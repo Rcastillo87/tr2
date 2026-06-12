@@ -7,3 +7,5 @@ python-dotenv==1.0.1
 pydantic==2.8.2
 pandas==2.2.2
 numpy==2.0.1
+redis==5.0.8
+

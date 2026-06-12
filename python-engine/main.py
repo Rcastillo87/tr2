@@ -19,6 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from api.v1.collector import router as collector_router
+from api.v1.regime import router as regime_router
 
 app = FastAPI(
     title="Trading Platform V2 — Python Engine",
@@ -41,6 +42,7 @@ async def verify_api_key(request: Request, call_next):
 
 # Rutas
 app.include_router(collector_router, prefix="/v1")
+app.include_router(regime_router, prefix="/v1")
 
 @app.get("/health")
 async def health():
