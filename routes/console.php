@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Artisan;
 use App\Jobs\CollectOhlcvDataJob;
 use Illuminate\Support\Facades\Schedule;
 use App\Jobs\DetectMarketRegimeJob;
+use App\Jobs\PaperTradingTickJob;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -12,3 +13,5 @@ Artisan::command('inspire', function () {
 
 Schedule::job(new CollectOhlcvDataJob)->everyMinute();
 Schedule::job(new DetectMarketRegimeJob)->everyFifteenMinutes();
+Schedule::job(new PaperTradingTickJob)->everyFiveMinutes();
+
