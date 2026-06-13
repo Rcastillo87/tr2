@@ -46,8 +46,10 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
 
     # Sharpe Ratio (anualizado asumiendo ~252 periodos de "trading" — aquí por trade)
     sharpe_ratio = 0.0
-    if returns.std() > 0:
-        sharpe_ratio = (returns.mean() / returns.std()) * np.sqrt(252)
+    returns_std = returns.std()
+    if returns_std > 1e-8:  # evita división por valores casi-cero
+        sharpe_ratio = (returns.mean() / returns_std) * np.sqrt(252)
+        sharpe_ratio = float(np.clip(sharpe_ratio, -100, 100))  # limita outliers absurdos
 
     # Max Drawdown
     running_max = equity_with_start.cummax()
