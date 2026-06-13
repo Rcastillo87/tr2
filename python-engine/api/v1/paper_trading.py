@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from dotenv import load_dotenv
 
 from trading.paper_trader import PaperTrader
+from trading.risk_manager import RiskManager
 from backtesting.strategies.ema_donchian import EmaDonchianStrategy
 from backtesting.strategies.mean_reversion import MeanReversionStrategy
 from backtesting.strategies.vwap_intraday import VwapIntradayStrategy
@@ -45,11 +46,19 @@ async def get_pool() -> asyncpg.Pool:
 async def paper_tick():
     """
     Ejecuta un ciclo completo de paper trading:
+      0. Evalúa controles de riesgo (drawdown, volatilidad, kill switch)
       1. Monitorea posiciones abiertas (SL/TP/BE/tiempo)
       2. Busca nuevas señales y abre posiciones si corresponde
     """
     try:
         pool = await get_pool()
+
+        risk_manager = RiskManager(pool)
+        risk_results = await risk_manager.evaluate(
+            strategies=list(STRATEGIES.keys()),
+            symbols=os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(','),
+        )
+
         trader = PaperTrader(pool, STRATEGIES, DEFAULT_PARAMS)
 
         monitor_results = await trader.monitor_open_trades()
@@ -59,6 +68,7 @@ async def paper_tick():
 
         return {
             "status": "ok",
+            "risk": risk_results,
             "monitor": monitor_results,
             "signals": signal_results,
         }
