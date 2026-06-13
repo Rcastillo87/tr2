@@ -1,6 +1,7 @@
 """
 Estrategia: Tendencia EMA/Donchian
-Trend Following: cruce de EMAs + ruptura de canal Donchian
+Trend Following: ruptura Donchian abre la "ventana de tendencia",
+el cruce de EMAs dentro de esa ventana dispara la entrada.
 Solo opera en régimen TRENDING
 """
 
@@ -18,13 +19,24 @@ class EmaDonchianStrategy(BaseStrategy):
         self.ema_fast        = params.get('ema_fast', 9)
         self.ema_slow        = params.get('ema_slow', 21)
         self.donchian_period = params.get('donchian_period', 20)
+        self.trend_window    = params.get('trend_window', 10)  # velas que dura el "permiso de tendencia"
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        df['ema_fast']      = df['close'].ewm(span=self.ema_fast, adjust=False).mean()
-        df['ema_slow']      = df['close'].ewm(span=self.ema_slow, adjust=False).mean()
-        df['donchian_high'] = df['high'].rolling(window=self.donchian_period).max()
-        df['donchian_low']  = df['low'].rolling(window=self.donchian_period).min()
+        df['ema_fast'] = df['close'].ewm(span=self.ema_fast, adjust=False).mean()
+        df['ema_slow'] = df['close'].ewm(span=self.ema_slow, adjust=False).mean()
+
+        donchian_high = df['high'].rolling(window=self.donchian_period).max()
+        donchian_low  = df['low'].rolling(window=self.donchian_period).min()
+
+        # Breakout: el cierre rompe el canal Donchian de las N velas previas (sin contar la actual)
+        df['breakout_up']   = df['close'] >= donchian_high.shift(1)
+        df['breakout_down'] = df['close'] <= donchian_low.shift(1)
+
+        # "Ventana de tendencia": True si hubo breakout en las últimas trend_window velas
+        df['trend_up_active']   = df['breakout_up'].rolling(window=self.trend_window).max().astype(bool)
+        df['trend_down_active'] = df['breakout_down'].rolling(window=self.trend_window).max().astype(bool)
+
         return df
 
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -35,14 +47,15 @@ class EmaDonchianStrategy(BaseStrategy):
             prev = df.iloc[i - 1]
             curr = df.iloc[i]
 
-            if (prev['ema_fast'] <= prev['ema_slow'] and
-                    curr['ema_fast'] > curr['ema_slow'] and
-                    curr['close'] >= curr['donchian_high']):
+            cross_up   = prev['ema_fast'] <= prev['ema_slow'] and curr['ema_fast'] > curr['ema_slow']
+            cross_down = prev['ema_fast'] >= prev['ema_slow'] and curr['ema_fast'] < curr['ema_slow']
+
+            # Long: cruce EMA alcista dentro de ventana de tendencia alcista
+            if cross_up and curr['trend_up_active']:
                 df.at[df.index[i], 'signal'] = 1
 
-            elif (prev['ema_fast'] >= prev['ema_slow'] and
-                    curr['ema_fast'] < curr['ema_slow'] and
-                    curr['close'] <= curr['donchian_low']):
+            # Short: cruce EMA bajista dentro de ventana de tendencia bajista
+            elif cross_down and curr['trend_down_active']:
                 df.at[df.index[i], 'signal'] = -1
 
         return df
