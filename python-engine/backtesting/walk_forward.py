@@ -8,9 +8,9 @@ import logging
 from backtesting.engine import BacktestEngine
 from backtesting.strategies.base_strategy import BaseStrategy
 from backtesting.metrics import calculate_metrics
+from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 
 logger = logging.getLogger(__name__)
-
 
 class WalkForwardValidator:
 
@@ -67,6 +67,30 @@ class WalkForwardValidator:
 
         return windows
 
+    def _build_regime_data(self, df: pd.DataFrame) -> dict:
+        """Calcula el régimen histórico para cada barra del DataFrame."""
+        regime_data  = {}
+        atr          = calculate_atr(df)
+        adx          = calculate_adx(df)
+        bb_width     = calculate_bb_width(df)
+        atr_avg      = atr.rolling(50).mean()
+        bb_width_avg = bb_width.rolling(50).mean()
+
+        for i in range(len(df)):
+            if i < 50:
+                continue
+            regime = classify_regime(
+                adx=float(adx.iloc[i]),
+                atr=float(atr.iloc[i]),
+                atr_avg=float(atr_avg.iloc[i]),
+                bb_width=float(bb_width.iloc[i]),
+                bb_width_avg=float(bb_width_avg.iloc[i]),
+            )
+            ts = str(df.iloc[i]['time'])
+            regime_data[ts] = regime
+
+        return regime_data
+
     def run(self) -> dict:
         """Ejecuta la validación walk-forward completa."""
         logger.info(
@@ -89,12 +113,13 @@ class WalkForwardValidator:
                 logger.warning(f"Ventana {w['window']}: datos de test insuficientes, saltando")
                 continue
 
+            regime_data = self._build_regime_data(w['test_df'])
             engine = BacktestEngine(
                 strategy=self.strategy,
                 df=w['test_df'],
                 initial_balance=self.initial_balance,
                 risk_per_trade_pct=self.risk_per_trade_pct,
-                regime_data=self.regime_data,
+                regime_data=regime_data,
             )
 
             result = engine.run()
