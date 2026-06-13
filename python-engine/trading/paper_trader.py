@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
+from trading.risk_manager import RiskManager
 
 load_dotenv()
 
@@ -35,6 +36,7 @@ class PaperTrader:
         self.pool = pool
         self.strategies = strategies
         self.default_params = default_params
+        self.risk_manager = RiskManager(pool)
 
     # ─────────────────────────────────────────────
     # Datos
@@ -272,12 +274,23 @@ class PaperTrader:
         """Para cada estrategia/símbolo, revisa si la última vela cerrada generó señal."""
         results = {}
 
+        # Kill switch global: no abrir ninguna posición nueva
+        if await self.risk_manager.is_kill_switch_active():
+            for strategy_name in self.strategies:
+                for symbol in SYMBOLS:
+                    results[f"{strategy_name}/{symbol}"] = "KILL SWITCH activo — sin nuevas entradas"
+            return results
+
         for strategy_name, strategy_cls in self.strategies.items():
             for symbol in SYMBOLS:
                 key = f"{strategy_name}/{symbol}"
 
                 if await self.has_open_trade(strategy_name, symbol):
                     results[key] = "ya tiene posición abierta"
+                    continue
+
+                if await self.risk_manager.is_paused(strategy_name, symbol):
+                    results[key] = "pausada por gestión de riesgo"
                     continue
 
                 df = await self.get_bars(symbol)
