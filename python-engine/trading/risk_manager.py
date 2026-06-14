@@ -75,7 +75,7 @@ class RiskManager:
                 strategy
             )
 
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
             daily_pnl = await conn.fetchval(
                 """
                 SELECT COALESCE(SUM(pnl), 0)
