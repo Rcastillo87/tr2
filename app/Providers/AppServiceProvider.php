@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +21,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Gate::define('viewPaperTrading', function (User $user) {
+            return $user->canViewPaperTrading();
+        });
+
+        Gate::define('viewAnalysisTools', function (User $user) {
+            return $user->canViewAnalysisTools();
+        });
+
+        Gate::define('viewRealTrading', function (User $user) {
+            return $user->canViewRealTrading();
+        });
+
+        Gate::define('manageUsers', function (User $user) {
+            return $user->canManageUsers();
+        });
     }
 }
