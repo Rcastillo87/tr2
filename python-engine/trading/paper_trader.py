@@ -142,7 +142,7 @@ class PaperTrader:
                     ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $11, 'open', now(), now())
                 """,
                 strategy_name, symbol, INTERVAL, side, entry_price, sl, tp, be,
-                size, regime, datetime.now(timezone.utc)
+                size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
         logger.info(
@@ -175,7 +175,7 @@ class PaperTrader:
                 WHERE id = $6
                 """,
                 exit_price, round(pnl, 4), round(pnl_pct, 4), exit_reason,
-                datetime.now(timezone.utc), trade['id']
+                datetime.now(timezone.utc).replace(tzinfo=None), trade['id']
             )
 
         logger.info(
