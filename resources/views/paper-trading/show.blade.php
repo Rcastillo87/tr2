@@ -46,15 +46,20 @@
         <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
             <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Posiciones abiertas</h3>
 
-            {{-- Mobile: cards --}}
+            {{-- Mobile/tablet: cards --}}
             <div class="space-y-2 lg:hidden">
                 @foreach ($openTrades as $t)
                     <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-sm font-medium" style="color:var(--color-text-primary);">{{ $t->symbol }}</span>
-                            <span class="text-xs font-medium" style="color: {{ $t->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                {{ strtoupper($t->side) }}
-                            </span>
+                            <div class="flex items-center gap-2">
+                                @if ($t->be_activated)
+                                    <span class="text-[10px]" style="color:var(--color-profit);">BE activado</span>
+                                @endif
+                                <span class="text-xs font-medium" style="color: {{ $t->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                    {{ strtoupper($t->side) }}
+                                </span>
+                            </div>
                         </div>
                         <div class="grid grid-cols-3 gap-2 font-mono text-[11px] mb-2" style="color:var(--color-text-muted);">
                             <div>
@@ -72,11 +77,6 @@
                         </div>
                         <div class="flex items-center justify-between text-[11px]" style="color:var(--color-text-muted);">
                             <span>{{ $t->regime }}</span>
-                            <span>
-                                @if ($t->be_activated)
-                                    <span style="color:var(--color-profit);">BE activado</span>
-                                @endif
-                            </span>
                             <span>{{ $t->entry_time->format('d/m H:i') }}</span>
                         </div>
                     </div>
@@ -142,7 +142,7 @@
                 ];
             @endphp
 
-            {{-- Mobile: cards --}}
+            {{-- Mobile/tablet: cards --}}
             <div class="space-y-2 lg:hidden">
                 @foreach ($closedTrades as $t)
                     <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
