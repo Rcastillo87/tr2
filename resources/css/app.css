@@ -1,9 +1,26 @@
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../../node_modules/flowbite/**/*.js';
+
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --color-base: #0A0E14;
+    --color-surface: #11161F;
+    --color-surface-raised: #161D29;
+    --color-border-soft: #1E2530;
+    --color-border-strong: #232B38;
+
+    --color-text-primary: #E5E9F0;
+    --color-text-secondary: #8B96A5;
+    --color-text-muted: #6B7787;
+
+    --color-profit: #3DD68C;
+    --color-loss: #F2545B;
+    --color-neutral: #E8B339;
+    --color-info: #4D8FE8;
 }
