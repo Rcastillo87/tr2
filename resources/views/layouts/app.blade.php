@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0A0E14">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <title>@yield('title', 'Trading Platform V2')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -89,6 +92,13 @@
     </nav>
 
     @stack('scripts')
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js');
+        });
+      }
+    </script>
     @vite('resources/js/app.js')
 </body>
 </html>
