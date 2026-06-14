@@ -2,71 +2,93 @@
 <html lang="es" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0A0E14">
     <title>@yield('title', 'Trading Platform V2')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @stack('scripts')
 </head>
-<body class="bg-gray-900 text-gray-100 font-sans antialiased">
+<body class="bg-base text-[var(--color-text-primary)] font-sans antialiased" style="background:var(--color-base); color:var(--color-text-primary);">
 
     <div class="flex h-screen overflow-hidden">
 
-        {{-- Sidebar --}}
-        <aside class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
-            <div class="p-4 border-b border-gray-700">
-                <h1 class="text-lg font-semibold text-white">Trading V2</h1>
-                <p class="text-xs text-gray-400">Algorithmic Trading Platform</p>
+        {{-- Sidebar — desktop only --}}
+        <aside class="hidden lg:flex lg:w-60 flex-col border-r"
+               style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="p-4 border-b" style="border-color:var(--color-border-soft);">
+                <p class="text-[11px] uppercase tracking-wider" style="color:var(--color-text-muted);">Trading V2</p>
+                <p class="text-base font-medium mt-0.5" style="color:var(--color-text-primary);">Vista general</p>
             </div>
 
             <nav class="flex-1 px-3 py-4 space-y-1">
-                <a href="{{ route('dashboard') }}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium {{ request()->routeIs('dashboard') ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700' }}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"/></svg>
-                    Vista General
-                </a>
-
-                <a href="{{ route('paper-trading.index') }}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium {{ request()->routeIs('paper-trading.*') ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700' }}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-                    Paper Trading
-                </a>
-
-                <a href="{{ route('backtesting.index') }}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium {{ request()->routeIs('backtesting.*') ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700' }}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
-                    Backtesting
-                </a>
-
-                <a href="{{ route('data-collector.index') }}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium {{ request()->routeIs('data-collector.*') ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700' }}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
-                    Data Collector
-                </a>
+                @include('layouts.nav-links')
             </nav>
 
-            <div class="p-3 border-t border-gray-700">
-                <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900">
-                    <span class="relative flex h-2.5 w-2.5">
-                        <span class="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping"></span>
-                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            <div class="p-3 border-t" style="border-color:var(--color-border-soft);">
+                <div class="flex items-center gap-2 px-3 py-2 rounded-md" style="background:var(--color-surface-raised);">
+                    <span class="relative flex h-2 w-2">
+                        <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--color-profit);"></span>
                     </span>
-                    <span class="text-xs text-gray-300">Sistema activo</span>
+                    <span class="text-xs" style="color:var(--color-text-secondary);">Sistema activo</span>
                 </div>
             </div>
         </aside>
 
         {{-- Main content --}}
         <div class="flex-1 flex flex-col overflow-hidden">
-            <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
-                <h2 class="text-xl font-semibold text-white">@yield('header', 'Dashboard')</h2>
+
+            {{-- Top bar — mobile/tablet only --}}
+            <header class="lg:hidden flex items-center justify-between px-4 py-3 border-b"
+                    style="background:var(--color-surface); border-color:var(--color-border-soft);">
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-muted);">Trading V2</p>
+                    <p class="text-sm font-medium mt-0.5">@yield('header', 'Dashboard')</p>
+                </div>
+                <span class="relative flex h-2 w-2">
+                    <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--color-profit);"></span>
+                </span>
             </header>
 
-            <main class="flex-1 overflow-y-auto p-6">
+            {{-- Desktop header --}}
+            <header class="hidden lg:block px-6 py-4 border-b" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+                <h2 class="text-lg font-medium">@yield('header', 'Dashboard')</h2>
+            </header>
+
+            <main class="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6">
                 @yield('content')
             </main>
         </div>
     </div>
 
+    {{-- Bottom nav — mobile/tablet only --}}
+    <nav class="lg:hidden fixed bottom-0 left-0 right-0 border-t z-50"
+         style="background:var(--color-surface); border-color:var(--color-border-soft); padding-bottom: env(safe-area-inset-bottom);">
+        <div class="grid grid-cols-4">
+            @php
+                $navItems = [
+                    ['route' => 'dashboard', 'icon' => 'home', 'label' => 'General'],
+                    ['route' => 'paper-trading.index', 'icon' => 'chart', 'label' => 'Paper'],
+                    ['route' => 'backtesting.index', 'icon' => 'flask', 'label' => 'Backtest'],
+                    ['route' => 'data-collector.index', 'icon' => 'database', 'label' => 'Datos'],
+                ];
+            @endphp
+
+            @foreach ($navItems as $item)
+                @php
+                    $active = request()->routeIs($item['route'] === 'dashboard' ? 'dashboard' : str_replace('.index', '.*', $item['route']));
+                @endphp
+                <a href="{{ route($item['route']) }}"
+                   class="flex flex-col items-center justify-center py-2.5 gap-1 text-[11px]"
+                   style="color: {{ $active ? 'var(--color-info)' : 'var(--color-text-muted)' }};">
+                    @include('layouts.icon', ['name' => $item['icon']])
+                    {{ $item['label'] }}
+                </a>
+            @endforeach
+        </div>
+    </nav>
+
+    @stack('scripts')
     @vite('resources/js/app.js')
 </body>
 </html>
