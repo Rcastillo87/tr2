@@ -18,7 +18,7 @@
         <aside class="hidden lg:flex lg:w-60 flex-col border-r"
                style="background:var(--color-surface); border-color:var(--color-border-soft);">
             <div class="p-4 border-b" style="border-color:var(--color-border-soft);">
-                <p class="text-[11px] uppercase tracking-wider" style="color:var(--color-text-muted);">Trading V2</p>
+                <p class="text-[11px] uppercase tracking-wider" style="color:var(--color-text-muted);">tr-bot</p>
                 <p class="text-base font-medium mt-0.5" style="color:var(--color-text-primary);">Vista general</p>
             </div>
 
@@ -44,7 +44,7 @@
             <header class="lg:hidden flex items-center justify-between px-4 py-3 border-b"
                     style="background:var(--color-surface); border-color:var(--color-border-soft);">
                 <div>
-                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-muted);">Trading V2</p>
+                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-muted);">tr-bot</p>
                     <p class="text-sm font-medium mt-0.5">@yield('header', 'Dashboard')</p>
                 </div>
                 <span class="relative flex h-2 w-2">

@@ -47,7 +47,7 @@
             <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Posiciones abiertas</h3>
 
             {{-- Mobile: cards --}}
-            <div class="space-y-2 sm:hidden">
+            <div class="space-y-2 lg:hidden">
                 @foreach ($openTrades as $t)
                     <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
                         <div class="flex items-center justify-between mb-2">
@@ -84,7 +84,7 @@
             </div>
 
             {{-- Desktop: tabla --}}
-            <div class="overflow-x-auto hidden sm:block">
+            <div class="overflow-x-auto hidden lg:block">
                 <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
                     <thead>
                         <tr class="border-b" style="border-color:var(--color-border-soft);">
@@ -143,7 +143,7 @@
             @endphp
 
             {{-- Mobile: cards --}}
-            <div class="space-y-2 sm:hidden">
+            <div class="space-y-2 lg:hidden">
                 @foreach ($closedTrades as $t)
                     <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
                         <div class="flex items-center justify-between mb-2">
@@ -177,7 +177,7 @@
             </div>
 
             {{-- Desktop: tabla --}}
-            <div class="overflow-x-auto hidden sm:block">
+            <div class="overflow-x-auto hidden lg:block">
                 <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
                     <thead>
                         <tr class="border-b" style="border-color:var(--color-border-soft);">
