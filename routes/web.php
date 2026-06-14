@@ -1,24 +1,20 @@
 <?php
 
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\PaperTradingController;
-use App\Http\Controllers\BacktestingController;
-use App\Http\Controllers\DataCollectorController;
 
-Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-
-Route::prefix('paper-trading')->name('paper-trading.')->group(function () {
-    Route::get('/', [PaperTradingController::class, 'index'])->name('index');
-    Route::get('/{strategy}', [PaperTradingController::class, 'show'])->name('show');
+Route::get('/', function () {
+    return view('welcome');
 });
 
-Route::prefix('backtesting')->name('backtesting.')->group(function () {
-    Route::get('/', [BacktestingController::class, 'index'])->name('index');
-    Route::post('/', [BacktestingController::class, 'index'])->name('run');
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::prefix('data-collector')->name('data-collector.')->group(function () {
-    Route::get('/', [DataCollectorController::class, 'index'])->name('index');
-});
-
+require __DIR__.'/auth.php';
