@@ -119,7 +119,8 @@ class RiskManager:
                     ($1, $2, $3, $4, $5, true, $6, $7, now(), now())
                 """,
                 strategy, symbol, reason, value, threshold,
-                datetime.now(timezone.utc), auto_resume_at
+                datetime.now(timezone.utc).replace(tzinfo=None),
+                auto_resume_at.replace(tzinfo=None) if auto_resume_at else None
             )
 
         logger.warning(
@@ -133,7 +134,7 @@ class RiskManager:
     # ─────────────────────────────────────────────
 
     async def resume_expired_pauses(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         async with self.pool.acquire() as conn:
             result = await conn.execute(
                 """
@@ -220,7 +221,7 @@ class RiskManager:
 
             if daily_dd_pct <= -DAILY_DRAWDOWN_PCT:
                 tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0, tzinfo=None
                 )
                 created = await self.create_pause(
                     strategy=strategy, symbol=None, reason='daily_drawdown',
