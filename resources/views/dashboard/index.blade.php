@@ -72,7 +72,9 @@
     <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Estrategias — paper trading</h3>
-            <a href="{{ route('paper-trading.index') }}" class="text-xs" style="color:var(--color-info);">Ver detalle →</a>
+            @can('viewPaperTrading')
+                <a href="{{ route('paper-trading.index') }}" class="text-xs" style="color:var(--color-info);">Ver detalle →</a>
+            @endcan
         </div>
 
         @if (count($summary) === 0)
@@ -80,61 +82,77 @@
         @else
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 @foreach ($summary as $s)
-                    <a href="{{ route('paper-trading.show', $s['strategy']) }}"
-                       class="rounded-md border p-3 block transition-colors"
-                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                        <p class="text-sm font-medium mb-2">{{ $s['strategy'] }}</p>
-                        <p class="font-mono text-lg font-medium mb-2" style="color: {{ $s['total_pnl'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                            {{ $s['total_pnl'] >= 0 ? '+' : '' }}{{ number_format($s['total_pnl'], 2) }}
-                        </p>
-                        <div class="grid grid-cols-3 gap-2 font-mono text-[11px]" style="color:var(--color-text-muted);">
-                            <span>WR {{ $s['win_rate'] }}%</span>
-                            <span>{{ $s['total_trades'] }} tr</span>
-                            <span>{{ $s['open_trades'] }} abiertas</span>
+                    @if (auth()->user()->canViewPaperTrading())
+                        <a href="{{ route('paper-trading.show', $s['strategy']) }}"
+                           class="rounded-md border p-3 block transition-colors"
+                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                            <p class="text-sm font-medium mb-2">{{ $s['strategy'] }}</p>
+                            <p class="font-mono text-lg font-medium mb-2" style="color: {{ $s['total_pnl'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ $s['total_pnl'] >= 0 ? '+' : '' }}{{ number_format($s['total_pnl'], 2) }}
+                            </p>
+                            <div class="grid grid-cols-3 gap-2 font-mono text-[11px]" style="color:var(--color-text-muted);">
+                                <span>WR {{ $s['win_rate'] }}%</span>
+                                <span>{{ $s['total_trades'] }} tr</span>
+                                <span>{{ $s['open_trades'] }} abiertas</span>
+                            </div>
+                        </a>
+                    @else
+                        <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                            <p class="text-sm font-medium mb-2">{{ $s['strategy'] }}</p>
+                            <p class="font-mono text-lg font-medium mb-2" style="color: {{ $s['total_pnl'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ $s['total_pnl'] >= 0 ? '+' : '' }}{{ number_format($s['total_pnl'], 2) }}
+                            </p>
+                            <div class="grid grid-cols-3 gap-2 font-mono text-[11px]" style="color:var(--color-text-muted);">
+                                <span>WR {{ $s['win_rate'] }}%</span>
+                                <span>{{ $s['total_trades'] }} tr</span>
+                                <span>{{ $s['open_trades'] }} abiertas</span>
+                            </div>
                         </div>
-                    </a>
+                    @endif
                 @endforeach
             </div>
         @endif
     </div>
 
-    {{-- Estado del Data Collector --}}
-    <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <div class="flex items-center justify-between mb-3">
-            <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Data collector</h3>
-            <a href="{{ route('data-collector.index') }}" class="text-xs" style="color:var(--color-info);">Ver detalle →</a>
-        </div>
-
-        @if (count($collector) === 0)
-            <p class="text-sm" style="color:var(--color-text-muted);">Sin datos disponibles.</p>
-        @else
-            <div class="overflow-x-auto -mx-1">
-                <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
-                    <thead>
-                        <tr class="border-b" style="border-color:var(--color-border-soft);">
-                            <th class="py-2 px-1 font-normal">Par/Int</th>
-                            <th class="py-2 px-1 font-normal">Última vela</th>
-                            <th class="py-2 px-1 font-normal">Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($collector as $key => $data)
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <td class="py-2 px-1" style="color:var(--color-text-primary);">{{ $key }}</td>
-                                <td class="py-2 px-1 whitespace-nowrap">{{ $data['last_candle'] ?? '—' }}</td>
-                                <td class="py-2 px-1">
-                                    @if ($data['has_data'])
-                                        <span style="color:var(--color-profit);">●</span> OK
-                                    @else
-                                        <span style="color:var(--color-loss);">●</span> Sin datos
-                                    @endif
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+    {{-- Estado del Data Collector — solo admin y consultor --}}
+    @can('viewAnalysisTools')
+        <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Data collector</h3>
+                <a href="{{ route('data-collector.index') }}" class="text-xs" style="color:var(--color-info);">Ver detalle →</a>
             </div>
-        @endif
-    </div>
+
+            @if (count($collector) === 0)
+                <p class="text-sm" style="color:var(--color-text-muted);">Sin datos disponibles.</p>
+            @else
+                <div class="overflow-x-auto -mx-1">
+                    <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
+                        <thead>
+                            <tr class="border-b" style="border-color:var(--color-border-soft);">
+                                <th class="py-2 px-1 font-normal">Par/Int</th>
+                                <th class="py-2 px-1 font-normal">Última vela</th>
+                                <th class="py-2 px-1 font-normal">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($collector as $key => $data)
+                                <tr class="border-b" style="border-color:var(--color-border-soft);">
+                                    <td class="py-2 px-1" style="color:var(--color-text-primary);">{{ $key }}</td>
+                                    <td class="py-2 px-1 whitespace-nowrap">{{ $data['last_candle'] ?? '—' }}</td>
+                                    <td class="py-2 px-1">
+                                        @if ($data['has_data'])
+                                            <span style="color:var(--color-profit);">●</span> OK
+                                        @else
+                                            <span style="color:var(--color-loss);">●</span> Sin datos
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    @endcan
 
 @endsection
