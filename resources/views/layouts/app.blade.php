@@ -26,7 +26,7 @@
                 @include('layouts.nav-links')
             </nav>
 
-            <div class="p-3 border-t space-y-2" style="border-color:var(--color-border-soft);">
+            <div class="p-3 border-t" style="border-color:var(--color-border-soft);">
                 <div class="flex items-center gap-2 px-3 py-2 rounded-md" style="background:var(--color-surface-raised);">
                     <span class="relative flex h-2 w-2">
                         <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
@@ -34,62 +34,57 @@
                     </span>
                     <span class="text-xs" style="color:var(--color-text-secondary);">Sistema activo</span>
                 </div>
-
-                @auth
-                    @php
-                        $roleLabels = [
-                            'admin' => 'Administrador',
-                            'consultor' => 'Consultor',
-                            'inversionista' => 'Inversionista',
-                        ];
-                    @endphp
-                    <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md" style="background:var(--color-surface-raised);">
-                        <div class="min-w-0">
-                            <p class="text-xs font-medium truncate" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
-                            <p class="text-[10px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
-                        </div>
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-                            <button type="submit" class="text-[11px] shrink-0" style="color:var(--color-loss);">
-                                Salir
-                            </button>
-                        </form>
-                    </div>
-                @endauth
             </div>
         </aside>
 
         {{-- Main content --}}
         <div class="flex-1 flex flex-col overflow-hidden">
 
+            @php
+                $roleLabels = [
+                    'admin' => 'Administrador',
+                    'consultor' => 'Consultor',
+                    'inversionista' => 'Inversionista',
+                ];
+            @endphp
+
             {{-- Top bar — mobile/tablet only --}}
-            <header class="lg:hidden flex items-center justify-between px-4 py-3 border-b"
+            <header class="lg:hidden flex items-center justify-between px-4 py-3 border-b gap-3"
                     style="background:var(--color-surface); border-color:var(--color-border-soft);">
                 <div class="min-w-0">
                     <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-muted);">tr-bot</p>
                     <p class="text-sm font-medium mt-0.5 truncate">@yield('header', 'Dashboard')</p>
                 </div>
 
-                <div class="flex items-center gap-3 shrink-0">
-                    <span class="relative flex h-2 w-2">
-                        <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--color-profit);"></span>
-                    </span>
-
-                    @auth
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-                            <button type="submit" class="text-[11px]" style="color:var(--color-loss);">
-                                Salir
-                            </button>
-                        </form>
-                    @endauth
-                </div>
+                @auth
+                    <div class="flex items-center gap-2 shrink-0">
+                        <div class="text-right min-w-0">
+                            <p class="text-[11px] font-medium truncate max-w-[110px]" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
+                            <p class="text-[10px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
+                        </div>
+                        <button type="button" onclick="confirmLogout()" class="text-[11px] px-2 py-1 rounded shrink-0" style="color:var(--color-loss); border:1px solid var(--color-border-soft);">
+                            Salir
+                        </button>
+                    </div>
+                @endauth
             </header>
 
             {{-- Desktop header --}}
-            <header class="hidden lg:block px-6 py-4 border-b" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <header class="hidden lg:flex items-center justify-between px-6 py-4 border-b" style="background:var(--color-surface); border-color:var(--color-border-soft);">
                 <h2 class="text-lg font-medium">@yield('header', 'Dashboard')</h2>
+
+                @auth
+                    <div class="flex items-center gap-3">
+                        <div class="text-right">
+                            <p class="text-sm font-medium" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
+                            <p class="text-[11px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
+                        </div>
+                        <button type="button" onclick="confirmLogout()" class="text-xs font-medium px-3 py-1.5 rounded-md transition-colors" style="color:var(--color-loss); border:1px solid var(--color-border-soft);"
+                                onmouseover="this.style.background='#3A1A1C'" onmouseout="this.style.background='transparent'">
+                            Salir
+                        </button>
+                    </div>
+                @endauth
             </header>
 
             <main class="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6">
@@ -125,7 +120,39 @@
         </div>
     </nav>
 
+    {{-- Formulario de logout, oculto, enviado tras confirmacion --}}
+    @auth
+        <form id="logout-form" method="POST" action="{{ route('logout') }}" class="hidden">
+            @csrf
+        </form>
+    @endauth
+
     @stack('scripts')
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function confirmLogout() {
+            Swal.fire({
+                title: 'Cerrar sesión',
+                text: '¿Seguro que quieres salir de tr-bot?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Salir',
+                cancelButtonText: 'Cancelar',
+                background: '#11161F',
+                color: '#E5E9F0',
+                confirmButtonColor: '#F2545B',
+                cancelButtonColor: '#232B38',
+                customClass: {
+                    popup: 'rounded-xl border',
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    document.getElementById('logout-form').submit();
+                }
+            });
+        }
+    </script>
 
     <script>
       if ('serviceWorker' in navigator) {
