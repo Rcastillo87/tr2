@@ -96,16 +96,16 @@
     {{-- Bottom nav — mobile/tablet only --}}
     <nav class="lg:hidden fixed bottom-0 left-0 right-0 border-t z-50"
          style="background:var(--color-surface); border-color:var(--color-border-soft); padding-bottom: env(safe-area-inset-bottom);">
-        <div class="grid grid-cols-4">
-            @php
-                $navItems = [
-                    ['route' => 'dashboard', 'icon' => 'home', 'label' => 'General'],
-                    ['route' => 'paper-trading.index', 'icon' => 'chart', 'label' => 'Paper'],
-                    ['route' => 'backtesting.index', 'icon' => 'flask', 'label' => 'Backtest'],
-                    ['route' => 'data-collector.index', 'icon' => 'database', 'label' => 'Datos'],
-                ];
-            @endphp
-
+        @php
+            $user = auth()->user();
+            $navItems = collect([
+                ['route' => 'dashboard', 'icon' => 'home', 'label' => 'General', 'visible' => true],
+                ['route' => 'paper-trading.index', 'icon' => 'chart', 'label' => 'Paper', 'visible' => $user?->canViewPaperTrading() ?? false],
+                ['route' => 'backtesting.index', 'icon' => 'flask', 'label' => 'Backtest', 'visible' => $user?->canViewAnalysisTools() ?? false],
+                ['route' => 'data-collector.index', 'icon' => 'database', 'label' => 'Datos', 'visible' => $user?->canViewAnalysisTools() ?? false],
+            ])->filter(fn ($item) => $item['visible'])->values();
+        @endphp
+        <div class="grid" style="grid-template-columns: repeat({{ $navItems->count() }}, 1fr);">
             @foreach ($navItems as $item)
                 @php
                     $active = request()->routeIs($item['route'] === 'dashboard' ? 'dashboard' : str_replace('.index', '.*', $item['route']));

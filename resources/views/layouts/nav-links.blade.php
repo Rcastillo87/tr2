@@ -1,13 +1,15 @@
 @php
+    $user = auth()->user();
+
     $links = [
-        ['route' => 'dashboard',            'match' => 'dashboard',          'icon' => 'home',     'label' => 'Vista general'],
-        ['route' => 'paper-trading.index',  'match' => 'paper-trading.*',    'icon' => 'chart',    'label' => 'Paper trading'],
-        ['route' => 'backtesting.index',    'match' => 'backtesting.*',      'icon' => 'flask',    'label' => 'Backtesting'],
-        ['route' => 'data-collector.index', 'match' => 'data-collector.*',   'icon' => 'database', 'label' => 'Data collector'],
+        ['route' => 'dashboard',            'match' => 'dashboard',          'icon' => 'home',     'label' => 'Vista general', 'visible' => true],
+        ['route' => 'paper-trading.index',  'match' => 'paper-trading.*',    'icon' => 'chart',    'label' => 'Paper trading', 'visible' => $user?->canViewPaperTrading() ?? false],
+        ['route' => 'backtesting.index',    'match' => 'backtesting.*',      'icon' => 'flask',    'label' => 'Backtesting',   'visible' => $user?->canViewAnalysisTools() ?? false],
+        ['route' => 'data-collector.index', 'match' => 'data-collector.*',   'icon' => 'database', 'label' => 'Data collector','visible' => $user?->canViewAnalysisTools() ?? false],
     ];
 @endphp
-
 @foreach ($links as $link)
+    @continue(! $link['visible'])
     @php $active = request()->routeIs($link['match']); @endphp
     <a href="{{ route($link['route']) }}"
        class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors"
