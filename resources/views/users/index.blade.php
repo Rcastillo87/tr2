@@ -113,7 +113,7 @@
 
     @if ($users->hasPages())
         <div class="mt-4 flex items-center justify-center">
-            {{ $users->links() }}
+            {{ $users->links('pagination.tr-bot') }}
         </div>
     @endif
 
