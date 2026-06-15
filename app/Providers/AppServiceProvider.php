@@ -36,5 +36,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manageUsers', function (User $user) {
             return $user->canManageUsers();
         });
+
+        Gate::define('createDemoAccounts', function (User $user) {
+            return $user->canCreateDemoAccounts();
+        });
     }
 }

@@ -13,6 +13,7 @@ class RealTrade extends Model
     protected $fillable = [
         'user_id',
         'subscription_id',
+        'broker_account_id',
         'strategy',
         'symbol',
         'broker',
@@ -56,6 +57,11 @@ class RealTrade extends Model
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(RealStrategySubscription::class, 'subscription_id');
+    }
+
+    public function brokerAccount(): BelongsTo
+    {
+        return $this->belongsTo(BrokerAccount::class);
     }
 
     public function isOpen(): bool

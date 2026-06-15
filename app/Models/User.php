@@ -42,6 +42,11 @@ class User extends Authenticatable
         return $this->hasMany(RealTrade::class);
     }
 
+    public function brokerAccounts(): HasMany
+    {
+        return $this->hasMany(BrokerAccount::class);
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
@@ -80,6 +85,15 @@ class User extends Authenticatable
     }
 
     public function canManageUsers(): bool
+    {
+        return $this->isAdmin();
+    }
+
+    /**
+     * Solo el admin puede crear cuentas de broker tipo 'demo' (para si mismo).
+     * Los inversionistas solo pueden crear cuentas 'real'.
+     */
+    public function canCreateDemoAccounts(): bool
     {
         return $this->isAdmin();
     }
