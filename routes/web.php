@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaperTradingController;
 use App\Http\Controllers\BacktestingController;
 use App\Http\Controllers\DataCollectorController;
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\ProfileController;
 
 /*
@@ -44,6 +45,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Data collector: admin y consultor
     Route::middleware('can:viewAnalysisTools')->prefix('data-collector')->name('data-collector.')->group(function () {
         Route::get('/', [DataCollectorController::class, 'index'])->name('index');
+    });
+
+    // Gestion de usuarios: solo admin
+    Route::middleware('can:manageUsers')->prefix('users')->name('users.')->group(function () {
+        Route::get('/', [UserManagementController::class, 'index'])->name('index');
+        Route::patch('/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('toggle-active');
     });
 
     // Perfil de usuario (Breeze)

@@ -6,6 +6,7 @@
         ['route' => 'paper-trading.index',  'match' => 'paper-trading.*',    'icon' => 'chart',    'label' => 'Paper trading', 'visible' => $user?->canViewPaperTrading() ?? false],
         ['route' => 'backtesting.index',    'match' => 'backtesting.*',      'icon' => 'flask',    'label' => 'Backtesting',   'visible' => $user?->canViewAnalysisTools() ?? false],
         ['route' => 'data-collector.index', 'match' => 'data-collector.*',   'icon' => 'database', 'label' => 'Data collector','visible' => $user?->canViewAnalysisTools() ?? false],
+        ['route' => 'users.index',          'match' => 'users.*',            'icon' => 'users',    'label' => 'Usuarios',      'visible' => $user?->canManageUsers() ?? false],
     ];
 @endphp
 @foreach ($links as $link)
