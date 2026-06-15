@@ -111,6 +111,12 @@
         </div>
     </div>
 
+    @if ($users->hasPages())
+        <div class="mt-4 flex items-center justify-center">
+            {{ $users->links() }}
+        </div>
+    @endif
+
 @endsection
 
 @push('scripts')

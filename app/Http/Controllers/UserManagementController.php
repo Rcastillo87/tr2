@@ -13,7 +13,7 @@ class UserManagementController extends Controller
     {
         Gate::authorize('manageUsers');
 
-        $users = User::orderBy('name')->get();
+        $users = User::orderBy('created_at', 'desc')->paginate(10);
 
         return view('users.index', [
             'users' => $users,
