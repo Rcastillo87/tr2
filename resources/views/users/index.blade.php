@@ -50,6 +50,7 @@
                         @if ($u->id !== auth()->id())
                             <form method="POST" action="{{ route('users.toggle-active', $u) }}" onsubmit="return confirmToggle(event, {{ $u->is_active ? 'true' : 'false' }}, '{{ $u->name }}')">
                                 @csrf
+                                @method('PATCH')
                                 <button type="submit" class="text-[11px] px-2 py-1 rounded" style="color: {{ $u->is_active ? 'var(--color-loss)' : 'var(--color-profit)' }}; border:1px solid var(--color-border-soft);">
                                     {{ $u->is_active ? 'Inactivar' : 'Activar' }}
                                 </button>
@@ -94,6 +95,7 @@
                                 @if ($u->id !== auth()->id())
                                     <form method="POST" action="{{ route('users.toggle-active', $u) }}" onsubmit="return confirmToggle(event, {{ $u->is_active ? 'true' : 'false' }}, '{{ $u->name }}')">
                                         @csrf
+                                        @method('PATCH')
                                         <button type="submit" class="px-2 py-1 rounded transition-colors" style="color: {{ $u->is_active ? 'var(--color-loss)' : 'var(--color-profit)' }}; border:1px solid var(--color-border-soft);">
                                             {{ $u->is_active ? 'Inactivar' : 'Activar' }}
                                         </button>
