@@ -101,6 +101,7 @@
             $navItems = collect([
                 ['route' => 'dashboard', 'icon' => 'home', 'label' => 'General', 'visible' => true],
                 ['route' => 'paper-trading.index', 'icon' => 'chart', 'label' => 'Paper', 'visible' => $user?->canViewPaperTrading() ?? false],
+                ['route' => 'real-trading.accounts.index', 'icon' => 'wallet', 'label' => 'Real', 'visible' => $user?->canViewRealTrading() ?? false],
                 ['route' => 'backtesting.index', 'icon' => 'flask', 'label' => 'Backtest', 'visible' => $user?->canViewAnalysisTools() ?? false],
                 ['route' => 'data-collector.index', 'icon' => 'database', 'label' => 'Datos', 'visible' => $user?->canViewAnalysisTools() ?? false],
                 ['route' => 'users.index', 'icon' => 'users', 'label' => 'Usuarios', 'visible' => $user?->canManageUsers() ?? false],

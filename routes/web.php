@@ -6,6 +6,7 @@ use App\Http\Controllers\PaperTradingController;
 use App\Http\Controllers\BacktestingController;
 use App\Http\Controllers\DataCollectorController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\BrokerAccountController;
 use App\Http\Controllers\ProfileController;
 
 /*
@@ -51,6 +52,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('can:manageUsers')->prefix('users')->name('users.')->group(function () {
         Route::get('/', [UserManagementController::class, 'index'])->name('index');
         Route::patch('/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('toggle-active');
+    });
+
+    // Trading real: admin e inversionista, cada uno gestiona sus propias cuentas
+    Route::middleware('can:viewRealTrading')->prefix('real-trading')->name('real-trading.')->group(function () {
+        Route::prefix('accounts')->name('accounts.')->group(function () {
+            Route::get('/', [BrokerAccountController::class, 'index'])->name('index');
+            Route::get('/create', [BrokerAccountController::class, 'create'])->name('create');
+            Route::post('/', [BrokerAccountController::class, 'store'])->name('store');
+            Route::patch('/{account}/toggle-status', [BrokerAccountController::class, 'toggleStatus'])->name('toggle-status');
+            Route::delete('/{account}', [BrokerAccountController::class, 'destroy'])->name('destroy');
+        });
     });
 
     // Perfil de usuario (Breeze)
