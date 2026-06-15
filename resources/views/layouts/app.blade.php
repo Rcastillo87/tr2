@@ -26,7 +26,7 @@
                 @include('layouts.nav-links')
             </nav>
 
-            <div class="p-3 border-t" style="border-color:var(--color-border-soft);">
+            <div class="p-3 border-t space-y-2" style="border-color:var(--color-border-soft);">
                 <div class="flex items-center gap-2 px-3 py-2 rounded-md" style="background:var(--color-surface-raised);">
                     <span class="relative flex h-2 w-2">
                         <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
@@ -34,6 +34,28 @@
                     </span>
                     <span class="text-xs" style="color:var(--color-text-secondary);">Sistema activo</span>
                 </div>
+
+                @auth
+                    @php
+                        $roleLabels = [
+                            'admin' => 'Administrador',
+                            'consultor' => 'Consultor',
+                            'inversionista' => 'Inversionista',
+                        ];
+                    @endphp
+                    <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md" style="background:var(--color-surface-raised);">
+                        <div class="min-w-0">
+                            <p class="text-xs font-medium truncate" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
+                            <p class="text-[10px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
+                        </div>
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button type="submit" class="text-[11px] shrink-0" style="color:var(--color-loss);">
+                                Salir
+                            </button>
+                        </form>
+                    </div>
+                @endauth
             </div>
         </aside>
 
@@ -43,14 +65,26 @@
             {{-- Top bar — mobile/tablet only --}}
             <header class="lg:hidden flex items-center justify-between px-4 py-3 border-b"
                     style="background:var(--color-surface); border-color:var(--color-border-soft);">
-                <div>
+                <div class="min-w-0">
                     <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-muted);">tr-bot</p>
-                    <p class="text-sm font-medium mt-0.5">@yield('header', 'Dashboard')</p>
+                    <p class="text-sm font-medium mt-0.5 truncate">@yield('header', 'Dashboard')</p>
                 </div>
-                <span class="relative flex h-2 w-2">
-                    <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
-                    <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--color-profit);"></span>
-                </span>
+
+                <div class="flex items-center gap-3 shrink-0">
+                    <span class="relative flex h-2 w-2">
+                        <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style="background:var(--color-profit);"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--color-profit);"></span>
+                    </span>
+
+                    @auth
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button type="submit" class="text-[11px]" style="color:var(--color-loss);">
+                                Salir
+                            </button>
+                        </form>
+                    @endauth
+                </div>
             </header>
 
             {{-- Desktop header --}}
