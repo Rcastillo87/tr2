@@ -34,6 +34,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Paper trading: admin e inversionista
     Route::middleware('can:viewPaperTrading')->prefix('paper-trading')->name('paper-trading.')->group(function () {
         Route::get('/', [PaperTradingController::class, 'index'])->name('index');
+        Route::get('/{strategy}/live', [PaperTradingController::class, 'live'])->name('live');
         Route::get('/{strategy}', [PaperTradingController::class, 'show'])->name('show');
     });
 

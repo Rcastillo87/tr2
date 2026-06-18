@@ -6,28 +6,31 @@
 @section('content')
 
     {{-- KPIs --}}
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+    <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Resumen de {{ ucfirst(now()->translatedFormat('F Y')) }} — paper trading</h3>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
 
-        <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">P&L del mes (paper)</p>
-            <p class="font-mono text-xl font-medium" style="color: {{ $totalPnlPct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">P&amp;L del mes</p>
+            <p class="font-mono text-lg font-medium" style="color: {{ $totalPnlPct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                 {{ $totalPnlPct >= 0 ? '+' : '' }}{{ number_format($totalPnlPct, 2) }}%
             </p>
         </div>
 
-        <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Win rate global</p>
-            <p class="font-mono text-xl font-medium">{{ $winRate }}%</p>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Win rate del mes</p>
+            <p class="font-mono text-lg font-medium">{{ $winRate }}%</p>
         </div>
 
-        <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Operaciones cerradas (mes)</p>
-            <p class="font-mono text-xl font-medium">{{ $totalTrades }}</p>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Cerradas en el mes</p>
+            <p class="font-mono text-lg font-medium">{{ $totalTrades }}</p>
         </div>
 
-        <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Posiciones abiertas</p>
-            <p class="font-mono text-xl font-medium" style="color:var(--color-info);">{{ $openTrades }}</p>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Posiciones abiertas</p>
+            <p class="font-mono text-lg font-medium" style="color:var(--color-info);">{{ $openTrades }}</p>
         </div>
 
     </div>

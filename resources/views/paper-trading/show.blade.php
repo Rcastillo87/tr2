@@ -81,7 +81,7 @@
             {{-- Mobile/tablet: cards --}}
             <div class="space-y-2 lg:hidden">
                 @foreach ($openTrades as $t)
-                    <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                    <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);" data-trade-row="{{ $t->id }}">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-sm font-medium" style="color:var(--color-text-primary);">{{ $t->symbol }}</span>
                             <div class="flex items-center gap-2">
@@ -110,11 +110,11 @@
                         <div class="grid grid-cols-2 gap-2 font-mono text-[11px] mb-2" style="color:var(--color-text-muted);">
                             <div>
                                 <p class="text-[10px]">Precio actual</p>
-                                <p style="color:var(--color-text-primary);">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</p>
+                                <p data-field="current_price" style="color:var(--color-text-primary);">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</p>
                             </div>
                             <div>
                                 <p class="text-[10px]">PnL flotante</p>
-                                <p style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
+                                <p data-field="floating_pnl_pct" style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
                                     {{ $t->floating_pnl_pct !== null ? ($t->floating_pnl_pct >= 0 ? '+' : '') . number_format($t->floating_pnl_pct, 2) . '%' : '—' }}
                                 </p>
                             </div>
@@ -146,7 +146,7 @@
                     </thead>
                     <tbody>
                         @foreach ($openTrades as $t)
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
+                            <tr class="border-b" style="border-color:var(--color-border-soft);" data-trade-row="{{ $t->id }}">
                                 <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $t->symbol }}</td>
                                 <td class="py-2 px-2">
                                     <span style="color: {{ $t->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
@@ -154,8 +154,8 @@
                                     </span>
                                 </td>
                                 <td class="py-2 px-2">{{ number_format($t->entry_price, 2) }}</td>
-                                <td class="py-2 px-2">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</td>
-                                <td class="py-2 px-2" style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
+                                <td class="py-2 px-2" data-field="current_price">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</td>
+                                <td class="py-2 px-2" data-field="floating_pnl_pct" style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
                                     {{ $t->floating_pnl_pct !== null ? ($t->floating_pnl_pct >= 0 ? '+' : '') . number_format($t->floating_pnl_pct, 2) . '%' : '—' }}
                                 </td>
                                 <td class="py-2 px-2">{{ number_format($t->sl, 2) }}</td>
@@ -348,5 +348,50 @@
     }
 
     updateSimulation();
+
+    @if ($openTrades->count() > 0)
+    const liveUrl = "{{ route('paper-trading.live', $strategy) }}";
+
+    function formatPnlPct(value) {
+        if (value === null || value === undefined) return '—';
+        const sign = value >= 0 ? '+' : '';
+        return `${sign}${value.toFixed(2)}%`;
+    }
+
+    function pnlColor(value) {
+        if (value === null || value === undefined) return 'var(--color-text-muted)';
+        return value >= 0 ? 'var(--color-profit)' : 'var(--color-loss)';
+    }
+
+    async function refreshLivePrices() {
+        try {
+            const res = await fetch(liveUrl, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) return;
+            const json = await res.json();
+            const rows = json.data || [];
+
+            rows.forEach((row) => {
+                document.querySelectorAll(`[data-trade-row="${row.id}"]`).forEach((rowEl) => {
+                    const priceEl = rowEl.querySelector('[data-field="current_price"]');
+                    const pnlEl   = rowEl.querySelector('[data-field="floating_pnl_pct"]');
+
+                    if (priceEl) {
+                        priceEl.textContent = row.current_price !== null
+                            ? Number(row.current_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                            : '—';
+                    }
+                    if (pnlEl) {
+                        pnlEl.textContent = formatPnlPct(row.floating_pnl_pct);
+                        pnlEl.style.color = pnlColor(row.floating_pnl_pct);
+                    }
+                });
+            });
+        } catch (e) {
+            // Silencioso: si falla un refresh, se reintenta en el siguiente ciclo
+        }
+    }
+
+    setInterval(refreshLivePrices, 30000);
+    @endif
 </script>
 @endpush

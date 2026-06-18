@@ -100,6 +100,28 @@ class PaperTradingController extends Controller
     }
 
     /**
+     * Endpoint AJAX: devuelve precio actual y PnL flotante de las posiciones
+     * abiertas de una estrategia, para refrescar la vista sin recargar la pagina.
+     */
+    public function live(string $strategy)
+    {
+        $openTrades = PaperTrade::forStrategy($strategy)->open()->get(['id']);
+        $livePrices = $this->getLiveOpenTrades();
+
+        $data = $openTrades->map(function ($trade) use ($livePrices) {
+            $live = $livePrices[$trade->id] ?? null;
+
+            return [
+                'id'               => $trade->id,
+                'current_price'    => $live['current_price'] ?? null,
+                'floating_pnl_pct' => $live['floating_pnl_pct'] ?? null,
+            ];
+        });
+
+        return response()->json(['status' => 'ok', 'data' => $data]);
+    }
+
+    /**
      * Consulta el motor Python para obtener el precio actual de mercado y el
      * PnL flotante de cada posicion abierta. Devuelve un mapa [trade_id => datos],
      * o un array vacio si el motor no responde (la vista debe degradar con gracia).
