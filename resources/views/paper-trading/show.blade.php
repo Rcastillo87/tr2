@@ -107,6 +107,18 @@
                                 <p style="color:var(--color-text-primary);">{{ number_format($t->tp, 2) }}</p>
                             </div>
                         </div>
+                        <div class="grid grid-cols-2 gap-2 font-mono text-[11px] mb-2" style="color:var(--color-text-muted);">
+                            <div>
+                                <p class="text-[10px]">Precio actual</p>
+                                <p style="color:var(--color-text-primary);">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px]">PnL flotante</p>
+                                <p style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
+                                    {{ $t->floating_pnl_pct !== null ? ($t->floating_pnl_pct >= 0 ? '+' : '') . number_format($t->floating_pnl_pct, 2) . '%' : '—' }}
+                                </p>
+                            </div>
+                        </div>
                         <div class="flex items-center justify-between text-[11px]" style="color:var(--color-text-muted);">
                             <span>{{ $t->regime }}</span>
                             <span>{{ $t->entry_time->format('d/m H:i') }}</span>
@@ -123,6 +135,8 @@
                             <th class="py-2 px-2 font-normal">Símbolo</th>
                             <th class="py-2 px-2 font-normal">Lado</th>
                             <th class="py-2 px-2 font-normal">Entrada</th>
+                            <th class="py-2 px-2 font-normal">Precio actual</th>
+                            <th class="py-2 px-2 font-normal">PnL flotante</th>
                             <th class="py-2 px-2 font-normal">SL</th>
                             <th class="py-2 px-2 font-normal">TP</th>
                             <th class="py-2 px-2 font-normal">BE</th>
@@ -140,6 +154,10 @@
                                     </span>
                                 </td>
                                 <td class="py-2 px-2">{{ number_format($t->entry_price, 2) }}</td>
+                                <td class="py-2 px-2">{{ $t->current_price !== null ? number_format($t->current_price, 2) : '—' }}</td>
+                                <td class="py-2 px-2" style="color: {{ $t->floating_pnl_pct === null ? 'var(--color-text-muted)' : ($t->floating_pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') }};">
+                                    {{ $t->floating_pnl_pct !== null ? ($t->floating_pnl_pct >= 0 ? '+' : '') . number_format($t->floating_pnl_pct, 2) . '%' : '—' }}
+                                </td>
                                 <td class="py-2 px-2">{{ number_format($t->sl, 2) }}</td>
                                 <td class="py-2 px-2">{{ number_format($t->tp, 2) }}</td>
                                 <td class="py-2 px-2">

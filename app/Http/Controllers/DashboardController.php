@@ -13,10 +13,16 @@ class DashboardController extends Controller
         $collectorStatus = auth()->user()?->canViewAnalysisTools()
             ? $this->getCollectorStatus()
             : [];
+
+        $startOfMonth = now()->startOfMonth();
+        $endOfMonth   = now()->endOfMonth();
+
+        $closedThisMonth = PaperTrade::closed()->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
+
         $openTrades = PaperTrade::open()->count();
-        $totalPnl   = PaperTrade::closed()->sum('pnl');
-        $totalTrades = PaperTrade::closed()->count();
-        $winningTrades = PaperTrade::closed()->where('pnl', '>', 0)->count();
+        $totalPnlPct = (float) (clone $closedThisMonth)->sum('pnl_pct');
+        $totalTrades = (clone $closedThisMonth)->count();
+        $winningTrades = (clone $closedThisMonth)->where('pnl', '>', 0)->count();
         $winRate = $totalTrades > 0 ? round($winningTrades / $totalTrades * 100, 2) : 0;
         $recentTrades = PaperTrade::orderBy('updated_at', 'desc')->limit(10)->get();
         return view('dashboard.index', [
@@ -24,7 +30,7 @@ class DashboardController extends Controller
             'summary'       => $summary,
             'collector'     => $collectorStatus,
             'openTrades'    => $openTrades,
-            'totalPnl'      => $totalPnl,
+            'totalPnlPct'   => $totalPnlPct,
             'totalTrades'   => $totalTrades,
             'winRate'       => $winRate,
             'recentTrades'  => $recentTrades,

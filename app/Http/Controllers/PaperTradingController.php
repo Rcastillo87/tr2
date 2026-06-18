@@ -2,6 +2,8 @@
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\PaperTrade;
 class PaperTradingController extends Controller
 {
@@ -33,6 +35,10 @@ class PaperTradingController extends Controller
             ];
         }
 
+        $summary = array_values(array_filter($summary, function ($s) {
+            return $s['total_trades'] > 0 || $s['open_trades'] > 0;
+        }));
+
         return view('paper-trading.index', [
             'summary'         => $summary,
             'selectedMonth'   => $month,
@@ -46,6 +52,13 @@ class PaperTradingController extends Controller
 
         // Las posiciones abiertas no se filtran por mes: son el estado actual.
         $openTrades = PaperTrade::forStrategy($strategy)->open()->orderBy('entry_time', 'desc')->get();
+        $livePrices = $this->getLiveOpenTrades();
+
+        foreach ($openTrades as $trade) {
+            $live = $livePrices[$trade->id] ?? null;
+            $trade->current_price    = $live['current_price'] ?? null;
+            $trade->floating_pnl_pct = $live['floating_pnl_pct'] ?? null;
+        }
 
         $closedTrades = PaperTrade::forStrategy($strategy)->closed()
             ->whereBetween('entry_time', [
@@ -84,6 +97,30 @@ class PaperTradingController extends Controller
             'selectedMonth'   => $month,
             'availableMonths' => $this->availableMonths(),
         ]);
+    }
+
+    /**
+     * Consulta el motor Python para obtener el precio actual de mercado y el
+     * PnL flotante de cada posicion abierta. Devuelve un mapa [trade_id => datos],
+     * o un array vacio si el motor no responde (la vista debe degradar con gracia).
+     */
+    private function getLiveOpenTrades(): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(10)->get(config('trading.python_engine_url') . '/v1/paper/open');
+
+            if ($response->successful()) {
+                $data = $response->json('data') ?? [];
+
+                return collect($data)->keyBy('id')->toArray();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('PaperTrading: error obteniendo precios en vivo — ' . $e->getMessage());
+        }
+
+        return [];
     }
 
     /**

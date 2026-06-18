@@ -9,9 +9,9 @@
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
 
         <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">P&L total (paper)</p>
-            <p class="font-mono text-xl font-medium" style="color: {{ $totalPnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                {{ $totalPnl >= 0 ? '+' : '' }}{{ number_format($totalPnl, 2) }}
+            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">P&L del mes (paper)</p>
+            <p class="font-mono text-xl font-medium" style="color: {{ $totalPnlPct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                {{ $totalPnlPct >= 0 ? '+' : '' }}{{ number_format($totalPnlPct, 2) }}%
             </p>
         </div>
 
@@ -21,7 +21,7 @@
         </div>
 
         <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Operaciones cerradas</p>
+            <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Operaciones cerradas (mes)</p>
             <p class="font-mono text-xl font-medium">{{ $totalTrades }}</p>
         </div>
 
