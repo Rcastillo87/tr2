@@ -5,14 +5,28 @@
 
 @section('content')
 
-    @if (count($summary) === 0)
+    {{-- Selector de mes --}}
+    <form method="GET" action="{{ route('paper-trading.index') }}" class="flex items-center gap-2 mb-4">
+        <label for="mes" class="text-[11px]" style="color:var(--color-text-muted);">Mes:</label>
+        <select name="mes" id="mes" onchange="this.form.submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            @foreach ($availableMonths as $m)
+                <option value="{{ $m['value'] }}" {{ $selectedMonth->format('Y-m') === $m['value'] ? 'selected' : '' }}>
+                    {{ $m['label'] }}
+                </option>
+            @endforeach
+        </select>
+    </form>
+
+    @if (count($summary) === 0 || collect($summary)->sum('total_trades') === 0 && collect($summary)->sum('open_trades') === 0)
         <div class="rounded-lg border p-8 text-center" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <p class="text-sm" style="color:var(--color-text-muted);">Aún no hay datos de paper trading.</p>
+            <p class="text-sm" style="color:var(--color-text-muted);">Sin operaciones registradas en {{ $selectedMonth->translatedFormat('F Y') }}.</p>
         </div>
     @else
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             @foreach ($summary as $s)
-                <a href="{{ route('paper-trading.show', $s['strategy']) }}"
+                <a href="{{ route('paper-trading.show', $s['strategy']) }}?mes={{ $selectedMonth->format('Y-m') }}"
                    class="rounded-lg border p-4 block transition-colors"
                    style="background:var(--color-surface); border-color:var(--color-border-soft);"
                    onmouseover="this.style.borderColor='var(--color-info)'"
@@ -29,9 +43,9 @@
 
                     <div class="space-y-3">
                         <div>
-                            <p class="text-[11px] mb-1" style="color:var(--color-text-muted);">P&amp;L total</p>
-                            <p class="font-mono text-xl font-medium" style="color: {{ $s['total_pnl'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                {{ $s['total_pnl'] >= 0 ? '+' : '' }}{{ number_format($s['total_pnl'], 2) }} USDT
+                            <p class="text-[11px] mb-1" style="color:var(--color-text-muted);">P&amp;L del mes</p>
+                            <p class="font-mono text-xl font-medium" style="color: {{ $s['total_pnl_pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ $s['total_pnl_pct'] >= 0 ? '+' : '' }}{{ number_format($s['total_pnl_pct'], 2) }}%
                             </p>
                         </div>
 
