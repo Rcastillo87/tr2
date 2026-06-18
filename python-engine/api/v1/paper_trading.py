@@ -47,7 +47,7 @@ async def paper_tick():
     """
     Ejecuta un ciclo completo de paper trading:
       0. Evalúa controles de riesgo (drawdown, volatilidad, kill switch)
-      1. Monitorea posiciones abiertas (SL/TP/BE/tiempo)
+      1. Monitorea posiciones abiertas (SL/TP/BE/tiempo, y actualiza Max G/Max P flotante)
       2. Busca nuevas señales y abre posiciones si corresponde
     """
     try:
@@ -79,22 +79,19 @@ async def paper_tick():
 
 @router.get("/paper/open")
 async def paper_open_trades():
-    """Lista todas las posiciones abiertas."""
+    """
+    Lista todas las posiciones abiertas, enriquecidas con el precio actual
+    de mercado y el PnL flotante (en % y en USDT virtual).
+    """
     try:
         pool = await get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, strategy, symbol, side, entry_price, sl, tp, be_level,
-                       be_activated, size, regime, entry_time
-                FROM paper_trades
-                WHERE status = 'open'
-                ORDER BY entry_time DESC
-                """
-            )
+        trader = PaperTrader(pool, STRATEGIES, DEFAULT_PARAMS)
+
+        trades = await trader.get_open_trades_with_live_price()
+
         await pool.close()
 
-        return {"status": "ok", "data": [dict(r) for r in rows]}
+        return {"status": "ok", "data": trades}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -149,8 +146,8 @@ async def paper_trades_by_strategy(strategy: str):
             rows = await conn.fetch(
                 """
                 SELECT id, strategy, symbol, side, entry_price, exit_price, sl, tp,
-                       be_activated, size, pnl, pnl_pct, exit_reason, regime,
-                       entry_time, exit_time, status
+                       be_activated, size, pnl, pnl_pct, max_profit_pct, max_loss_pct,
+                       exit_reason, regime, entry_time, exit_time, status
                 FROM paper_trades
                 WHERE strategy = $1
                 ORDER BY entry_time DESC

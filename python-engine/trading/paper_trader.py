@@ -24,6 +24,9 @@ SYMBOLS  = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
 INTERVAL = '60'  # todas las estrategias V2 operan en H1
 LOOKBACK_BARS = 100
 
+# Balance virtual de referencia, usado para expresar pnl/max excursion como %
+VIRTUAL_BALANCE = 10000.0
+
 
 class PaperTrader:
 
@@ -95,7 +98,8 @@ class PaperTrader:
             rows = await conn.fetch(
                 """
                 SELECT id, strategy, symbol, interval, side, entry_price, sl, tp,
-                       be_level, be_activated, size, entry_time, regime
+                       be_level, be_activated, size, entry_time, regime,
+                       max_profit_pct, max_loss_pct
                 FROM paper_trades
                 WHERE status = 'open'
                 """
@@ -114,6 +118,20 @@ class PaperTrader:
         return row is not None
 
     # ─────────────────────────────────────────────
+    # Calculo de PnL flotante (% sobre balance virtual)
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def calculate_floating_pnl_pct(entry_price: float, current_price: float, side: str, size: float) -> float:
+        """PnL no realizado, expresado en % sobre el balance virtual de referencia."""
+        if side == 'long':
+            pnl = (current_price - entry_price) * size
+        else:
+            pnl = (entry_price - current_price) * size
+
+        return (pnl / VIRTUAL_BALANCE) * 100
+
+    # ─────────────────────────────────────────────
     # Abrir nueva posición
     # ─────────────────────────────────────────────
 
@@ -123,7 +141,7 @@ class PaperTrader:
         be     = strategy_instance.calculate_breakeven(entry_price, side)
 
         # Position sizing: 1% de riesgo fijo sobre balance virtual de 10,000
-        balance = 10000.0
+        balance = VIRTUAL_BALANCE
         risk_pct = self.default_params.get('risk_per_trade_pct', 1.0)
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
@@ -137,9 +155,10 @@ class PaperTrader:
                 """
                 INSERT INTO paper_trades
                     (strategy, symbol, interval, side, entry_price, sl, tp, be_level,
-                     be_activated, size, regime, entry_time, status, created_at, updated_at)
+                     be_activated, size, regime, entry_time, status, max_profit_pct, max_loss_pct,
+                     created_at, updated_at)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $11, 'open', now(), now())
+                    ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $11, 'open', 0, 0, now(), now())
                 """,
                 strategy_name, symbol, INTERVAL, side, entry_price, sl, tp, be,
                 size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
@@ -164,18 +183,27 @@ class PaperTrader:
         else:
             pnl = (entry_price - exit_price) * size
 
-        pnl_pct = pnl / 10000.0 * 100  # sobre balance virtual de referencia
+        pnl_pct = pnl / VIRTUAL_BALANCE * 100
+
+        # Asegurar que el cierre tambien cuente como punto para max_profit/max_loss,
+        # por si el cierre ocurre en un pico no capturado por el ultimo tick de monitoreo.
+        max_profit_pct = max(float(trade.get('max_profit_pct', 0)), pnl_pct)
+        max_loss_pct   = min(float(trade.get('max_loss_pct', 0)), pnl_pct)
 
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
                 UPDATE paper_trades
                 SET exit_price = $1, pnl = $2, pnl_pct = $3, exit_reason = $4,
-                    exit_time = $5, status = 'closed', updated_at = now()
-                WHERE id = $6
+                    exit_time = $5, status = 'closed',
+                    max_profit_pct = $6, max_loss_pct = $7,
+                    updated_at = now()
+                WHERE id = $8
                 """,
                 exit_price, round(pnl, 4), round(pnl_pct, 4), exit_reason,
-                datetime.now(timezone.utc).replace(tzinfo=None), trade['id']
+                datetime.now(timezone.utc).replace(tzinfo=None),
+                round(max_profit_pct, 4), round(max_loss_pct, 4),
+                trade['id']
             )
 
         logger.info(
@@ -188,6 +216,25 @@ class PaperTrader:
             await conn.execute(
                 "UPDATE paper_trades SET sl = $1, be_activated = true, updated_at = now() WHERE id = $2",
                 new_sl, trade_id
+            )
+
+    async def update_max_excursion(self, trade_id: int, floating_pnl_pct: float,
+                                    current_max_profit: float, current_max_loss: float):
+        """Actualiza el pico de ganancia/perdida flotante (MFE/MAE) del trade, en % sobre balance virtual."""
+        new_max_profit = max(current_max_profit, floating_pnl_pct)
+        new_max_loss   = min(current_max_loss, floating_pnl_pct)
+
+        if new_max_profit == current_max_profit and new_max_loss == current_max_loss:
+            return  # sin cambios, evitar UPDATE innecesario
+
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE paper_trades
+                SET max_profit_pct = $1, max_loss_pct = $2, updated_at = now()
+                WHERE id = $3
+                """,
+                round(new_max_profit, 4), round(new_max_loss, 4), trade_id
             )
 
     # ─────────────────────────────────────────────
@@ -223,6 +270,16 @@ class PaperTrader:
             tp   = float(trade['tp'])
             be_level = float(trade['be_level'])
             entry    = float(trade['entry_price'])
+            size     = float(trade['size'])
+
+            # Actualizar pico de ganancia/perdida flotante (MFE/MAE) antes de evaluar cierre
+            floating_pnl_pct = self.calculate_floating_pnl_pct(entry, current_price, side, size)
+            await self.update_max_excursion(
+                trade['id'],
+                floating_pnl_pct,
+                float(trade.get('max_profit_pct', 0)),
+                float(trade.get('max_loss_pct', 0)),
+            )
 
             exit_price  = None
             exit_reason = None
@@ -265,6 +322,46 @@ class PaperTrader:
                 results["closed"] += 1
 
         return results
+
+    # ─────────────────────────────────────────────
+    # Posiciones abiertas con precio actual de mercado
+    # ─────────────────────────────────────────────
+
+    async def get_open_trades_with_live_price(self) -> list[dict]:
+        """
+        Igual que get_open_trades, pero enriquece cada posicion con el precio
+        actual de mercado y su PnL flotante en % y en USDT virtual.
+        """
+        open_trades = await self.get_open_trades()
+        price_cache: dict[str, float] = {}
+        enriched = []
+
+        for trade in open_trades:
+            symbol = trade['symbol']
+
+            if symbol not in price_cache:
+                price = await get_current_price(symbol)
+                price_cache[symbol] = price
+
+            current_price = price_cache[symbol]
+            trade = dict(trade)
+            trade['current_price'] = current_price
+
+            if current_price is not None:
+                entry = float(trade['entry_price'])
+                size  = float(trade['size'])
+                side  = trade['side']
+
+                floating_pnl_pct = self.calculate_floating_pnl_pct(entry, current_price, side, size)
+                trade['floating_pnl_pct'] = round(floating_pnl_pct, 4)
+                trade['floating_pnl'] = round(floating_pnl_pct / 100 * VIRTUAL_BALANCE, 4)
+            else:
+                trade['floating_pnl_pct'] = None
+                trade['floating_pnl'] = None
+
+            enriched.append(trade)
+
+        return enriched
 
     # ─────────────────────────────────────────────
     # Buscar nuevas señales
