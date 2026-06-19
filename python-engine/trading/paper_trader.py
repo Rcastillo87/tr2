@@ -1,12 +1,15 @@
 """
-Paper Trader V2
+Paper Trader V2 — Refactorizado
 Abre y gestiona posiciones simuladas usando precios en vivo de Bybit.
+Los parametros de cada estrategia/simbolo se leen desde config_map
+(cargado desde paper_strategy_configs en DB), no hardcodeados.
 """
 
 import asyncpg
 import pandas as pd
 import logging
 import os
+import json
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -20,32 +23,52 @@ logger = logging.getLogger(__name__)
 
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
-SYMBOLS  = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
-INTERVAL = '60'  # todas las estrategias V2 operan en H1
-LOOKBACK_BARS = 100
-
-# Balance virtual de referencia, usado para expresar pnl/max excursion como %
 VIRTUAL_BALANCE = 10000.0
 
 
 class PaperTrader:
 
-    def __init__(self, pool: asyncpg.Pool, strategies: dict, default_params: dict):
+    def __init__(self, pool: asyncpg.Pool, strategies: dict, default_params: dict,
+                 config_map: dict | None = None):
         """
         pool:           asyncpg connection pool
-        strategies:     dict {name: StrategyClass}
-        default_params: parámetros comunes (sl_pct, tp_pct, be_pct, max_duration, risk_per_trade_pct)
+        strategies:     dict {display_name: StrategyClass}
+        default_params: parametros base de respaldo
+        config_map:     dict {display_name: config_dict} con params especificos por config
         """
-        self.pool = pool
-        self.strategies = strategies
+        self.pool          = pool
+        self.strategies    = strategies
         self.default_params = default_params
-        self.risk_manager = RiskManager(pool)
+        self.config_map    = config_map or {}
+        self.risk_manager  = RiskManager(pool)
+
+    # ─────────────────────────────────────────────
+    # Helpers de params
+    # ─────────────────────────────────────────────
+
+    def _get_params_for(self, display_name: str, symbol: str) -> dict:
+        """
+        Devuelve los parametros combinados para una config especifica.
+        Los params de config_map sobreescriben los default_params.
+        """
+        params = dict(self.default_params)
+
+        if display_name in self.config_map:
+            cfg         = self.config_map[display_name]
+            cfg_params  = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
+            params.update(cfg_params)
+            params['symbol']   = cfg['symbol']
+            params['interval'] = cfg['interval']
+        else:
+            params['symbol'] = symbol
+
+        return params
 
     # ─────────────────────────────────────────────
     # Datos
     # ─────────────────────────────────────────────
 
-    async def get_bars(self, symbol: str) -> pd.DataFrame:
+    async def get_bars(self, symbol: str, interval: str) -> pd.DataFrame:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -53,9 +76,9 @@ class PaperTrader:
                 FROM ohlcv_data
                 WHERE symbol = $1 AND interval = $2
                 ORDER BY time DESC
-                LIMIT $3
+                LIMIT 200
                 """,
-                symbol, INTERVAL, LOOKBACK_BARS
+                symbol, interval
             )
 
         if not rows:
@@ -70,7 +93,6 @@ class PaperTrader:
         return df
 
     async def get_current_regime(self, df: pd.DataFrame) -> str:
-        """Calcula el régimen actual a partir de las velas H1."""
         if len(df) < 64:
             return "RANGING"
 
@@ -106,46 +128,46 @@ class PaperTrader:
             )
         return [dict(r) for r in rows]
 
-    async def has_open_trade(self, strategy: str, symbol: str) -> bool:
+    async def has_open_trade(self, display_name: str, symbol: str) -> bool:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT id FROM paper_trades
                 WHERE strategy = $1 AND symbol = $2 AND status = 'open'
                 """,
-                strategy, symbol
+                display_name, symbol
             )
         return row is not None
 
     # ─────────────────────────────────────────────
-    # Calculo de PnL flotante (% sobre balance virtual)
+    # Calculo de PnL flotante
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def calculate_floating_pnl_pct(entry_price: float, current_price: float, side: str, size: float) -> float:
-        """PnL no realizado, expresado en % sobre el balance virtual de referencia."""
+    def calculate_floating_pnl_pct(entry_price: float, current_price: float,
+                                    side: str, size: float) -> float:
         if side == 'long':
             pnl = (current_price - entry_price) * size
         else:
             pnl = (entry_price - current_price) * size
-
         return (pnl / VIRTUAL_BALANCE) * 100
 
     # ─────────────────────────────────────────────
-    # Abrir nueva posición
+    # Abrir nueva posicion
     # ─────────────────────────────────────────────
 
-    async def open_trade(self, strategy_name: str, strategy_instance, symbol: str, side: str,
-                          entry_price: float, regime: str):
+    async def open_trade(self, display_name: str, strategy_instance, symbol: str,
+                          side: str, entry_price: float, regime: str, interval: str):
         sl, tp = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
 
-        # Position sizing: 1% de riesgo fijo sobre balance virtual de 10,000
-        balance = VIRTUAL_BALANCE
-        risk_pct = self.default_params.get('risk_per_trade_pct', 1.0)
-        risk_amount = balance * (risk_pct / 100)
+        risk_pct    = strategy_instance.default_params.get('risk_per_trade_pct', 1.0) \
+                      if hasattr(strategy_instance, 'default_params') \
+                      else self.default_params.get('risk_per_trade_pct', 1.0)
+
+        risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
-        size = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0.0
+        size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0.0
 
         if size <= 0:
             return
@@ -155,22 +177,22 @@ class PaperTrader:
                 """
                 INSERT INTO paper_trades
                     (strategy, symbol, interval, side, entry_price, sl, tp, be_level,
-                     be_activated, size, regime, entry_time, status, max_profit_pct, max_loss_pct,
-                     created_at, updated_at)
+                     be_activated, size, regime, entry_time, status,
+                     max_profit_pct, max_loss_pct, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $11, 'open', 0, 0, now(), now())
                 """,
-                strategy_name, symbol, INTERVAL, side, entry_price, sl, tp, be,
+                display_name, symbol, interval, side, entry_price, sl, tp, be,
                 size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
         logger.info(
-            f"[PAPER] OPEN {strategy_name} {symbol} {side.upper()} @ {entry_price} "
-            f"SL={sl} TP={tp} BE={be} regime={regime}"
+            f"[PAPER] OPEN {display_name} {symbol} {side.upper()} @ {entry_price} "
+            f"SL={sl} TP={tp} BE={be} regime={regime} interval={interval}"
         )
 
     # ─────────────────────────────────────────────
-    # Cerrar posición
+    # Cerrar posicion
     # ─────────────────────────────────────────────
 
     async def close_trade(self, trade: dict, exit_price: float, exit_reason: str):
@@ -185,8 +207,6 @@ class PaperTrader:
 
         pnl_pct = pnl / VIRTUAL_BALANCE * 100
 
-        # Asegurar que el cierre tambien cuente como punto para max_profit/max_loss,
-        # por si el cierre ocurre en un pico no capturado por el ultimo tick de monitoreo.
         max_profit_pct = max(float(trade.get('max_profit_pct', 0)), pnl_pct)
         max_loss_pct   = min(float(trade.get('max_loss_pct', 0)), pnl_pct)
 
@@ -220,12 +240,11 @@ class PaperTrader:
 
     async def update_max_excursion(self, trade_id: int, floating_pnl_pct: float,
                                     current_max_profit: float, current_max_loss: float):
-        """Actualiza el pico de ganancia/perdida flotante (MFE/MAE) del trade, en % sobre balance virtual."""
         new_max_profit = max(current_max_profit, floating_pnl_pct)
         new_max_loss   = min(current_max_loss, floating_pnl_pct)
 
         if new_max_profit == current_max_profit and new_max_loss == current_max_loss:
-            return  # sin cambios, evitar UPDATE innecesario
+            return
 
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -242,17 +261,15 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def monitor_open_trades(self) -> dict:
-        """Revisa cada posición abierta contra el precio actual y la cierra si aplica."""
         open_trades = await self.get_open_trades()
-        results = {"checked": 0, "closed": 0, "be_activated": 0}
-
-        # Cache de precios para no pedir el mismo símbolo varias veces
+        results     = {"checked": 0, "closed": 0, "be_activated": 0}
         price_cache: dict[str, float] = {}
 
-        # Cache de max_duration por estrategia
-        strategy_params = {}
-        for name, cls in self.strategies.items():
-            strategy_params[name] = cls(self.default_params)
+        # Instanciar estrategias con sus params especificos para obtener max_duration
+        strategy_instances = {}
+        for display_name, cls in self.strategies.items():
+            params = self._get_params_for(display_name, '')
+            strategy_instances[display_name] = cls(params)
 
         for trade in open_trades:
             results["checked"] += 1
@@ -265,18 +282,17 @@ class PaperTrader:
                 price_cache[symbol] = price
 
             current_price = price_cache[symbol]
-            side = trade['side']
-            sl   = float(trade['sl'])
-            tp   = float(trade['tp'])
+            side     = trade['side']
+            sl       = float(trade['sl'])
+            tp       = float(trade['tp'])
             be_level = float(trade['be_level'])
             entry    = float(trade['entry_price'])
             size     = float(trade['size'])
 
-            # Actualizar pico de ganancia/perdida flotante (MFE/MAE) antes de evaluar cierre
+            # Actualizar Max G/Max P flotante
             floating_pnl_pct = self.calculate_floating_pnl_pct(entry, current_price, side, size)
             await self.update_max_excursion(
-                trade['id'],
-                floating_pnl_pct,
+                trade['id'], floating_pnl_pct,
                 float(trade.get('max_profit_pct', 0)),
                 float(trade.get('max_loss_pct', 0)),
             )
@@ -306,15 +322,18 @@ class PaperTrader:
                 elif side == 'short' and current_price <= tp:
                     exit_price, exit_reason = tp, 'take_profit'
 
-            # Cierre por tiempo
+            # Cierre por tiempo — usa max_duration de la estrategia especifica
             if exit_price is None:
+                strategy_name = trade['strategy']
+                instance = strategy_instances.get(strategy_name,
+                           list(strategy_instances.values())[0])
+
                 entry_time = trade['entry_time']
                 if entry_time.tzinfo is None:
                     entry_time = entry_time.replace(tzinfo=timezone.utc)
                 hours_open = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
-                max_duration = strategy_params.get(trade['strategy'], strategy_params[list(strategy_params.keys())[0]]).max_duration
 
-                if hours_open >= max_duration:
+                if hours_open >= instance.max_duration:
                     exit_price, exit_reason = current_price, 'time_exit'
 
             if exit_price is not None:
@@ -324,14 +343,10 @@ class PaperTrader:
         return results
 
     # ─────────────────────────────────────────────
-    # Posiciones abiertas con precio actual de mercado
+    # Posiciones abiertas con precio actual
     # ─────────────────────────────────────────────
 
     async def get_open_trades_with_live_price(self) -> list[dict]:
-        """
-        Igual que get_open_trades, pero enriquece cada posicion con el precio
-        actual de mercado y su PnL flotante en % y en USDT virtual.
-        """
         open_trades = await self.get_open_trades()
         price_cache: dict[str, float] = {}
         enriched = []
@@ -354,76 +369,76 @@ class PaperTrader:
 
                 floating_pnl_pct = self.calculate_floating_pnl_pct(entry, current_price, side, size)
                 trade['floating_pnl_pct'] = round(floating_pnl_pct, 4)
-                trade['floating_pnl'] = round(floating_pnl_pct / 100 * VIRTUAL_BALANCE, 4)
+                trade['floating_pnl']     = round(floating_pnl_pct / 100 * VIRTUAL_BALANCE, 4)
             else:
                 trade['floating_pnl_pct'] = None
-                trade['floating_pnl'] = None
+                trade['floating_pnl']     = None
 
             enriched.append(trade)
 
         return enriched
 
     # ─────────────────────────────────────────────
-    # Buscar nuevas señales
+    # Buscar nuevas senales
     # ─────────────────────────────────────────────
 
     async def check_new_signals(self) -> dict:
-        """Para cada estrategia/símbolo, revisa si la última vela cerrada generó señal."""
         results = {}
 
-        # Kill switch global: no abrir ninguna posición nueva
         if await self.risk_manager.is_kill_switch_active():
-            for strategy_name in self.strategies:
-                for symbol in SYMBOLS:
-                    results[f"{strategy_name}/{symbol}"] = "KILL SWITCH activo — sin nuevas entradas"
+            for display_name in self.strategies:
+                results[display_name] = "KILL SWITCH activo — sin nuevas entradas"
             return results
 
-        for strategy_name, strategy_cls in self.strategies.items():
-            for symbol in SYMBOLS:
-                key = f"{strategy_name}/{symbol}"
+        for display_name, strategy_cls in self.strategies.items():
+            cfg = self.config_map.get(display_name, {})
+            cfg_params = cfg.get('params', {})
+            if isinstance(cfg_params, str):
+                cfg_params = json.loads(cfg_params)
 
-                if await self.has_open_trade(strategy_name, symbol):
-                    results[key] = "ya tiene posición abierta"
-                    continue
+            symbol   = cfg.get('symbol', 'BTCUSDT')
+            interval = cfg.get('interval', '60')
 
-                if await self.risk_manager.is_paused(strategy_name, symbol):
-                    results[key] = "pausada por gestión de riesgo"
-                    continue
+            if await self.has_open_trade(display_name, symbol):
+                results[display_name] = f"{symbol}: ya tiene posicion abierta"
+                continue
 
-                df = await self.get_bars(symbol)
-                if len(df) < 64:
-                    results[key] = "datos insuficientes"
-                    continue
+            if await self.risk_manager.is_paused(display_name, symbol):
+                results[display_name] = f"{symbol}: pausada por gestion de riesgo"
+                continue
 
-                params = dict(self.default_params)
-                params['symbol'] = symbol
+            df = await self.get_bars(symbol, interval)
+            if len(df) < 64:
+                results[display_name] = f"{symbol}: datos insuficientes"
+                continue
 
-                strategy = strategy_cls(params)
-                regime   = await self.get_current_regime(df)
+            params = self._get_params_for(display_name, symbol)
+            strategy = strategy_cls(params)
+            regime   = await self.get_current_regime(df)
 
-                if not strategy.should_operate(regime):
-                    results[key] = f"régimen no permitido ({regime})"
-                    continue
+            if not strategy.should_operate(regime):
+                results[display_name] = f"{symbol}: regimen no permitido ({regime})"
+                continue
 
-                df = strategy.prepare(df)
-                df = strategy.generate_signals(df)
+            df = strategy.prepare(df)
+            df = strategy.generate_signals(df)
 
-                # Señal de la última vela cerrada (la anterior a la actual en formación)
-                last_closed = df.iloc[-2]
-                signal = int(last_closed['signal'])
+            last_closed = df.iloc[-2]
+            signal = int(last_closed['signal'])
 
-                if signal == 0:
-                    results[key] = "sin señal"
-                    continue
+            if signal == 0:
+                results[display_name] = f"{symbol}: sin senal"
+                continue
 
-                side = 'long' if signal == 1 else 'short'
-                entry_price = await get_current_price(symbol)
+            side        = 'long' if signal == 1 else 'short'
+            entry_price = await get_current_price(symbol)
 
-                if entry_price is None:
-                    results[key] = "error obteniendo precio"
-                    continue
+            if entry_price is None:
+                results[display_name] = f"{symbol}: error obteniendo precio"
+                continue
 
-                await self.open_trade(strategy_name, strategy, symbol, side, entry_price, regime)
-                results[key] = f"ABIERTA {side} @ {entry_price} (regime={regime})"
+            await self.open_trade(display_name, strategy, symbol, side,
+                                   entry_price, regime, interval)
+            results[display_name] = f"{symbol}: ABIERTA {side} @ {entry_price} (regime={regime})"
 
         return results

@@ -28,6 +28,8 @@ class PaperTrade extends Model
         'entry_time',
         'exit_time',
         'status',
+	'max_profit_pct',
+	'max_loss_pct',
     ];
 
     protected $casts = [
@@ -42,6 +44,8 @@ class PaperTrade extends Model
         'pnl_pct'      => 'decimal:4',
         'entry_time'   => 'datetime',
         'exit_time'    => 'datetime',
+	'max_profit_pct' => 'decimal:4',
+	'max_loss_pct'   => 'decimal:4',
     ];
 
     public function isOpen(): bool

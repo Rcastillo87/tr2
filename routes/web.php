@@ -4,9 +4,10 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaperTradingController;
 use App\Http\Controllers\BacktestingController;
-use App\Http\Controllers\DataCollectorController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\BrokerAccountController;
+use App\Http\Controllers\PaperStrategyConfigController;
+use App\Http\Controllers\CollectorConfigController;
 use App\Http\Controllers\ProfileController;
 
 /*
@@ -38,15 +39,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{strategy}', [PaperTradingController::class, 'show'])->name('show');
     });
 
+    // Configuracion del Data Collector: solo admin
+    Route::middleware('can:manageUsers')->prefix('collector/configs')->name('collector.configs.')->group(function () {
+        Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
+        Route::patch('/{config}/toggle', [CollectorConfigController::class, 'toggleActive'])->name('toggle');
+    });
+    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
+        Route::get('/', [PaperStrategyConfigController::class, 'index'])->name('index');
+        Route::get('/{config}/edit', [PaperStrategyConfigController::class, 'edit'])->name('edit');
+        Route::patch('/{config}', [PaperStrategyConfigController::class, 'update'])->name('update');
+        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
+    });
+
     // Backtesting: admin y consultor
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/', [BacktestingController::class, 'index'])->name('index');
         Route::post('/', [BacktestingController::class, 'index'])->name('run');
-    });
-
-    // Data collector: admin y consultor
-    Route::middleware('can:viewAnalysisTools')->prefix('data-collector')->name('data-collector.')->group(function () {
-        Route::get('/', [DataCollectorController::class, 'index'])->name('index');
     });
 
     // Gestion de usuarios: solo admin

@@ -1,11 +1,13 @@
 """
-Endpoint Backtesting V2
+Endpoint Backtesting V2 — Actualizado
+Estrategias alineadas con paper_strategy_configs y VwapStrategy unificada.
 """
 
 import asyncpg
 import pandas as pd
 import logging
 import os
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -22,18 +24,19 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 
 class BacktestRequest(BaseModel):
     strategy:            str
-    symbol:              str   = "BTCUSDT"
-    interval:            str   = "60"
-    initial_balance:     float = 10000.0
-    risk_per_trade_pct:  float = 1.0
-    sl_pct:              float = 1.5
-    tp_pct:              float = 3.0
-    be_pct:              float = 0.8
-    max_duration:        int   = 24
-    regime_filter:       bool  = True
-    walk_forward:        bool  = True
-    n_windows:           int   = 5
-    train_pct:           float = 0.7
+    symbol:              str            = "BTCUSDT"
+    interval:            str            = "60"
+    initial_balance:     float          = 10000.0
+    risk_per_trade_pct:  float          = 1.0
+    sl_pct:              float          = 1.5
+    tp_pct:              float          = 3.0
+    be_pct:              float          = 2.0
+    max_duration:        int            = 24
+    regime_filter:       bool           = True
+    walk_forward:        bool           = True
+    n_windows:           int            = 5
+    train_pct:           float          = 0.7
+    mode:                Optional[str]  = None  # para VwapStrategy: "trend_follow" | "reversion"
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -41,7 +44,6 @@ async def get_pool() -> asyncpg.Pool:
 
 
 async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str) -> pd.DataFrame:
-    """Carga datos OHLCV desde la DB propia."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -64,7 +66,14 @@ async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str) -> pd.DataF
 
 
 def load_strategy(request: BacktestRequest):
-    """Carga la estrategia solicitada por nombre."""
+    """
+    Carga la estrategia solicitada por nombre.
+    Nombres reconocidos (alineados con BacktestingController de Laravel):
+      - "VWAP Tendencia"          → VwapStrategy(mode=trend_follow)
+      - "VWAP Reversión"          → VwapStrategy(mode=reversion)
+      - "Reversión a la Media"    → MeanReversionStrategy
+      - "Tendencia EMA/Donchian"  → EmaDonchianStrategy
+    """
     params = {
         "symbol":        request.symbol,
         "interval":      request.interval,
@@ -75,32 +84,52 @@ def load_strategy(request: BacktestRequest):
         "regime_filter": request.regime_filter,
     }
 
-    strategy_map = {}
-
-    # Importar estrategias disponibles
+    # VwapStrategy unificada — modo desde el request o inferido por nombre
     try:
-        from backtesting.strategies.ema_donchian import EmaDonchianStrategy
-        strategy_map["Tendencia EMA/Donchian"] = EmaDonchianStrategy
-    except ImportError:
-        pass
+        from backtesting.strategies.vwap_strategy import VwapStrategy
 
+        if request.strategy == "VWAP Tendencia":
+            mode = request.mode or "trend_follow"
+            params["mode"] = mode
+            params["allowed_regimes"] = ["TRENDING"]
+            return VwapStrategy(params)
+
+        if request.strategy == "VWAP Reversión":
+            mode = request.mode or "reversion"
+            params["mode"] = mode
+            params["allowed_regimes"] = ["TRENDING"]
+            return VwapStrategy(params)
+
+    except ImportError as e:
+        logger.warning(f"VwapStrategy no disponible: {e}")
+
+    # Estrategias individuales
     try:
         from backtesting.strategies.mean_reversion import MeanReversionStrategy
-        strategy_map["Reversión a la Media"] = MeanReversionStrategy
+        if request.strategy == "Reversión a la Media":
+            params["allowed_regimes"] = ["RANGING"]
+            return MeanReversionStrategy(params)
     except ImportError:
         pass
 
     try:
-        from backtesting.strategies.vwap_intraday import VwapIntradayStrategy
-        strategy_map["VWAP Intradía"] = VwapIntradayStrategy
+        from backtesting.strategies.ema_donchian import EmaDonchianStrategy
+        if request.strategy == "Tendencia EMA/Donchian":
+            params["allowed_regimes"] = ["TRENDING"]
+            return EmaDonchianStrategy(params)
     except ImportError:
         pass
 
-    if request.strategy not in strategy_map:
-        available = list(strategy_map.keys())
-        raise ValueError(f"Estrategia '{request.strategy}' no encontrada. Disponibles: {available}")
+    # Estrategias legacy (para backtests historicos, no en produccion)
+    try:
+        from backtesting.strategies.vwap_intraday import VwapIntradayStrategy
+        if request.strategy == "VWAP Intradía":
+            return VwapIntradayStrategy(params)
+    except ImportError:
+        pass
 
-    return strategy_map[request.strategy](params)
+    available = ["VWAP Tendencia", "VWAP Reversión", "Reversión a la Media", "Tendencia EMA/Donchian"]
+    raise ValueError(f"Estrategia '{request.strategy}' no encontrada. Disponibles: {available}")
 
 
 @router.post("/backtest/run")
@@ -142,20 +171,11 @@ async def run_backtest(request: BacktestRequest):
 
 @router.get("/backtest/strategies")
 async def list_strategies():
-    """Lista las estrategias disponibles."""
-    available = []
-
-    strategy_checks = [
-        ("Tendencia EMA/Donchian",  "backtesting.strategies.ema_donchian",  "EmaDonchianStrategy"),
-        ("Reversión a la Media",    "backtesting.strategies.mean_reversion", "MeanReversionStrategy"),
-        ("VWAP Intradía",           "backtesting.strategies.vwap_intraday",  "VwapIntradayStrategy"),
+    """Lista las estrategias disponibles para backtesting."""
+    available = [
+        {"name": "VWAP Tendencia",         "description": "VWAP trend follow — mejor en ETH H2"},
+        {"name": "VWAP Reversión",          "description": "VWAP reversión extremos ±2σ (E-13) — mejor en BTC/SOL H1"},
+        {"name": "Reversión a la Media",    "description": "Bollinger + RSI en régimen RANGING"},
+        {"name": "Tendencia EMA/Donchian",  "description": "EMA cruce + Donchian breakout en régimen TRENDING"},
     ]
-
-    for name, module, cls in strategy_checks:
-        try:
-            __import__(module)
-            available.append({"name": name, "status": "disponible"})
-        except ImportError:
-            available.append({"name": name, "status": "no implementada aún"})
-
     return {"status": "ok", "strategies": available}

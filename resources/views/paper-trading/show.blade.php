@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <a href="{{ route('paper-trading.index') }}" class="text-[11px]" style="color:var(--color-info);">← Volver al resumen</a>
 
-        <form method="GET" action="{{ route('paper-trading.show', $strategy) }}" class="flex items-center gap-2">
+        <form method="GET" action="{{ route('paper-trading.show', $strategy) }}" class="flex items-center gap-2 flex-wrap">
             <label for="mes" class="text-[11px]" style="color:var(--color-text-muted);">Mes:</label>
             <select name="mes" id="mes" onchange="this.form.submit()"
                     class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
@@ -19,6 +19,18 @@
                     </option>
                 @endforeach
             </select>
+
+            @if (count($availableSymbols) > 1)
+                <label for="symbol" class="text-[11px]" style="color:var(--color-text-muted);">Símbolo:</label>
+                <select name="symbol" id="symbol" onchange="this.form.submit()"
+                        class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <option value="all" {{ $selectedSymbol === 'all' ? 'selected' : '' }}>Todos</option>
+                    @foreach ($availableSymbols as $sym)
+                        <option value="{{ $sym }}" {{ $selectedSymbol === $sym ? 'selected' : '' }}>{{ $sym }}</option>
+                    @endforeach
+                </select>
+            @endif
         </form>
     </div>
 
@@ -177,6 +189,30 @@
         </div>
     @endif
 
+    {{-- Subtotales por simbolo --}}
+    @if (count($symbolTotals) > 1 && $selectedSymbol === 'all')
+        <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Rendimiento por símbolo — {{ $selectedMonth->translatedFormat('F Y') }}</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                @foreach ($symbolTotals as $st)
+                    <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium" style="color:var(--color-text-primary);">{{ $st['symbol'] }}</span>
+                            <span class="font-mono text-sm font-medium" style="color: {{ $st['total_pnl_pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ $st['total_pnl_pct'] >= 0 ? '+' : '' }}{{ number_format($st['total_pnl_pct'], 2) }}%
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-1 font-mono text-[10px]" style="color:var(--color-text-muted);">
+                            <span>WR {{ $st['win_rate'] }}%</span>
+                            <span>{{ $st['total'] }} tr</span>
+                            <span>{{ $st['wins'] }}/{{ $st['losses'] }}</span>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     {{-- Historial de trades cerrados --}}
     <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
         <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Historial de operaciones — {{ $selectedMonth->translatedFormat('F Y') }}</h3>
@@ -290,6 +326,65 @@
             </div>
         @endif
     </div>
+
+    {{-- Configuracion de la estrategia --}}
+    @if ($strategyConfig)
+        <div class="rounded-lg border p-4 mt-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Configuración de la estrategia</h3>
+                @can('manageUsers')
+                    <a href="{{ route('paper-trading.configs.edit', $strategyConfig) }}"
+                       class="text-[11px]" style="color:var(--color-info);">Editar →</a>
+                @endcan
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                <div>
+                    <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">Clase</p>
+                    <p class="text-xs font-mono" style="color:var(--color-text-primary);">{{ $strategyConfig->strategy_class }}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">Símbolo</p>
+                    <p class="text-xs font-mono" style="color:var(--color-text-primary);">{{ $strategyConfig->symbol }}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">Intervalo</p>
+                    <p class="text-xs font-mono" style="color:var(--color-text-primary);">{{ $strategyConfig->interval }}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">Estado</p>
+                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                          style="background: {{ $strategyConfig->active ? '#16331F' : '#3A1A1C' }}; color: {{ $strategyConfig->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                        {{ $strategyConfig->active ? 'ACTIVA' : 'INACTIVA' }}
+                    </span>
+                </div>
+            </div>
+
+            {{-- Parametros clave --}}
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                @foreach (['mode' => 'Modo', 'sl_pct' => 'Stop Loss %', 'tp_pct' => 'Take Profit %', 'be_pct' => 'Break-even %', 'max_duration' => 'Duración máx (h)', 'risk_per_trade_pct' => 'Riesgo/trade %'] as $key => $label)
+                    @if (isset($strategyConfig->params[$key]))
+                        <div>
+                            <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
+                            <p class="text-xs font-mono" style="color:var(--color-text-primary);">
+                                @if (is_array($strategyConfig->params[$key]))
+                                    {{ implode(', ', $strategyConfig->params[$key]) }}
+                                @else
+                                    {{ $strategyConfig->params[$key] }}
+                                @endif
+                            </p>
+                        </div>
+                    @endif
+                @endforeach
+                @if (isset($strategyConfig->params['allowed_regimes']))
+                    <div>
+                        <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">Regímenes</p>
+                        <p class="text-xs font-mono" style="color:var(--color-text-primary);">{{ implode(', ', $strategyConfig->params['allowed_regimes']) }}</p>
+                    </div>
+                @endif
+            </div>
+        </div>
+    @endif
 
 @endsection
 
