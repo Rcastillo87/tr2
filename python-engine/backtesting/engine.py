@@ -1,7 +1,7 @@
 """
 Backtesting Engine V2
 Motor genérico que simula trades sobre datos históricos.
-Soporta: SL/TP, Break-even, Cierre por tiempo, Filtro de régimen.
+Soporta: SL/TP1/TP2, Break-even, Cierre por tiempo, Filtro de régimen.
 """
 
 import pandas as pd
@@ -101,14 +101,22 @@ class BacktestEngine:
                     exit_price  = position['sl']
                     exit_reason = 'stop_loss'
 
-                # Take Profit
+                # Take Profit — TP2 tiene prioridad si esta definido y se alcanzo,
+                # si no se evalua TP1. Replica el sistema TP1/TP2 de E-13 original.
                 if exit_price is None:
-                    if position['side'] == 'long' and high >= position['tp']:
-                        exit_price  = position['tp']
-                        exit_reason = 'take_profit'
-                    elif position['side'] == 'short' and low <= position['tp']:
-                        exit_price  = position['tp']
-                        exit_reason = 'take_profit'
+                    tp2 = position.get('tp2')
+
+                    if tp2 is not None:
+                        if position['side'] == 'long' and high >= tp2:
+                            exit_price, exit_reason = tp2, 'take_profit_2'
+                        elif position['side'] == 'short' and low <= tp2:
+                            exit_price, exit_reason = tp2, 'take_profit_2'
+
+                    if exit_price is None:
+                        if position['side'] == 'long' and high >= position['tp']:
+                            exit_price, exit_reason = position['tp'], 'take_profit' if tp2 is None else 'take_profit_1'
+                        elif position['side'] == 'short' and low <= position['tp']:
+                            exit_price, exit_reason = position['tp'], 'take_profit' if tp2 is None else 'take_profit_1'
 
                 # Cierre por tiempo
                 if exit_price is None and bars_open >= self.strategy.max_duration:
@@ -134,6 +142,7 @@ class BacktestEngine:
                         "exit_price":   exit_price,
                         "sl":           position['sl'],
                         "tp":           position['tp'],
+                        "tp2":          position.get('tp2'),
                         "size":         position['size'],
                         "pnl":          round(pnl, 4),
                         "pnl_pct":      round(pnl_pct, 4),
@@ -161,6 +170,9 @@ class BacktestEngine:
                 be     = self.strategy.calculate_breakeven(entry, side)
                 size   = self._calculate_position_size(entry, sl)
 
+                # TP2 opcional — None si la estrategia no lo define (backward compatible)
+                tp2 = self.strategy.calculate_tp2(entry, side) if hasattr(self.strategy, 'calculate_tp2') else None
+
                 if size <= 0:
                     continue
 
@@ -171,6 +183,7 @@ class BacktestEngine:
                     'entry_bar':    i,
                     'sl':           sl,
                     'tp':           tp,
+                    'tp2':          tp2,
                     'be_level':     be,
                     'be_activated': False,
                     'size':         size,

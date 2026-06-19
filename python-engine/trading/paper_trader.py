@@ -119,7 +119,7 @@ class PaperTrader:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, strategy, symbol, interval, side, entry_price, sl, tp,
+                SELECT id, strategy, symbol, interval, side, entry_price, sl, tp, tp2,
                        be_level, be_activated, size, entry_time, regime,
                        max_profit_pct, max_loss_pct
                 FROM paper_trades
@@ -161,6 +161,10 @@ class PaperTrader:
         sl, tp = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
 
+        # TP2 opcional: None si la estrategia no lo define (comportamiento sin cambios)
+        tp2 = strategy_instance.calculate_tp2(entry_price, side) \
+              if hasattr(strategy_instance, 'calculate_tp2') else None
+
         risk_pct    = strategy_instance.default_params.get('risk_per_trade_pct', 1.0) \
                       if hasattr(strategy_instance, 'default_params') \
                       else self.default_params.get('risk_per_trade_pct', 1.0)
@@ -176,19 +180,19 @@ class PaperTrader:
             await conn.execute(
                 """
                 INSERT INTO paper_trades
-                    (strategy, symbol, interval, side, entry_price, sl, tp, be_level,
+                    (strategy, symbol, interval, side, entry_price, sl, tp, tp2, be_level,
                      be_activated, size, regime, entry_time, status,
                      max_profit_pct, max_loss_pct, created_at, updated_at)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $11, 'open', 0, 0, now(), now())
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10, $11, $12, 'open', 0, 0, now(), now())
                 """,
-                display_name, symbol, interval, side, entry_price, sl, tp, be,
+                display_name, symbol, interval, side, entry_price, sl, tp, tp2, be,
                 size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
         logger.info(
             f"[PAPER] OPEN {display_name} {symbol} {side.upper()} @ {entry_price} "
-            f"SL={sl} TP={tp} BE={be} regime={regime} interval={interval}"
+            f"SL={sl} TP1={tp} TP2={tp2} BE={be} regime={regime} interval={interval}"
         )
 
     # ─────────────────────────────────────────────
@@ -285,6 +289,7 @@ class PaperTrader:
             side     = trade['side']
             sl       = float(trade['sl'])
             tp       = float(trade['tp'])
+            tp2      = float(trade['tp2']) if trade.get('tp2') is not None else None
             be_level = float(trade['be_level'])
             entry    = float(trade['entry_price'])
             size     = float(trade['size'])
@@ -315,12 +320,20 @@ class PaperTrader:
             elif side == 'short' and current_price >= sl:
                 exit_price, exit_reason = sl, 'stop_loss'
 
-            # Take Profit
+            # Take Profit — TP2 tiene prioridad si esta definido y se alcanzo,
+            # si no se evalua TP1 (replica el sistema TP1/TP2 de E-13 original).
             if exit_price is None:
-                if side == 'long' and current_price >= tp:
-                    exit_price, exit_reason = tp, 'take_profit'
-                elif side == 'short' and current_price <= tp:
-                    exit_price, exit_reason = tp, 'take_profit'
+                if tp2 is not None:
+                    if side == 'long' and current_price >= tp2:
+                        exit_price, exit_reason = tp2, 'take_profit_2'
+                    elif side == 'short' and current_price <= tp2:
+                        exit_price, exit_reason = tp2, 'take_profit_2'
+
+                if exit_price is None:
+                    if side == 'long' and current_price >= tp:
+                        exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
+                    elif side == 'short' and current_price <= tp:
+                        exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
 
             # Cierre por tiempo — usa max_duration de la estrategia especifica
             if exit_price is None:

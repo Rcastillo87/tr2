@@ -30,6 +30,7 @@ class BacktestRequest(BaseModel):
     risk_per_trade_pct:  float          = 1.0
     sl_pct:              float          = 1.5
     tp_pct:              float          = 3.0
+    tp2_pct:             Optional[float] = None
     be_pct:              float          = 2.0
     max_duration:        int            = 24
     regime_filter:       bool           = True
@@ -79,6 +80,7 @@ def load_strategy(request: BacktestRequest):
         "interval":      request.interval,
         "sl_pct":        request.sl_pct,
         "tp_pct":        request.tp_pct,
+        "tp2_pct":       request.tp2_pct,
         "be_pct":        request.be_pct,
         "max_duration":  request.max_duration,
         "regime_filter": request.regime_filter,
