@@ -36,6 +36,14 @@ class VwapStrategy(BaseStrategy):
         self.vwap_std_filter  = params.get('vwap_std_filter', 1.5)
         self.zone_bars        = params.get('zone_bars', 4)
 
+        # Filtro de tendencia macro (replica E-13 original): solo opera
+        # reversiones a favor de la tendencia H4 (EMA50). Por defecto activo
+        # en modo reversion, ya que es lo que diferenciaba a E-13 real (58% WR)
+        # de nuestra primera réplica sin este filtro (~22% WR en backtest).
+        self.macro_trend_filter  = params.get('macro_trend_filter', self.mode == 'reversion')
+        self.macro_trend_period  = params.get('macro_trend_period', 50)
+        self.macro_trend_interval_hours = params.get('macro_trend_interval_hours', 4)  # H4
+
         # allowed_regimes se puede sobreescribir desde params
         if 'allowed_regimes' in params:
             self.allowed_regimes = params['allowed_regimes']
@@ -91,6 +99,39 @@ class VwapStrategy(BaseStrategy):
         df['vwap_std_dev'] = df.groupby('date')['typical'].transform('std')
         return df
 
+    def _calculate_macro_trend(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calcula la tendencia macro (BULLISH/BEARISH) resampleando el propio
+        DataFrame (asumido H1) a un timeframe mayor (default H4) y calculando
+        EMA50 sobre esas velas resampleadas. Replica el filtro de E-13 original
+        (que usaba EMA50 en H4 real de Bybit) sin requerir un segundo dataset.
+
+        El valor de tendencia de cada vela H4 se propaga (forward-fill) a todas
+        las velas H1 contenidas en ese bloque de tiempo.
+        """
+        interval_bars = self.macro_trend_interval_hours  # asumiendo barras de 1h
+
+        df = df.copy()
+        df['time_dt'] = pd.to_datetime(df['time'])
+        df = df.set_index('time_dt')
+
+        # Resample a H4 (u otro intervalo configurado) usando el close de cada bloque
+        resampled = df['close'].resample(f'{self.macro_trend_interval_hours}h').last().dropna()
+
+        if len(resampled) < self.macro_trend_period:
+            # Datos insuficientes para EMA50 en H4 — sin filtro de tendencia
+            df['macro_trend'] = None
+            return df.reset_index(drop=True)
+
+        ema = resampled.ewm(span=self.macro_trend_period, adjust=False).mean()
+        trend = (resampled > ema).map({True: 'BULLISH', False: 'BEARISH'})
+
+        # Reindexar la tendencia H4 sobre el indice H1 original (forward-fill)
+        trend_h1 = trend.reindex(df.index, method='ffill')
+        df['macro_trend'] = trend_h1.values
+
+        return df.reset_index(drop=True)
+
     # ─────────────────────────────────────────────
     # Prepare
     # ─────────────────────────────────────────────
@@ -109,6 +150,9 @@ class VwapStrategy(BaseStrategy):
             df = self._calculate_vwap_std_rolling(df)
             df['vwap_upper_entry'] = df['vwap'] + (self.vwap_std_entry * df['vwap_std_dev'])
             df['vwap_lower_entry'] = df['vwap'] - (self.vwap_std_entry * df['vwap_std_dev'])
+
+            if self.macro_trend_filter:
+                df = self._calculate_macro_trend(df)
 
         return df
 
@@ -179,6 +223,17 @@ class VwapStrategy(BaseStrategy):
 
             if direction is None:
                 continue
+
+            # Filtro de tendencia macro (replica E-13 original):
+            # LONG se omite si la tendencia H4 es BAJISTA (ir contra la macro-tendencia).
+            # SHORT se omite si la tendencia H4 es ALCISTA.
+            if self.macro_trend_filter and 'macro_trend' in df.columns:
+                trend = row.get('macro_trend')
+                if trend is not None:
+                    if direction == 'LONG' and trend == 'BEARISH':
+                        continue
+                    if direction == 'SHORT' and trend == 'BULLISH':
+                        continue
 
             zone_id      = i // self.zone_bars
             last_zone_id = last_zone_bar[direction] // self.zone_bars
