@@ -5,243 +5,34 @@
 
 @section('content')
 
-    <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <div class="flex items-center justify-between mb-3">
-            <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Configurar backtest</h3>
-            <span class="text-[11px]" style="color:var(--color-text-muted);">Parámetros precargados desde la config activa al cambiar estrategia/símbolo</span>
-        </div>
+<style>
+    button, a[href] { cursor: pointer; }
+</style>
 
-        <form method="POST" action="{{ route('backtesting.run') }}" id="backtestForm" class="space-y-4">
-            @csrf
-
-            {{-- Bloque 1: estrategia/simbolo/intervalo/rango fechas --}}
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Estrategia</label>
-                    <select name="strategy" id="strategy" onchange="loadParams()"
-                            class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                            style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        @foreach ($strategies as $key => $def)
-                            <option value="{{ $key }}" {{ ($old['strategy'] ?? '') === $key ? 'selected' : '' }}>{{ $def['label'] }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolo</label>
-                    <select name="symbol" id="symbol" onchange="loadParams(); loadDataRange();"
-                            class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                            style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        @foreach ($symbols as $sym)
-                            <option value="{{ $sym }}" {{ ($old['symbol'] ?? '') === $sym ? 'selected' : '' }}>{{ $sym }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Intervalo</label>
-                    <select name="interval" id="interval" onchange="loadDataRange()"
-                            class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                            style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        @foreach ($intervals as $iv)
-                            @php $labels = ['1'=>'1m','5'=>'5m','15'=>'15m','60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1']; @endphp
-                            <option value="{{ $iv }}" {{ ($old['interval'] ?? '60') === $iv ? 'selected' : '' }}>{{ $labels[$iv] ?? $iv }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Desde (opcional)</label>
-                    <input type="date" name="start_date" id="start_date" value="{{ $old['start_date'] ?? '' }}"
-                           class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Hasta (opcional)</label>
-                    <input type="date" name="end_date" id="end_date" value="{{ $old['end_date'] ?? '' }}"
-                           class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-            </div>
-
-            <p id="dataRangeInfo" class="text-[11px]" style="color:var(--color-text-muted);"></p>
-            <div id="preloadIndicator" class="hidden">
-                <p class="text-[11px] px-2 py-1.5 rounded" style="background:#13233D; color:var(--color-info); border:1px solid #1E3A5F;">
-                    ✓ Parámetros precargados desde: <span id="preloadSource" class="font-medium"></span>
-                </p>
-            </div>
-
-            {{-- Bloque 2: parametros comunes --}}
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Parámetros comunes</h4>
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Stop Loss %</label>
-                        <input type="number" step="0.1" name="sl_pct" id="sl_pct" value="{{ $old['sl_pct'] ?? '1.5' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 1 %</label>
-                        <input type="number" step="0.1" name="tp_pct" id="tp_pct" value="{{ $old['tp_pct'] ?? '3.0' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Break-even %</label>
-                        <input type="number" step="0.1" name="be_pct" id="be_pct" value="{{ $old['be_pct'] ?? '2.0' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Máx. duración (velas)</label>
-                        <input type="number" step="1" name="max_duration" id="max_duration" value="{{ $old['max_duration'] ?? '24' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Riesgo/trade %</label>
-                        <input type="number" step="0.1" name="risk_per_trade_pct" id="risk_per_trade_pct" value="{{ $old['risk_per_trade_pct'] ?? '1.0' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div class="flex items-end pb-2">
-                        <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                            <input type="checkbox" name="regime_filter" value="1" {{ ($old['regime_filter'] ?? '1') ? 'checked' : '' }}
-                                   class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                            Filtro de régimen
-                        </label>
-                    </div>
-                    <div class="flex items-end pb-2">
-                        <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                            <input type="checkbox" name="macro_trend_filter" value="1" {{ ($old['macro_trend_filter'] ?? '') ? 'checked' : '' }}
-                                   class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                            Filtro de tendencia macro H4
-                        </label>
-                    </div>
-                </div>
-                <p class="text-[10px] mt-2" style="color:var(--color-text-muted);">
-                    El filtro macro H4 bloquea señales contra la tendencia mayor (EMA50 en H4): reduce el retorno total
-                    pero suaviza significativamente los meses de pérdida — útil si priorizas menor drawdown sobre retorno máximo.
-                </p>
-            </div>
-
-            {{-- Bloque 3: Take Profit escalonado TP2-TP4 --}}
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Take Profit escalonado (opcional)</h4>
-                <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Deja en blanco los niveles que no quieras usar. El motor cierra en el nivel más favorable alcanzado (prioridad TP4 &gt; TP3 &gt; TP2 &gt; TP1).</p>
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 2 %</label>
-                        <input type="number" step="0.1" name="tp2_pct" id="tp2_pct" value="{{ $old['tp2_pct'] ?? '' }}" placeholder="—"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 3 %</label>
-                        <input type="number" step="0.1" name="tp3_pct" id="tp3_pct" value="{{ $old['tp3_pct'] ?? '' }}" placeholder="—"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 4 %</label>
-                        <input type="number" step="0.1" name="tp4_pct" id="tp4_pct" value="{{ $old['tp4_pct'] ?? '' }}" placeholder="—"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                </div>
-            </div>
-
-            {{-- Bloque 4: Trailing Stop --}}
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Trailing Stop (opcional)</h4>
-                <select name="trailing_mode" id="trailing_mode" onchange="toggleTrailingFields()"
-                        class="w-full sm:w-64 rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
-                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    <option value="none" {{ ($old['trailing_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguno</option>
-                    <option value="fixed" {{ ($old['trailing_mode'] ?? '') === 'fixed' ? 'selected' : '' }}>Fijo (distancia constante)</option>
-                    <option value="stepped" {{ ($old['trailing_mode'] ?? '') === 'stepped' ? 'selected' : '' }}>Por pasos (escalonado)</option>
-                </select>
-
-                <div id="trailingFixedFields" class="hidden">
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia del trailing %</label>
-                    <input type="number" step="0.1" name="trailing_distance_pct" value="{{ $old['trailing_distance_pct'] ?? '1.0' }}"
-                           class="w-full sm:w-48 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-
-                <div id="trailingSteppedFields" class="hidden">
-                    <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Define escalones: cuando la ganancia alcance el % indicado, el SL salta al % indicado (desde la entrada).</p>
-                    <div id="trailingStepsContainer" class="space-y-2">
-                        <div class="flex items-center gap-2">
-                            <input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %"
-                                   class="w-32 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            <span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span>
-                            <input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %"
-                                   class="w-32 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
-                    </div>
-                    <button type="button" onclick="addTrailingStep()" class="text-[11px] mt-2" style="color:var(--color-info);">+ Agregar escalón</button>
-                </div>
-            </div>
-
-            {{-- Bloque 5: Proteccion por volatilidad --}}
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Protección por volatilidad (opcional)</h4>
-                <select name="volatility_protection_mode" id="volatility_protection_mode" onchange="toggleVolatilityFields()"
-                        class="w-full sm:w-72 rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
-                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    <option value="none" {{ ($old['volatility_protection_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguna</option>
-                    <option value="close" {{ ($old['volatility_protection_mode'] ?? '') === 'close' ? 'selected' : '' }}>Cerrar si la volatilidad se dispara</option>
-                    <option value="widen" {{ ($old['volatility_protection_mode'] ?? '') === 'widen' ? 'selected' : '' }}>Ampliar SL si la volatilidad se dispara</option>
-                </select>
-
-                <div id="volatilityFields" class="hidden grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador ATR (umbral)</label>
-                        <input type="number" step="0.1" name="volatility_atr_multiplier" value="{{ $old['volatility_atr_multiplier'] ?? '2.5' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">Se activa si ATR actual &gt; ATR promedio × este valor</p>
-                    </div>
-                    <div id="volatilityWidenField" class="hidden">
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Ampliación de SL (puntos %)</label>
-                        <input type="number" step="0.1" name="volatility_widen_pct" value="{{ $old['volatility_widen_pct'] ?? '1.0' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                </div>
-            </div>
-
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <button type="submit" class="w-full sm:w-auto text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
-                        style="background:var(--color-info); color:#fff;">
-                    Ejecutar backtest (walk-forward)
-                </button>
-            </div>
-        </form>
+    <div class="flex items-center justify-between mb-4">
+        <p class="text-[11px]" style="color:var(--color-text-muted);">Ejecuta backtests y administra las estrategias activas en Paper Trading</p>
+        <button type="button" onclick="openBacktestModal()"
+                class="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                style="background:var(--color-info); color:#fff;">
+            + Nuevo backtest
+        </button>
     </div>
 
-    {{-- Error --}}
     @if ($error)
         <div class="rounded-lg border p-3 mb-4 text-sm" style="background:#3A1A1C; border-color:#5A2226; color:var(--color-loss);">
             {{ $error }}
         </div>
     @endif
 
-    {{-- Resultado --}}
     @if ($result)
         @php $agg = $result['aggregate_metrics']; @endphp
 
         <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                 <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">
                     {{ $result['strategy'] }} — {{ $result['symbol'] }} / {{ $result['interval'] }}
                 </h3>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                     @if ($result['passed'])
                         <span class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium" style="background:#16331F; color:var(--color-profit); border:1px solid #1E4A2E;">
                             ✓ Aprobada para paper trading
@@ -253,18 +44,51 @@
                     @endif
 
                     @if (!empty($result['monthly_breakdown']))
-                        <form method="POST" action="{{ route('backtesting.export-excel') }}">
+                        <form method="POST" action="{{ route('backtesting.export-excel') }}" id="exportExcelForm">
                             @csrf
-                            <input type="hidden" name="result" value='{{ json_encode($result) }}'>
-                            <button type="submit" class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium" style="background:var(--color-surface-raised); color:var(--color-info); border:1px solid var(--color-border-strong);">
+                            <input type="hidden" name="result" value='{{ json_encode(array_merge($result, ["_implement_params" => $implementParams ?? []])) }}'>
+                            <button type="submit" id="exportExcelBtn" class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium transition-colors" style="background:var(--color-surface-raised); color:var(--color-info); border:1px solid var(--color-border-strong);">
                                 ⬇ Exportar a Excel
                             </button>
                         </form>
                     @endif
+
+                    @can('manageUsers')
+                        <button type="button" onclick="confirmImplement()" id="implementBtn" class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium transition-colors" style="background:#13233D; color:var(--color-info); border:1px solid #1E3A5F;">
+                            ⚡ Implementar en Paper Trading
+                        </button>
+                        <form method="POST" action="{{ route('paper-trading.configs.implement') }}" id="implementForm" class="hidden">
+                            @csrf
+                            <input type="hidden" name="strategy_name" value="{{ $result['strategy'] }}">
+                            <input type="hidden" name="symbol" value="{{ $result['symbol'] }}">
+                            <input type="hidden" name="interval" value="{{ $result['interval'] }}">
+                            <input type="hidden" name="params" id="implementParams" value="">
+                        </form>
+                    @endcan
                 </div>
             </div>
 
-            {{-- Métricas agregadas --}}
+            @if (!empty($implementParams))
+                <div class="rounded-md p-3 mb-4 font-mono text-[11px]" style="background:var(--color-surface-raised); border:1px solid var(--color-border-soft); color:var(--color-text-muted);">
+                    <span style="color:var(--color-text-secondary);">Configuración usada:</span>
+                    sl:{{ $implementParams['sl_pct'] ?? '—' }}%
+                    tp1:{{ $implementParams['tp_pct'] ?? '—' }}%
+                    @if (!empty($implementParams['tp2_pct'])) tp2:{{ $implementParams['tp2_pct'] }}% @endif
+                    @if (!empty($implementParams['tp3_pct'])) tp3:{{ $implementParams['tp3_pct'] }}% @endif
+                    @if (!empty($implementParams['tp4_pct'])) tp4:{{ $implementParams['tp4_pct'] }}% @endif
+                    be:{{ $implementParams['be_pct'] ?? '—' }}%
+                    dur:{{ $implementParams['max_duration'] ?? '—' }}
+                    riesgo:{{ $implementParams['risk_per_trade_pct'] ?? '—' }}%
+                    @if (!empty($implementParams['mode'])) modo:{{ $implementParams['mode'] }} @endif
+                    @if (!empty($implementParams['macro_trend_filter'])) <span style="color:var(--color-info);">+macro H4</span> @endif
+                    @if (!empty($implementParams['trailing_mode'])) <span style="color:var(--color-info);">+trailing:{{ $implementParams['trailing_mode'] }}</span> @endif
+                    @if (!empty($implementParams['volatility_protection_mode'])) <span style="color:var(--color-info);">+vol:{{ $implementParams['volatility_protection_mode'] }}</span> @endif
+                    @if (!empty($implementParams['start_date']) || !empty($implementParams['end_date']))
+                        <br><span style="color:var(--color-text-secondary);">Rango:</span> {{ $implementParams['start_date'] ?? 'inicio' }} — {{ $implementParams['end_date'] ?? 'hoy' }}
+                    @endif
+                </div>
+            @endif
+
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                 @foreach ([
                     'total_trades'     => 'Total trades',
@@ -297,9 +121,9 @@
                 </div>
             @endif
 
-            <div>
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-muted);">Resultados por ventana (walk-forward)</h4>
-                <div class="overflow-x-auto">
+            <details class="mb-2">
+                <summary class="text-[11px] font-medium cursor-pointer" style="color:var(--color-text-muted);">Resultados por ventana (walk-forward)</summary>
+                <div class="overflow-x-auto mt-2">
                     <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
                         <thead>
                             <tr class="border-b" style="border-color:var(--color-border-soft);">
@@ -327,12 +151,11 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </details>
         </div>
 
-        {{-- Desglose mes a mes --}}
         @if (!empty($result['monthly_breakdown']))
-            <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
                 <h3 class="text-sm font-medium mb-3" style="color:var(--color-text-secondary);">Desglose mes a mes</h3>
                 <div class="overflow-x-auto">
                     <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
@@ -368,11 +191,284 @@
         @endif
     @endif
 
+    @can('manageUsers')
+        <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">Estrategias en Paper Trading</h3>
+                <span class="text-[11px]" style="color:var(--color-text-muted);">Mismos parámetros que corren en producción ahora mismo</span>
+            </div>
+
+            @if ($paperConfigs->isEmpty())
+                <p class="text-sm" style="color:var(--color-text-muted);">Aún no hay configuraciones. Corre un backtest y usa "Implementar en Paper Trading" para crear la primera.</p>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
+                        <thead>
+                            <tr class="border-b" style="border-color:var(--color-border-soft);">
+                                <th class="py-2 px-2 font-normal">Nombre</th>
+                                <th class="py-2 px-2 font-normal">Símbolo</th>
+                                <th class="py-2 px-2 font-normal">Int.</th>
+                                <th class="py-2 px-2 font-normal">Params clave</th>
+                                <th class="py-2 px-2 font-normal">Estado</th>
+                                <th class="py-2 px-2 font-normal">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($paperConfigs as $config)
+                                <tr class="border-b" style="border-color:var(--color-border-soft);">
+                                    <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $config->display_name }}</td>
+                                    <td class="py-2 px-2">{{ $config->symbol }}</td>
+                                    <td class="py-2 px-2">{{ $config->interval }}</td>
+                                    <td class="py-2 px-2" style="color:var(--color-text-muted);">
+                                        sl:{{ $config->params['sl_pct'] ?? '—' }} tp:{{ $config->params['tp_pct'] ?? '—' }}
+                                        @if (!empty($config->params['tp2_pct']))/{{ $config->params['tp2_pct'] }}@endif
+                                        @if (!empty($config->params['tp3_pct']))/{{ $config->params['tp3_pct'] }}@endif
+                                        @if (!empty($config->params['tp4_pct']))/{{ $config->params['tp4_pct'] }}@endif
+                                        be:{{ $config->params['be_pct'] ?? '—' }}
+                                    </td>
+                                    <td class="py-2 px-2">
+                                        <span class="px-1.5 py-0.5 rounded text-[10px]" style="background: {{ $config->active ? '#16331F' : '#3A1A1C' }}; color: {{ $config->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                            {{ $config->active ? 'ACTIVA' : 'INACTIVA' }}
+                                        </span>
+                                    </td>
+                                    <td class="py-2 px-2">
+                                        <div class="flex items-center gap-2">
+                                            <button type="button" onclick="retestConfig({{ $config->id }})" class="transition-colors" style="color:var(--color-info);">Editar</button>
+                                            <form method="POST" action="{{ route('paper-trading.configs.toggle', $config) }}" onsubmit="return confirmToggleConfig(event, '{{ $config->display_name }}', {{ $config->active ? 'true' : 'false' }})">
+                                                @csrf @method('PATCH')
+                                                <button type="submit" class="transition-colors" style="color: {{ $config->active ? 'var(--color-loss)' : 'var(--color-profit)' }};">
+                                                    {{ $config->active ? 'Deshabilitar' : 'Activar' }}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    @endcan
+
+    <div id="backtestModalOverlay" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4" style="background:rgba(0,0,0,0.6);">
+        <div class="rounded-lg border w-full max-w-4xl my-8" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <div class="flex items-center justify-between p-4 border-b" style="border-color:var(--color-border-soft);">
+                <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">Configurar backtest</h3>
+                <button type="button" onclick="closeBacktestModal()" class="text-xl leading-none" style="color:var(--color-text-muted);">✕</button>
+            </div>
+
+            <div class="p-4">
+                <form method="POST" action="{{ route('backtesting.run') }}" id="backtestForm" class="space-y-4">
+                    @csrf
+
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div>
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Estrategia</label>
+                            <select name="strategy" id="strategy" onchange="loadParams()"
+                                    class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
+                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                @foreach ($strategies as $key => $def)
+                                    <option value="{{ $key }}" {{ ($old['strategy'] ?? '') === $key ? 'selected' : '' }}>{{ $def['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolo</label>
+                            <select name="symbol" id="symbol" onchange="loadParams(); loadDataRange();"
+                                    class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
+                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                @foreach ($symbols as $sym)
+                                    <option value="{{ $sym }}" {{ ($old['symbol'] ?? '') === $sym ? 'selected' : '' }}>{{ $sym }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Intervalo</label>
+                            <select name="interval" id="interval" onchange="loadDataRange()"
+                                    class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
+                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                @foreach ($intervals as $iv)
+                                    @php $labels = ['1'=>'1m','5'=>'5m','15'=>'15m','60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1']; @endphp
+                                    <option value="{{ $iv }}" {{ ($old['interval'] ?? '60') === $iv ? 'selected' : '' }}>{{ $labels[$iv] ?? $iv }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Desde (opcional)</label>
+                            <input type="date" name="start_date" id="start_date" value="{{ $old['start_date'] ?? '' }}"
+                                   class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Hasta (opcional)</label>
+                            <input type="date" name="end_date" id="end_date" value="{{ $old['end_date'] ?? '' }}"
+                                   class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+                    </div>
+
+                    <p id="dataRangeInfo" class="text-[11px]" style="color:var(--color-text-muted);"></p>
+                    <div id="preloadIndicator" class="hidden">
+                        <p class="text-[11px] px-2 py-1.5 rounded" style="background:#13233D; color:var(--color-info); border:1px solid #1E3A5F;">
+                            ✓ Parámetros precargados desde: <span id="preloadSource" class="font-medium"></span>
+                        </p>
+                    </div>
+
+                    <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                        <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Parámetros comunes</h4>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Stop Loss %</label>
+                                <input type="number" step="0.1" name="sl_pct" id="sl_pct" value="{{ $old['sl_pct'] ?? '1.5' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 1 %</label>
+                                <input type="number" step="0.1" name="tp_pct" id="tp_pct" value="{{ $old['tp_pct'] ?? '3.0' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Break-even %</label>
+                                <input type="number" step="0.1" name="be_pct" id="be_pct" value="{{ $old['be_pct'] ?? '2.0' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Máx. duración (velas)</label>
+                                <input type="number" step="1" name="max_duration" id="max_duration" value="{{ $old['max_duration'] ?? '24' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Riesgo/trade %</label>
+                                <input type="number" step="0.1" name="risk_per_trade_pct" id="risk_per_trade_pct" value="{{ $old['risk_per_trade_pct'] ?? '1.0' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div class="flex flex-col justify-end gap-1 pb-1">
+                                <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
+                                    <input type="checkbox" name="regime_filter" value="1" {{ ($old['regime_filter'] ?? '1') ? 'checked' : '' }}
+                                           class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                                    Filtro de régimen
+                                </label>
+                                <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
+                                    <input type="checkbox" name="macro_trend_filter" value="1" {{ ($old['macro_trend_filter'] ?? '') ? 'checked' : '' }}
+                                           class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                                    Filtro macro H4
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                        <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Take Profit escalonado (opcional)</h4>
+                        <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Deja en blanco los niveles que no quieras usar. El motor cierra en el nivel más favorable alcanzado.</p>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 2 %</label>
+                                <input type="number" step="0.1" name="tp2_pct" id="tp2_pct" value="{{ $old['tp2_pct'] ?? '' }}" placeholder="—"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 3 %</label>
+                                <input type="number" step="0.1" name="tp3_pct" id="tp3_pct" value="{{ $old['tp3_pct'] ?? '' }}" placeholder="—"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 4 %</label>
+                                <input type="number" step="0.1" name="tp4_pct" id="tp4_pct" value="{{ $old['tp4_pct'] ?? '' }}" placeholder="—"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                        <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Trailing Stop (opcional)</h4>
+                        <select name="trailing_mode" id="trailing_mode" onchange="toggleTrailingFields()"
+                                class="w-full sm:w-64 rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
+                                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            <option value="none" {{ ($old['trailing_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguno</option>
+                            <option value="fixed" {{ ($old['trailing_mode'] ?? '') === 'fixed' ? 'selected' : '' }}>Fijo (distancia constante)</option>
+                            <option value="stepped" {{ ($old['trailing_mode'] ?? '') === 'stepped' ? 'selected' : '' }}>Por pasos (escalonado)</option>
+                        </select>
+
+                        <div id="trailingFixedFields" class="hidden">
+                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia del trailing %</label>
+                            <input type="number" step="0.1" name="trailing_distance_pct" value="{{ $old['trailing_distance_pct'] ?? '1.0' }}"
+                                   class="w-full sm:w-48 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+
+                        <div id="trailingSteppedFields" class="hidden">
+                            <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Cuando la ganancia alcance el % indicado, el SL salta al % indicado (desde la entrada).</p>
+                            <div id="trailingStepsContainer" class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %"
+                                           class="w-32 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                    <span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span>
+                                    <input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %"
+                                           class="w-32 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                </div>
+                            </div>
+                            <button type="button" onclick="addTrailingStep()" class="text-[11px] mt-2" style="color:var(--color-info);">+ Agregar escalón</button>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                        <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Protección por volatilidad (opcional)</h4>
+                        <select name="volatility_protection_mode" id="volatility_protection_mode" onchange="toggleVolatilityFields()"
+                                class="w-full sm:w-72 rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
+                                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            <option value="none" {{ ($old['volatility_protection_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguna</option>
+                            <option value="close" {{ ($old['volatility_protection_mode'] ?? '') === 'close' ? 'selected' : '' }}>Cerrar si la volatilidad se dispara</option>
+                            <option value="widen" {{ ($old['volatility_protection_mode'] ?? '') === 'widen' ? 'selected' : '' }}>Ampliar SL si la volatilidad se dispara</option>
+                        </select>
+
+                        <div id="volatilityFields" class="hidden grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador ATR (umbral)</label>
+                                <input type="number" step="0.1" name="volatility_atr_multiplier" value="{{ $old['volatility_atr_multiplier'] ?? '2.5' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                            <div id="volatilityWidenField" class="hidden">
+                                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Ampliación de SL (puntos %)</label>
+                                <input type="number" step="0.1" name="volatility_widen_pct" value="{{ $old['volatility_widen_pct'] ?? '1.0' }}"
+                                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
+                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-4 flex justify-end" style="border-color:var(--color-border-soft);">
+                        <button type="submit" class="text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
+                                style="background:var(--color-info); color:#fff;">
+                            Ejecutar backtest (walk-forward)
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
 @endsection
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-const paperConfigs = {!! $paperConfigs->toJson() !!};
+const paperConfigs = {!! $paperConfigsForPreload->toJson() !!};
 
 const strategyClassMap = {
     'VwapStrategy_trend_follow': 'VWAP Tendencia',
@@ -380,6 +476,13 @@ const strategyClassMap = {
     'MeanReversionStrategy_':    'Reversión a la Media',
     'EmaDonchianStrategy_':      'Tendencia EMA/Donchian',
 };
+
+function openBacktestModal() {
+    document.getElementById('backtestModalOverlay').classList.remove('hidden');
+}
+function closeBacktestModal() {
+    document.getElementById('backtestModalOverlay').classList.add('hidden');
+}
 
 function loadParams() {
     const strategy = document.getElementById('strategy').value;
@@ -474,11 +577,148 @@ function toggleVolatilityFields() {
 document.addEventListener('DOMContentLoaded', () => {
     toggleTrailingFields();
     toggleVolatilityFields();
-    loadDataRange();
+
+    @if ($old)
+        openBacktestModal();
+        loadDataRange();
+    @endif
 
     @if (empty($old['strategy']) || empty($old['sl_pct']))
         loadParams();
     @endif
 });
+
+document.getElementById('backtestForm').addEventListener('submit', function () {
+    Swal.fire({
+        title: 'Ejecutando backtest...',
+        html: 'Procesando walk-forward, esto puede tardar unos segundos.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        background: '#11161F',
+        color: '#E5E9F0',
+        didOpen: () => Swal.showLoading(),
+    });
+});
+
+const exportForm = document.getElementById('exportExcelForm');
+if (exportForm) {
+    exportForm.addEventListener('submit', function () {
+        Swal.fire({
+            title: 'Generando Excel...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            background: '#11161F',
+            color: '#E5E9F0',
+            didOpen: () => Swal.showLoading(),
+            timer: 3000,
+            timerProgressBar: true,
+        });
+    });
+}
+
+function confirmImplement() {
+    const strategyName = document.getElementById('implementForm').elements['strategy_name'].value;
+    const symbol = document.getElementById('implementForm').elements['symbol'].value;
+    const interval = document.getElementById('implementForm').elements['interval'].value;
+
+    Swal.fire({
+        title: 'Implementar en Paper Trading',
+        html: `¿Implementar <b>${strategyName}</b> para <b>${symbol}</b> (intervalo ${interval})?<br><br>
+               Esto creará o actualizará la configuración activa en producción con los parámetros exactos de este backtest.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Implementar',
+        cancelButtonText: 'Cancelar',
+        background: '#11161F',
+        color: '#E5E9F0',
+        confirmButtonColor: '#4D8FE8',
+        cancelButtonColor: '#232B38',
+        customClass: { popup: 'rounded-xl border' }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            document.getElementById('implementParams').value = {!! json_encode(json_encode($implementParams ?? [])) !!};
+            Swal.fire({
+                title: 'Implementando...',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                background: '#11161F',
+                color: '#E5E9F0',
+                didOpen: () => Swal.showLoading(),
+            });
+            document.getElementById('implementForm').submit();
+        }
+    });
+}
+
+async function retestConfig(configId) {
+    openBacktestModal();
+
+    Swal.fire({
+        title: 'Cargando configuración...',
+        allowOutsideClick: false,
+        background: '#11161F',
+        color: '#E5E9F0',
+        didOpen: () => Swal.showLoading(),
+    });
+
+    try {
+        const res = await fetch(`/backtesting/retest/${configId}`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+
+        Swal.close();
+
+        document.getElementById('strategy').value = data.strategy_name;
+        document.getElementById('symbol').value = data.symbol;
+        document.getElementById('interval').value = data.interval;
+
+        const p = data.params;
+        if (p.sl_pct !== undefined) document.getElementById('sl_pct').value = p.sl_pct;
+        if (p.tp_pct !== undefined) document.getElementById('tp_pct').value = p.tp_pct;
+        if (p.tp2_pct !== undefined) document.getElementById('tp2_pct').value = p.tp2_pct;
+        if (p.tp3_pct !== undefined) document.getElementById('tp3_pct').value = p.tp3_pct;
+        if (p.tp4_pct !== undefined) document.getElementById('tp4_pct').value = p.tp4_pct;
+        if (p.be_pct !== undefined) document.getElementById('be_pct').value = p.be_pct;
+        if (p.max_duration !== undefined) document.getElementById('max_duration').value = p.max_duration;
+        if (p.risk_per_trade_pct !== undefined) document.getElementById('risk_per_trade_pct').value = p.risk_per_trade_pct;
+
+        document.getElementById('preloadIndicator').classList.remove('hidden');
+        document.getElementById('preloadSource').textContent = data.strategy_name + ' (config activa)';
+
+        loadDataRange();
+    } catch (e) {
+        Swal.fire({
+            title: 'Error',
+            text: 'No se pudo cargar la configuración.',
+            icon: 'error',
+            background: '#11161F',
+            color: '#E5E9F0',
+        });
+    }
+}
+
+function confirmToggleConfig(event, name, isActive) {
+    event.preventDefault();
+    const form = event.target;
+
+    Swal.fire({
+        title: isActive ? 'Deshabilitar estrategia' : 'Activar estrategia',
+        html: isActive
+            ? `¿Deshabilitar <b>${name}</b>? Dejará de operar en Paper Trading inmediatamente.`
+            : `¿Activar <b>${name}</b> en Paper Trading?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: isActive ? 'Deshabilitar' : 'Activar',
+        cancelButtonText: 'Cancelar',
+        background: '#11161F',
+        color: '#E5E9F0',
+        confirmButtonColor: isActive ? '#F2545B' : '#3DD68C',
+        cancelButtonColor: '#232B38',
+        customClass: { popup: 'rounded-xl border' }
+    }).then((result) => {
+        if (result.isConfirmed) form.submit();
+    });
+
+    return false;
+}
 </script>
 @endpush

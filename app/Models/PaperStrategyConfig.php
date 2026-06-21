@@ -1,13 +1,10 @@
 <?php
-
 namespace App\Models;
-
 use Illuminate\Database\Eloquent\Model;
 
 class PaperStrategyConfig extends Model
 {
     protected $table = 'paper_strategy_configs';
-
     protected $fillable = [
         'display_name',
         'strategy_class',
@@ -16,7 +13,6 @@ class PaperStrategyConfig extends Model
         'params',
         'active',
     ];
-
     protected $casts = [
         'params' => 'array',
         'active' => 'boolean',
@@ -39,5 +35,71 @@ class PaperStrategyConfig extends Model
             'EmaDonchianStrategy'  => 'backtesting.strategies.ema_donchian',
             default                => throw new \InvalidArgumentException("Clase desconocida: {$this->strategy_class}"),
         };
+    }
+
+    /**
+     * Mapea el nombre de estrategia usado en Backtesting (display generico,
+     * ej. "VWAP Tendencia") a la clase Python real y el modo (si aplica).
+     */
+    public static function strategyNameToClassAndMode(string $strategyName): array
+    {
+        return match ($strategyName) {
+            'VWAP Tendencia'         => ['class' => 'VwapStrategy', 'mode' => 'trend_follow'],
+            'VWAP Reversión'         => ['class' => 'VwapStrategy', 'mode' => 'reversion'],
+            'Reversión a la Media'   => ['class' => 'MeanReversionStrategy', 'mode' => null],
+            'Tendencia EMA/Donchian' => ['class' => 'EmaDonchianStrategy', 'mode' => null],
+            default => throw new \InvalidArgumentException("Estrategia no reconocida: {$strategyName}"),
+        };
+    }
+
+    /**
+     * Mapea clase+modo de vuelta al nombre de estrategia usado en Backtesting,
+     * para precargar el formulario al re-testear.
+     */
+    public static function classAndModeToStrategyName(string $class, ?string $mode): string
+    {
+        if ($class === 'VwapStrategy') {
+            return $mode === 'reversion' ? 'VWAP Reversión' : 'VWAP Tendencia';
+        }
+        return match ($class) {
+            'MeanReversionStrategy' => 'Reversión a la Media',
+            'EmaDonchianStrategy'   => 'Tendencia EMA/Donchian',
+            default => $class,
+        };
+    }
+
+    /**
+     * Crea o actualiza (por unicidad strategy_class+symbol+interval) la config
+     * de Paper Trading a partir de los parametros usados en un backtest.
+     * Esta es la UNICA via para que una configuracion entre en produccion,
+     * garantizando que Backtesting y Paper Trading comparten la misma fuente
+     * de verdad (misma fila, mismos parametros exactos).
+     */
+    public static function implementFromBacktest(string $strategyName, string $symbol, string $interval,
+                                                   array $params, ?string $displayNameOverride = null): self
+    {
+        $map = self::strategyNameToClassAndMode($strategyName);
+
+        if ($map['mode']) {
+            $params['mode'] = $map['mode'];
+        }
+
+        $intervalLabels = ['1' => '1m', '5' => '5m', '15' => '15m', '60' => 'H1', '120' => 'H2', '240' => 'H4', 'D' => 'D1'];
+        $intervalLabel = $intervalLabels[$interval] ?? $interval;
+
+        $displayName = $displayNameOverride ?: "{$strategyName} — {$symbol} {$intervalLabel}";
+
+        return self::updateOrCreate(
+            [
+                'strategy_class' => $map['class'],
+                'symbol'         => $symbol,
+                'interval'       => $interval,
+            ],
+            [
+                'display_name' => $displayName,
+                'params'       => $params,
+                'active'       => true,
+            ]
+        );
     }
 }

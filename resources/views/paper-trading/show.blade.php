@@ -332,10 +332,6 @@
         <div class="rounded-lg border p-4 mt-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
             <div class="flex items-center justify-between mb-3">
                 <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Configuración de la estrategia</h3>
-                @can('manageUsers')
-                    <a href="{{ route('paper-trading.configs.edit', $strategyConfig) }}"
-                       class="text-[11px]" style="color:var(--color-info);">Editar →</a>
-                @endcan
             </div>
 
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">

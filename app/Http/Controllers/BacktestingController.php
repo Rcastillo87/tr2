@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Models\CollectorConfig;
 use App\Models\PaperStrategyConfig;
+use Illuminate\Support\Facades\Gate;
 
 class BacktestingController extends Controller
 {
@@ -19,14 +20,18 @@ class BacktestingController extends Controller
 
     public function index(Request $request)
     {
+        Gate::authorize('viewAnalysisTools');
+
         $result = null;
         $error  = null;
+        $implementParams = null;
 
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
 
-        $paperConfigs = PaperStrategyConfig::active()
-            ->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])
+        $paperConfigs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
+
+        $paperConfigsForPreload = $paperConfigs->where('active', true)
             ->map(function ($c) {
                 $params = is_array($c->params) ? $c->params : json_decode($c->params, true);
                 return [
@@ -36,7 +41,7 @@ class BacktestingController extends Controller
                     'interval'       => $c->interval,
                     'params'         => $params,
                 ];
-            });
+            })->values();
 
         if ($request->isMethod('post')) {
             $strategyKey = $request->input('strategy');
@@ -138,6 +143,12 @@ class BacktestingController extends Controller
 
                     if ($response->successful()) {
                         $result = $response->json('result');
+                        // Guardar el payload completo (sin walk_forward/n_windows/monthly_breakdown,
+                        // solo los params de la estrategia) para poder implementar esta config tal cual.
+                        $implementParams = collect($payload)->except([
+                            'strategy', 'symbol', 'interval', 'walk_forward', 'n_windows',
+                            'train_pct', 'monthly_breakdown', 'initial_balance',
+                        ])->filter(fn ($v) => $v !== null)->toArray();
                     } else {
                         $error = 'Error del motor: ' . $response->body();
                     }
@@ -149,13 +160,36 @@ class BacktestingController extends Controller
         }
 
         return view('backtesting.index', [
-            'strategies'   => self::STRATEGY_OPTIONS,
-            'symbols'      => $symbols,
-            'intervals'    => $intervals,
-            'paperConfigs' => $paperConfigs,
-            'result'       => $result,
-            'error'        => $error,
-            'old'          => $request->all(),
+            'strategies'             => self::STRATEGY_OPTIONS,
+            'symbols'                => $symbols,
+            'intervals'              => $intervals,
+            'paperConfigs'           => $paperConfigs,
+            'paperConfigsForPreload' => $paperConfigsForPreload,
+            'result'                 => $result,
+            'implementParams'        => $implementParams,
+            'error'                  => $error,
+            'old'                    => $request->all(),
+        ]);
+    }
+
+    /**
+     * Endpoint AJAX: devuelve los parametros exactos de una config activa de
+     * Paper Trading, para precargar el formulario de Backtesting al re-testear.
+     */
+    public function retest(PaperStrategyConfig $config)
+    {
+        Gate::authorize('viewAnalysisTools');
+
+        $strategyName = PaperStrategyConfig::classAndModeToStrategyName(
+            $config->strategy_class,
+            $config->params['mode'] ?? null
+        );
+
+        return response()->json([
+            'strategy_name' => $strategyName,
+            'symbol'        => $config->symbol,
+            'interval'      => $config->interval,
+            'params'        => $config->params,
         ]);
     }
 

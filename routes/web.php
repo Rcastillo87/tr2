@@ -44,19 +44,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
         Route::patch('/{config}/toggle', [CollectorConfigController::class, 'toggleActive'])->name('toggle');
     });
-    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
-        Route::get('/', [PaperStrategyConfigController::class, 'index'])->name('index');
-        Route::get('/{config}/edit', [PaperStrategyConfigController::class, 'edit'])->name('edit');
-        Route::patch('/{config}', [PaperStrategyConfigController::class, 'update'])->name('update');
-        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
-    });
-
-    // Backtesting: admin y consultor
+    // Backtesting: admin y consultor (incluye gestion de estrategias paper trading)
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/', [BacktestingController::class, 'index'])->name('index');
         Route::post('/', [BacktestingController::class, 'index'])->name('run');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel', [BacktestingController::class, 'exportExcel'])->name('export-excel');
+        Route::get('/retest/{config}', [BacktestingController::class, 'retest'])->name('retest');
+    });
+
+    // Gestion de configs de paper trading: solo admin, solo acciones (sin vista propia, viven en /backtesting)
+    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
+        Route::post('/implement', [PaperStrategyConfigController::class, 'implement'])->name('implement');
+        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
+        Route::delete('/{config}', [PaperStrategyConfigController::class, 'destroy'])->name('destroy');
     });
 
     // Gestion de usuarios: solo admin
