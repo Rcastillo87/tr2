@@ -36,13 +36,28 @@ class VwapStrategy(BaseStrategy):
         self.vwap_std_filter  = params.get('vwap_std_filter', 1.5)
         self.zone_bars        = params.get('zone_bars', 4)
 
-        # Filtro de tendencia macro (replica E-13 original): solo opera
-        # reversiones a favor de la tendencia H4 (EMA50). Por defecto activo
-        # en modo reversion, ya que es lo que diferenciaba a E-13 real (58% WR)
-        # de nuestra primera réplica sin este filtro (~22% WR en backtest).
+        # Filtro de tendencia macro (replica E-13 original, tambien aplicable
+        # a trend_follow): bloquea señales contra la tendencia mayor H4.
+        # Activo por defecto en reversion; en trend_follow es opcional (False
+        # por defecto) ya que normalmente trend_follow ya sigue la EMA de
+        # tendencia local, pero se puede activar para filtrar pullbacks falsos.
         self.macro_trend_filter  = params.get('macro_trend_filter', self.mode == 'reversion')
         self.macro_trend_period  = params.get('macro_trend_period', 50)
         self.macro_trend_interval_hours = params.get('macro_trend_interval_hours', 4)  # H4
+
+        # Filtro de persistencia de tendencia (solo trend_follow)
+        self.trend_persistence_filter = params.get('trend_persistence_filter', False)
+        self.trend_persistence_bars   = params.get('trend_persistence_bars', 4)
+        self.trend_adx_threshold      = params.get('trend_adx_threshold', 25)
+
+        # SL dinamico en zona ADX dudosa (solo trend_follow): si el ADX al
+        # momento de entrar esta en la "zona gris" (entre adx_threshold y
+        # adx_strong_threshold), usa un SL mas ajustado (sl_pct_weak_zone) en
+        # vez del sl_pct normal, reduciendo el riesgo cuando la tendencia es
+        # debil/dudosa en vez de bloquear la entrada por completo.
+        self.dynamic_sl_filter      = params.get('dynamic_sl_filter', False)
+        self.adx_strong_threshold   = params.get('adx_strong_threshold', 30)
+        self.sl_pct_weak_zone       = params.get('sl_pct_weak_zone', 0.7)
 
         # allowed_regimes se puede sobreescribir desde params
         if 'allowed_regimes' in params:
@@ -132,6 +147,39 @@ class VwapStrategy(BaseStrategy):
 
         return df.reset_index(drop=True)
 
+    def _calculate_trend_persistence(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calcula si el ADX ha estado por encima del umbral de forma sostenida
+        durante trend_persistence_bars velas consecutivas. Marca la columna
+        'trend_persistent' = True solo cuando se cumple esa condicion.
+        """
+        high, low, close = df['high'], df['low'], df['close']
+        prev_high, prev_low, prev_close = high.shift(1), low.shift(1), close.shift(1)
+
+        plus_dm  = (high - prev_high).clip(lower=0)
+        minus_dm = (prev_low - low).clip(lower=0)
+        plus_dm  = plus_dm.where(plus_dm > minus_dm, 0.0)
+        minus_dm = minus_dm.where(minus_dm > plus_dm, 0.0)
+
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1/14, adjust=False).mean()
+
+        plus_di  = 100 * (plus_dm.ewm(alpha=1/14, adjust=False).mean() / atr)
+        minus_di = 100 * (minus_dm.ewm(alpha=1/14, adjust=False).mean() / atr)
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+        adx = dx.ewm(alpha=1/14, adjust=False).mean()
+
+        df['_adx'] = adx
+        above_threshold = adx > self.trend_adx_threshold
+
+        # Persistente = True si las ultimas N velas (incluyendo la actual) estuvieron todas por encima
+        df['trend_persistent'] = above_threshold.rolling(self.trend_persistence_bars).min().fillna(0).astype(bool)
+
+        return df
+
     # ─────────────────────────────────────────────
     # Prepare
     # ─────────────────────────────────────────────
@@ -145,6 +193,12 @@ class VwapStrategy(BaseStrategy):
             df['vwap_upper'] = df['vwap'] + (self.vwap_std_filter * df['vwap_std_dev'])
             df['vwap_lower'] = df['vwap'] - (self.vwap_std_filter * df['vwap_std_dev'])
             df['ema_trend']  = df['close'].ewm(span=self.ema_trend_period, adjust=False).mean()
+
+            if self.trend_persistence_filter or self.dynamic_sl_filter:
+                df = self._calculate_trend_persistence(df)
+
+            if self.macro_trend_filter:
+                df = self._calculate_macro_trend(df)
 
         elif self.mode == 'reversion':
             df = self._calculate_vwap_std_rolling(df)
@@ -174,6 +228,7 @@ class VwapStrategy(BaseStrategy):
         """
         df = df.copy()
         df['signal'] = 0
+        df['signal_sl_pct'] = self.sl_pct  # default: sl_pct normal, sobreescrito si dynamic_sl_filter activo
 
         for i in range(1, len(df)):
             prev = df.iloc[i - 1]
@@ -182,17 +237,50 @@ class VwapStrategy(BaseStrategy):
             trend_up   = curr['close'] > curr['ema_trend']
             trend_down = curr['close'] < curr['ema_trend']
 
+            # Filtro de persistencia: si esta activo, exige que la tendencia
+            # (ADX > umbral) se haya mantenido N velas consecutivas
+            if self.trend_persistence_filter and 'trend_persistent' in df.columns:
+                if not curr.get('trend_persistent', False):
+                    continue
+
+            # Filtro de tendencia macro H4: bloquea SHORT si la macro es BULLISH,
+            # bloquea LONG si la macro es BEARISH (evita pullbacks falsos)
+            macro_trend = curr.get('macro_trend') if self.macro_trend_filter and 'macro_trend' in df.columns else None
+
             if (trend_up and
                     prev['close'] <= prev['vwap'] and
                     curr['close'] > curr['vwap']):
+                if macro_trend == 'BEARISH':
+                    continue
                 df.at[df.index[i], 'signal'] = 1
+                if self.dynamic_sl_filter:
+                    df.at[df.index[i], 'signal_sl_pct'] = self._sl_for_adx_zone(curr.get('_adx'))
 
             elif (trend_down and
                     prev['close'] >= prev['vwap'] and
                     curr['close'] < curr['vwap']):
+                if macro_trend == 'BULLISH':
+                    continue
                 df.at[df.index[i], 'signal'] = -1
+                if self.dynamic_sl_filter:
+                    df.at[df.index[i], 'signal_sl_pct'] = self._sl_for_adx_zone(curr.get('_adx'))
 
         return df
+
+    def _sl_for_adx_zone(self, adx_value) -> float:
+        """
+        Determina el SL a usar segun la fuerza del ADX al momento de la entrada.
+        Zona debil (adx_threshold <= ADX < adx_strong_threshold): usa sl_pct_weak_zone (mas ajustado).
+        Zona fuerte (ADX >= adx_strong_threshold): usa el sl_pct normal.
+        Si ADX no disponible, usa el sl_pct normal por seguridad.
+        """
+        if adx_value is None or pd.isna(adx_value):
+            return self.sl_pct
+
+        if self.trend_adx_threshold <= adx_value < self.adx_strong_threshold:
+            return self.sl_pct_weak_zone
+
+        return self.sl_pct
 
     def _signals_reversion(self, df: pd.DataFrame) -> pd.DataFrame:
         """

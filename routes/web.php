@@ -55,6 +55,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/', [BacktestingController::class, 'index'])->name('index');
         Route::post('/', [BacktestingController::class, 'index'])->name('run');
+        Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
+        Route::post('/export-excel', [BacktestingController::class, 'exportExcel'])->name('export-excel');
     });
 
     // Gestion de usuarios: solo admin

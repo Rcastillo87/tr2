@@ -10,8 +10,6 @@ use App\Models\PaperStrategyConfig;
 
 class BacktestingController extends Controller
 {
-    // Clases genericas de estrategia disponibles para backtesting
-    // Cada una mapea al nombre que el motor Python reconoce en backtest.py
     const STRATEGY_OPTIONS = [
         'VWAP Tendencia'         => ['class' => 'VwapStrategy',          'mode' => 'trend_follow', 'label' => 'VWAP Tendencia (trend follow)'],
         'VWAP Reversión'         => ['class' => 'VwapStrategy',          'mode' => 'reversion',    'label' => 'VWAP Reversión (E-13)'],
@@ -24,11 +22,9 @@ class BacktestingController extends Controller
         $result = null;
         $error  = null;
 
-        // Simbolos e intervalos activos desde DB
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
 
-        // Configs activas de paper trading para precarga de params via JS
         $paperConfigs = PaperStrategyConfig::active()
             ->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])
             ->map(function ($c) {
@@ -49,7 +45,6 @@ class BacktestingController extends Controller
             if (!$strategyDef) {
                 $error = "Estrategia no reconocida: {$strategyKey}";
             } else {
-                // Nombre que el motor Python reconoce en su strategy_map
                 $strategyName = match($strategyDef['class']) {
                     'VwapStrategy' => $strategyDef['mode'] === 'trend_follow'
                         ? 'VWAP Tendencia'
@@ -64,7 +59,7 @@ class BacktestingController extends Controller
                     'symbol'             => $request->input('symbol'),
                     'interval'           => $request->input('interval', '60'),
                     'initial_balance'    => 10000,
-                    'risk_per_trade_pct' => 1.0,
+                    'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
                     'sl_pct'             => (float) $request->input('sl_pct', 1.5),
                     'tp_pct'             => (float) $request->input('tp_pct', 3.0),
                     'be_pct'             => (float) $request->input('be_pct', 2.0),
@@ -72,17 +67,71 @@ class BacktestingController extends Controller
                     'regime_filter'      => $request->boolean('regime_filter', true),
                     'walk_forward'       => true,
                     'n_windows'          => 5,
+                    'monthly_breakdown'  => true,
                 ];
 
-                // Si la estrategia tiene modo (VwapStrategy), incluirlo en extra_params
                 if ($strategyDef['mode']) {
                     $payload['mode'] = $strategyDef['mode'];
+                }
+
+                // Filtro de tendencia macro H4 (opcional, aplicable a ambos modos VWAP)
+                if ($request->has('macro_trend_filter')) {
+                    $payload['macro_trend_filter'] = $request->boolean('macro_trend_filter');
+                }
+
+                // TP escalonado (TP2-TP4) — solo se incluyen si el usuario los activo
+                foreach (['tp2_pct', 'tp3_pct', 'tp4_pct'] as $tpField) {
+                    $value = $request->input($tpField);
+                    if ($value !== null && $value !== '') {
+                        $payload[$tpField] = (float) $value;
+                    }
+                }
+
+                // Rango de fechas opcional
+                if ($request->filled('start_date')) {
+                    $payload['start_date'] = $request->input('start_date');
+                }
+                if ($request->filled('end_date')) {
+                    $payload['end_date'] = $request->input('end_date');
+                }
+
+                // Trailing Stop
+                $trailingMode = $request->input('trailing_mode');
+                if ($trailingMode && $trailingMode !== 'none') {
+                    $payload['trailing_mode'] = $trailingMode;
+
+                    if ($trailingMode === 'fixed') {
+                        $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
+                    }
+
+                    if ($trailingMode === 'stepped') {
+                        $steps = [];
+                        $gains = $request->input('trailing_step_gain', []);
+                        $sls   = $request->input('trailing_step_sl', []);
+                        foreach ($gains as $idx => $gain) {
+                            if ($gain !== null && $gain !== '' && isset($sls[$idx]) && $sls[$idx] !== '') {
+                                $steps[] = [(float) $gain, (float) $sls[$idx]];
+                            }
+                        }
+                        $payload['trailing_steps'] = $steps;
+                    }
+                }
+
+                // Proteccion por volatilidad
+                $volMode = $request->input('volatility_protection_mode');
+                if ($volMode && $volMode !== 'none') {
+                    $payload['volatility_protection_mode'] = $volMode;
+                    $payload['volatility_atr_multiplier']  = (float) $request->input('volatility_atr_multiplier', 2.5);
+
+                    if ($volMode === 'widen') {
+                        $payload['volatility_widen_pct'] = (float) $request->input('volatility_widen_pct', 1.0);
+                    }
                 }
 
                 try {
                     $response = Http::withHeaders([
                         'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-                    ])->timeout(120)->post(
+                    ])->timeout(180)->post(
                         config('trading.python_engine_url') . '/v1/backtest/run',
                         $payload
                     );
@@ -108,5 +157,52 @@ class BacktestingController extends Controller
             'error'        => $error,
             'old'          => $request->all(),
         ]);
+    }
+
+    /**
+     * Endpoint AJAX: devuelve el rango de fechas disponible para un simbolo/intervalo,
+     * usado para calibrar el selector de meses en el formulario.
+     */
+    public function dataRange(string $symbol, string $interval)
+    {
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(10)->get(
+                config('trading.python_engine_url') . "/v1/backtest/data-range/{$symbol}/{$interval}"
+            );
+
+            if ($response->successful()) {
+                return response()->json($response->json('data'));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Backtesting: error obteniendo rango de fechas — ' . $e->getMessage());
+        }
+
+        return response()->json(null);
+    }
+
+    /**
+     * Exporta el ultimo resultado de backtest (desglose mensual) a Excel.
+     * Recibe el resultado completo como JSON en el request (enviado por el formulario
+     * tras correr el backtest, para no tener que re-ejecutar el backtest).
+     */
+    public function exportExcel(Request $request)
+    {
+        $request->validate([
+            'result' => ['required', 'string'],
+        ]);
+
+        $result = json_decode($request->input('result'), true);
+
+        if (!$result || empty($result['monthly_breakdown'])) {
+            return back()->withErrors(['result' => 'No hay datos de desglose mensual para exportar.']);
+        }
+
+        $strategy = $result['strategy'] ?? 'backtest';
+        $symbol   = $result['symbol'] ?? '';
+        $filename = 'backtest_' . str_replace(' ', '_', $strategy) . '_' . $symbol . '_' . now()->format('Ymd_His') . '.xlsx';
+
+        return \App\Exports\BacktestMonthlyExport::download($result, $filename);
     }
 }
