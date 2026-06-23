@@ -14,7 +14,8 @@ class DashboardController extends Controller
 
         // Resumen consolidado por grupo de estrategia (igual que paper-trading/index)
         $groups = [
-            'VWAP'                   => ['VWAP Tendencia', 'VWAP Reversión'],
+            'VWAP Tendencia'         => ['VWAP Tendencia'],
+            'VWAP Reversión'         => ['VWAP Reversión'],
             'Reversión a la Media'   => ['Reversión a la Media'],
             'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
         ];
@@ -22,7 +23,8 @@ class DashboardController extends Controller
         $startOfMonth = now()->startOfMonth();
         $endOfMonth   = now()->endOfMonth();
         $legacyMap = [
-            'VWAP'                   => ['VWAP Intradía'],
+            'VWAP Tendencia'         => ['VWAP Intradía'],
+            'VWAP Reversión'         => [],
             'Reversión a la Media'   => ['Reversión a la Media'],
             'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
         ];

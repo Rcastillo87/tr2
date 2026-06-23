@@ -96,6 +96,8 @@ class PaperStrategyConfigController extends Controller
      */
     public function implement(Request $request)
     {
+\Log::info('implement called', $request->all());
+
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([

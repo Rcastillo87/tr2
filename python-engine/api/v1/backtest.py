@@ -231,11 +231,17 @@ async def run_backtest(request: BacktestRequest):
             all_trades = []
             # WalkForwardValidator no expone trades crudos directamente en result,
             # se reconstruyen corriendo el engine simple sobre todo el rango para el desglose mensual
-            if request.monthly_breakdown:
+        if request.monthly_breakdown:
+                _regime_data = WalkForwardValidator(
+                    strategy=strategy, df=df,
+                    initial_balance=request.initial_balance,
+                    risk_per_trade_pct=request.risk_per_trade_pct,
+                )._build_regime_data(df)
                 engine_full = BacktestEngine(
                     strategy=strategy, df=df,
                     initial_balance=request.initial_balance,
                     risk_per_trade_pct=request.risk_per_trade_pct,
+                    regime_data=_regime_data,
                 )
                 full_result = engine_full.run()
                 result['monthly_breakdown'] = build_monthly_breakdown(

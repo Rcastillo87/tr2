@@ -44,10 +44,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
         Route::patch('/{config}/toggle', [CollectorConfigController::class, 'toggleActive'])->name('toggle');
     });
-    // Backtesting: admin y consultor (incluye gestion de estrategias paper trading)
+    // Backtesting: admin y consultor
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/', [BacktestingController::class, 'index'])->name('index');
-        Route::post('/', [BacktestingController::class, 'index'])->name('run');
+        Route::get('/run', [BacktestingController::class, 'run'])->name('run');
+        Route::post('/run', [BacktestingController::class, 'run'])->name('execute');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel', [BacktestingController::class, 'exportExcel'])->name('export-excel');
         Route::get('/retest/{config}', [BacktestingController::class, 'retest'])->name('retest');

@@ -18,20 +18,37 @@ class BacktestingController extends Controller
         'Tendencia EMA/Donchian' => ['class' => 'EmaDonchianStrategy',   'mode' => null,           'label' => 'Tendencia EMA/Donchian'],
     ];
 
-    public function index(Request $request)
+    /**
+     * Vista 1: Lista de estrategias activas en Paper Trading.
+     * Punto de entrada al módulo de Backtesting.
+     */
+    public function index()
     {
         Gate::authorize('viewAnalysisTools');
 
-        $result = null;
-        $error  = null;
+        $paperConfigs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
+
+        return view('backtesting.index', compact('paperConfigs'));
+    }
+
+    /**
+     * Vista 2: Formulario de configuración + resultados del backtest.
+     * GET: muestra el formulario vacío.
+     * POST: ejecuta el backtest y muestra resultados.
+     */
+    public function run(Request $request)
+    {
+        Gate::authorize('viewAnalysisTools');
+
+        $result          = null;
+        $error           = null;
         $implementParams = null;
 
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
 
-        $paperConfigs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
-
-        $paperConfigsForPreload = $paperConfigs->where('active', true)
+        $paperConfigsForPreload = PaperStrategyConfig::active()
+            ->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])
             ->map(function ($c) {
                 $params = is_array($c->params) ? $c->params : json_decode($c->params, true);
                 return [
@@ -69,7 +86,7 @@ class BacktestingController extends Controller
                     'tp_pct'             => (float) $request->input('tp_pct', 3.0),
                     'be_pct'             => (float) $request->input('be_pct', 2.0),
                     'max_duration'       => (int) $request->input('max_duration', 24),
-                    'regime_filter'      => $request->boolean('regime_filter', true),
+                    'regime_filter'      => $request->has('regime_filter'), // fix: checkbox desmarcado = false
                     'walk_forward'       => true,
                     'n_windows'          => 5,
                     'monthly_breakdown'  => true,
@@ -79,12 +96,10 @@ class BacktestingController extends Controller
                     $payload['mode'] = $strategyDef['mode'];
                 }
 
-                // Filtro de tendencia macro H4 (opcional, aplicable a ambos modos VWAP)
                 if ($request->has('macro_trend_filter')) {
-                    $payload['macro_trend_filter'] = $request->boolean('macro_trend_filter');
+                    $payload['macro_trend_filter'] = true;
                 }
 
-                // TP escalonado (TP2-TP4) — solo se incluyen si el usuario los activo
                 foreach (['tp2_pct', 'tp3_pct', 'tp4_pct'] as $tpField) {
                     $value = $request->input($tpField);
                     if ($value !== null && $value !== '') {
@@ -92,29 +107,21 @@ class BacktestingController extends Controller
                     }
                 }
 
-                // Rango de fechas opcional
-                if ($request->filled('start_date')) {
-                    $payload['start_date'] = $request->input('start_date');
-                }
-                if ($request->filled('end_date')) {
-                    $payload['end_date'] = $request->input('end_date');
-                }
+                if ($request->filled('start_date')) $payload['start_date'] = $request->input('start_date');
+                if ($request->filled('end_date'))   $payload['end_date']   = $request->input('end_date');
 
-                // Trailing Stop
                 $trailingMode = $request->input('trailing_mode');
                 if ($trailingMode && $trailingMode !== 'none') {
                     $payload['trailing_mode'] = $trailingMode;
-
                     if ($trailingMode === 'fixed') {
                         $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
                     }
-
                     if ($trailingMode === 'stepped') {
                         $steps = [];
                         $gains = $request->input('trailing_step_gain', []);
                         $sls   = $request->input('trailing_step_sl', []);
                         foreach ($gains as $idx => $gain) {
-                            if ($gain !== null && $gain !== '' && isset($sls[$idx]) && $sls[$idx] !== '') {
+                            if ($gain !== '' && isset($sls[$idx]) && $sls[$idx] !== '') {
                                 $steps[] = [(float) $gain, (float) $sls[$idx]];
                             }
                         }
@@ -122,12 +129,10 @@ class BacktestingController extends Controller
                     }
                 }
 
-                // Proteccion por volatilidad
                 $volMode = $request->input('volatility_protection_mode');
                 if ($volMode && $volMode !== 'none') {
                     $payload['volatility_protection_mode'] = $volMode;
                     $payload['volatility_atr_multiplier']  = (float) $request->input('volatility_atr_multiplier', 2.5);
-
                     if ($volMode === 'widen') {
                         $payload['volatility_widen_pct'] = (float) $request->input('volatility_widen_pct', 1.0);
                     }
@@ -143,8 +148,6 @@ class BacktestingController extends Controller
 
                     if ($response->successful()) {
                         $result = $response->json('result');
-                        // Guardar el payload completo (sin walk_forward/n_windows/monthly_breakdown,
-                        // solo los params de la estrategia) para poder implementar esta config tal cual.
                         $implementParams = collect($payload)->except([
                             'strategy', 'symbol', 'interval', 'walk_forward', 'n_windows',
                             'train_pct', 'monthly_breakdown', 'initial_balance',
@@ -159,11 +162,10 @@ class BacktestingController extends Controller
             }
         }
 
-        return view('backtesting.index', [
+        return view('backtesting.run', [
             'strategies'             => self::STRATEGY_OPTIONS,
             'symbols'                => $symbols,
             'intervals'              => $intervals,
-            'paperConfigs'           => $paperConfigs,
             'paperConfigsForPreload' => $paperConfigsForPreload,
             'result'                 => $result,
             'implementParams'        => $implementParams,

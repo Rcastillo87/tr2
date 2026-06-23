@@ -89,17 +89,31 @@ class PaperStrategyConfig extends Model
 
         $displayName = $displayNameOverride ?: "{$strategyName} — {$symbol} {$intervalLabel}";
 
-        return self::updateOrCreate(
-            [
-                'strategy_class' => $map['class'],
-                'symbol'         => $symbol,
-                'interval'       => $interval,
-            ],
-            [
+        // Buscar config existente con misma clase+simbolo+intervalo+modo
+        // (el mode es parte de la identidad para VwapStrategy, donde
+        // "VWAP Tendencia" y "VWAP Reversión" son distintas configs)
+        $existing = self::where('strategy_class', $map['class'])
+            ->where('symbol', $symbol)
+            ->where('interval', $interval)
+            ->when($map['mode'], fn ($q) => $q->where('params->mode', $map['mode']))
+            ->first();
+
+        if ($existing) {
+            $existing->update([
                 'display_name' => $displayName,
                 'params'       => $params,
                 'active'       => true,
-            ]
-        );
+            ]);
+            return $existing->fresh();
+        }
+
+        return self::create([
+            'display_name'   => $displayName,
+            'strategy_class' => $map['class'],
+            'symbol'         => $symbol,
+            'interval'       => $interval,
+            'params'         => $params,
+            'active'         => true,
+        ]);
     }
 }

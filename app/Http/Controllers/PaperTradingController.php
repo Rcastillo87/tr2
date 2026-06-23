@@ -11,13 +11,14 @@ class PaperTradingController extends Controller
 {
     // Nombres legacy (sistema anterior) mapeados a cada grupo
 const LEGACY_NAMES = [
-    'VWAP'                   => ['VWAP Intradía'],
+    'VWAP Tendencia'         => ['VWAP Intradía'],
+    'VWAP Reversión'         => [],
     'Reversión a la Media'   => ['Reversión a la Media'],
     'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
 ];
-
 const STRATEGY_GROUPS = [
-    'VWAP'                   => ['VWAP Tendencia', 'VWAP Reversión'],
+    'VWAP Tendencia'         => ['VWAP Tendencia'],
+    'VWAP Reversión'         => ['VWAP Reversión'],
     'Reversión a la Media'   => ['Reversión a la Media'],
     'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
 ];
