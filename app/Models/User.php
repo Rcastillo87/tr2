@@ -95,6 +95,6 @@ class User extends Authenticatable
      */
     public function canCreateDemoAccounts(): bool
     {
-        return $this->isAdmin();
+        return $this->isAdmin() || config('trading.allow_investor_demo_accounts', false);
     }
 }

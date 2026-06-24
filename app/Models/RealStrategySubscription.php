@@ -14,8 +14,10 @@ class RealStrategySubscription extends Model
     protected $fillable = [
         'user_id',
         'broker_account_id',
+        'paper_strategy_config_id',
         'strategy',
         'symbol',
+        'interval',
         'status',
     ];
 
@@ -29,9 +31,20 @@ class RealStrategySubscription extends Model
         return $this->belongsTo(BrokerAccount::class);
     }
 
+    public function paperStrategyConfig(): BelongsTo
+    {
+        return $this->belongsTo(PaperStrategyConfig::class);
+    }
+
     public function trades(): HasMany
     {
         return $this->hasMany(RealTrade::class, 'subscription_id');
+    }
+
+    public function openTrades(): HasMany
+    {
+        return $this->hasMany(RealTrade::class, 'subscription_id')
+            ->whereIn('status', ['open', 'pending_open', 'pending_close']);
     }
 
     public function isActive(): bool
@@ -47,5 +60,12 @@ class RealStrategySubscription extends Model
     public function scopeForUser($query, int $userId)
     {
         return $query->where('user_id', $userId);
+    }
+
+    public function pauseIfConfigInactive(): void
+    {
+        if ($this->paperStrategyConfig && !$this->paperStrategyConfig->active) {
+            $this->update(['status' => 'paused']);
+        }
     }
 }

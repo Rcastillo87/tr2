@@ -6,6 +6,8 @@ use App\Http\Controllers\PaperTradingController;
 use App\Http\Controllers\BacktestingController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\BrokerAccountController;
+use App\Http\Controllers\TradingController;
+use App\Http\Controllers\RealStrategySubscriptionController;
 use App\Http\Controllers\PaperStrategyConfigController;
 use App\Http\Controllers\CollectorConfigController;
 use App\Http\Controllers\ProfileController;
@@ -68,14 +70,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // Trading real: admin e inversionista, cada uno gestiona sus propias cuentas
-    Route::middleware('can:viewRealTrading')->prefix('real-trading')->name('real-trading.')->group(function () {
-        Route::prefix('accounts')->name('accounts.')->group(function () {
-            Route::get('/', [BrokerAccountController::class, 'index'])->name('index');
-            Route::get('/create', [BrokerAccountController::class, 'create'])->name('create');
-            Route::post('/', [BrokerAccountController::class, 'store'])->name('store');
-            Route::patch('/{account}/toggle-status', [BrokerAccountController::class, 'toggleStatus'])->name('toggle-status');
-            Route::delete('/{account}', [BrokerAccountController::class, 'destroy'])->name('destroy');
-        });
+    Route::middleware('can:viewRealTrading')->prefix('trading')->name('trading.')->group(function () {
+        // Vista principal de operaciones
+        Route::get('/', [TradingController::class, 'index'])->name('index');
+        Route::get('/live-prices', [TradingController::class, 'livePrices'])->name('live-prices');
+
+        // Gestión de cuentas
+        Route::get('/accounts', [TradingController::class, 'accounts'])->name('accounts');
+        Route::post('/accounts', [BrokerAccountController::class, 'store'])->name('accounts.store');
+        Route::patch('/accounts/{account}/toggle-status', [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
+        Route::delete('/accounts/{account}', [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
+
+        // Suscripciones de estrategias por cuenta
+        Route::post('/accounts/{account}/subscriptions', [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
+        Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle', [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
+        Route::delete('/accounts/{account}/subscriptions/{subscription}', [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
     });
 
     // Perfil de usuario (Breeze)
