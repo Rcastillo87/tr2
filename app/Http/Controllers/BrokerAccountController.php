@@ -9,28 +9,6 @@ use Illuminate\Validation\Rule;
 
 class BrokerAccountController extends Controller
 {
-    public function index()
-    {
-        Gate::authorize('viewRealTrading');
-
-        $accounts = auth()->user()
-            ->brokerAccounts()
-            ->withCount('subscriptions')
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        return view('real-trading.accounts.index', [
-            'accounts' => $accounts,
-        ]);
-    }
-
-    public function create()
-    {
-        Gate::authorize('viewRealTrading');
-
-        return view('real-trading.accounts.create');
-    }
-
     public function store(Request $request)
     {
         Gate::authorize('viewRealTrading');
@@ -40,24 +18,38 @@ class BrokerAccountController extends Controller
         $allowedTypes = $user->canCreateDemoAccounts() ? ['real', 'demo'] : ['real'];
 
         $validated = $request->validate([
-            'broker' => ['required', 'string', 'max:50'],
+            'broker'       => ['required', 'string', 'max:50'],
             'account_type' => ['required', Rule::in($allowedTypes)],
-            'label' => ['required', 'string', 'max:100'],
-            'api_key' => ['required', 'string', 'min:10'],
-            'api_secret' => ['required', 'string', 'min:10'],
+            'api_key'      => ['required', 'string', 'min:10'],
+            'api_secret'   => ['required', 'string', 'min:10'],
         ]);
+
+        // Verificar unicidad broker + tipo con mensaje claro
+        $exists = BrokerAccount::where('user_id', $user->id)
+            ->where('broker', $validated['broker'])
+            ->where('account_type', $validated['account_type'])
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors([
+                'account_type' => 'Ya tienes una cuenta ' . ucfirst($validated['account_type']) . ' de ' . ucfirst($validated['broker']) . '. Solo se permite una por tipo.',
+            ]);
+        }
+
+        // Label autogenerado: "Bybit Real" o "Bybit Demo"
+        $label = ucfirst($validated['broker']) . ' ' . ucfirst($validated['account_type']);
 
         $user->brokerAccounts()->create([
-            'broker' => $validated['broker'],
+            'broker'       => $validated['broker'],
             'account_type' => $validated['account_type'],
-            'label' => $validated['label'],
-            'api_key' => $validated['api_key'],
-            'api_secret' => $validated['api_secret'],
-            'status' => 'active',
+            'label'        => $label,
+            'api_key'      => $validated['api_key'],
+            'api_secret'   => $validated['api_secret'],
+            'status'       => 'active',
         ]);
 
-        return redirect()->route('real-trading.accounts.index')
-            ->with('status', 'Cuenta agregada correctamente.');
+        return redirect()->route('trading.accounts')
+            ->with('status', "Cuenta {$label} agregada correctamente.");
     }
 
     public function toggleStatus(BrokerAccount $account)
@@ -71,14 +63,13 @@ class BrokerAccountController extends Controller
         $account->status = $account->status === 'active' ? 'paused' : 'active';
         $account->save();
 
-        // Si se pausa la cuenta, pausar tambien sus suscripciones activas
         if ($account->status === 'paused') {
             $account->subscriptions()->where('status', 'active')->update(['status' => 'paused']);
         }
 
         return back()->with('status', $account->status === 'active'
-            ? 'Cuenta activada.'
-            : 'Cuenta pausada. Sus suscripciones fueron pausadas.');
+            ? "Cuenta {$account->label} activada."
+            : "Cuenta {$account->label} pausada. Sus suscripciones fueron pausadas.");
     }
 
     public function destroy(BrokerAccount $account)
@@ -90,12 +81,15 @@ class BrokerAccountController extends Controller
         }
 
         if ($account->subscriptions()->exists()) {
-            return back()->withErrors(['account' => 'No puedes eliminar una cuenta con suscripciones asociadas. Elimina o pausa las suscripciones primero.']);
+            return back()->withErrors([
+                'account' => 'No puedes eliminar una cuenta con suscripciones. Elimínalas primero.',
+            ]);
         }
 
+        $label = $account->label;
         $account->delete();
 
-        return redirect()->route('real-trading.accounts.index')
-            ->with('status', 'Cuenta eliminada.');
+        return redirect()->route('trading.accounts')
+            ->with('status', "Cuenta {$label} eliminada.");
     }
 }

@@ -54,8 +54,42 @@ class RealStrategySubscriptionController extends Controller
     }
 
     /**
-     * Pausar / reactivar una suscripcion.
+     * Suscribir TODAS las estrategias activas de paper_strategy_configs a una cuenta.
      */
+    public function storeAll(Request $request, BrokerAccount $account)
+    {
+        Gate::authorize('viewRealTrading');
+
+        if ($account->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        $configs = PaperStrategyConfig::active()->get();
+        $added   = 0;
+
+        foreach ($configs as $config) {
+            $exists = RealStrategySubscription::where('broker_account_id', $account->id)
+                ->where('paper_strategy_config_id', $config->id)
+                ->exists();
+
+            if (!$exists) {
+                RealStrategySubscription::create([
+                    'user_id'                  => auth()->id(),
+                    'broker_account_id'        => $account->id,
+                    'paper_strategy_config_id' => $config->id,
+                    'strategy'                 => $config->display_name,
+                    'symbol'                   => $config->symbol,
+                    'interval'                 => $config->interval,
+                    'status'                   => 'active',
+                ]);
+                $added++;
+            }
+        }
+
+        return back()->with('status', $added > 0
+            ? "{$added} estrategia(s) añadidas a {$account->label}."
+            : "Todas las estrategias ya estaban suscritas a {$account->label}.");
+    }
     public function toggle(BrokerAccount $account, RealStrategySubscription $subscription)
     {
         Gate::authorize('viewRealTrading');

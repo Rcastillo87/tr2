@@ -83,6 +83,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Suscripciones de estrategias por cuenta
         Route::post('/accounts/{account}/subscriptions', [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
+        Route::post('/accounts/{account}/subscriptions/all', [RealStrategySubscriptionController::class, 'storeAll'])->name('subscriptions.store-all');
         Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle', [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
         Route::delete('/accounts/{account}/subscriptions/{subscription}', [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
     });

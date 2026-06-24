@@ -116,10 +116,22 @@ class TradingController extends Controller
             ->orderBy('display_name')
             ->get();
 
+        // IDs suscritos por cuenta (para excluirlos del modal)
+        $subscribedByAccount = $accounts->mapWithKeys(function ($account) {
+            return [
+                $account->id => $account->subscriptions
+                    ->pluck('paper_strategy_config_id')
+                    ->filter()
+                    ->values()
+                    ->toArray(),
+            ];
+        });
+
         return view('trading.accounts', [
             'accounts'         => $accounts,
-            'availableConfigs' => $availableConfigs,
-            'canCreateDemo'    => $user->canCreateDemoAccounts(),
+            'availableConfigs'    => $availableConfigs,
+            'subscribedByAccount' => $subscribedByAccount,
+            'canCreateDemo'       => $user->canCreateDemoAccounts(),
         ]);
     }
 
