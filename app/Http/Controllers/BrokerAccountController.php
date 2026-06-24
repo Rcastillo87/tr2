@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BrokerAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 
 class BrokerAccountController extends Controller
@@ -34,6 +35,36 @@ class BrokerAccountController extends Controller
             return back()->withErrors([
                 'account_type' => 'Ya tienes una cuenta ' . ucfirst($validated['account_type']) . ' de ' . ucfirst($validated['broker']) . '. Solo se permite una por tipo.',
             ]);
+        }
+
+        // Validar credenciales con el motor Python antes de guardar
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(15)->post(
+                config('trading.python_engine_url') . '/v1/broker/validate-credentials',
+                [
+                    'broker'       => $validated['broker'],
+                    'account_type' => $validated['account_type'],
+                    'api_key'      => $validated['api_key'],
+                    'api_secret'   => $validated['api_secret'],
+                ]
+            );
+
+            if (!$response->successful()) {
+                return back()->withErrors(['api_key' => 'No se pudo conectar al motor para validar las credenciales. Intenta de nuevo.']);
+            }
+
+            $result = $response->json();
+
+            if (!($result['valid'] ?? false)) {
+                return back()->withErrors([
+                    'api_key' => $result['message'] ?? 'Credenciales inválidas.',
+                ]);
+            }
+
+        } catch (\Throwable $e) {
+            return back()->withErrors(['api_key' => 'Error validando credenciales: ' . $e->getMessage()]);
         }
 
         // Label autogenerado: "Bybit Real" o "Bybit Demo"

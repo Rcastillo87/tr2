@@ -3,6 +3,12 @@
 @section('header', 'Trading — Cuentas')
 
 @section('content')
+<div class="mb-4">
+    <a href="{{ route('trading.index') }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">
+        ← Volver a Trading
+    </a>
+</div>
+
 <style>button, a[href] { cursor: pointer; }</style>
 
 @if (session('status'))
@@ -81,6 +87,33 @@
                     <span class="h-2 w-2 rounded-full" style="background: {{ $account->status === 'active' ? 'var(--color-profit)' : 'var(--color-loss)' }};"></span>
                     {{ $account->status === 'active' ? 'Activa' : 'Pausada' }}
                 </span>
+
+                {{-- Info de la API key --}}
+                @php $info = $accountInfos[$account->id] ?? null; @endphp
+                @if ($info && ($info['success'] ?? false))
+                    @php $days = $info['days_remaining'] ?? null; @endphp
+                    @if ($days !== null)
+                        <span class="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                              style="background: {{ $days <= 7 ? '#3A1A1C' : ($days <= 30 ? '#3A2E0E' : '#1A2A1A') }};
+                                     color: {{ $days <= 7 ? 'var(--color-loss)' : ($days <= 30 ? 'var(--color-neutral)' : 'var(--color-profit)') }};">
+                            {{ $days }}d restantes
+                        </span>
+                    @endif
+                    @if (!($info['can_trade'] ?? true))
+                        <span class="text-[10px] px-1.5 py-0.5 rounded"
+                              style="background:#3A1A1C; color:var(--color-loss);">
+                            ⚠ Sin permisos de trading
+                        </span>
+                    @endif
+                    @if ($info['read_only'] ?? false)
+                        <span class="text-[10px] px-1.5 py-0.5 rounded"
+                              style="background:#3A1A1C; color:var(--color-loss);">
+                            Solo lectura
+                        </span>
+                    @endif
+                @elseif ($info && !($info['success'] ?? true))
+                    <span class="text-[10px]" style="color:var(--color-text-muted);">API: {{ $info['message'] ?? 'Error' }}</span>
+                @endif
             </div>
             <div class="flex items-center gap-2">
                 <form method="POST" action="{{ route('trading.accounts.toggle-status', $account) }}"

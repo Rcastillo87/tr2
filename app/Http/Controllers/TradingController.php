@@ -95,6 +95,38 @@ class TradingController extends Controller
     }
 
     /**
+     * Obtiene info de una cuenta de broker (dias restantes API, permisos).
+     * Cache de 1 hora para no llamar a Bybit en cada carga.
+     */
+    private function getAccountInfo(BrokerAccount $account): ?array
+    {
+        $cacheKey = "broker_account_info:{$account->id}";
+
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 3600, function () use ($account) {
+            try {
+                $response = \Illuminate\Support\Facades\Http::withHeaders([
+                    'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+                ])->timeout(10)->post(
+                    config('trading.python_engine_url') . '/v1/broker/account-info',
+                    [
+                        'broker'       => $account->broker,
+                        'account_type' => $account->account_type,
+                        'api_key'      => $account->api_key,
+                        'api_secret'   => $account->api_secret,
+                    ]
+                );
+
+                if ($response->successful()) {
+                    return $response->json();
+                }
+            } catch (\Throwable $e) {
+                // Si falla no bloqueamos la carga de la página
+            }
+            return null;
+        });
+    }
+
+    /**
      * Vista de gestión de cuentas y suscripciones.
      */
     public function accounts(Request $request)
@@ -127,10 +159,16 @@ class TradingController extends Controller
             ];
         });
 
+        // Info de cada cuenta (días restantes API, permisos) con cache 1h
+        $accountInfos = $accounts->mapWithKeys(function ($account) {
+            return [$account->id => $this->getAccountInfo($account)];
+        });
+
         return view('trading.accounts', [
-            'accounts'         => $accounts,
+            'accounts'            => $accounts,
             'availableConfigs'    => $availableConfigs,
             'subscribedByAccount' => $subscribedByAccount,
+            'accountInfos'        => $accountInfos,
             'canCreateDemo'       => $user->canCreateDemoAccounts(),
         ]);
     }
