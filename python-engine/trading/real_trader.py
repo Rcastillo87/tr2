@@ -725,8 +725,21 @@ class RealTrader:
                     entry_time = entry_time.replace(tzinfo=timezone.utc)
                 hours_open = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
 
-                # Usar max_duration de la config (por defecto 24h)
+                # Usar max_duration de la config de la suscripcion (por defecto 24h)
                 max_duration = 24
+                async with self.pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT psc.params->>'max_duration' as max_duration
+                        FROM real_trades rt
+                        JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
+                        JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
+                        WHERE rt.id = $1
+                        """,
+                        trade['id']
+                    )
+                    if row and row['max_duration']:
+                        max_duration = int(row['max_duration'])
                 if hours_open >= max_duration:
                     exit_price, exit_reason = current_price, 'time_exit'
 
