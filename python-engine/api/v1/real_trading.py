@@ -122,6 +122,7 @@ async def real_tick(
                 sub_dict = sub.dict()
                 try:
                     strategy = instantiate_strategy(sub)
+                    sub_dict['broker'] = account.broker  # agregar broker desde account
                     result   = await trader.check_new_signals(sub_dict, strategy, client)
                     signal_results[sub.strategy] = result
                 except Exception as e:

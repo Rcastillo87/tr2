@@ -87,7 +87,7 @@ class BybitClient:
         """Firma para requests con body JSON (POST). Bybit V5: timestamp+key+recv+body."""
         timestamp   = str(int(time.time() * 1000))
         recv_window = '5000'
-        body_str    = json.dumps(body, separators=(',', ':'))
+        body_str    = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
 
         param_str = timestamp + self.api_key + recv_window + body_str
 
@@ -151,8 +151,8 @@ class BybitClient:
             logger.error(f"[BYBIT] get_balance exception: {e}")
             return None
 
-    async def get_min_qty(self, symbol: str) -> float:
-        """Obtiene el lot size minimo para un simbolo."""
+    async def get_min_qty(self, symbol: str) -> tuple[float, float]:
+        """Obtiene el lot size minimo y qty step para un simbolo."""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(
@@ -161,22 +161,20 @@ class BybitClient:
                 )
             data = r.json()
             if data.get('retCode') != 0:
-                return 0.001
+                return 0.001, 0.001
 
             items = data['result']['list']
             if not items:
-                return 0.001
+                return 0.001, 0.001
 
-            lot_size_filter = next(
-                (f for f in items[0].get('lotSizeFilter', {}).items()),
-                None
-            )
-            # Bybit devuelve minOrderQty en lotSizeFilter
             lot_filter = items[0].get('lotSizeFilter', {})
-            return float(lot_filter.get('minOrderQty', 0.001))
+            min_qty  = float(lot_filter.get('minOrderQty', 0.001))
+            qty_step = float(lot_filter.get('qtyStep', min_qty))
+            logger.info(f"[BYBIT] {symbol} minQty={min_qty} qtyStep={qty_step}")
+            return min_qty, qty_step
 
         except Exception:
-            return 0.001
+            return 0.001, 0.001
 
     async def place_market_order(self, symbol: str, side: str, qty: float) -> dict | None:
         """
@@ -198,7 +196,7 @@ class BybitClient:
                 async with httpx.AsyncClient(timeout=15) as client:
                     r = await client.post(
                         f'{self.base_url}/v5/order/create',
-                        json=body,
+                        content=json.dumps(body, separators=(',', ':'), ensure_ascii=True).encode(),
                         headers=headers,
                     )
                 data = r.json()
@@ -356,15 +354,12 @@ class RealTrader:
     async def log_audit(self, trade_id: int, action: str, data: dict):
         """Agrega entrada al audit_log del trade."""
         async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
+            existing = row['audit_log'] if row and row['audit_log'] else []
+            existing.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
             await conn.execute(
-                """
-                UPDATE real_trades
-                SET audit_log = COALESCE(audit_log, '[]'::jsonb) || $1::jsonb,
-                    updated_at = now()
-                WHERE id = $2
-                """,
-                json.dumps([{'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data}]),
-                trade_id
+                "UPDATE real_trades SET audit_log = $1, updated_at = now() WHERE id = $2",
+                json.dumps(existing), trade_id
             )
 
     # ─────────────────────────────────────────────
@@ -449,10 +444,18 @@ class RealTrader:
             logger.warning(f"[REAL] Tamaño calculado <= 0 para {symbol}")
             return False
 
-        # 4. Verificar lot size minimo
-        min_qty = await client.get_min_qty(symbol)
+        # 4. Verificar lot size minimo y redondear al step size
+        min_qty, qty_step = await client.get_min_qty(symbol)
         if size < min_qty:
             logger.warning(f"[REAL] Tamaño {size} < minimo {min_qty} para {symbol}")
+            return False
+        # Redondear al step size (ej. SOLUSDT = 0.1, BTCUSDT = 0.001)
+        if qty_step > 0:
+            import math
+            decimals = max(0, -int(math.floor(math.log10(qty_step))))
+            size = round(math.floor(size / qty_step) * qty_step, decimals)
+        if size <= 0:
+            logger.warning(f"[REAL] Tamaño tras redondeo <= 0 para {symbol}")
             return False
 
         # 5. Crear registro en pending_open ANTES de enviar a Bybit
