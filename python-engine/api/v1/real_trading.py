@@ -140,9 +140,65 @@ async def real_tick(
 
 @router.post('/real/reconcile')
 async def reconcile(
+    request: RealTickRequest,
     x_internal_api_key: str = Header(None, alias='X-Internal-API-Key'),
 ):
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    return {'status': 'ok', 'message': 'Reconciliacion requiere payload con credenciales — usar RealTradingTickJob'}
+    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5)
+    trader  = RealTrader(pool)
+    results = {'reconciled': [], 'orphaned': [], 'ok': []}
+
+    try:
+        for account in request.accounts:
+            client = BybitClient(
+                api_key      = account.api_key,
+                api_secret   = account.api_secret,
+                account_type = account.account_type,
+            )
+
+            open_trades = await trader.get_open_trades(account.id)
+
+            for trade in open_trades:
+                symbol   = trade['symbol']
+                position = await client.get_open_position(symbol)
+
+                if not position:
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            UPDATE real_trades
+                            SET status = 'closed',
+                                exit_reason = 'reconciled_sl_tp_bybit',
+                                exit_time = now(), updated_at = now()
+                            WHERE id = $1
+                            """,
+                            trade['id']
+                        )
+                    results['reconciled'].append({
+                        'trade_id': trade['id'],
+                        'symbol':   symbol,
+                        'reason':   'cerrada en Bybit mientras servidor caido',
+                    })
+                    logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado")
+                else:
+                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
+
+            for sub in account.subscriptions:
+                position = await client.get_open_position(sub.symbol)
+                if position:
+                    has_trade = await trader.has_open_trade(sub.subscription_id, sub.symbol)
+                    if not has_trade:
+                        results['orphaned'].append({
+                            'symbol': sub.symbol,
+                            'size':   position.get('size'),
+                            'side':   position.get('side'),
+                            'reason': 'posicion en Bybit sin registro en DB',
+                        })
+                        logger.error(f"[RECONCILE] Posicion huerfana en Bybit: {sub.symbol}")
+
+    finally:
+        await pool.close()
+
+    return {'status': 'ok', 'results': results}

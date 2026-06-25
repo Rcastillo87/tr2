@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Schedule;
 use App\Jobs\DetectMarketRegimeJob;
 use App\Jobs\PaperTradingTickJob;
 use App\Jobs\RealTradingTickJob;
+use App\Jobs\RealTradingReconcileJob;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -16,3 +17,5 @@ Schedule::job(new CollectOhlcvDataJob)->everyMinute();
 Schedule::job(new DetectMarketRegimeJob)->everyFifteenMinutes();
 Schedule::job(new PaperTradingTickJob)->everyFiveMinutes();
 Schedule::job(new RealTradingTickJob)->everyFiveMinutes();
+Schedule::job(new RealTradingReconcileJob)->hourly();
+
