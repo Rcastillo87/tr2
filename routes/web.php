@@ -1,96 +1,77 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\BacktestingController;
+use App\Http\Controllers\BrokerAccountController;
+use App\Http\Controllers\CollectorConfigController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaperTradingController;
-use App\Http\Controllers\BacktestingController;
-use App\Http\Controllers\UserManagementController;
-use App\Http\Controllers\BrokerAccountController;
-use App\Http\Controllers\TradingController;
-use App\Http\Controllers\RealStrategySubscriptionController;
 use App\Http\Controllers\PaperStrategyConfigController;
-use App\Http\Controllers\CollectorConfigController;
 use App\Http\Controllers\ProfileController;
-
-/*
-|--------------------------------------------------------------------------
-| Rutas publicas
-|--------------------------------------------------------------------------
-*/
+use App\Http\Controllers\RealStrategySubscriptionController;
+use App\Http\Controllers\TradingController;
+use App\Http\Controllers\UserManagementController;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
 });
 
-/*
-|--------------------------------------------------------------------------
-| Rutas protegidas (requieren login)
-|--------------------------------------------------------------------------
-*/
-
 Route::middleware(['auth', 'verified'])->group(function () {
 
-    // Vista general: visible para todos los roles (cada uno ve un subconjunto
-    // distinto de KPIs, esto se maneja dentro del controller/vista)
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-    // Paper trading: admin e inversionista
+    // Paper trading
     Route::middleware('can:viewPaperTrading')->prefix('paper-trading')->name('paper-trading.')->group(function () {
-        Route::get('/', [PaperTradingController::class, 'index'])->name('index');
-        Route::get('/{strategy}/live', [PaperTradingController::class, 'live'])->name('live');
-        Route::get('/{strategy}', [PaperTradingController::class, 'show'])->name('show');
+        Route::get('/',     [PaperTradingController::class, 'index'])->name('index');
+        Route::get('/live', [PaperTradingController::class, 'live'])->name('live');
     });
 
-    // Configuracion del Data Collector: solo admin
+    // Data Collector
     Route::middleware('can:manageUsers')->prefix('collector/configs')->name('collector.configs.')->group(function () {
         Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
         Route::patch('/{config}/toggle', [CollectorConfigController::class, 'toggleActive'])->name('toggle');
     });
-    // Backtesting: admin y consultor
+
+    // Backtesting
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
-        Route::get('/', [BacktestingController::class, 'index'])->name('index');
-        Route::get('/run', [BacktestingController::class, 'run'])->name('run');
-        Route::post('/run', [BacktestingController::class, 'run'])->name('execute');
+        Route::get('/',                               [BacktestingController::class, 'index'])->name('index');
+        Route::get('/run',                            [BacktestingController::class, 'run'])->name('run');
+        Route::post('/run',                           [BacktestingController::class, 'run'])->name('execute');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
-        Route::post('/export-excel', [BacktestingController::class, 'exportExcel'])->name('export-excel');
-        Route::get('/retest/{config}', [BacktestingController::class, 'retest'])->name('retest');
+        Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
+        Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
     });
 
-    // Gestion de configs de paper trading: solo admin, solo acciones (sin vista propia, viven en /backtesting)
-    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
-        Route::post('/implement', [PaperStrategyConfigController::class, 'implement'])->name('implement');
-        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
-        Route::delete('/{config}', [PaperStrategyConfigController::class, 'destroy'])->name('destroy');
-    });
+    // Configs de paper trading (toggle activo/inactivo) — usado desde backtesting
+Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
+    Route::patch('/{config}/toggle', [PaperTradingConfigController::class, 'toggle'])->name('toggle');
+});
 
-    // Gestion de usuarios: solo admin
+    // Usuarios
     Route::middleware('can:manageUsers')->prefix('users')->name('users.')->group(function () {
         Route::get('/', [UserManagementController::class, 'index'])->name('index');
         Route::patch('/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('toggle-active');
     });
 
-    // Trading real: admin e inversionista, cada uno gestiona sus propias cuentas
+    // Trading real
     Route::middleware('can:viewRealTrading')->prefix('trading')->name('trading.')->group(function () {
-        // Vista principal de operaciones
-        Route::get('/', [TradingController::class, 'index'])->name('index');
+        Route::get('/',            [TradingController::class, 'index'])->name('index');
         Route::get('/live-prices', [TradingController::class, 'livePrices'])->name('live-prices');
 
-        // Gestión de cuentas
-        Route::get('/accounts', [TradingController::class, 'accounts'])->name('accounts');
-        Route::post('/accounts', [BrokerAccountController::class, 'store'])->name('accounts.store');
-        Route::patch('/accounts/{account}/toggle-status', [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
-        Route::delete('/accounts/{account}', [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
+        Route::get('/accounts',                                                   [TradingController::class, 'accounts'])->name('accounts');
+        Route::post('/accounts',                                                  [BrokerAccountController::class, 'store'])->name('accounts.store');
+        Route::patch('/accounts/{account}/toggle-status',                         [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
+        Route::delete('/accounts/{account}',                                      [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
 
-        // Suscripciones de estrategias por cuenta
-        Route::post('/accounts/{account}/subscriptions', [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
-        Route::post('/accounts/{account}/subscriptions/all', [RealStrategySubscriptionController::class, 'storeAll'])->name('subscriptions.store-all');
-        Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle', [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
-        Route::delete('/accounts/{account}/subscriptions/{subscription}', [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
+        Route::post('/accounts/{account}/subscriptions',                          [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
+        Route::post('/accounts/{account}/subscriptions/all',                      [RealStrategySubscriptionController::class, 'storeAll'])->name('subscriptions.store-all');
+        Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle',   [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
+        Route::delete('/accounts/{account}/subscriptions/{subscription}',         [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
     });
 
-    // Perfil de usuario (Breeze)
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    // Perfil
+    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 

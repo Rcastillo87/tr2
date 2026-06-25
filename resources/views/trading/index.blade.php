@@ -5,208 +5,335 @@
 @section('content')
 <style>button, a[href] { cursor: pointer; }</style>
 
-{{-- Selector de mes + link a cuentas --}}
-<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-    <div class="flex items-center gap-2">
-        <a href="{{ route('trading.index', ['month' => $month->copy()->subMonth()->format('Y-m')]) }}"
-           class="px-2 py-1 rounded text-sm transition-colors" style="color:var(--color-text-muted); border:1px solid var(--color-border-soft);">‹</a>
-        <span class="text-sm font-medium" style="color:var(--color-text-primary);">{{ $month->translatedFormat('F Y') }}</span>
-        @if (!$month->isCurrentMonth())
-            <a href="{{ route('trading.index', ['month' => $month->copy()->addMonth()->format('Y-m')]) }}"
-               class="px-2 py-1 rounded text-sm transition-colors" style="color:var(--color-text-muted); border:1px solid var(--color-border-soft);">›</a>
-        @endif
-    </div>
+{{-- Filtros + link cuentas --}}
+<div class="flex items-center justify-between mb-3 flex-wrap gap-2">
     <a href="{{ route('trading.accounts') }}"
        class="text-[11px] px-3 py-1.5 rounded transition-colors"
        style="background:var(--color-surface-raised); color:var(--color-info); border:1px solid var(--color-border-soft);">
-        ⚙ Gestionar cuentas y estrategias
+        ⚙ Gestionar cuentas
     </a>
 </div>
 
-{{-- Consolidado global --}}
-@if ($globalTrades > 0)
-    <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <h3 class="text-[11px] font-medium mb-3" style="color:var(--color-text-muted);">Consolidado global — {{ $month->translatedFormat('F Y') }}</h3>
-        <div class="grid grid-cols-3 gap-3">
-            <div>
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">P&L neto total</p>
-                <p class="font-mono text-lg font-medium" style="color: {{ $globalNetPnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                    {{ $globalNetPnl >= 0 ? '+' : '' }}{{ number_format($globalNetPnl, 2) }} USDT
-                </p>
-            </div>
-            <div>
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Win rate global</p>
-                <p class="font-mono text-lg font-medium" style="color:var(--color-text-primary);">{{ $globalWinRate }}%</p>
-            </div>
-            <div>
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Total trades cerrados</p>
-                <p class="font-mono text-lg font-medium" style="color:var(--color-text-primary);">{{ $globalTrades }}</p>
-            </div>
-        </div>
+<form method="GET" action="{{ route('trading.index') }}" id="filterForm">
+    <div class="flex items-center gap-2 mb-4 flex-wrap">
+
+        {{-- Mes --}}
+        <select name="month" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            @foreach ($availableMonths as $m)
+                <option value="{{ $m['value'] }}" {{ $month->format('Y-m') === $m['value'] ? 'selected' : '' }}>
+                    {{ $m['label'] }}
+                </option>
+            @endforeach
+        </select>
+
+        {{-- Estrategia --}}
+        <select name="strategy" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all" {{ $filterStrategy === 'all' ? 'selected' : '' }}>Todas las estrategias</option>
+            @foreach ($filterOptions['strategies'] as $s)
+                <option value="{{ $s }}" {{ $filterStrategy === $s ? 'selected' : '' }}>{{ $s }}</option>
+            @endforeach
+        </select>
+
+        {{-- Símbolo --}}
+        <select name="symbol" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all" {{ $filterSymbol === 'all' ? 'selected' : '' }}>Todos los símbolos</option>
+            @foreach ($filterOptions['symbols'] as $sym)
+                <option value="{{ $sym }}" {{ $filterSymbol === $sym ? 'selected' : '' }}>{{ $sym }}</option>
+            @endforeach
+        </select>
+
+        {{-- Intervalo --}}
+        @php $iLabels = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
+        <select name="interval" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all" {{ $filterInterval === 'all' ? 'selected' : '' }}>Todos los intervalos</option>
+            @foreach ($filterOptions['intervals'] as $iv)
+                <option value="{{ $iv }}" {{ $filterInterval === $iv ? 'selected' : '' }}>{{ $iLabels[$iv] ?? $iv }}</option>
+            @endforeach
+        </select>
+
+        {{-- Resultado --}}
+        <select name="result" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all"  {{ $filterResult === 'all'  ? 'selected' : '' }}>Todos los resultados</option>
+            <option value="win"  {{ $filterResult === 'win'  ? 'selected' : '' }}>Ganadoras</option>
+            <option value="loss" {{ $filterResult === 'loss' ? 'selected' : '' }}>Perdedoras</option>
+        </select>
+
+        {{-- Cuenta --}}
+        <select name="account" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all" {{ $filterAccount === 'all' ? 'selected' : '' }}>Todas las cuentas</option>
+            @foreach ($filterOptions['accounts'] as $acc)
+                <option value="{{ $acc->id }}" {{ $filterAccount == $acc->id ? 'selected' : '' }}>
+                    {{ ucfirst($acc->broker) }} {{ strtoupper($acc->account_type) }} — {{ $acc->label }}
+                </option>
+            @endforeach
+        </select>
+
+        @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
+            <a href="{{ route('trading.index', ['month' => $month->format('Y-m')]) }}"
+               class="text-xs px-2 py-1 rounded transition-colors"
+               style="color:var(--color-text-muted); border:1px solid var(--color-border-soft);">
+               Limpiar filtros
+            </a>
+        @endif
     </div>
+</form>
+
+{{-- KPIs --}}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">P&L neto del mes</p>
+        <p class="font-mono text-xl font-medium" style="color: {{ $totalNetPnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+            {{ $totalNetPnl >= 0 ? '+' : '' }}{{ number_format($totalNetPnl, 2) }} USDT
+        </p>
+    </div>
+    <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Win rate</p>
+        <p class="font-mono text-xl font-medium" style="color:var(--color-text-primary);">{{ $winRate }}%</p>
+    </div>
+    <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Profit factor</p>
+        <p class="font-mono text-xl font-medium" style="color:var(--color-text-primary);">{{ $profitFactor ?? '—' }}</p>
+    </div>
+    <div class="rounded-lg border p-3" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <p class="text-[11px] mb-1.5" style="color:var(--color-text-muted);">Trades cerrados</p>
+        <p class="font-mono text-xl font-medium" style="color:var(--color-text-primary);">
+            {{ $totalClosed }} <span class="text-sm font-normal" style="color:var(--color-text-muted);">({{ $wins }}G / {{ $totalClosed - $wins }}P)</span>
+        </p>
+    </div>
+</div>
+
+{{-- Curva de equity --}}
+@if (count($equityCurve) > 1)
+<div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+    <p class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Curva de equity (USDT)</p>
+    <canvas id="equityChart" height="80"></canvas>
+</div>
 @endif
 
-{{-- Por cuenta/broker --}}
-@forelse ($accountData as $data)
-    @php $account = $data['account']; @endphp
-    <div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+{{-- Posiciones abiertas --}}
+@if ($openTrades->isNotEmpty())
+<div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+    <div class="px-4 py-3 border-b flex items-center justify-between" style="border-color:var(--color-border-soft);">
+        <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
+            Posiciones abiertas ({{ $openTrades->count() }})
+        </h3>
+        <span class="text-[10px]" style="color:var(--color-text-muted);">Precio actualizado cada 30s</span>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
+            <thead>
+                <tr class="border-b" style="border-color:var(--color-border-soft);">
+                    <th class="py-2 px-3 text-left font-normal">Estrategia</th>
+                    <th class="py-2 px-3 text-left font-normal">Símbolo</th>
+                    <th class="py-2 px-3 text-left font-normal">Int.</th>
+                    <th class="py-2 px-3 text-left font-normal">Dir.</th>
+                    <th class="py-2 px-3 text-left font-normal">Entrada</th>
+                    <th class="py-2 px-3 text-left font-normal">Precio actual</th>
+                    <th class="py-2 px-3 text-left font-normal">SL</th>
+                    <th class="py-2 px-3 text-left font-normal">TP</th>
+                    <th class="py-2 px-3 text-left font-normal">P&L flotante</th>
+                    <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
+                    <th class="py-2 px-3 text-left font-normal">Cuenta</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($openTrades as $trade)
+                    @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
+                    <tr class="border-b" style="border-color:var(--color-border-soft);">
+                        <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
+                        <td class="py-2 px-3">{{ $trade->symbol }}</td>
+                        <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? $trade->interval }}</td>
+                        <td class="py-2 px-3">
+                            <span style="color: {{ $trade->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ strtoupper($trade->side) }}
+                            </span>
+                        </td>
+                        <td class="py-2 px-3">{{ number_format($trade->entry_price, 2) }}</td>
+                        <td class="py-2 px-3" id="price_{{ $trade->id }}">
+                            {{ $trade->current_price ? number_format($trade->current_price, 2) : '—' }}
+                        </td>
+                        <td class="py-2 px-3" style="color:var(--color-loss);">{{ number_format($trade->sl, 2) }}</td>
+                        <td class="py-2 px-3" style="color:var(--color-profit);">{{ number_format($trade->tp, 2) }}</td>
+                        <td class="py-2 px-3" id="pnl_{{ $trade->id }}"
+                            style="color: {{ ($trade->floating_pnl_pct ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                            {{ $trade->floating_pnl_pct !== null ? ($trade->floating_pnl_pct >= 0 ? '+' : '') . number_format($trade->floating_pnl_pct, 3) . '%' : '—' }}
+                        </td>
+                        <td class="py-2 px-3">
+                            {{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}
+                        </td>
+                        <td class="py-2 px-3">
+                            @php
+                                $acct = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
+                            @endphp
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style="background: {{ ($acct?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};
+                                         color: {{ ($acct?->account_type ?? '') === 'demo' ? 'var(--color-neutral)' : 'var(--color-profit)' }};">
+                                {{ strtoupper($acct?->account_type ?? 'real') }}
+                            </span>
+                            <span class="text-[10px] ml-1" style="color:var(--color-text-muted);">{{ ucfirst($trade->broker ?? 'bybit') }}</span>
+                        </td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+</div>
+@endif
 
-        {{-- Header cuenta --}}
-        <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--color-border-soft);">
-            <div class="flex items-center gap-3">
-                <h3 class="text-sm font-medium" style="color:var(--color-text-primary);">{{ $account->label }}</h3>
-                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                      style="background: {{ $account->account_type === 'demo' ? '#3A2E0E' : '#16331F' }};
-                             color: {{ $account->account_type === 'demo' ? 'var(--color-neutral)' : 'var(--color-profit)' }};">
-                    {{ strtoupper($account->account_type) }}
-                </span>
-                <span class="text-[11px]" style="color:var(--color-text-muted);">{{ ucfirst($account->broker) }}</span>
-            </div>
-        </div>
-
-        {{-- Consolidado de la cuenta --}}
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 p-4 border-b" style="border-color:var(--color-border-soft);">
-            @foreach ([
-                ['Balance inicial', $data['balance_start'] ? number_format($data['balance_start'], 2) . ' USDT' : '—', false],
-                ['Balance final',   $data['balance_end']   ? number_format($data['balance_end'],   2) . ' USDT' : '—', false],
-                ['P&L neto',        ($data['total_net_pnl'] >= 0 ? '+' : '') . number_format($data['total_net_pnl'], 2) . ' USDT', true],
-                ['Win rate',        $data['win_rate'] . '%', false],
-                ['Trades cerrados', $data['total_trades'], false],
-                ['Mejor / Peor',    ($data['best_trade'] ? '+' . number_format($data['best_trade']->net_pnl ?? $data['best_trade']->pnl, 2) : '—') . ' / ' . ($data['worst_trade'] ? number_format($data['worst_trade']->net_pnl ?? $data['worst_trade']->pnl, 2) : '—'), false],
-            ] as [$label, $value, $colored])
-                <div class="rounded-md p-2.5" style="background:var(--color-surface-raised);">
-                    <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">{{ $label }}</p>
-                    <p class="font-mono text-sm font-medium"
-                       style="color: {{ $colored ? ($data['total_net_pnl'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-primary)' }};">
-                        {{ $value }}
-                    </p>
-                </div>
+{{-- Historial --}}
+<div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+    <div class="px-4 py-3 border-b" style="border-color:var(--color-border-soft);">
+        <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
+            Historial de operaciones — {{ ucfirst($month->translatedFormat('F Y')) }}
+            {{-- Cuenta --}}
+        <select name="account" onchange="document.getElementById('filterForm').submit()"
+                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            <option value="all" {{ $filterAccount === 'all' ? 'selected' : '' }}>Todas las cuentas</option>
+            @foreach ($filterOptions['accounts'] as $acc)
+                <option value="{{ $acc->id }}" {{ $filterAccount == $acc->id ? 'selected' : '' }}>
+                    {{ ucfirst($acc->broker) }} {{ strtoupper($acc->account_type) }} — {{ $acc->label }}
+                </option>
             @endforeach
+        </select>
+
+        @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
+                <span class="text-[10px] ml-2" style="color:var(--color-info);">(filtrado)</span>
+            @endif
+        </h3>
+    </div>
+
+    @if ($closedTrades->isEmpty())
+        <div class="p-6 text-center">
+            <p class="text-sm" style="color:var(--color-text-muted);">Sin operaciones cerradas en este período.</p>
         </div>
-
-        {{-- Operaciones abiertas --}}
-        @if ($data['open']->isNotEmpty())
-            <div class="p-4 border-b" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">
-                    Operaciones abiertas ({{ $data['open']->count() }})
-                    <span class="text-[10px] ml-2" style="color:var(--color-text-muted);">Precio actualizado cada 30s</span>
-                </h4>
-                <div class="overflow-x-auto">
-                    <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
-                        <thead>
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <th class="py-2 px-2 text-left font-normal">Estrategia</th>
-                                <th class="py-2 px-2 text-left font-normal">Símbolo</th>
-                                <th class="py-2 px-2 text-left font-normal">Dir.</th>
-                                <th class="py-2 px-2 text-left font-normal">Entrada</th>
-                                <th class="py-2 px-2 text-left font-normal">Precio actual</th>
-                                <th class="py-2 px-2 text-left font-normal">SL</th>
-                                <th class="py-2 px-2 text-left font-normal">TP</th>
-                                <th class="py-2 px-2 text-left font-normal">P&L flotante</th>
-                                <th class="py-2 px-2 text-left font-normal">Tiempo</th>
-                                <th class="py-2 px-2 text-left font-normal">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($data['open'] as $trade)
-                                <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                    <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
-                                    <td class="py-2 px-2">{{ $trade->symbol }}</td>
-                                    <td class="py-2 px-2">
-                                        <span style="color: {{ $trade->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                            {{ strtoupper($trade->side) }}
-                                        </span>
-                                    </td>
-                                    <td class="py-2 px-2">{{ number_format($trade->entry_price, 2) }}</td>
-                                    <td class="py-2 px-2" id="price_{{ $trade->id }}">—</td>
-                                    <td class="py-2 px-2" style="color:var(--color-loss);">{{ number_format($trade->sl, 2) }}</td>
-                                    <td class="py-2 px-2" style="color:var(--color-profit);">{{ number_format($trade->tp, 2) }}</td>
-                                    <td class="py-2 px-2" id="pnl_{{ $trade->id }}">—</td>
-                                    <td class="py-2 px-2">{{ $trade->entry_time->diffForHumans() }}</td>
-                                    <td class="py-2 px-2">
-                                        <span class="px-1.5 py-0.5 rounded text-[10px]"
-                                              style="background:#13233D; color:var(--color-info);">
-                                            {{ strtoupper(str_replace('_', ' ', $trade->status)) }}
-                                        </span>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @endif
-
-        {{-- Operaciones cerradas del mes --}}
-        @if ($data['closed']->isNotEmpty())
-            <div class="p-4">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">
-                    Operaciones cerradas — {{ $month->translatedFormat('F Y') }} ({{ $data['closed']->count() }})
-                </h4>
-                <div class="overflow-x-auto">
-                    <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
-                        <thead>
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <th class="py-2 px-2 text-left font-normal">Estrategia</th>
-                                <th class="py-2 px-2 text-left font-normal">Símbolo</th>
-                                <th class="py-2 px-2 text-left font-normal">Dir.</th>
-                                <th class="py-2 px-2 text-left font-normal">Entrada</th>
-                                <th class="py-2 px-2 text-left font-normal">Salida</th>
-                                <th class="py-2 px-2 text-left font-normal">Razón</th>
-                                <th class="py-2 px-2 text-left font-normal">Tamaño</th>
-                                <th class="py-2 px-2 text-left font-normal">Comisión</th>
-                                <th class="py-2 px-2 text-left font-normal">P&L neto</th>
-                                <th class="py-2 px-2 text-left font-normal">Balance antes</th>
-                                <th class="py-2 px-2 text-left font-normal">Balance después</th>
-                                <th class="py-2 px-2 text-left font-normal">Slippage</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($data['closed'] as $trade)
-                                <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                    <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
-                                    <td class="py-2 px-2">{{ $trade->symbol }}</td>
-                                    <td class="py-2 px-2">
-                                        <span style="color: {{ $trade->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                            {{ strtoupper($trade->side) }}
-                                        </span>
-                                    </td>
-                                    <td class="py-2 px-2">{{ number_format($trade->entry_price, 2) }}<br><span style="color:var(--color-text-muted);">{{ $trade->entry_time->format('d/m H:i') }}</span></td>
-                                    <td class="py-2 px-2">{{ number_format($trade->exit_price, 2) }}<br><span style="color:var(--color-text-muted);">{{ $trade->exit_time?->format('d/m H:i') }}</span></td>
-                                    <td class="py-2 px-2">{{ str_replace('_', ' ', $trade->exit_reason ?? '—') }}</td>
-                                    <td class="py-2 px-2">{{ $trade->size }}</td>
-                                    <td class="py-2 px-2">{{ $trade->commission ? number_format($trade->commission, 4) : '—' }}</td>
-                                    <td class="py-2 px-2 font-medium" style="color: {{ ($trade->net_pnl ?? $trade->pnl) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                        {{ ($trade->net_pnl ?? $trade->pnl) >= 0 ? '+' : '' }}{{ number_format($trade->net_pnl ?? $trade->pnl, 2) }}
-                                        <br><span class="text-[10px]">{{ $trade->pnl_pct >= 0 ? '+' : '' }}{{ $trade->pnl_pct }}%</span>
-                                    </td>
-                                    <td class="py-2 px-2">{{ $trade->balance_before ? number_format($trade->balance_before, 2) : '—' }}</td>
-                                    <td class="py-2 px-2">{{ $trade->balance_after ? number_format($trade->balance_after, 2) : '—' }}</td>
-                                    <td class="py-2 px-2">{{ $trade->slippage_pct ? $trade->slippage_pct . '%' : '—' }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @elseif ($data['open']->isEmpty())
-            <div class="p-6 text-center">
-                <p class="text-sm" style="color:var(--color-text-muted);">Sin operaciones en {{ $month->translatedFormat('F Y') }}.</p>
-            </div>
-        @endif
-    </div>
-@empty
-    <div class="rounded-lg border p-8 text-center" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <p class="text-sm mb-2" style="color:var(--color-text-muted);">No tienes cuentas de broker configuradas.</p>
-        <a href="{{ route('trading.accounts') }}" style="color:var(--color-info);" class="text-sm">Agregar una cuenta →</a>
-    </div>
-@endforelse
+    @else
+        <div class="overflow-x-auto">
+            <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
+                <thead>
+                    <tr class="border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
+                        <th class="py-2 px-3 text-left font-normal">Estrategia</th>
+                        <th class="py-2 px-3 text-left font-normal">Símbolo</th>
+                        <th class="py-2 px-3 text-left font-normal">Int.</th>
+                        <th class="py-2 px-3 text-left font-normal">Dir.</th>
+                        <th class="py-2 px-3 text-left font-normal">Entrada</th>
+                        <th class="py-2 px-3 text-left font-normal">Salida</th>
+                        <th class="py-2 px-3 text-left font-normal">Razón</th>
+                        <th class="py-2 px-3 text-left font-normal">Tamaño</th>
+                        <th class="py-2 px-3 text-left font-normal">Comisión</th>
+                        <th class="py-2 px-3 text-left font-normal">P&L neto</th>
+                        <th class="py-2 px-3 text-left font-normal">Bal. antes</th>
+                        <th class="py-2 px-3 text-left font-normal">Bal. después</th>
+                        <th class="py-2 px-3 text-left font-normal">Cuenta</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($closedTrades as $trade)
+                        @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
+                        <tr class="border-b" style="border-color:var(--color-border-soft);">
+                            <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
+                            <td class="py-2 px-3">{{ $trade->symbol }}</td>
+                            <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? ($trade->interval ?? '—') }}</td>
+                            <td class="py-2 px-3">
+                                <span style="color: {{ $trade->side === 'long' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                    {{ strtoupper($trade->side) }}
+                                </span>
+                            </td>
+                            <td class="py-2 px-3">
+                                {{ number_format($trade->entry_price, 2) }}<br>
+                                <span style="color:var(--color-text-muted);">
+                                    {{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}
+                                </span>
+                            </td>
+                            <td class="py-2 px-3">
+                                {{ number_format($trade->exit_price, 2) }}<br>
+                                <span style="color:var(--color-text-muted);">
+                                    {{ $trade->exit_time ? \Carbon\Carbon::parse($trade->exit_time)->timezone('America/Bogota')->format('d/m H:i') : '—' }}
+                                </span>
+                            </td>
+                            <td class="py-2 px-3">{{ str_replace('_', ' ', $trade->exit_reason ?? '—') }}</td>
+                            <td class="py-2 px-3">{{ $trade->size }}</td>
+                            <td class="py-2 px-3">{{ $trade->commission ? number_format($trade->commission, 4) : '—' }}</td>
+                            <td class="py-2 px-3 font-medium"
+                                style="color: {{ ($trade->net_pnl ?? $trade->pnl) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                {{ ($trade->net_pnl ?? $trade->pnl) >= 0 ? '+' : '' }}{{ number_format($trade->net_pnl ?? $trade->pnl, 2) }} USDT
+                                <br><span class="text-[10px]">{{ $trade->pnl_pct >= 0 ? '+' : '' }}{{ $trade->pnl_pct }}%</span>
+                            </td>
+                            <td class="py-2 px-3">{{ $trade->balance_before ? number_format($trade->balance_before, 2) : '—' }}</td>
+                            <td class="py-2 px-3">{{ $trade->balance_after ? number_format($trade->balance_after, 2) : '—' }}</td>
+                            <td class="py-2 px-3">
+                                @php
+                                    $acct2 = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
+                                @endphp
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                      style="background: {{ ($acct2?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};
+                                             color: {{ ($acct2?->account_type ?? '') === 'demo' ? 'var(--color-neutral)' : 'var(--color-profit)' }};">
+                                    {{ strtoupper($acct2?->account_type ?? 'real') }}
+                                </span>
+                                <span class="text-[10px] ml-1" style="color:var(--color-text-muted);">{{ ucfirst($trade->broker ?? 'bybit') }}</span>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endif
+</div>
 
 @endsection
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// Actualizar precios de operaciones abiertas cada 30 segundos
+const equityData = {!! json_encode($equityCurve) !!};
+const totalNetPnl = {{ $totalNetPnl }};
+
+// Curva de equity
+@if (count($equityCurve) > 1)
+const ctx = document.getElementById('equityChart').getContext('2d');
+const color = equityData[equityData.length - 1] >= 0 ? 'rgba(61,214,140,1)' : 'rgba(242,84,91,1)';
+const colorAlpha = equityData[equityData.length - 1] >= 0 ? 'rgba(61,214,140,0.1)' : 'rgba(242,84,91,0.1)';
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: equityData.map((_, i) => i),
+        datasets: [{
+            data: equityData,
+            borderColor: color,
+            backgroundColor: colorAlpha,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.3,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { display: false },
+            y: {
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                ticks: { color: '#6B7280', font: { size: 10 }, callback: v => v + ' USDT' }
+            }
+        }
+    }
+});
+@endif
+
+// Precio en tiempo real (cada 30s)
 async function refreshLivePrices() {
     try {
         const res = await fetch('{{ route("trading.live-prices") }}', {
@@ -215,13 +342,14 @@ async function refreshLivePrices() {
         const data = await res.json();
 
         data.forEach(trade => {
-            const priceEl = document.getElementById(`price_${trade.id}`);
-            const pnlEl   = document.getElementById(`pnl_${trade.id}`);
+            const priceEl = document.getElementById('price_' + trade.id);
+            const pnlEl   = document.getElementById('pnl_' + trade.id);
 
             if (priceEl && trade.current_price) {
-                priceEl.textContent = parseFloat(trade.current_price).toLocaleString('es-CO', { minimumFractionDigits: 2 });
+                priceEl.textContent = parseFloat(trade.current_price).toLocaleString('es-CO', {
+                    minimumFractionDigits: 2, maximumFractionDigits: 2
+                });
             }
-
             if (pnlEl && trade.floating_pnl_pct !== null) {
                 const pct = parseFloat(trade.floating_pnl_pct);
                 pnlEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(3) + '%';
@@ -233,13 +361,9 @@ async function refreshLivePrices() {
     }
 }
 
-// Ejecutar al cargar y luego cada 30 segundos
-document.addEventListener('DOMContentLoaded', () => {
-    const hasOpenTrades = document.querySelectorAll('[id^="price_"]').length > 0;
-    if (hasOpenTrades) {
-        refreshLivePrices();
-        setInterval(refreshLivePrices, 30000);
-    }
-});
+@if ($openTrades->isNotEmpty())
+refreshLivePrices();
+setInterval(refreshLivePrices, 30000);
+@endif
 </script>
 @endpush

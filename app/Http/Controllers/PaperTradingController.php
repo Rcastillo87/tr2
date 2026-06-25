@@ -1,5 +1,7 @@
 <?php
+
 namespace App\Http\Controllers;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -9,134 +11,48 @@ use App\Models\PaperStrategyConfig;
 
 class PaperTradingController extends Controller
 {
-    // Nombres legacy (sistema anterior) mapeados a cada grupo
-const LEGACY_NAMES = [
-    'VWAP Tendencia'         => ['VWAP Intradía'],
-    'VWAP Reversión'         => [],
-    'Reversión a la Media'   => ['Reversión a la Media'],
-    'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
-];
-const STRATEGY_GROUPS = [
-    'VWAP Tendencia'         => ['VWAP Tendencia'],
-    'VWAP Reversión'         => ['VWAP Reversión'],
-    'Reversión a la Media'   => ['Reversión a la Media'],
-    'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
-];
-
     public function index(Request $request)
     {
-        $month = $this->resolveMonth($request);
-        $start = $month->copy()->startOfMonth();
-        $end   = $month->copy()->endOfMonth();
+        $month    = $this->resolveMonth($request);
+        $start    = $month->copy()->startOfMonth();
+        $end      = $month->copy()->endOfMonth();
 
-        $summary = [];
+        // Filtros
+        $filterStrategy = $request->query('strategy', 'all');
+        $filterSymbol   = $request->query('symbol', 'all');
+        $filterInterval = $request->query('interval', 'all');
+        $filterResult   = $request->query('result', 'all');
 
-        foreach (self::STRATEGY_GROUPS as $groupName => $prefixes) {
-            // Buscar todos los display_names que pertenecen a este grupo
-            $displayNames = PaperStrategyConfig::active()
-                ->get('display_name')
-                ->pluck('display_name')
-                ->filter(function ($name) use ($prefixes) {
-                    foreach ($prefixes as $prefix) {
-                        if (str_starts_with($name, $prefix)) return true;
-                    }
-                    return false;
-                })->values()->toArray();
+        // Posiciones abiertas (sin filtro de mes, siempre se muestran)
+        $openQuery = PaperTrade::open()->orderBy('entry_time', 'desc');
+        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'like', $filterStrategy . '%');
+        if ($filterSymbol   !== 'all') $openQuery->where('symbol', $filterSymbol);
+        if ($filterInterval !== 'all') $openQuery->where('interval', $filterInterval);
+        $openTrades = $openQuery->get();
 
-            // Agregar nombres legacy para compatibilidad con trades historicos
-            $legacyNames  = self::LEGACY_NAMES[$groupName] ?? [];
-            $allNames     = array_unique(array_merge($displayNames, $legacyNames));
-
-            if (empty($allNames)) continue;
-
-            $closedQuery = PaperTrade::whereIn('strategy', $allNames)
-                ->closed()
-                ->whereBetween('entry_time', [$start, $end]);
-
-            $total      = $closedQuery->count();
-            $wins       = (clone $closedQuery)->where('pnl', '>', 0)->count();
-            $openTrades = PaperTrade::whereIn('strategy', $allNames)->open()->count();
-
-            if ($total === 0 && $openTrades === 0) continue;
-
-            // Stats por config individual (para mostrar sub-filas en la card)
-            $configStats = [];
-            foreach ($displayNames as $dn) {
-                $q     = PaperTrade::where('strategy', $dn)->closed()->whereBetween('entry_time', [$start, $end]);
-                $qOpen = PaperTrade::where('strategy', $dn)->open()->count();
-                $t     = $q->count();
-                $w     = (clone $q)->where('pnl', '>', 0)->count();
-                $configStats[] = [
-                    'name'          => $dn,
-                    'total_trades'  => $t,
-                    'wins'          => $w,
-                    'open_trades'   => $qOpen,
-                    'total_pnl_pct' => (float)(clone $q)->sum('pnl_pct'),
-                ];
-            }
-
-            $summary[] = [
-                'group'         => $groupName,
-                'display_names' => $displayNames,
-                'config_stats'  => $configStats,
-                'total_trades'  => $total,
-                'wins'          => $wins,
-                'losses'        => $total - $wins,
-                'win_rate'      => $total > 0 ? round($wins / $total * 100, 2) : 0,
-                'open_trades'   => $openTrades,
-                'total_pnl_pct' => (float) (clone $closedQuery)->sum('pnl_pct'),
-            ];
-        }
-
-        return view('paper-trading.index', [
-            'summary'         => $summary,
-            'selectedMonth'   => $month,
-            'availableMonths' => $this->availableMonths(),
-        ]);
-    }
-
-    public function show(string $strategy, Request $request)
-    {
-        $month  = $this->resolveMonth($request);
-        $symbol = $request->query('symbol', 'all');
-
-        // Posiciones abiertas — sin filtro de mes ni símbolo (estado actual)
-        $openTrades = PaperTrade::forStrategy($strategy)->open()->orderBy('entry_time', 'desc')->get();
+        // Precios en vivo para posiciones abiertas
         $livePrices = $this->getLiveOpenTrades();
-
         foreach ($openTrades as $trade) {
             $live = $livePrices[$trade->id] ?? null;
             $trade->current_price    = $live['current_price'] ?? null;
             $trade->floating_pnl_pct = $live['floating_pnl_pct'] ?? null;
         }
 
-        // Trades cerrados — filtro de mes + filtro de símbolo
-        $closedQuery = PaperTrade::forStrategy($strategy)->closed()
-            ->whereBetween('entry_time', [
-                $month->copy()->startOfMonth(),
-                $month->copy()->endOfMonth(),
-            ]);
+        // Operaciones cerradas del mes con filtros
+        $closedQuery = PaperTrade::closed()
+            ->whereBetween('entry_time', [$start, $end]);
+        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'like', $filterStrategy . '%');
+        if ($filterSymbol   !== 'all') $closedQuery->where('symbol', $filterSymbol);
+        if ($filterInterval !== 'all') $closedQuery->where('interval', $filterInterval);
+        if ($filterResult === 'win')  $closedQuery->where('pnl', '>', 0);
+        if ($filterResult === 'loss') $closedQuery->where('pnl', '<=', 0);
+        $closedTrades = $closedQuery->orderBy('exit_time', 'desc')->get();
 
-        if ($symbol !== 'all') {
-            $closedQuery->where('symbol', $symbol);
-        }
-
-        $closedTrades = $closedQuery->orderBy('exit_time', 'desc')->limit(200)->get();
-
-        // Símbolos disponibles para el selector (todos los que tiene esta estrategia)
-        $availableSymbols = PaperTrade::forStrategy($strategy)
-            ->closed()
-            ->distinct()
-            ->pluck('symbol')
-            ->sort()
-            ->values()
-            ->toArray();
-
-        // KPIs
+        // KPIs consolidados
         $totalClosed  = $closedTrades->count();
         $wins         = $closedTrades->where('pnl', '>', 0)->count();
         $winRate      = $totalClosed > 0 ? round($wins / $totalClosed * 100, 2) : 0;
-        $totalPnlPct  = $closedTrades->sum('pnl_pct');
+        $totalPnlPct  = round($closedTrades->sum('pnl_pct'), 4);
         $grossProfit  = $closedTrades->where('pnl', '>', 0)->sum('pnl');
         $grossLoss    = abs($closedTrades->where('pnl', '<=', 0)->sum('pnl'));
         $profitFactor = $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : null;
@@ -147,44 +63,35 @@ const STRATEGY_GROUPS = [
             $equityCurvePct[] = round(end($equityCurvePct) + (float) $trade->pnl_pct, 4);
         }
 
-        // Subtotales por símbolo
-        $symbolTotals = [];
-        foreach ($closedTrades->groupBy('symbol') as $sym => $trades) {
-            $symWins = $trades->where('pnl', '>', 0)->count();
-            $symbolTotals[$sym] = [
-                'symbol'        => $sym,
-                'total'         => $trades->count(),
-                'wins'          => $symWins,
-                'losses'        => $trades->count() - $symWins,
-                'win_rate'      => $trades->count() > 0 ? round($symWins / $trades->count() * 100, 2) : 0,
-                'total_pnl_pct' => round($trades->sum('pnl_pct'), 2),
-            ];
-        }
+        // Opciones para los filtros
+        $filterOptions = [
+            'strategies' => PaperTrade::distinct()->pluck('strategy')->sort()->values()->toArray(),
+            'symbols'    => PaperTrade::distinct()->pluck('symbol')->sort()->values()->toArray(),
+            'intervals'  => PaperTrade::distinct()->pluck('interval')->sort()->values()->toArray(),
+        ];
 
-        // Config de la estrategia (para mostrar en show — inversionista puede ver, admin puede editar)
-        $strategyConfig = PaperStrategyConfig::where('display_name', $strategy)->first();
-
-        return view('paper-trading.show', [
-            'strategy'        => $strategy,
+        return view('paper-trading.index', [
             'openTrades'      => $openTrades,
             'closedTrades'    => $closedTrades,
             'totalClosed'     => $totalClosed,
+            'wins'            => $wins,
             'winRate'         => $winRate,
             'totalPnlPct'     => $totalPnlPct,
             'profitFactor'    => $profitFactor,
             'equityCurvePct'  => $equityCurvePct,
             'selectedMonth'   => $month,
             'availableMonths' => $this->availableMonths(),
-            'availableSymbols'=> $availableSymbols,
-            'selectedSymbol'  => $symbol,
-            'symbolTotals'    => $symbolTotals,
-            'strategyConfig'  => $strategyConfig,
+            'filterOptions'   => $filterOptions,
+            'filterStrategy'  => $filterStrategy,
+            'filterSymbol'    => $filterSymbol,
+            'filterInterval'  => $filterInterval,
+            'filterResult'    => $filterResult,
         ]);
     }
 
-    public function live(string $strategy)
+    public function live(Request $request)
     {
-        $openTrades = PaperTrade::forStrategy($strategy)->open()->get(['id']);
+        $openTrades = PaperTrade::open()->get(['id']);
         $livePrices = $this->getLiveOpenTrades();
 
         $data = $openTrades->map(function ($trade) use ($livePrices) {
@@ -223,8 +130,8 @@ const STRATEGY_GROUPS = [
             : now()->startOfMonth();
 
         $earliestAllowed = $this->earliestAllowedMonth();
-        if ($month->lessThan($earliestAllowed)) $month = $earliestAllowed->copy();
-        if ($month->greaterThan(now()->startOfMonth())) $month = now()->startOfMonth();
+        if ($month->lessThan($earliestAllowed))          $month = $earliestAllowed->copy();
+        if ($month->greaterThan(now()->startOfMonth()))  $month = now()->startOfMonth();
         return $month;
     }
 
