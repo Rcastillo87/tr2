@@ -693,12 +693,17 @@ class RealTrader:
         )
         return True
 
-    async def update_breakeven(self, trade_id: int, new_sl: float):
+    async def update_breakeven(self, trade_id: int, new_sl: float,
+                               client: 'BybitClient' = None, symbol: str = None, side: str = None, tp: float = None):
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE real_trades SET sl = $1, be_activated = true, updated_at = now() WHERE id = $2",
                 new_sl, trade_id
             )
+        # Actualizar SL en Bybit para que este protegido aunque caiga el servidor
+        if client and symbol and side:
+            await client.set_trading_stop(symbol, side, new_sl, tp or 0)
+            logger.info(f"[REAL] BE activado — SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
 
     # ─────────────────────────────────────────────
     # Monitor: revisar posiciones abiertas
@@ -736,7 +741,7 @@ class RealTrader:
             if not trade['be_activated']:
                 if (side == 'long' and current_price >= be_level) or \
                    (side == 'short' and current_price <= be_level):
-                    await self.update_breakeven(trade['id'], entry)
+                    await self.update_breakeven(trade['id'], entry, client=client, symbol=symbol, side=side, tp=tp)
                     results["be_activated"] += 1
 
             # Stop Loss
