@@ -6,13 +6,6 @@ use Illuminate\Support\Facades\Gate;
 
 class PaperStrategyConfigController extends Controller
 {
-    public function index()
-    {
-        Gate::authorize('manageUsers');
-        $configs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
-        return view('paper-trading.configs.index', compact('configs'));
-    }
-
     public function toggleActive(PaperStrategyConfig $config)
     {
         Gate::authorize('manageUsers');
@@ -21,36 +14,6 @@ class PaperStrategyConfigController extends Controller
         return back()->with('status', $config->active
             ? "Configuración \"{$config->display_name}\" activada."
             : "Configuración \"{$config->display_name}\" desactivada.");
-    }
-
-    public function edit(PaperStrategyConfig $config)
-    {
-        Gate::authorize('manageUsers');
-        return view('paper-trading.configs.edit', compact('config'));
-    }
-
-    public function update(Request $request, PaperStrategyConfig $config)
-    {
-        Gate::authorize('manageUsers');
-        $validated = $request->validate([
-            'display_name' => ['required', 'string', 'max:100'],
-            'interval'     => ['required', 'string', 'max:10'],
-            'params'       => ['required', 'string'],
-        ]);
-
-        $params = json_decode($validated['params'], true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return back()->withErrors(['params' => 'Los parámetros no son JSON válido.']);
-        }
-
-        $config->update([
-            'display_name' => $validated['display_name'],
-            'interval'     => $validated['interval'],
-            'params'       => $params,
-        ]);
-
-        return redirect()->route('paper-trading.configs.index')
-            ->with('status', "Configuración \"{$config->display_name}\" actualizada.");
     }
 
     public function store(Request $request)
@@ -79,14 +42,11 @@ class PaperStrategyConfigController extends Controller
                 $validated['interval'],
                 $params
             );
-
-            // Guardar estadísticas del backtest
             $config->update([
                 'audited_months'  => $validated['audited_months'] ?? null,
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
             ]);
-
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }
@@ -98,7 +58,7 @@ class PaperStrategyConfigController extends Controller
     public function implement(Request $request)
     {
         Gate::authorize('manageUsers');
-\Log::info('implement payload', $request->all());
+
         $validated = $request->validate([
             'strategy_name'   => ['required', 'string'],
             'symbol'          => ['required', 'string', 'max:20'],
@@ -121,14 +81,11 @@ class PaperStrategyConfigController extends Controller
                 $validated['interval'],
                 $params
             );
-
-            // Guardar estadísticas del backtest
             $config->update([
                 'audited_months'  => $validated['audited_months'] ?? null,
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
             ]);
-
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }

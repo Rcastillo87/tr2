@@ -31,7 +31,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
         Route::post('/implement',        [PaperStrategyConfigController::class, 'implement'])->name('implement');
         Route::post('/',                 [PaperStrategyConfigController::class, 'store'])->name('store');
-        Route::put('/{config}',          [PaperStrategyConfigController::class, 'update'])->name('update');
+        Route::delete('/{config}',       [PaperStrategyConfigController::class, 'destroy'])->name('destroy');
     });
 
     // Data Collector
