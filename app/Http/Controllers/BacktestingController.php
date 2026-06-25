@@ -191,6 +191,9 @@ class BacktestingController extends Controller
             'strategy_name' => $strategyName,
             'symbol'        => $config->symbol,
             'interval'      => $config->interval,
+            'audited_months'  => $config->audited_months,
+            'avg_win_rate'    => $config->avg_win_rate,
+            'avg_monthly_pnl' => $config->avg_monthly_pnl,
             'params'        => $config->params,
         ]);
     }

@@ -12,6 +12,9 @@ class PaperStrategyConfig extends Model
         'interval',
         'params',
         'active',
+        'audited_months',
+        'avg_win_rate',
+        'avg_monthly_pnl',
     ];
     protected $casts = [
         'params' => 'array',

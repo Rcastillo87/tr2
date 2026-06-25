@@ -13,8 +13,8 @@ class BacktestMonthlyExport
     private const HEADER_FILL = '1E2530';
 
     /**
-     * Genera y descarga un archivo Excel con 4 hojas:
-     * Resumen, Parametros completos, Mes a mes, Resultados por ventana.
+     * Genera y descarga un archivo Excel con 3 hojas:
+     * Resumen, Parametros completos, Mes a mes.
      */
     public static function download(array $result, string $filename): StreamedResponse
     {
@@ -23,10 +23,8 @@ class BacktestMonthlyExport
         self::buildSummarySheet($spreadsheet, $result);
         self::buildParamsSheet($spreadsheet, $result);
         self::buildMonthlySheet($spreadsheet, $result);
-        self::buildWindowsSheet($spreadsheet, $result);
 
         $spreadsheet->setActiveSheetIndex(0);
-
         $writer = new Xlsx($spreadsheet);
 
         return new StreamedResponse(function () use ($writer) {
@@ -48,10 +46,22 @@ class BacktestMonthlyExport
 
     private static function buildSummarySheet(Spreadsheet $spreadsheet, array $result): void
     {
-        $sheet = $spreadsheet->getActiveSheet();
+        $sheet  = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Resumen');
 
-        $agg = $result['aggregate_metrics'] ?? [];
+        $agg     = $result['aggregate_metrics'] ?? [];
+        $monthly = $result['monthly_breakdown'] ?? [];
+
+        // Calcular métricas adicionales del monthly_breakdown
+        $monthlyPnls   = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
+        $auditedMonths = $monthlyPnls->count();
+        $avgMonthlyPnl = $auditedMonths > 0 ? round($monthlyPnls->average(), 2) : null;
+        $bestMonth     = $auditedMonths > 0 ? round($monthlyPnls->max(), 2) : null;
+        $worstMonth    = $auditedMonths > 0 ? round($monthlyPnls->min(), 2) : null;
+        $totalReturnPct = $auditedMonths > 0 ? round($monthlyPnls->sum(), 2) : null;
+        $avgWinRate    = $auditedMonths > 0
+            ? round(collect($monthly)->pluck('win_rate')->map(fn($v) => (float)$v)->average(), 2)
+            : null;
 
         $sheet->setCellValue('A1', 'Backtest — Resumen');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
@@ -68,16 +78,18 @@ class BacktestMonthlyExport
         $sheet->setCellValue('B7', ($result['passed'] ?? false) ? 'Sí' : 'No');
 
         $rows = [
-            ['Total trades',      $agg['total_trades'] ?? 0],
-            ['Win rate (%)',      $agg['win_rate'] ?? 0],
-            ['Profit factor',     $agg['profit_factor'] ?? '—'],
-            ['Sharpe ratio',      $agg['sharpe_ratio'] ?? 0],
-            ['Max drawdown (%)',  $agg['max_drawdown_pct'] ?? 0],
-            ['Retorno total (%)', $agg['total_return_pct'] ?? 0],
-            ['P&L total',         $agg['total_pnl'] ?? 0],
-            ['Expectancy',        $agg['expectancy'] ?? 0],
-            ['Avg win',           $agg['avg_win'] ?? 0],
-            ['Avg loss',          $agg['avg_loss'] ?? 0],
+            ['Total trades',            $agg['total_trades'] ?? 0],
+            ['Win rate (%)',             $agg['win_rate'] ?? 0],
+            ['Sharpe ratio',             $agg['sharpe_ratio'] ?? 0],
+            ['Meses testeados',          $auditedMonths],
+            ['Win rate prom./mes (%)',   $avgWinRate ?? '—'],
+            ['Retorno prom./mes (%)',    $avgMonthlyPnl ?? '—'],
+            ['Retorno total (%)',        $totalReturnPct ?? '—'],
+            ['Mejor mes (%)',            $bestMonth ?? '—'],
+            ['Peor mes (%)',             $worstMonth ?? '—'],
+            ['Avg win (%)',              $agg['avg_win'] ?? 0],
+            ['Avg loss (%)',             $agg['avg_loss'] ?? 0],
+            ['Max drawdown (%)',         $agg['max_drawdown_pct'] ?? 0],
         ];
 
         $row = 9;
@@ -89,6 +101,13 @@ class BacktestMonthlyExport
             $row++;
             $sheet->setCellValue("A{$row}", $r[0]);
             $sheet->setCellValue("B{$row}", $r[1]);
+
+            // Colorear métricas de retorno
+            if (in_array($r[0], ['Retorno prom./mes (%)', 'Retorno total (%)', 'Mejor mes (%)', 'Peor mes (%)'])) {
+                $val   = is_numeric($r[1]) ? $r[1] : 0;
+                $color = $val >= 0 ? '3DD68C' : 'F2545B';
+                $sheet->getStyle("B{$row}")->getFont()->getColor()->setRGB($color);
+            }
         }
 
         if (!empty($result['pass_reasons'])) {
@@ -101,13 +120,13 @@ class BacktestMonthlyExport
             }
         }
 
-        $sheet->getColumnDimension('A')->setWidth(24);
+        $sheet->getColumnDimension('A')->setWidth(26);
         $sheet->getColumnDimension('B')->setWidth(40);
     }
 
     private static function buildParamsSheet(Spreadsheet $spreadsheet, array $result): void
     {
-        $sheet = $spreadsheet->createSheet();
+        $sheet  = $spreadsheet->createSheet();
         $sheet->setTitle('Parámetros completos');
 
         $params = $result['_implement_params'] ?? [];
@@ -117,31 +136,25 @@ class BacktestMonthlyExport
         self::headerRow($sheet, 'A1:B1');
 
         $labels = [
-            'sl_pct'                      => 'Stop Loss %',
-            'tp_pct'                      => 'Take Profit 1 %',
-            'tp2_pct'                     => 'Take Profit 2 %',
-            'tp3_pct'                     => 'Take Profit 3 %',
-            'tp4_pct'                     => 'Take Profit 4 %',
-            'be_pct'                      => 'Break-even %',
-            'max_duration'                => 'Máx. duración (velas)',
-            'risk_per_trade_pct'          => 'Riesgo por trade %',
-            'regime_filter'               => 'Filtro de régimen',
-            'macro_trend_filter'          => 'Filtro de tendencia macro H4',
-            'mode'                        => 'Modo (VWAP)',
-            'trailing_mode'               => 'Modo de trailing stop',
-            'trailing_distance_pct'       => 'Distancia trailing %',
-            'trailing_steps'              => 'Escalones de trailing',
-            'volatility_protection_mode'  => 'Protección por volatilidad',
-            'volatility_atr_multiplier'   => 'Multiplicador ATR',
-            'volatility_widen_pct'        => 'Ampliación SL volatilidad %',
-            'trend_persistence_filter'    => 'Filtro de persistencia de tendencia',
-            'trend_persistence_bars'      => 'Velas de persistencia',
-            'trend_adx_threshold'         => 'Umbral ADX',
-            'dynamic_sl_filter'           => 'SL dinámico por zona ADX',
-            'adx_strong_threshold'        => 'Umbral ADX fuerte',
-            'sl_pct_weak_zone'            => 'SL en zona ADX débil %',
-            'start_date'                  => 'Fecha desde',
-            'end_date'                    => 'Fecha hasta',
+            'sl_pct'                     => 'Stop Loss %',
+            'tp_pct'                     => 'Take Profit 1 %',
+            'tp2_pct'                    => 'Take Profit 2 %',
+            'tp3_pct'                    => 'Take Profit 3 %',
+            'tp4_pct'                    => 'Take Profit 4 %',
+            'be_pct'                     => 'Break-even %',
+            'max_duration'               => 'Máx. duración (velas)',
+            'risk_per_trade_pct'         => 'Riesgo por trade %',
+            'regime_filter'              => 'Filtro de régimen',
+            'macro_trend_filter'         => 'Filtro de tendencia macro H4',
+            'mode'                       => 'Modo (VWAP)',
+            'trailing_mode'              => 'Modo de trailing stop',
+            'trailing_distance_pct'      => 'Distancia trailing %',
+            'trailing_steps'             => 'Escalones de trailing',
+            'volatility_protection_mode' => 'Protección por volatilidad',
+            'volatility_atr_multiplier'  => 'Multiplicador ATR',
+            'volatility_widen_pct'       => 'Ampliación SL volatilidad %',
+            'start_date'                 => 'Fecha desde',
+            'end_date'                   => 'Fecha hasta',
         ];
 
         $row = 1;
@@ -151,11 +164,8 @@ class BacktestMonthlyExport
             }
             $row++;
             $value = $params[$key];
-            if (is_bool($value)) {
-                $value = $value ? 'Sí' : 'No';
-            } elseif (is_array($value)) {
-                $value = json_encode($value);
-            }
+            if (is_bool($value))   $value = $value ? 'Sí' : 'No';
+            if (is_array($value))  $value = json_encode($value);
             $sheet->setCellValue("A{$row}", $label);
             $sheet->setCellValue("B{$row}", $value);
         }
@@ -177,13 +187,14 @@ class BacktestMonthlyExport
         $sheet = $spreadsheet->createSheet();
         $sheet->setTitle('Mes a mes');
 
-        $headers = ['Mes', 'Trades', 'Ganadores', 'Perdedores', 'Win rate (%)', 'P&L (%)', 'P&L (USDT)'];
+        // Sin columna P&L USDT
+        $headers = ['Mes', 'Trades', 'Ganadores', 'Perdedores', 'Win rate (%)', 'P&L (%)'];
         $col = 'A';
         foreach ($headers as $h) {
             $sheet->setCellValue("{$col}1", $h);
             $col++;
         }
-        self::headerRow($sheet, 'A1:G1');
+        self::headerRow($sheet, 'A1:F1');
 
         $breakdown = $result['monthly_breakdown'] ?? [];
         $row = 2;
@@ -195,60 +206,32 @@ class BacktestMonthlyExport
             $sheet->setCellValue("D{$row}", $m['losses']);
             $sheet->setCellValue("E{$row}", $m['win_rate']);
             $sheet->setCellValue("F{$row}", $m['total_pnl_pct']);
-            $sheet->setCellValue("G{$row}", $m['total_pnl']);
 
             $color = $m['total_pnl_pct'] >= 0 ? '3DD68C' : 'F2545B';
             $sheet->getStyle("F{$row}")->getFont()->getColor()->setRGB($color);
-
             $row++;
         }
 
-        foreach (range('A', 'G') as $c) {
-            $sheet->getColumnDimension($c)->setAutoSize(true);
-        }
-
-        $sheet->getStyle("A1:G" . ($row - 1))->getBorders()->getAllBorders()
-            ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('CCCCCC');
-    }
-
-    private static function buildWindowsSheet(Spreadsheet $spreadsheet, array $result): void
-    {
-        $sheet = $spreadsheet->createSheet();
-        $sheet->setTitle('Resultados por ventana');
-
-        $headers = ['Ventana', 'Velas train', 'Velas test', 'Trades', 'Win rate (%)', 'Profit factor', 'Sharpe', 'Drawdown (%)', 'Retorno (%)'];
-        $col = 'A';
-        foreach ($headers as $h) {
-            $sheet->setCellValue("{$col}1", $h);
-            $col++;
-        }
-        self::headerRow($sheet, 'A1:I1');
-
-        $windows = $result['window_results'] ?? [];
-        $row = 2;
-
-        foreach ($windows as $w) {
-            $sheet->setCellValue("A{$row}", $w['window']);
-            $sheet->setCellValue("B{$row}", $w['train_bars'] ?? '—');
-            $sheet->setCellValue("C{$row}", $w['test_bars'] ?? '—');
-            $sheet->setCellValue("D{$row}", $w['total_trades']);
-            $sheet->setCellValue("E{$row}", $w['win_rate']);
-            $sheet->setCellValue("F{$row}", $w['profit_factor'] ?? '—');
-            $sheet->setCellValue("G{$row}", $w['sharpe_ratio']);
-            $sheet->setCellValue("H{$row}", $w['max_drawdown_pct']);
-            $sheet->setCellValue("I{$row}", $w['total_return_pct']);
-
-            $color = $w['total_return_pct'] >= 0 ? '3DD68C' : 'F2545B';
-            $sheet->getStyle("I{$row}")->getFont()->getColor()->setRGB($color);
-
+        // Fila de totales/promedios
+        if ($row > 2) {
+            $sheet->setCellValue("A{$row}", 'PROMEDIO');
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+            $sheet->setCellValue("B{$row}", "=AVERAGE(B2:B" . ($row-1) . ")");
+            $sheet->setCellValue("E{$row}", "=AVERAGE(E2:E" . ($row-1) . ")");
+            $sheet->setCellValue("F{$row}", "=AVERAGE(F2:F" . ($row-1) . ")");
+            $sheet->getStyle("A{$row}:F{$row}")->getFont()->setBold(true);
             $row++;
+            $sheet->setCellValue("A{$row}", 'TOTAL P&L %');
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+            $sheet->setCellValue("F{$row}", "=SUM(F2:F" . ($row-2) . ")");
+            $sheet->getStyle("A{$row}:F{$row}")->getFont()->setBold(true);
         }
 
-        foreach (range('A', 'I') as $c) {
+        foreach (range('A', 'F') as $c) {
             $sheet->getColumnDimension($c)->setAutoSize(true);
         }
 
-        $sheet->getStyle("A1:I" . ($row - 1))->getBorders()->getAllBorders()
+        $sheet->getStyle("A1:F" . ($row))->getBorders()->getAllBorders()
             ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('CCCCCC');
     }
 }

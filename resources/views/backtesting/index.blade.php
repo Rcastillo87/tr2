@@ -1,10 +1,8 @@
 @extends('layouts.app')
-
 @section('title', 'Backtesting')
 @section('header', 'Backtesting')
 
 @section('content')
-
 <style>button, a[href] { cursor: pointer; }</style>
 
     @if (session('status'))
@@ -62,7 +60,6 @@
                 <button type="button" onclick="clearFilters()" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">
                     Limpiar filtros
                 </button>
-
                 <span id="filterCount" class="text-[11px] ml-auto" style="color:var(--color-text-muted);"></span>
             </div>
 
@@ -88,6 +85,9 @@
                                 <th class="py-2.5 px-3 font-medium">TP4</th>
                                 <th class="py-2.5 px-3 font-medium">BE</th>
                                 <th class="py-2.5 px-3 font-medium">Dur.</th>
+                                <th class="py-2.5 px-3 font-medium" title="Meses auditados en el último backtest">Meses</th>
+                                <th class="py-2.5 px-3 font-medium" title="Win rate promedio mensual">WR prom.</th>
+                                <th class="py-2.5 px-3 font-medium" title="Retorno promedio mensual">Ret. prom./mes</th>
                                 <th class="py-2.5 px-3 font-medium">Estado</th>
                                 <th class="py-2.5 px-4 font-medium">Acciones</th>
                             </tr>
@@ -109,10 +109,7 @@
                                     onmouseout="this.style.background='transparent'">
                                     <td class="py-2.5 px-4 font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->symbol }}</td>
-                                    <td class="py-2.5 px-3 font-mono">
-                                        @php $iLabels = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
-                                        {{ $iLabels[$config->interval] ?? $config->interval }}
-                                    </td>
+                                    <td class="py-2.5 px-3 font-mono">{{ $iLabel }}</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['sl_pct'] ?? '—' }}%</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['tp_pct'] ?? '—' }}%</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['tp2_pct'] ?? '—' }}</td>
@@ -120,6 +117,20 @@
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['tp4_pct'] ?? '—' }}</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['be_pct'] ?? '—' }}%</td>
                                     <td class="py-2.5 px-3 font-mono">{{ $config->params['max_duration'] ?? '—' }}h</td>
+
+                                    {{-- 3 campos de stats del último backtest --}}
+                                    <td class="py-2.5 px-3 font-mono">
+                                        {{ $config->audited_months ? $config->audited_months . 'm' : '—' }}
+                                    </td>
+                                    <td class="py-2.5 px-3 font-mono"
+                                        style="color: {{ $config->avg_win_rate ? ($config->avg_win_rate >= 50 ? 'var(--color-profit)' : 'var(--color-neutral)') : 'var(--color-text-muted)' }};">
+                                        {{ $config->avg_win_rate ? $config->avg_win_rate . '%' : '—' }}
+                                    </td>
+                                    <td class="py-2.5 px-3 font-mono"
+                                        style="color: {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)' }};">
+                                        {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? '+' : '') . $config->avg_monthly_pnl . '%' : '—' }}
+                                    </td>
+
                                     <td class="py-2.5 px-3">
                                         <span class="px-1.5 py-0.5 rounded text-[10px]"
                                               style="background: {{ $config->active ? '#16331F' : '#3A1A1C' }}; color: {{ $config->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
@@ -157,15 +168,9 @@
 <script>
 async function loadConfigAndRun(event, configId) {
     event.preventDefault();
-    Swal.fire({
-        title: 'Cargando configuración...',
-        allowOutsideClick: false,
-        background: '#11161F',
-        color: '#E5E9F0',
-        didOpen: () => Swal.showLoading(),
-    });
+    Swal.fire({ title: 'Cargando configuración...', allowOutsideClick: false, background: '#11161F', color: '#E5E9F0', didOpen: () => Swal.showLoading() });
     try {
-        const res = await fetch(`/backtesting/retest/${configId}`, { headers: { 'Accept': 'application/json' } });
+        const res  = await fetch(`/backtesting/retest/${configId}`, { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         Swal.close();
         const params = new URLSearchParams({
@@ -220,17 +225,13 @@ function confirmToggle(event, name, isActive) {
         html: isActive
             ? `¿Deshabilitar <b>${name}</b>? Dejará de operar en Paper Trading inmediatamente.`
             : `¿Activar <b>${name}</b> en Paper Trading?`,
-        icon: 'warning',
-        showCancelButton: true,
+        icon: 'warning', showCancelButton: true,
         confirmButtonText: isActive ? 'Deshabilitar' : 'Activar',
         cancelButtonText: 'Cancelar',
-        background: '#11161F',
-        color: '#E5E9F0',
+        background: '#11161F', color: '#E5E9F0',
         confirmButtonColor: isActive ? '#F2545B' : '#3DD68C',
         cancelButtonColor: '#232B38',
-    }).then((result) => {
-        if (result.isConfirmed) form.submit();
-    });
+    }).then((result) => { if (result.isConfirmed) form.submit(); });
     return false;
 }
 </script>

@@ -8,7 +8,7 @@ class PaperStrategyConfigController extends Controller
 {
     public function index()
     {
-        Gate::authorize('manageUsers'); // solo admin
+        Gate::authorize('manageUsers');
         $configs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
         return view('paper-trading.configs.index', compact('configs'));
     }
@@ -53,19 +53,18 @@ class PaperStrategyConfigController extends Controller
             ->with('status', "Configuración \"{$config->display_name}\" actualizada.");
     }
 
-    /**
-     * Crea una nueva configuracion manualmente (sin venir de un backtest).
-     * Util para registrar combinaciones nuevas estrategia+simbolo+intervalo.
-     */
     public function store(Request $request)
     {
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
-            'strategy_name' => ['required', 'string'],
-            'symbol'        => ['required', 'string', 'max:20'],
-            'interval'      => ['required', 'string', 'max:10'],
-            'params'        => ['required', 'string'],
+            'strategy_name'   => ['required', 'string'],
+            'symbol'          => ['required', 'string', 'max:20'],
+            'interval'        => ['required', 'string', 'max:10'],
+            'params'          => ['required', 'string'],
+            'audited_months'  => ['nullable', 'integer', 'min:1'],
+            'avg_win_rate'    => ['nullable', 'numeric'],
+            'avg_monthly_pnl' => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -80,6 +79,14 @@ class PaperStrategyConfigController extends Controller
                 $validated['interval'],
                 $params
             );
+
+            // Guardar estadísticas del backtest
+            $config->update([
+                'audited_months'  => $validated['audited_months'] ?? null,
+                'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
+                'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
+            ]);
+
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }
@@ -88,23 +95,18 @@ class PaperStrategyConfigController extends Controller
             ->with('status', "Configuración \"{$config->display_name}\" creada.");
     }
 
-    /**
-     * Implementa (crea o actualiza) una configuracion de Paper Trading a partir
-     * de los parametros exactos usados en el ultimo backtest ejecutado.
-     * Es el unico punto de entrada para que una config entre en produccion,
-     * garantizando que Backtesting y Paper Trading nunca queden desincronizados.
-     */
     public function implement(Request $request)
     {
-\Log::info('implement called', $request->all());
-
         Gate::authorize('manageUsers');
-
+\Log::info('implement payload', $request->all());
         $validated = $request->validate([
-            'strategy_name' => ['required', 'string'],
-            'symbol'        => ['required', 'string', 'max:20'],
-            'interval'      => ['required', 'string', 'max:10'],
-            'params'        => ['required', 'string'],
+            'strategy_name'   => ['required', 'string'],
+            'symbol'          => ['required', 'string', 'max:20'],
+            'interval'        => ['required', 'string', 'max:10'],
+            'params'          => ['required', 'string'],
+            'audited_months'  => ['nullable', 'integer', 'min:1'],
+            'avg_win_rate'    => ['nullable', 'numeric'],
+            'avg_monthly_pnl' => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -119,6 +121,14 @@ class PaperStrategyConfigController extends Controller
                 $validated['interval'],
                 $params
             );
+
+            // Guardar estadísticas del backtest
+            $config->update([
+                'audited_months'  => $validated['audited_months'] ?? null,
+                'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
+                'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
+            ]);
+
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }
@@ -130,10 +140,8 @@ class PaperStrategyConfigController extends Controller
     public function destroy(PaperStrategyConfig $config)
     {
         Gate::authorize('manageUsers');
-
         $name = $config->display_name;
         $config->delete();
-
         return back()->with('status', "Configuración \"{$name}\" eliminada.");
     }
 }

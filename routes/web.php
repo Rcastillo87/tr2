@@ -26,6 +26,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/live', [PaperTradingController::class, 'live'])->name('live');
     });
 
+    // Configs de paper trading — usado desde backtesting
+    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
+        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
+        Route::post('/implement',        [PaperStrategyConfigController::class, 'implement'])->name('implement');
+        Route::post('/',                 [PaperStrategyConfigController::class, 'store'])->name('store');
+        Route::put('/{config}',          [PaperStrategyConfigController::class, 'update'])->name('update');
+    });
+
     // Data Collector
     Route::middleware('can:manageUsers')->prefix('collector/configs')->name('collector.configs.')->group(function () {
         Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
@@ -42,11 +50,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
     });
 
-    // Configs de paper trading (toggle activo/inactivo) — usado desde backtesting
-Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
-    Route::patch('/{config}/toggle', [PaperTradingConfigController::class, 'toggle'])->name('toggle');
-});
-
     // Usuarios
     Route::middleware('can:manageUsers')->prefix('users')->name('users.')->group(function () {
         Route::get('/', [UserManagementController::class, 'index'])->name('index');
@@ -58,15 +61,15 @@ Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('pap
         Route::get('/',            [TradingController::class, 'index'])->name('index');
         Route::get('/live-prices', [TradingController::class, 'livePrices'])->name('live-prices');
 
-        Route::get('/accounts',                                                   [TradingController::class, 'accounts'])->name('accounts');
-        Route::post('/accounts',                                                  [BrokerAccountController::class, 'store'])->name('accounts.store');
-        Route::patch('/accounts/{account}/toggle-status',                         [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
-        Route::delete('/accounts/{account}',                                      [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
+        Route::get('/accounts',                                                 [TradingController::class, 'accounts'])->name('accounts');
+        Route::post('/accounts',                                                [BrokerAccountController::class, 'store'])->name('accounts.store');
+        Route::patch('/accounts/{account}/toggle-status',                       [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
+        Route::delete('/accounts/{account}',                                    [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
 
-        Route::post('/accounts/{account}/subscriptions',                          [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
-        Route::post('/accounts/{account}/subscriptions/all',                      [RealStrategySubscriptionController::class, 'storeAll'])->name('subscriptions.store-all');
-        Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle',   [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
-        Route::delete('/accounts/{account}/subscriptions/{subscription}',         [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
+        Route::post('/accounts/{account}/subscriptions',                        [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
+        Route::post('/accounts/{account}/subscriptions/all',                    [RealStrategySubscriptionController::class, 'storeAll'])->name('subscriptions.store-all');
+        Route::patch('/accounts/{account}/subscriptions/{subscription}/toggle', [RealStrategySubscriptionController::class, 'toggle'])->name('subscriptions.toggle');
+        Route::delete('/accounts/{account}/subscriptions/{subscription}',       [RealStrategySubscriptionController::class, 'destroy'])->name('subscriptions.destroy');
     });
 
     // Perfil
