@@ -213,6 +213,41 @@ class BybitClient:
 
         return None
 
+    async def set_trading_stop(self, symbol: str, side: str, sl: float, tp: float) -> bool:
+        """
+        Configura SL y TP en Bybit para una posicion abierta.
+        Se llama despues de confirmar la apertura de la orden.
+        side: 'long' o 'short' (se convierte a Buy/Sell internamente)
+        """
+        position_idx = 0  # one-way mode
+        body = {
+            'category':    'linear',
+            'symbol':      symbol,
+            'positionIdx': position_idx,
+            'stopLoss':    str(round(sl, 8)),
+            'takeProfit':  str(round(tp, 8)),
+            'slTriggerBy': 'LastPrice',
+            'tpTriggerBy': 'LastPrice',
+        }
+        headers = self._sign_body(body)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.post(
+                    f'{self.base_url}/v5/position/trading-stop',
+                    content=json.dumps(body, separators=(',', ':'), ensure_ascii=True).encode(),
+                    headers=headers,
+                )
+            data = r.json()
+            if data.get('retCode') == 0:
+                logger.info(f"[BYBIT] SL/TP configurado en Bybit: {symbol} SL={sl} TP={tp}")
+                return True
+            else:
+                logger.error(f"[BYBIT] set_trading_stop error: {data.get('retMsg')} code={data.get('retCode')}")
+                return False
+        except Exception as e:
+            logger.error(f"[BYBIT] set_trading_stop exception: {e}")
+            return False
+
     async def get_order(self, symbol: str, order_id: str) -> dict | None:
         """Verifica el estado de una orden por su ID."""
         params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id}
@@ -529,6 +564,10 @@ class RealTrader:
                 """,
                 order_id, filled_price, round(slippage_pct, 6), trade_id
             )
+
+        # Configurar SL y TP en Bybit inmediatamente tras confirmar apertura
+        # Esto protege la posicion aunque el servidor caiga
+        await client.set_trading_stop(symbol, side, sl, tp1)
 
         await self.log_audit(trade_id, 'opened', {
             'order_id': order_id,
