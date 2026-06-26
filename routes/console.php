@@ -17,5 +17,5 @@ Schedule::job(new CollectOhlcvDataJob)->everyMinute();
 Schedule::job(new DetectMarketRegimeJob)->everyFifteenMinutes();
 Schedule::job(new PaperTradingTickJob)->everyFiveMinutes();
 Schedule::job(new RealTradingTickJob)->everyFiveMinutes();
-Schedule::job(new RealTradingReconcileJob)->hourly();
+Schedule::job(new RealTradingReconcileJob)->everyFiveMinutes();
 

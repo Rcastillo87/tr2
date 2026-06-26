@@ -541,28 +541,63 @@ class RealTrader:
 
         order_id = result.get('orderId')
 
-        # 7. Esperar confirmacion (hasta 30s)
+        # 7. Esperar confirmacion — MARKET se llena casi instantaneo
         filled_price = entry_signal_price
-        for _ in range(6):
-            await asyncio.sleep(5)
+        filled = False
+        for attempt in range(3):
+            await asyncio.sleep(2)
             order = await client.get_order(symbol, order_id)
             if order and order.get('orderStatus') == 'Filled':
                 filled_price = float(order.get('avgPrice', entry_signal_price))
+                filled = True
                 break
+
+        # Si no confirmo via order, verificar posicion directamente en Bybit
+        if not filled:
+            position = await client.get_open_position(symbol)
+            if position and float(position.get('size', 0)) > 0:
+                filled_price = float(position.get('avgPrice', entry_signal_price))
+                filled = True
+                logger.warning(f"[REAL] Orden no confirmada via order_id pero posicion existe: {symbol} @ {filled_price}")
+            else:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE real_trades SET status='error', error_message='Orden no confirmada en Bybit', updated_at=now() WHERE id=$1",
+                        trade_id
+                    )
+                logger.error(f"[REAL] Orden {order_id} no confirmada en Bybit para {symbol}")
+                return False
 
         slippage_pct = abs(filled_price - entry_signal_price) / entry_signal_price * 100
 
-        # 8. Actualizar a 'open' con precio real de ejecucion
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE real_trades
-                SET status = 'open', order_id = $1,
-                    entry_price = $2, slippage_pct = $3,
-                    updated_at = now()
-                WHERE id = $4
-                """,
-                order_id, filled_price, round(slippage_pct, 6), trade_id
+        # 8. Actualizar a 'open' con precio real — hasta 4 reintentos
+        update_ok = False
+        for attempt in range(4):
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        UPDATE real_trades
+                        SET status = 'open', order_id = $1,
+                            entry_price = $2, slippage_pct = $3,
+                            updated_at = now()
+                        WHERE id = $4
+                        """,
+                        order_id, filled_price, round(slippage_pct, 6), trade_id
+                    )
+                update_ok = True
+                break
+            except Exception as e:
+                wait = [2, 5, 30][attempt] if attempt < 3 else 0
+                logger.error(f"[REAL] UPDATE a open fallo (intento {attempt+1}): {e}")
+                if wait:
+                    await asyncio.sleep(wait)
+
+        if not update_ok:
+            logger.critical(
+                f"[REAL] CRITICO: trade #{trade_id} {symbol} abierto en Bybit "
+                f"order_id={order_id} pero no se pudo actualizar en DB tras 4 intentos. "
+                f"El reconciliador (5min) lo detectara y creara el registro."
             )
 
         # Configurar SL y TP en Bybit inmediatamente tras confirmar apertura

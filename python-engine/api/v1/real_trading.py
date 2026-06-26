@@ -184,19 +184,46 @@ async def reconcile(
                     logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado")
                 else:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
-
+            symbols_checked = set()
             for sub in account.subscriptions:
+                if sub.symbol in symbols_checked:
+                    continue
+                symbols_checked.add(sub.symbol)
                 position = await client.get_open_position(sub.symbol)
-                if position:
-                    has_trade = await trader.has_open_trade(sub.subscription_id, sub.symbol)
-                    if not has_trade:
-                        results['orphaned'].append({
-                            'symbol': sub.symbol,
-                            'size':   position.get('size'),
-                            'side':   position.get('side'),
-                            'reason': 'posicion en Bybit sin registro en DB',
-                        })
-                        logger.error(f"[RECONCILE] Posicion huerfana en Bybit: {sub.symbol}")
+                if not position:
+                    continue
+                has_trade = await trader.has_open_trade(sub.subscription_id, sub.symbol)
+                if not has_trade:
+                    pos_size = float(position.get('size', 0))
+                    pos_side = position.get('side', '')
+                    if pos_size <= 0:
+                        continue
+                    try:
+                        entry_price = float(position.get('avgPrice', 0) or position.get('entryPrice', 0))
+                        db_side = 'long' if pos_side == 'Buy' else 'short'
+                        async with pool.acquire() as conn:
+                            await conn.execute(
+                                """
+                                INSERT INTO real_trades
+                                    (user_id, subscription_id, broker_account_id, paper_strategy_config_id,
+                                     strategy, symbol, broker, interval, side,
+                                     entry_price, entry_price_signal, sl, tp,
+                                     be_level, be_activated, size, leverage,
+                                     balance_before, regime, entry_time,
+                                     status, created_at, updated_at)
+                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,0,0,0,false,$11,1,0,'UNKNOWN',now(),'open',now(),now())
+                                """,
+                                sub.user_id, sub.subscription_id, account.id,
+                                sub.paper_strategy_config_id,
+                                sub.strategy, sub.symbol, account.broker,
+                                sub.interval, db_side,
+                                entry_price, pos_size
+                            )
+                        results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': 'registrada en DB'})
+                        logger.warning(f"[RECONCILE] Posicion huerfana registrada en DB: {sub.symbol} {pos_side} size={pos_size} @ {entry_price}")
+                    except Exception as e:
+                        logger.error(f"[RECONCILE] No se pudo registrar posicion huerfana {sub.symbol}: {e}")
+                        results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': f'ERROR: {str(e)}'})
 
     finally:
         await pool.close()
