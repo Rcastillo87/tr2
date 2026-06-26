@@ -189,6 +189,12 @@ async function loadConfigAndRun(event, configId) {
             be_pct:             data.params.be_pct ?? '',
             max_duration:       data.params.max_duration ?? '',
             risk_per_trade_pct: data.params.risk_per_trade_pct ?? '',
+            regime_filter:       data.params.regime_filter ? '1' : '',
+            macro_trend_filter:  data.params.macro_trend_filter ? '1' : '',
+            trailing_mode:       data.params.trailing_mode ?? 'none',
+            trailing_distance_pct: data.params.trailing_distance_pct ?? '',
+            volatility_protection_mode: data.params.volatility_protection_mode ?? 'none',
+            volatility_atr_multiplier: data.params.volatility_atr_multiplier ?? '',
             preload_from:       data.strategy_name,
         });
         window.location.href = `/backtesting/run?${params.toString()}`;

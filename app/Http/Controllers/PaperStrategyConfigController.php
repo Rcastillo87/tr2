@@ -29,6 +29,7 @@ class PaperStrategyConfigController extends Controller
             'avg_win_rate'    => ['nullable', 'numeric'],
             'avg_monthly_pnl'    => ['nullable', 'numeric'],
             'avg_monthly_trades' => ['nullable', 'numeric'],
+            'total_return_pct'   => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -48,6 +49,7 @@ class PaperStrategyConfigController extends Controller
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
                 'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
+                'total_return_pct'   => $validated['total_return_pct'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
@@ -70,6 +72,7 @@ class PaperStrategyConfigController extends Controller
             'avg_win_rate'    => ['nullable', 'numeric'],
             'avg_monthly_pnl'    => ['nullable', 'numeric'],
             'avg_monthly_trades' => ['nullable', 'numeric'],
+            'total_return_pct'   => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -89,6 +92,7 @@ class PaperStrategyConfigController extends Controller
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
                 'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
+                'total_return_pct'   => $validated['total_return_pct'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);

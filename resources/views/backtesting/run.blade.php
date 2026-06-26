@@ -213,13 +213,13 @@
                 <div class="flex flex-col justify-end gap-1.5 pb-1">
                     <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
                         <input type="checkbox" name="regime_filter" id="regime_filter" value="1"
-                               {{ ($old ? isset($old['regime_filter']) : true) ? 'checked' : '' }}
+                               {{ ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')) ? 'checked' : '' }}
                                class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
                         Filtro de régimen
                     </label>
                     <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
                         <input type="checkbox" name="macro_trend_filter" value="1"
-                               {{ ($old['macro_trend_filter'] ?? '') ? 'checked' : '' }}
+                               {{ ($old['macro_trend_filter'] ?? request('macro_trend_filter')) ? 'checked' : '' }}
                                class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
                         Filtro macro H4
                     </label>
@@ -324,6 +324,7 @@
         $auditedMonths = $monthlyPnls->count();
         $avgWinRate       = isset($agg['win_rate']) ? (float)$agg['win_rate'] : null;
         $avgMonthlyTrades = $auditedMonths > 0 ? round(collect($monthly)->pluck('total_trades')->average(), 2) : null;
+        $totalAccum       = $auditedMonths > 0 ? round($monthlyPnls->sum(), 2) : null;
 
         // Buscar config existente para comparativo
         $strategyDisplayName = $result['strategy'];
@@ -372,6 +373,7 @@
                         <input type="hidden" name="avg_win_rate"    value="{{ $avgWinRate }}">
                         <input type="hidden" name="avg_monthly_pnl" value="{{ $avgMonthlyPnl }}">
                         <input type="hidden" name="avg_monthly_trades" value="{{ $avgMonthlyTrades }}">
+                        <input type="hidden" name="total_return_pct" value="{{ $totalAccum }}">
                     </form>
                 @endcan
             </div>
@@ -477,6 +479,20 @@
                                     @endif
                                 </td>
                             </tr>
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Total acumulado</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->total_return_pct !== null ? ($existingConfig->total_return_pct >= 0 ? '+' : '') . $existingConfig->total_return_pct . '%' : '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $totalAccum !== null ? ($totalAccum >= 0 ? '+' : '') . $totalAccum . '%' : '—' }}</td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->total_return_pct !== null && $totalAccum !== null)
+                                        @php $diffAcc = round($totalAccum - $existingConfig->total_return_pct, 2); @endphp
+                                        <span style="color: {{ $diffAcc >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">
+                                            {{ $diffAcc >= 0 ? '▲ +' : '▼ ' }}{{ $diffAcc }}%
+                                        </span>
+                                    @else —
+                                    @endif
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                     @if ($fewerMonths)
@@ -516,6 +532,12 @@
                 <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Retorno prom./mes</p>
                 <p class="font-mono text-base font-medium" style="color: {{ ($avgMonthlyPnl ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                     {{ $avgMonthlyPnl !== null ? ($avgMonthlyPnl >= 0 ? '+' : '') . $avgMonthlyPnl . '%' : '—' }}
+                </p>
+            </div>
+            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Total acumulado</p>
+                <p class="font-mono text-base font-medium" style="color: {{ ($totalAccum ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">
+                    {{ $totalAccum !== null ? ($totalAccum >= 0 ? '+' : '') . $totalAccum . '%' : '—' }}
                 </p>
             </div>
         </div>
