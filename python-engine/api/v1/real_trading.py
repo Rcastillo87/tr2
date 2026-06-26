@@ -93,17 +93,35 @@ async def real_tick(
             account_key     = f"account_{account.id}_{account.broker}"
             account_results = {}
 
-            # Circuit breaker
+            # Circuit breaker — solo pausa si los errores son criticos
+            # Errores de parametros (10001) o precios desactualizados no pausan la cuenta
             error_count = await trader.get_circuit_breaker_errors(account.id)
             if error_count >= CIRCUIT_BREAKER_THRESHOLD:
-                await trader.pause_account(
-                    account.id,
-                    f'{error_count} errores consecutivos en las ultimas 2h'
+                last_errors = await trader.get_last_error_messages(account.id)
+                # No critico: errores de parametros, SL/TP invalido, orden rechazada por params
+                non_critical_patterns = [
+                    'firma', 'timestamp', '10001', 'stopLoss', 'takeProfit',
+                    'rechazada por bybit', 'qty', 'invalid', 'no confirmada'
+                ]
+                critical = any(
+                    msg and not any(p in msg.lower() for p in non_critical_patterns)
+                    for msg in last_errors
+                    if msg
                 )
-                results[account_key] = {
-                    'error': f'Circuit breaker activado ({error_count} errores) — cuenta pausada'
-                }
-                continue
+                if critical:
+                    await trader.pause_account(
+                        account.id,
+                        f'{error_count} errores criticos en las ultimas 2h'
+                    )
+                    results[account_key] = {
+                        'error': f'Circuit breaker activado ({error_count} errores criticos) — cuenta pausada'
+                    }
+                    logger.error(f"[CIRCUIT] Cuenta {account.id} pausada por {error_count} errores criticos")
+                    continue
+                else:
+                    # Errores no criticos — limpiar y continuar
+                    await trader.clear_non_critical_errors(account.id)
+                    logger.warning(f"[CIRCUIT] {error_count} errores no criticos ignorados para cuenta {account.id}")
 
             # Cliente Bybit con credenciales desencriptadas por Laravel
             client = BybitClient(

@@ -390,6 +390,60 @@ class RealTrader:
             )
         return int(count or 0)
 
+    async def get_last_error_messages(self, account_id: int) -> list:
+        """Obtiene los mensajes de error recientes para clasificar el circuit breaker."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT error_message FROM real_trades
+                WHERE broker_account_id = $1 AND status = 'error'
+                AND updated_at >= NOW() - INTERVAL '2 hours'
+                ORDER BY updated_at DESC LIMIT 5
+                """,
+                account_id
+            )
+        return [r['error_message'] for r in rows]
+
+    async def clear_non_critical_errors(self, account_id: int):
+        """Marca errores no criticos como 'ignored' para no contar en el circuit breaker."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE real_trades SET status = 'ignored', updated_at = now()
+                WHERE broker_account_id = $1 AND status = 'error'
+                AND updated_at >= NOW() - INTERVAL '2 hours'
+                """,
+                account_id
+            )
+        logger.info(f"[CIRCUIT] Errores no criticos limpiados para cuenta {account_id}")
+
+    async def get_last_error_messages(self, account_id: int) -> list:
+        """Obtiene los mensajes de error recientes para clasificar el circuit breaker."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT error_message FROM real_trades
+                WHERE broker_account_id = $1 AND status = 'error'
+                AND updated_at >= NOW() - INTERVAL '2 hours'
+                ORDER BY updated_at DESC LIMIT 5
+                """,
+                account_id
+            )
+        return [r['error_message'] for r in rows]
+
+    async def clear_non_critical_errors(self, account_id: int):
+        """Marca errores no criticos como 'ignored' para no contar en el circuit breaker."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE real_trades SET status = 'ignored', updated_at = now()
+                WHERE broker_account_id = $1 AND status = 'error'
+                AND updated_at >= NOW() - INTERVAL '2 hours'
+                """,
+                account_id
+            )
+        logger.info(f"[CIRCUIT] Errores no criticos limpiados para cuenta {account_id}")
+
     async def pause_account(self, account_id: int, reason: str):
         """Pausa la cuenta automaticamente (circuit breaker)."""
         async with self.pool.acquire() as conn:

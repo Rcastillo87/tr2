@@ -88,13 +88,21 @@ class RealTradingTickJob implements ShouldQueue
                     Log::warning("RealTrading {$accountKey}: {$monitor['errors']} error(es) al cerrar");
                 }
 
-                foreach (($accountData['signals'] ?? []) as $strategy => $result) {
-                    if (str_starts_with((string) $result, 'ABIERTA')) {
-                        Log::info("RealTrading señal: {$accountKey} {$strategy} -> {$result}");
-                    } elseif (str_starts_with((string) $result, 'ERROR')) {
-                        Log::error("RealTrading error: {$accountKey} {$strategy} -> {$result}");
-                    }
+                // Loguear TODAS las señales para facilitar debugging
+                $signals = $accountData['signals'] ?? [];
+                $opened  = array_filter($signals, fn($r) => str_starts_with((string)$r, 'ABIERTA'));
+                $errors  = array_filter($signals, fn($r) => str_starts_with((string)$r, 'ERROR') || str_starts_with((string)$r, 'EXCEPTION'));
+
+                foreach ($opened as $strategy => $result) {
+                    Log::info("RealTrading ABIERTA: {$accountKey} | {$strategy} -> {$result}");
                 }
+                foreach ($errors as $strategy => $result) {
+                    Log::error("RealTrading ERROR: {$accountKey} | {$strategy} -> {$result}");
+                }
+                // Log resumen del tick (debug)
+                $sinSenal = count(array_filter($signals, fn($r) => str_contains((string)$r, 'sin señal')));
+                $pausadas = count(array_filter($signals, fn($r) => str_contains((string)$r, 'pausada') || str_contains((string)$r, 'regimen')));
+                Log::debug("RealTrading tick: {$accountKey} | abiertas:" . count($opened) . " errores:" . count($errors) . " sin_senal:{$sinSenal} bloqueadas:{$pausadas}");
             }
 
         } catch (\Throwable $e) {
