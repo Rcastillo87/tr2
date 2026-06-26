@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
-use App\Models\RealStrategySubscription;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -20,8 +19,6 @@ class RealTradingTickJob implements ShouldQueue
     {
         $url = config('trading.python_engine_url') . '/v1/real/tick';
 
-        // Construir payload con credenciales desencriptadas por Laravel
-        // Python NO puede leer credenciales encriptadas de la DB directamente
         $accounts = BrokerAccount::where('status', 'active')
             ->whereHas('subscriptions', fn ($q) => $q->where('status', 'active'))
             ->with(['subscriptions' => fn ($q) => $q->where('status', 'active')
@@ -29,6 +26,7 @@ class RealTradingTickJob implements ShouldQueue
             ->get();
 
         if ($accounts->isEmpty()) {
+            Log::debug('RealTradingTickJob: sin cuentas activas');
             return;
         }
 
@@ -38,8 +36,8 @@ class RealTradingTickJob implements ShouldQueue
                     'id'           => $account->id,
                     'broker'       => $account->broker,
                     'account_type' => $account->account_type,
-                    'api_key'      => $account->api_key,    // desencriptado por Laravel
-                    'api_secret'   => $account->api_secret, // desencriptado por Laravel
+                    'api_key'      => $account->api_key,
+                    'api_secret'   => $account->api_secret,
                     'subscriptions' => $account->subscriptions->map(function ($sub) {
                         $config = $sub->paperStrategyConfig;
                         return [
@@ -72,6 +70,9 @@ class RealTradingTickJob implements ShouldQueue
             }
 
             $data = $response->json();
+            Log::info('RealTradingTickJob: tick ejecutado', [
+                'accounts' => array_keys($data['results'] ?? []),
+            ]);
 
             foreach (($data['results'] ?? []) as $accountKey => $accountData) {
                 if (isset($accountData['error'])) {

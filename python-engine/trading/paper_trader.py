@@ -164,10 +164,13 @@ class PaperTrader:
         # TP2 opcional: None si la estrategia no lo define (comportamiento sin cambios)
         tp2 = strategy_instance.calculate_tp2(entry_price, side) \
               if hasattr(strategy_instance, 'calculate_tp2') else None
-
-        risk_pct    = strategy_instance.default_params.get('risk_per_trade_pct', 1.0) \
-                      if hasattr(strategy_instance, 'default_params') \
-                      else self.default_params.get('risk_per_trade_pct', 1.0)
+        # Leer risk_per_trade_pct de la config especifica (paper_strategy_configs)
+        cfg_params = {}
+        if display_name in self.config_map:
+            cfg = self.config_map[display_name]
+            cfg_params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
+        risk_pct = cfg_params.get('risk_per_trade_pct',
+                   self.default_params.get('risk_per_trade_pct', 1.0))
 
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
