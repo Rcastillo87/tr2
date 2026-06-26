@@ -27,7 +27,8 @@ class PaperStrategyConfigController extends Controller
             'params'          => ['required', 'string'],
             'audited_months'  => ['nullable', 'integer', 'min:1'],
             'avg_win_rate'    => ['nullable', 'numeric'],
-            'avg_monthly_pnl' => ['nullable', 'numeric'],
+            'avg_monthly_pnl'    => ['nullable', 'numeric'],
+            'avg_monthly_trades' => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -45,7 +46,8 @@ class PaperStrategyConfigController extends Controller
             $config->update([
                 'audited_months'  => $validated['audited_months'] ?? null,
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
-                'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
+                'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
+                'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
@@ -66,7 +68,8 @@ class PaperStrategyConfigController extends Controller
             'params'          => ['required', 'string'],
             'audited_months'  => ['nullable', 'integer', 'min:1'],
             'avg_win_rate'    => ['nullable', 'numeric'],
-            'avg_monthly_pnl' => ['nullable', 'numeric'],
+            'avg_monthly_pnl'    => ['nullable', 'numeric'],
+            'avg_monthly_trades' => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -84,7 +87,8 @@ class PaperStrategyConfigController extends Controller
             $config->update([
                 'audited_months'  => $validated['audited_months'] ?? null,
                 'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
-                'avg_monthly_pnl' => $validated['avg_monthly_pnl'] ?? null,
+                'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
+                'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);

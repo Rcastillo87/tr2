@@ -88,6 +88,7 @@
                                 <th class="py-2.5 px-3 font-medium" title="Meses auditados en el último backtest">Meses</th>
                                 <th class="py-2.5 px-3 font-medium" title="Win rate promedio mensual">WR prom.</th>
                                 <th class="py-2.5 px-3 font-medium" title="Retorno promedio mensual">Ret. prom./mes</th>
+                                <th class="py-2.5 px-3 font-medium" title="Promedio de trades por mes">Trades/mes</th>
                                 <th class="py-2.5 px-3 font-medium">Estado</th>
                                 <th class="py-2.5 px-4 font-medium">Acciones</th>
                             </tr>
@@ -129,6 +130,9 @@
                                     <td class="py-2.5 px-3 font-mono"
                                         style="color: {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)' }};">
                                         {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? '+' : '') . $config->avg_monthly_pnl . '%' : '—' }}
+                                    </td>
+                                    <td class="py-2.5 px-3 font-mono" style="color:var(--color-text-muted);">
+                                        {{ $config->avg_monthly_trades ?? '—' }}
                                     </td>
 
                                     <td class="py-2.5 px-3">

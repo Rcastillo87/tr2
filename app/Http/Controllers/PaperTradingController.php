@@ -65,7 +65,7 @@ class PaperTradingController extends Controller
 
         // Opciones para los filtros
         $filterOptions = [
-            'strategies' => PaperTrade::distinct()->pluck('strategy')->sort()->values()->toArray(),
+            'strategies' => ['VWAP Tendencia', 'VWAP Reversión', 'Reversión a la Media', 'Tendencia EMA/Donchian'],
             'symbols'    => PaperTrade::distinct()->pluck('symbol')->sort()->values()->toArray(),
             'intervals'  => PaperTrade::distinct()->pluck('interval')->sort()->values()->toArray(),
         ];

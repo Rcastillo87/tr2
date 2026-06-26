@@ -322,8 +322,8 @@
         $bestMonth     = $monthlyPnls->count() > 0 ? round($monthlyPnls->max(), 2) : null;
         $worstMonth    = $monthlyPnls->count() > 0 ? round($monthlyPnls->min(), 2) : null;
         $auditedMonths = $monthlyPnls->count();
-        $avgWinRate    = collect($monthly)->pluck('win_rate')->map(fn($v) => (float)$v)->average();
-        $avgWinRate    = $auditedMonths > 0 ? round($avgWinRate, 2) : null;
+        $avgWinRate       = isset($agg['win_rate']) ? (float)$agg['win_rate'] : null;
+        $avgMonthlyTrades = $auditedMonths > 0 ? round(collect($monthly)->pluck('total_trades')->average(), 2) : null;
 
         // Buscar config existente para comparativo
         $strategyDisplayName = $result['strategy'];
@@ -371,6 +371,7 @@
                         <input type="hidden" name="audited_months"  value="{{ $auditedMonths }}">
                         <input type="hidden" name="avg_win_rate"    value="{{ $avgWinRate }}">
                         <input type="hidden" name="avg_monthly_pnl" value="{{ $avgMonthlyPnl }}">
+                        <input type="hidden" name="avg_monthly_trades" value="{{ $avgMonthlyTrades }}">
                     </form>
                 @endcan
             </div>
@@ -451,6 +452,26 @@
                                         @php $diff2 = round($avgMonthlyPnl - $existingConfig->avg_monthly_pnl, 2); @endphp
                                         <span style="color: {{ $diff2 >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                                             {{ $diff2 >= 0 ? '▲ +' : '▼ ' }}{{ $diff2 }}%
+                                        </span>
+                                    @else —
+                                    @endif
+                                </td>
+                            </tr>
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Total trades</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->avg_monthly_trades ? round($existingConfig->avg_monthly_trades * $existingConfig->audited_months) : '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $agg['total_trades'] ?? '—' }}</td>
+                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                            </tr>
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Trades prom./mes</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->avg_monthly_trades ?? '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $avgMonthlyTrades ?? '—' }}</td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->avg_monthly_trades && $avgMonthlyTrades)
+                                        @php $diffT = round($avgMonthlyTrades - $existingConfig->avg_monthly_trades, 1); @endphp
+                                        <span style="color: {{ $diffT >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">
+                                            {{ $diffT >= 0 ? '▲ +' : '▼ ' }}{{ $diffT }}
                                         </span>
                                     @else —
                                     @endif
