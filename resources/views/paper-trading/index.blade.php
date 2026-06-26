@@ -224,6 +224,7 @@
                         <th class="py-2 px-3 text-left font-normal">P&L %</th>
                         <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
                         <th class="py-2 px-3 text-left font-normal">Hora salida</th>
+                                <th class="py-2 px-3 text-left font-normal">Duración</th>
                     </tr>
                 </thead>
                 <tbody>

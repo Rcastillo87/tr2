@@ -6,6 +6,7 @@ credenciales directamente de la DB para evitar el problema de encriptacion.
 """
 
 import asyncpg
+import json as _json
 import importlib
 import json
 import logging
@@ -73,6 +74,11 @@ def instantiate_strategy(sub: SubscriptionPayload):
     return instance
 
 
+async def _setup_jsonb_codec(conn):
+    import json
+    await conn.set_type_codec('jsonb', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
+    await conn.set_type_codec('json', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
+
 @router.post('/real/tick')
 async def real_tick(
     request: RealTickRequest,
@@ -81,7 +87,7 @@ async def real_tick(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
+    pool    = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10, init=_setup_jsonb_codec)
     trader  = RealTrader(pool)
     results = {}
 
@@ -164,7 +170,7 @@ async def reconcile(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5)
+    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5, init=_setup_jsonb_codec)
     trader  = RealTrader(pool)
     results = {'reconciled': [], 'orphaned': [], 'ok': []}
 
