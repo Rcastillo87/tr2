@@ -176,10 +176,12 @@ class BybitClient:
         except Exception:
             return 0.001, 0.001
 
-    async def place_market_order(self, symbol: str, side: str, qty: float) -> dict | None:
+    async def place_market_order(self, symbol: str, side: str, qty: float,
+                                  sl: float = None, tp: float = None) -> dict | None:
         """
-        Coloca una orden MARKET.
+        Coloca una orden MARKET con SL y TP incluidos.
         side: 'Buy' o 'Sell'
+        sl/tp: precios absolutos de stop loss y take profit
         Retorna el resultado de Bybit o None si fallo.
         """
         body = {
@@ -189,6 +191,17 @@ class BybitClient:
             'orderType': 'Market',
             'qty':       str(qty),
         }
+        # Incluir SL y TP directamente en la orden — mas seguro que configurarlos despues
+        if sl and sl > 0:
+            logger.info(f"[BYBIT] SL recibido: {sl} side={side} symbol={symbol}")
+            body['stopLoss']    = str(round(sl, 8))
+            body['slTriggerBy'] = 'LastPrice'
+        if tp and tp > 0:
+            logger.info(f"[BYBIT] TP recibido: {tp} side={side} symbol={symbol}")
+            body['takeProfit']  = str(round(tp, 8))
+            body['tpTriggerBy'] = 'LastPrice'
+        logger.info(f"[BYBIT] body orden: {body}")
+
         headers = self._sign_body(body)
 
         for attempt in range(3):
@@ -390,7 +403,16 @@ class RealTrader:
         """Agrega entrada al audit_log del trade."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
-            existing = row['audit_log'] if row and row['audit_log'] else []
+            raw = row['audit_log'] if row and row['audit_log'] else []
+            if isinstance(raw, str):
+                try:
+                    existing = json.loads(raw)
+                except Exception:
+                    existing = []
+            elif isinstance(raw, list):
+                existing = raw
+            else:
+                existing = []
             existing.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
             await conn.execute(
                 "UPDATE real_trades SET audit_log = $1, updated_at = now() WHERE id = $2",
@@ -455,19 +477,25 @@ class RealTrader:
             logger.error(f"[REAL] No se pudo obtener balance para {sub['broker_account_id']}")
             return False
 
-        # 2. Calcular SL/TP/BE con los params de la estrategia
-        sl, tp1 = strategy_instance.calculate_sl_tp(entry_signal_price, side)
-        be      = strategy_instance.calculate_breakeven(entry_signal_price, side)
+        # 2. Obtener precio actual del mercado para calcular SL/TP
+        # Usar precio actual, no el de la señal, para evitar SL/TP desactualizados
+        current_price = await get_current_price(symbol)
+        entry_price_for_calc = current_price if current_price else entry_signal_price
+        if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.02:
+            logger.warning(f"[REAL] Precio actual ({current_price}) difiere >2% del precio de señal ({entry_signal_price}) para {symbol}")
 
-        tp2 = strategy_instance.calculate_tp2(entry_signal_price, side) \
+        sl, tp1 = strategy_instance.calculate_sl_tp(entry_price_for_calc, side)
+        be      = strategy_instance.calculate_breakeven(entry_price_for_calc, side)
+
+        tp2 = strategy_instance.calculate_tp2(entry_price_for_calc, side) \
               if hasattr(strategy_instance, 'calculate_tp2') else None
         tp3 = getattr(strategy_instance, 'tp3_pct', None)
         tp4 = getattr(strategy_instance, 'tp4_pct', None)
 
         if tp3:
-            tp3 = entry_signal_price * (1 + tp3/100) if side == 'long' else entry_signal_price * (1 - tp3/100)
+            tp3 = entry_price_for_calc * (1 + tp3/100) if side == 'long' else entry_price_for_calc * (1 - tp3/100)
         if tp4:
-            tp4 = entry_signal_price * (1 + tp4/100) if side == 'long' else entry_signal_price * (1 - tp4/100)
+            tp4 = entry_price_for_calc * (1 + tp4/100) if side == 'long' else entry_price_for_calc * (1 - tp4/100)
 
         # 3. Calcular tamaño con balance real y riesgo configurado
         risk_pct    = strategy_instance.params.get('risk_per_trade_pct', 1.0)
@@ -520,9 +548,10 @@ class RealTrader:
                 datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
-        # 6. Enviar orden MARKET a Bybit
+        # 6. Enviar orden MARKET a Bybit con SL y TP incluidos
         bybit_side = 'Buy' if side == 'long' else 'Sell'
-        result = await client.place_market_order(symbol, bybit_side, size)
+        logger.info(f"[REAL] Abriendo {side} {symbol} entry={entry_signal_price} sl={sl} tp1={tp1} size={size}")
+        result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1)
 
         if result is None:
             # Marcar como error
