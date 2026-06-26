@@ -164,7 +164,10 @@
                             </span>
                         </td>
                         <td class="py-2 px-3">{{ number_format($trade->entry_price, 2) }}</td>
-                        <td class="py-2 px-3" id="price_{{ $trade->id }}">
+                        <td class="py-2 px-3 font-mono" id="price_{{ $trade->id }}"
+                            data-entry="{{ $trade->entry_price }}"
+                            data-side="{{ $trade->side }}"
+                            style="color:var(--color-text-muted);">
                             {{ $trade->current_price ? number_format($trade->current_price, 2) : '—' }}
                         </td>
                         <td class="py-2 px-3" style="color:var(--color-loss);">{{ number_format($trade->sl, 2) }}</td>
@@ -244,6 +247,18 @@
                             </td>
                             <td class="py-2 px-3">{{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}</td>
                             <td class="py-2 px-3">{{ $trade->exit_time ? \Carbon\Carbon::parse($trade->exit_time)->timezone('America/Bogota')->format('d/m H:i') : '—' }}</td>
+                            <td class="py-2 px-3">
+                                @if ($trade->exit_time && $trade->entry_time)
+                                    @php
+                                        $mins = \Carbon\Carbon::parse($trade->entry_time)->diffInMinutes(\Carbon\Carbon::parse($trade->exit_time));
+                                        $h = intdiv($mins, 60);
+                                        $m = $mins % 60;
+                                    @endphp
+                                    {{ $h > 0 ? $h . 'h ' : '' }}{{ $m }}m
+                                @else
+                                    —
+                                @endif
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -329,9 +344,17 @@ async function refreshLivePrices() {
             const pnlEl   = document.getElementById('pnl_' + trade.id);
 
             if (priceEl && trade.current_price) {
-                priceEl.textContent = parseFloat(trade.current_price).toLocaleString('es-CO', {
+                const current  = parseFloat(trade.current_price);
+                const entry    = parseFloat(priceEl.dataset.entry);
+                const side     = priceEl.dataset.side;
+                const up       = current >= entry;
+                // Para LONG: verde si sube, rojo si baja. Para SHORT: al reves
+                const isGood   = side === 'long' ? up : !up;
+                const arrow    = up ? '▲ ' : '▼ ';
+                priceEl.textContent = arrow + current.toLocaleString('es-CO', {
                     minimumFractionDigits: 2, maximumFractionDigits: 2
                 });
+                priceEl.style.color = isGood ? 'var(--color-profit)' : 'var(--color-loss)';
             }
             if (pnlEl && trade.floating_pnl_pct !== null) {
                 const pct = parseFloat(trade.floating_pnl_pct);
@@ -346,7 +369,7 @@ async function refreshLivePrices() {
 
 @if ($openTrades->isNotEmpty())
 refreshLivePrices();
-setInterval(refreshLivePrices, 30000);
+setInterval(refreshLivePrices, 20000);
 @endif
 </script>
 @endpush
