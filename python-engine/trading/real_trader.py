@@ -632,6 +632,8 @@ class RealTrader:
             logger.warning(f"[REAL] Tamaño tras redondeo <= 0 para {symbol}")
             return False
 
+        # 4b. Obtener balance actualizado justo antes de insertar
+        balance = await client.get_balance() or balance
         # 5. Crear registro en pending_open ANTES de enviar a Bybit
         async with self.pool.acquire() as conn:
             trade_id = await conn.fetchval(
@@ -674,6 +676,12 @@ class RealTrader:
                 sl  = round(current_price * (1 + sl_pct), 8)
                 tp1 = round(current_price * (1 - tp_pct), 8)
             entry_signal_price = current_price
+        # Actualizar SL/TP en DB si fueron recalculados
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE real_trades SET sl=$1, tp=$2, entry_price_signal=$3, updated_at=now() WHERE id=$4",
+                sl, tp1, entry_signal_price, trade_id
+            )
         logger.info(f"[REAL] Abriendo {side} {symbol} entry={entry_signal_price} sl={sl} tp1={tp1} size={size}")
         result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1)
 
