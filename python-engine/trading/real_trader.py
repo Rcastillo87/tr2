@@ -63,21 +63,25 @@ class BybitClient:
 
     async def get_closed_pnl(self, symbol: str) -> dict | None:
         """Obtiene el ultimo trade cerrado de Bybit para obtener precio de salida y razon."""
-        params = {'category': 'linear', 'symbol': symbol, 'limit': '1'}
+        params = {'category': 'linear', 'limit': '1', 'symbol': symbol}
+        # Construir query string ordenado para que coincida con la firma
+        query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
         headers = self._sign(params)
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(
-                    f'{self.base_url}/v5/position/closed-pnl',
-                    params=params, headers=headers,
+                    f'{self.base_url}/v5/position/closed-pnl?{query_string}',
+                    headers=headers,
                 )
             data = r.json()
             if data.get('retCode') == 0:
                 items = data.get('result', {}).get('list', [])
                 if items:
                     return items[0]
+            else:
+                logger.error(f"[BYBIT] get_closed_pnl error: {data.get('retMsg')}")
         except Exception as e:
-            logger.error(f"[BYBIT] get_closed_pnl error: {e}")
+            logger.error(f"[BYBIT] get_closed_pnl exception: {e}")
         return None
 
     async def get_market_price(self, symbol: str) -> float | None:
