@@ -250,8 +250,6 @@ class TradingController extends Controller
         // Usar precios testnet si hay cuentas demo
         $hasDemo = $openTrades->filter(fn($t) => $t->brokerAccount?->account_type === 'demo')->isNotEmpty();
         $prices  = $hasDemo ? $this->getTestnetPrices($symbols) : $this->getLivePrices($symbols);
-        $symbols = $openTrades->pluck('symbol')->unique()->toArray();
-        $prices  = $this->getLivePrices($symbols);
 
         $result = $openTrades->map(function ($trade) use ($prices) {
             $currentPrice   = $prices[$trade->symbol] ?? null;
