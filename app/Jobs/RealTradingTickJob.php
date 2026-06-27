@@ -103,7 +103,7 @@ class RealTradingTickJob implements ShouldQueue
                 // Log resumen del tick (debug)
                 $sinSenal = count(array_filter($signals, fn($r) => str_contains((string)$r, 'sin señal')));
                 $pausadas = count(array_filter($signals, fn($r) => str_contains((string)$r, 'pausada') || str_contains((string)$r, 'regimen')));
-                Log::debug("RealTrading tick: {$accountKey} | abiertas:" . count($opened) . " errores:" . count($errors) . " sin_senal:{$sinSenal} bloqueadas:{$pausadas}");
+                Log::debug("RealTrading tick: {$accountKey} | monitoreadas:" . ($monitor['checked'] ?? 0) . " cerradas:" . ($monitor['closed'] ?? 0) . " nuevas:" . count($opened) . " errores:" . count($errors) . " sin_senal:{$sinSenal}");
             }
 
         } catch (\Throwable $e) {
