@@ -208,6 +208,38 @@ async def reconcile(
                     logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado")
                 else:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
+            # Adoptar trades 'orphaned' — abiertos en DB pero no confirmados
+            async with pool.acquire() as conn:
+                orphaned_trades = await conn.fetch(
+                    """SELECT * FROM real_trades
+                       WHERE broker_account_id = $1 AND status = 'orphaned'
+                       ORDER BY created_at DESC""",
+                    account.id
+                )
+            for trade in orphaned_trades:
+                symbol = trade['symbol']
+                position = await client.get_open_position(symbol)
+                if position and float(position.get('size', 0) or 0) > 0:
+                    avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            """UPDATE real_trades SET status='open', entry_price=$1,
+                               updated_at=now(), error_message='Adoptado por reconciliador'
+                               WHERE id=$2""",
+                            avg_price, trade['id']
+                        )
+                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} adoptado @ {avg_price}")
+                    results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted'})
+                else:
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            """UPDATE real_trades SET status='failed',
+                               error_message='Orphaned sin posicion en Bybit', updated_at=now()
+                               WHERE id=$1""",
+                            trade['id']
+                        )
+                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} → failed (sin posicion en Bybit)")
+
             symbols_checked = set()
             for sub in account.subscriptions:
                 if sub.symbol in symbols_checked:

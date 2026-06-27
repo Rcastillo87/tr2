@@ -648,31 +648,82 @@ class RealTrader:
 
         order_id = result.get('orderId')
 
-        # 7. Esperar confirmacion — MARKET se llena casi instantaneo
+        # 7. Esperar confirmacion — 3s inicial
         filled_price = entry_signal_price
         filled = False
-        for attempt in range(3):
-            await asyncio.sleep(2)
-            order = await client.get_order(symbol, order_id)
-            if order and order.get('orderStatus') == 'Filled':
-                filled_price = float(order.get('avgPrice', entry_signal_price))
-                filled = True
-                break
+        await asyncio.sleep(3)
+        order = await client.get_order(symbol, order_id)
+        if order and order.get('orderStatus') == 'Filled':
+            filled_price = float(order.get('avgPrice', entry_signal_price))
+            filled = True
 
-        # Si no confirmo via order, verificar posicion directamente en Bybit
+        # Si no confirmo via order — 5s luego verificar posicion en Bybit
         if not filled:
+            await asyncio.sleep(5)
             position = await client.get_open_position(symbol)
-            if position and float(position.get('size', 0)) > 0:
-                filled_price = float(position.get('avgPrice', entry_signal_price))
+            if position and float(position.get('size', 0) or 0) > 0:
+                filled_price = float(position.get('avgPrice', entry_signal_price) or entry_signal_price)
                 filled = True
-                logger.warning(f"[REAL] Orden no confirmada via order_id pero posicion existe: {symbol} @ {filled_price}")
-            else:
-                async with self.pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE real_trades SET status='error', error_message='Orden no confirmada en Bybit', updated_at=now() WHERE id=$1",
-                        trade_id
-                    )
-                logger.error(f"[REAL] Orden {order_id} no confirmada en Bybit para {symbol}")
+                logger.warning(f"[REAL] Confirmado via posicion Bybit: {symbol} @ {filled_price}")
+
+        # Si sigue sin confirmar — reintentar hasta 3 veces (10s entre intentos)
+        if not filled:
+            for retry in range(3):
+                await asyncio.sleep(10)
+                logger.warning(f"[REAL] Reintento {retry+1}/3 abriendo {symbol}")
+                # Verificar si la senal sigue activa
+                df_retry = await self.get_bars(symbol, interval)
+                if len(df_retry) >= 64:
+                    df_retry = strategy_instance.prepare(df_retry)
+                    df_retry = strategy_instance.generate_signals(df_retry)
+                    current_signal = int(df_retry.iloc[-2]['signal'])
+                    expected_signal = 1 if side == 'long' else -1
+                    if current_signal != expected_signal:
+                        logger.warning(f"[REAL] Senal no activa en reintento {retry+1} para {symbol} — abortando")
+                        async with self.pool.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE real_trades SET status='failed', error_message='Senal no activa en reintento', updated_at=now() WHERE id=$1",
+                                trade_id
+                            )
+                        return False
+                # Reintenta con precio actualizado
+                new_price = await client.get_market_price(symbol)
+                if new_price:
+                    new_sl, new_tp1 = strategy_instance.calculate_sl_tp(new_price, side)
+                    retry_result = await client.place_market_order(symbol, bybit_side, size, sl=new_sl, tp=new_tp1)
+                    if retry_result:
+                        retry_order_id = retry_result.get('orderId', '')
+                        await asyncio.sleep(3)
+                        retry_order = await client.get_order(symbol, retry_order_id)
+                        if retry_order and retry_order.get('orderStatus') == 'Filled':
+                            filled_price = float(retry_order.get('avgPrice', new_price))
+                            filled = True
+                            order_id = retry_order_id
+                            sl, tp1 = new_sl, new_tp1
+                            async with self.pool.acquire() as conn:
+                                await conn.execute(
+                                    "UPDATE real_trades SET sl=$1, tp=$2, entry_price_signal=$3, updated_at=now() WHERE id=$4",
+                                    new_sl, new_tp1, new_price, trade_id
+                                )
+                            logger.info(f"[REAL] Reintento {retry+1} exitoso: {symbol} @ {filled_price}")
+                            break
+                    # Verificar posicion tras reintento
+                    position = await client.get_open_position(symbol)
+                    if position and float(position.get('size', 0) or 0) > 0:
+                        filled_price = float(position.get('avgPrice', new_price) or new_price)
+                        filled = True
+                        logger.warning(f"[REAL] Reintento {retry+1} confirmado via posicion: {symbol} @ {filled_price}")
+                        break
+
+        # Si despues de 3 reintentos sigue sin confirmar → orphaned
+        if not filled:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE real_trades SET status='orphaned', error_message='No confirmada tras 3 reintentos (38s)', updated_at=now() WHERE id=$1",
+                    trade_id
+                )
+            logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 reintentos")
+            return False
                 return False
 
         slippage_pct = abs(filled_price - entry_signal_price) / entry_signal_price * 100
