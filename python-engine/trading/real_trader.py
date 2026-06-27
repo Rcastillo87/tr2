@@ -659,8 +659,21 @@ class RealTrader:
                 datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
-        # 6. Enviar orden MARKET a Bybit con SL y TP incluidos
+        # 6. Recalcular SL/TP con precio actual justo antes de enviar
         bybit_side = 'Buy' if side == 'long' else 'Sell'
+        current_price = await client.get_market_price(symbol)
+        if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.005:
+            # Precio movio mas de 0.5% — recalcular SL/TP con precio actual
+            logger.warning(f"[REAL] Precio movio de {entry_signal_price} a {current_price} — recalculando SL/TP")
+            sl_pct = strategy_instance.sl_pct / 100
+            tp_pct = strategy_instance.tp_pct / 100
+            if side == 'long':
+                sl  = round(current_price * (1 - sl_pct), 8)
+                tp1 = round(current_price * (1 + tp_pct), 8)
+            else:
+                sl  = round(current_price * (1 + sl_pct), 8)
+                tp1 = round(current_price * (1 - tp_pct), 8)
+            entry_signal_price = current_price
         logger.info(f"[REAL] Abriendo {side} {symbol} entry={entry_signal_price} sl={sl} tp1={tp1} size={size}")
         result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1)
 
