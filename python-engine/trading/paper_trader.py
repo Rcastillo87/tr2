@@ -158,20 +158,21 @@ class PaperTrader:
 
     async def open_trade(self, display_name: str, strategy_instance, symbol: str,
                           side: str, entry_price: float, regime: str, interval: str):
+        # Leer params especificos de la config (paper_strategy_configs)
+        cfg_params = self._get_params_for(display_name, symbol)
+
+        # Actualizar instancia con params correctos de la config
+        for attr in ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration']:
+            if attr in cfg_params:
+                setattr(strategy_instance, attr, cfg_params[attr])
+
         sl, tp = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
-
-        # TP2 opcional: None si la estrategia no lo define (comportamiento sin cambios)
         tp2 = strategy_instance.calculate_tp2(entry_price, side) \
               if hasattr(strategy_instance, 'calculate_tp2') else None
-        # Leer risk_per_trade_pct de la config especifica (paper_strategy_configs)
-        cfg_params = {}
-        if display_name in self.config_map:
-            cfg = self.config_map[display_name]
-            cfg_params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
         risk_pct = cfg_params.get('risk_per_trade_pct',
                    self.default_params.get('risk_per_trade_pct', 1.0))
-
+        risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
         size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0.0
