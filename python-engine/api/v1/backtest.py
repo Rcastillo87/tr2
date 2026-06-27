@@ -67,6 +67,10 @@ class BacktestRequest(BaseModel):
     volatility_protection_mode: Optional[str] = None  # None | "close" | "widen"
     volatility_atr_multiplier:  float         = 2.5
     volatility_widen_pct:       float         = 1.0
+    # Filtro de volumen
+    volume_filter:              bool          = False
+    volume_filter_period:       int           = 20
+    volume_filter_mult:         float         = 1.2
 
     # Si True, ademas de las metricas agregadas devuelve un desglose mes a mes
     monthly_breakdown: bool = False
@@ -129,6 +133,9 @@ def load_strategy(request: BacktestRequest):
         "volatility_protection_mode": request.volatility_protection_mode,
         "volatility_atr_multiplier":  request.volatility_atr_multiplier,
         "volatility_widen_pct":       request.volatility_widen_pct,
+        "volume_filter":              request.volume_filter,
+        "volume_filter_period":       request.volume_filter_period,
+        "volume_filter_mult":         request.volume_filter_mult,
 
         "trend_persistence_filter": request.trend_persistence_filter,
         "trend_persistence_bars":   request.trend_persistence_bars,
