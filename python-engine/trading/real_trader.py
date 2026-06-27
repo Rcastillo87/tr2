@@ -576,7 +576,9 @@ class RealTrader:
             tp4 = entry_price_for_calc * (1 + tp4/100) if side == 'long' else entry_price_for_calc * (1 - tp4/100)
 
         # 3. Calcular tamaño con balance real y riesgo configurado
-        risk_pct    = strategy_instance.params.get('risk_per_trade_pct', 1.0)
+        # risk_override_pct de la suscripcion tiene prioridad sobre config
+        risk_pct = sub.get('risk_override_pct') or                    sub.get('config_params', {}).get('risk_per_trade_pct', 1.0)
+        risk_pct = float(risk_pct)
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_signal_price - sl)
         size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0

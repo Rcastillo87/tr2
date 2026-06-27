@@ -50,6 +50,7 @@ class RealTradingTickJob implements ShouldQueue
                             'interval'                 => $sub->interval,
                             'strategy_class'           => $config?->strategy_class,
                             'config_params'            => $config?->params,
+                            'risk_override_pct'        => $sub->risk_override_pct,
                         ];
                     })->values()->toArray(),
                 ];
