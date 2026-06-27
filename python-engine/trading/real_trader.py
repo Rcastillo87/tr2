@@ -577,8 +577,16 @@ class RealTrader:
 
         # 3. Calcular tamaño con balance real y riesgo configurado
         # risk_override_pct de la suscripcion tiene prioridad sobre config
-        risk_pct = sub.get('risk_override_pct') or                    sub.get('config_params', {}).get('risk_per_trade_pct', 1.0)
-        risk_pct = float(risk_pct)
+        risk_override = sub.get('risk_override_pct')
+        if risk_override is not None and str(risk_override).strip() not in ('', 'None', 'null'):
+            risk_pct = float(risk_override)
+        else:
+            config_params = sub.get('config_params') or {}
+            if isinstance(config_params, str):
+                import json as _j
+                config_params = _j.loads(config_params)
+            risk_pct = float(config_params.get('risk_per_trade_pct', 1.0))
+        logger.debug(f"[REAL] Risk calculado: {risk_pct}% (override={risk_override}) para {sub.get('symbol')}")
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_signal_price - sl)
         size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0
