@@ -724,7 +724,6 @@ class RealTrader:
                 )
             logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 reintentos")
             return False
-                return False
 
         slippage_pct = abs(filled_price - entry_signal_price) / entry_signal_price * 100
 
