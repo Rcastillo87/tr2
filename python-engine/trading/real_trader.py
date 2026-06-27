@@ -61,6 +61,22 @@ class BybitClient:
         self.api_secret = api_secret
         self.base_url   = BYBIT_TESTNET if account_type == 'demo' else BYBIT_MAINNET
 
+    async def get_market_price(self, symbol: str) -> float | None:
+        """Obtiene precio actual usando la URL correcta (testnet o mainnet)."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f'{self.base_url}/v5/market/tickers',
+                    params={'category': 'linear', 'symbol': symbol}
+                )
+                data = r.json()
+                tickers = data.get('result', {}).get('list', [])
+                if tickers:
+                    return float(tickers[0]['lastPrice'])
+        except Exception as e:
+            logger.error(f"[BYBIT] Error obteniendo precio {symbol}: {e}")
+        return None
+
     def _sign(self, params: dict) -> dict:
         timestamp   = str(int(time.time() * 1000))
         recv_window = '5000'
@@ -455,23 +471,31 @@ class RealTrader:
 
     async def log_audit(self, trade_id: int, action: str, data: dict):
         """Agrega entrada al audit_log del trade."""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
-            raw = row['audit_log'] if row and row['audit_log'] else []
-            if isinstance(raw, str):
-                try:
-                    existing = json.loads(raw)
-                except Exception:
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
+                raw = row['audit_log'] if row and row['audit_log'] else []
+                # Normalizar a lista — puede venir como str, str-dentro-str, lista o None
+                if isinstance(raw, list):
+                    existing = raw
+                elif isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                        # Doble encode: "[{...}]" -> parsea a string -> parsear de nuevo
+                        if isinstance(parsed, str):
+                            parsed = json.loads(parsed)
+                        existing = parsed if isinstance(parsed, list) else []
+                    except Exception:
+                        existing = []
+                else:
                     existing = []
-            elif isinstance(raw, list):
-                existing = raw
-            else:
-                existing = []
-            existing.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
-            await conn.execute(
-                "UPDATE real_trades SET audit_log = $1, updated_at = now() WHERE id = $2",
-                json.dumps(existing), trade_id
-            )
+                existing.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
+                await conn.execute(
+                    "UPDATE real_trades SET audit_log = $1::jsonb, updated_at = now() WHERE id = $2",
+                    json.dumps(existing), trade_id
+                )
+        except Exception as e:
+            logger.error(f"[REAL] log_audit error trade #{trade_id}: {e}")
 
     # ─────────────────────────────────────────────
     # Datos de mercado
@@ -532,8 +556,8 @@ class RealTrader:
             return False
 
         # 2. Obtener precio actual del mercado para calcular SL/TP
-        # Usar precio actual, no el de la señal, para evitar SL/TP desactualizados
-        current_price = await get_current_price(symbol)
+        # Usar el precio del mismo entorno (testnet/mainnet) donde se ejecutara la orden
+        current_price = await client.get_market_price(symbol)
         entry_price_for_calc = current_price if current_price else entry_signal_price
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.02:
             logger.warning(f"[REAL] Precio actual ({current_price}) difiere >2% del precio de señal ({entry_signal_price}) para {symbol}")
@@ -756,7 +780,7 @@ class RealTrader:
         close_order_id = result.get('orderId')
 
         # Esperar confirmacion
-        exit_price = await get_current_price(symbol) or float(trade['entry_price'])
+        exit_price = await client.get_market_price(symbol) or float(trade['entry_price'])
         for _ in range(6):
             await asyncio.sleep(5)
             order = await client.get_order(symbol, close_order_id)
@@ -837,7 +861,7 @@ class RealTrader:
             symbol = trade['symbol']
 
             if symbol not in price_cache:
-                price = await get_current_price(symbol)
+                price = await client.get_market_price(symbol)
                 if price is None:
                     continue
                 price_cache[symbol] = price
@@ -954,7 +978,7 @@ class RealTrader:
             return f"{symbol}: sin señal"
 
         side        = 'long' if signal == 1 else 'short'
-        entry_price = await get_current_price(symbol)
+        entry_price = await client.get_market_price(symbol)
 
         if entry_price is None:
             return f"{symbol}: error obteniendo precio"
