@@ -189,23 +189,54 @@ async def reconcile(
                 position = await client.get_open_position(symbol)
 
                 if not position:
+                    # Obtener precio de cierre real del historial de Bybit
+                    exit_price  = None
+                    exit_reason = 'reconciled_sl_tp_bybit'
+                    try:
+                        closed_pnl = await client.get_closed_pnl(symbol)
+                        if closed_pnl:
+                            exit_price  = float(closed_pnl.get('avgExitPrice') or closed_pnl.get('exitPrice') or 0) or None
+                            close_side  = closed_pnl.get('side', '')
+                            # Determinar razon de cierre
+                            if closed_pnl.get('orderType') == 'StopLoss':
+                                exit_reason = 'stop_loss'
+                            elif closed_pnl.get('orderType') in ('TakeProfit', 'PartialTakeProfit'):
+                                exit_reason = 'take_profit_1'
+                    except Exception as e:
+                        logger.error(f"[RECONCILE] Error obteniendo closed PnL: {e}")
+
+                    # Calcular PnL si tenemos precio de salida
+                    pnl = None
+                    if exit_price:
+                        entry = float(trade['entry_price'])
+                        size  = float(trade['size'])
+                        side  = trade['side']
+                        if side == 'long':
+                            pnl = (exit_price - entry) * size
+                        else:
+                            pnl = (entry - exit_price) * size
+
                     async with pool.acquire() as conn:
                         await conn.execute(
                             """
                             UPDATE real_trades
                             SET status = 'closed',
-                                exit_reason = 'reconciled_sl_tp_bybit',
+                                exit_reason = $2,
+                                exit_price = $3,
+                                pnl = $4,
+                                net_pnl = $4,
                                 exit_time = now(), updated_at = now()
                             WHERE id = $1
                             """,
-                            trade['id']
+                            trade['id'], exit_reason, exit_price, pnl
                         )
                     results['reconciled'].append({
                         'trade_id': trade['id'],
                         'symbol':   symbol,
-                        'reason':   'cerrada en Bybit mientras servidor caido',
+                        'reason':   exit_reason,
+                        'pnl':      pnl,
                     })
-                    logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado")
+                    logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado exit={exit_price} pnl={pnl} reason={exit_reason}")
                 else:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
             # Adoptar trades 'orphaned' — abiertos en DB pero no confirmados

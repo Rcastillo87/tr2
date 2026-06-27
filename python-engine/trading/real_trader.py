@@ -61,6 +61,25 @@ class BybitClient:
         self.api_secret = api_secret
         self.base_url   = BYBIT_TESTNET if account_type == 'demo' else BYBIT_MAINNET
 
+    async def get_closed_pnl(self, symbol: str) -> dict | None:
+        """Obtiene el ultimo trade cerrado de Bybit para obtener precio de salida y razon."""
+        params = {'category': 'linear', 'symbol': symbol, 'limit': '1'}
+        headers = self._sign(params)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f'{self.base_url}/v5/position/closed-pnl',
+                    params=params, headers=headers,
+                )
+            data = r.json()
+            if data.get('retCode') == 0:
+                items = data.get('result', {}).get('list', [])
+                if items:
+                    return items[0]
+        except Exception as e:
+            logger.error(f"[BYBIT] get_closed_pnl error: {e}")
+        return None
+
     async def get_market_price(self, symbol: str) -> float | None:
         """Obtiene precio actual usando la URL correcta (testnet o mainnet)."""
         try:
