@@ -42,6 +42,10 @@ class BaseStrategy(ABC):
         self.be_pct       = params.get('be_pct', 0.8)
         self.max_duration = params.get('max_duration', 24)
         self.regime_filter = params.get('regime_filter', True)
+        # Filtro de volumen — solo opera si el volumen actual > promedio * multiplicador
+        self.volume_filter          = params.get('volume_filter', False)
+        self.volume_filter_period   = params.get('volume_filter_period', 20)
+        self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
 
         # Take profit escalonado — hasta 4 niveles, todos opcionales
         self.tp2_pct = params.get('tp2_pct', None)
@@ -75,6 +79,24 @@ class BaseStrategy(ABC):
         Calcula los indicadores necesarios para la estrategia.
         Sobreescribir en la estrategia hija si se necesitan indicadores adicionales.
         """
+        return df
+
+    def apply_volume_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filtra señales cuando el volumen es menor al promedio * multiplicador.
+        Si volume_filter=False no hace nada.
+        """
+        if not self.volume_filter:
+            return df
+        period = self.volume_filter_period
+        mult   = self.volume_filter_mult
+        df = df.copy()
+        df['volume_ma'] = df['volume'].rolling(window=period).mean()
+        # Marcar velas donde el volumen es insuficiente
+        df['volume_ok'] = df['volume'] >= df['volume_ma'] * mult
+        # Anular señales donde el volumen es insuficiente
+        if 'signal' in df.columns:
+            df.loc[~df['volume_ok'], 'signal'] = 0
         return df
 
     def should_operate(self, regime: str) -> bool:

@@ -301,6 +301,34 @@
             </div>
         </div>
 
+        <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+            <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Filtro de volumen (opcional)</h4>
+            <div class="flex items-center gap-4 flex-wrap">
+                <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
+                    <input type="checkbox" name="volume_filter" id="volume_filter" value="1"
+                           {{ ($old['volume_filter'] ?? '') ? 'checked' : '' }}
+                           onchange="toggleVolumeFields()"
+                           class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                    Activar filtro de volumen
+                </label>
+                <div id="volumeFields" class="hidden flex items-center gap-3 flex-wrap">
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Período (velas)</label>
+                        <input type="number" step="1" name="volume_filter_period" value="{{ $old['volume_filter_period'] ?? '20' }}"
+                               class="w-24 rounded-lg px-3 py-2 text-sm border font-mono"
+                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador</label>
+                        <input type="number" step="0.1" name="volume_filter_mult" value="{{ $old['volume_filter_mult'] ?? '1.2' }}"
+                               class="w-24 rounded-lg px-3 py-2 text-sm border font-mono"
+                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">Solo opera si volumen > promedio × multiplicador</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="border-t pt-4 flex justify-end" style="border-color:var(--color-border-soft);">
             <button type="submit" class="text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
                     style="background:var(--color-info); color:#fff;">
@@ -691,6 +719,11 @@ function toggleVolatilityFields() {
     const mode = document.getElementById('volatility_protection_mode').value;
     document.getElementById('volatilityFields').classList.toggle('hidden', mode === 'none');
     document.getElementById('volatilityWidenField').classList.toggle('hidden', mode !== 'widen');
+}
+
+function toggleVolumeFields() {
+    const checked = document.getElementById('volume_filter').checked;
+    document.getElementById('volumeFields').classList.toggle('hidden', !checked);
 }
 
 document.getElementById('backtestForm').addEventListener('submit', function () {

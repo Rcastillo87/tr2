@@ -57,4 +57,5 @@ class MeanReversionStrategy(BaseStrategy):
                     curr['rsi'] > self.rsi_ob - 10):
                 df.at[df.index[i], 'signal'] = -1
 
+        df = self.apply_volume_filter(df)
         return df

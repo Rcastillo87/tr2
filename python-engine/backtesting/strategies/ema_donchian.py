@@ -58,4 +58,5 @@ class EmaDonchianStrategy(BaseStrategy):
             elif cross_down and curr['trend_down_active']:
                 df.at[df.index[i], 'signal'] = -1
 
+        df = self.apply_volume_filter(df)
         return df

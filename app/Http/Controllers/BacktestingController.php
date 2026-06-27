@@ -136,6 +136,11 @@ class BacktestingController extends Controller
                     if ($volMode === 'widen') {
                         $payload['volatility_widen_pct'] = (float) $request->input('volatility_widen_pct', 1.0);
                     }
+                // Filtro de volumen
+                if ($request->has('volume_filter')) {
+                    $payload['volume_filter']        = true;
+                    $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
+                    $payload['volume_filter_mult']   = (float) $request->input('volume_filter_mult', 1.2);
                 }
 
                 try {

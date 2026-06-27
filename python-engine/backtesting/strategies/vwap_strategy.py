@@ -216,9 +216,11 @@ class VwapStrategy(BaseStrategy):
 
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.mode == 'trend_follow':
-            return self._signals_trend_follow(df)
+            df = self._signals_trend_follow(df)
         elif self.mode == 'reversion':
-            return self._signals_reversion(df)
+            df = self._signals_reversion(df)
+        # Aplicar filtro de volumen si esta activado
+        df = self.apply_volume_filter(df)
         return df
 
     def _signals_trend_follow(self, df: pd.DataFrame) -> pd.DataFrame:
