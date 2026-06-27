@@ -306,7 +306,7 @@
             <div class="flex items-center gap-4 flex-wrap">
                 <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
                     <input type="checkbox" name="volume_filter" id="volume_filter" value="1"
-                           {{ ($old['volume_filter'] ?? '') ? 'checked' : '' }}
+                           {{ (!empty($old['volume_filter'])) ? 'checked' : '' }}
                            onchange="toggleVolumeFields()"
                            class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
                     Activar filtro de volumen
@@ -329,7 +329,12 @@
             </div>
         </div>
 
-        <div class="border-t pt-4 flex justify-end" style="border-color:var(--color-border-soft);">
+        <div class="border-t pt-4 flex items-center justify-between" style="border-color:var(--color-border-soft);">
+            <button type="button" onclick="resetForm()"
+                    class="text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+                    style="background:var(--color-surface-raised); color:var(--color-text-muted); border:1px solid var(--color-border-strong);">
+                ↺ Restablecer valores
+            </button>
             <button type="submit" class="text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
                     style="background:var(--color-info); color:#fff;">
                 Ejecutar backtest
@@ -724,6 +729,57 @@ function toggleVolatilityFields() {
 function toggleVolumeFields() {
     const checked = document.getElementById('volume_filter').checked;
     document.getElementById('volumeFields').classList.toggle('hidden', !checked);
+}
+
+function resetForm() {
+    Swal.fire({
+        title: '¿Restablecer valores?',
+        html: 'Se limpiarán todos los parámetros del formulario y se cargarán los valores por defecto.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Restablecer',
+        cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0',
+        confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Limpiar campos numericos a defaults
+            const defaults = {
+                'sl_pct': '1.5', 'tp_pct': '3.0', 'be_pct': '2.0',
+                'max_duration': '24', 'risk_per_trade_pct': '1.0',
+                'tp2_pct': '', 'tp3_pct': '', 'tp4_pct': '',
+                'trailing_distance_pct': '1.0',
+                'volatility_atr_multiplier': '2.5', 'volatility_widen_pct': '1.0',
+                'volume_filter_period': '20', 'volume_filter_mult': '1.2',
+            };
+            Object.entries(defaults).forEach(([id, val]) => {
+                const el = document.getElementById(id) || document.querySelector(`[name="${id}"]`);
+                if (el) el.value = val;
+            });
+            // Desmarcar checkboxes
+            ['regime_filter', 'macro_trend_filter', 'volume_filter'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.checked = id === 'regime_filter'; // regime_filter activo por defecto
+            });
+            // Resetear selects
+            document.getElementById('trailing_mode').value = 'none';
+            document.getElementById('volatility_protection_mode').value = 'none';
+            // Ocultar campos condicionales
+            toggleTrailingFields();
+            toggleVolatilityFields();
+            toggleVolumeFields();
+            // Limpiar fechas
+            document.getElementById('start_date').value = '';
+            document.getElementById('end_date').value = '';
+
+            Swal.fire({
+                title: '✓ Valores restablecidos',
+                timer: 1200, timerProgressBar: true,
+                showConfirmButton: false,
+                background: '#11161F', color: '#E5E9F0',
+            });
+        }
+    });
 }
 
 document.getElementById('backtestForm').addEventListener('submit', function () {
