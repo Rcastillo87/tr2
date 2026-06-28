@@ -418,14 +418,22 @@ class RealTrader:
         return [dict(r) for r in rows]
 
     async def has_open_trade(self, subscription_id: int, symbol: str) -> bool:
+        # Verifica por simbolo Y por broker_account_id — evita duplicados entre suscripciones del mismo simbolo
         async with self.pool.acquire() as conn:
+            # Obtener broker_account_id de la suscripcion
+            sub_row = await conn.fetchrow(
+                "SELECT broker_account_id FROM real_strategy_subscriptions WHERE id = $1",
+                subscription_id
+            )
+            if not sub_row:
+                return False
             row = await conn.fetchrow(
                 """
                 SELECT id FROM real_trades
-                WHERE subscription_id = $1 AND symbol = $2
-                  AND status IN ('pending_open', 'open', 'pending_close')
+                WHERE broker_account_id = $1 AND symbol = $2
+                  AND status IN ('pending_open', 'open', 'pending_close', 'orphaned')
                 """,
-                subscription_id, symbol
+                sub_row['broker_account_id'], symbol
             )
         return row is not None
 
@@ -1019,15 +1027,30 @@ class RealTrader:
                 if pos_size <= 0:
                     # Posicion ya no existe — cerrada por SL/TP en Bybit
                     closed = await client.get_closed_pnl(symbol)
-                    exit_price  = float(closed.get("avgExitPrice", 0) or entry) if closed else entry
-                    exit_reason = "stop_loss" if closed and closed.get("orderType") == "StopLoss" else "take_profit_1"
+                    if closed:
+                        exit_price = float(closed.get("avgExitPrice", 0) or entry)
+                        close_type = closed.get("orderType", "")
+                        if close_type == "StopLoss":
+                            exit_reason = "stop_loss"
+                        elif close_type in ("TakeProfit", "PartialTakeProfit"):
+                            exit_reason = "take_profit_1"
+                        else:
+                            # Determinar por precio si fue SL o TP
+                            sl_val = float(trade["sl"])
+                            tp_val = float(trade["tp"])
+                            if side == "short":
+                                exit_reason = "stop_loss" if exit_price >= sl_val else "take_profit_1"
+                            else:
+                                exit_reason = "stop_loss" if exit_price <= sl_val else "take_profit_1"
+                    else:
+                        exit_price  = entry
+                        exit_reason = "reconciled_sl_tp_bybit"
                     success = await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price)
                     if success:
                         results["closed"] += 1
                     else:
                         results["errors"] += 1
                     continue
-
                 # 2. Verificar si SL es provisional (>2.5%) — reintentar trading-stop
                 sl_pct_actual = abs(sl - entry) / entry * 100 if entry > 0 else 0
                 if sl_pct_actual > 2.5:

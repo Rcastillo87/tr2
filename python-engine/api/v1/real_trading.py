@@ -300,7 +300,17 @@ async def reconcile(
                 position = await client.get_open_position(sub.symbol)
                 if not position:
                     continue
+                # Verificar por simbolo completo — evita duplicados entre suscripciones del mismo simbolo
                 has_trade = await trader.has_open_trade(sub.subscription_id, sub.symbol)
+                # Doble verificacion directa por simbolo en DB
+                if not has_trade:
+                    async with pool.acquire() as conn:
+                        existing = await conn.fetchrow(
+                            "SELECT id FROM real_trades WHERE broker_account_id=$1 AND symbol=$2 AND status IN ('open','pending_open','pending_close','orphaned')",
+                            account.id, sub.symbol
+                        )
+                    if existing:
+                        has_trade = True
                 if not has_trade:
                     pos_size = float(position.get('size', 0))
                     pos_side = position.get('side', '')
