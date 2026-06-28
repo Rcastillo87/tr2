@@ -21,15 +21,23 @@ class PaperStrategyConfigController extends Controller
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
-            'strategy_name'   => ['required', 'string'],
-            'symbol'          => ['required', 'string', 'max:20'],
-            'interval'        => ['required', 'string', 'max:10'],
-            'params'          => ['required', 'string'],
-            'audited_months'  => ['nullable', 'integer', 'min:1'],
-            'avg_win_rate'    => ['nullable', 'numeric'],
+            'strategy_name'      => ['required', 'string'],
+            'symbol'             => ['required', 'string', 'max:20'],
+            'interval'           => ['required', 'string', 'max:10'],
+            'params'             => ['required', 'string'],
+            'audited_months'     => ['nullable', 'integer', 'min:1'],
+            'avg_win_rate'       => ['nullable', 'numeric'],
             'avg_monthly_pnl'    => ['nullable', 'numeric'],
             'avg_monthly_trades' => ['nullable', 'numeric'],
             'total_return_pct'   => ['nullable', 'numeric'],
+            'star_wr'            => ['nullable', 'numeric'],
+            'star_sharpe'        => ['nullable', 'numeric'],
+            'star_ret'           => ['nullable', 'numeric'],
+            'star_consistency'   => ['nullable', 'numeric'],
+            'star_pf'            => ['nullable', 'numeric'],
+            'star_rating'        => ['nullable', 'numeric'],
+            'backtest_range_from'=> ['nullable', 'string'],
+            'backtest_range_to'  => ['nullable', 'string'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -45,11 +53,19 @@ class PaperStrategyConfigController extends Controller
                 $params
             );
             $config->update([
-                'audited_months'  => $validated['audited_months'] ?? null,
-                'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
+                'audited_months'     => $validated['audited_months'] ?? null,
+                'avg_win_rate'       => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
                 'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
                 'total_return_pct'   => $validated['total_return_pct'] ?? null,
+                'star_wr'            => $validated['star_wr'] ?? null,
+                'star_sharpe'        => $validated['star_sharpe'] ?? null,
+                'star_ret'           => $validated['star_ret'] ?? null,
+                'star_consistency'   => $validated['star_consistency'] ?? null,
+                'star_pf'            => $validated['star_pf'] ?? null,
+                'star_rating'        => $validated['star_rating'] ?? null,
+                'backtest_range_from'=> $validated['backtest_range_from'] ?? null,
+                'backtest_range_to'  => $validated['backtest_range_to'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
@@ -64,15 +80,23 @@ class PaperStrategyConfigController extends Controller
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
-            'strategy_name'   => ['required', 'string'],
-            'symbol'          => ['required', 'string', 'max:20'],
-            'interval'        => ['required', 'string', 'max:10'],
-            'params'          => ['required', 'string'],
-            'audited_months'  => ['nullable', 'integer', 'min:1'],
-            'avg_win_rate'    => ['nullable', 'numeric'],
+            'strategy_name'      => ['required', 'string'],
+            'symbol'             => ['required', 'string', 'max:20'],
+            'interval'           => ['required', 'string', 'max:10'],
+            'params'             => ['required', 'string'],
+            'audited_months'     => ['nullable', 'integer', 'min:1'],
+            'avg_win_rate'       => ['nullable', 'numeric'],
             'avg_monthly_pnl'    => ['nullable', 'numeric'],
             'avg_monthly_trades' => ['nullable', 'numeric'],
             'total_return_pct'   => ['nullable', 'numeric'],
+            'star_wr'            => ['nullable', 'numeric'],
+            'star_sharpe'        => ['nullable', 'numeric'],
+            'star_ret'           => ['nullable', 'numeric'],
+            'star_consistency'   => ['nullable', 'numeric'],
+            'star_pf'            => ['nullable', 'numeric'],
+            'star_rating'        => ['nullable', 'numeric'],
+            'backtest_range_from'=> ['nullable', 'string'],
+            'backtest_range_to'  => ['nullable', 'string'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -88,11 +112,19 @@ class PaperStrategyConfigController extends Controller
                 $params
             );
             $config->update([
-                'audited_months'  => $validated['audited_months'] ?? null,
-                'avg_win_rate'    => $validated['avg_win_rate'] ?? null,
+                'audited_months'     => $validated['audited_months'] ?? null,
+                'avg_win_rate'       => $validated['avg_win_rate'] ?? null,
                 'avg_monthly_pnl'    => $validated['avg_monthly_pnl'] ?? null,
                 'avg_monthly_trades' => $validated['avg_monthly_trades'] ?? null,
                 'total_return_pct'   => $validated['total_return_pct'] ?? null,
+                'star_wr'            => $validated['star_wr'] ?? null,
+                'star_sharpe'        => $validated['star_sharpe'] ?? null,
+                'star_ret'           => $validated['star_ret'] ?? null,
+                'star_consistency'   => $validated['star_consistency'] ?? null,
+                'star_pf'            => $validated['star_pf'] ?? null,
+                'star_rating'        => $validated['star_rating'] ?? null,
+                'backtest_range_from'=> $validated['backtest_range_from'] ?? null,
+                'backtest_range_to'  => $validated['backtest_range_to'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);

@@ -22,6 +22,27 @@ class BacktestingController extends Controller
      * Vista 1: Lista de estrategias activas en Paper Trading.
      * Punto de entrada al módulo de Backtesting.
      */
+    private function calcularEstrellas(float $wr, float $sharpe, float $retMes, float $consistencia, float $pf): array
+    {
+        $starWr = match(true) {
+            $wr >= 65  => 5, $wr >= 55 => 4, $wr >= 45 => 3, $wr >= 35 => 2, default => 1,
+        };
+        $starSharpe = match(true) {
+            $sharpe >= 4 => 5, $sharpe >= 3 => 4, $sharpe >= 2 => 3, $sharpe >= 1 => 2, default => 1,
+        };
+        $starRet = match(true) {
+            $retMes >= 20 => 5, $retMes >= 10 => 4, $retMes >= 5 => 3, $retMes >= 2 => 2, default => 1,
+        };
+        $starConsistency = match(true) {
+            $consistencia >= 95 => 5, $consistencia >= 85 => 4, $consistencia >= 65 => 3, $consistencia >= 40 => 2, default => 1,
+        };
+        $starPf = match(true) {
+            $pf >= 2.5 => 5, $pf >= 2.0 => 4, $pf >= 1.5 => 3, $pf >= 1.0 => 2, default => 1,
+        };
+        $starRating = round(($starWr + $starSharpe + $starRet + $starConsistency + $starPf) / 5, 1);
+        return compact('starWr','starSharpe','starRet','starConsistency','starPf','starRating');
+    }
+
     public function index()
     {
         Gate::authorize('viewAnalysisTools');
@@ -158,6 +179,30 @@ class BacktestingController extends Controller
                             'strategy', 'symbol', 'interval', 'walk_forward', 'n_windows',
                             'train_pct', 'monthly_breakdown', 'initial_balance',
                         ])->filter(fn ($v) => $v !== null)->toArray();
+
+                        // Calcular estrellas
+                        if ($result) {
+                            $agg      = $result['aggregate_metrics'] ?? [];
+                            $monthly  = $result['monthly_breakdown'] ?? [];
+                            $pnls     = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
+                            $avgRet   = $pnls->count() > 0 ? $pnls->average() : 0;
+                            $mesesPos = $pnls->filter(fn($p) => $p > 0)->count();
+                            $consist  = $pnls->count() > 0 ? round($mesesPos / $pnls->count() * 100, 1) : 0;
+                            $rangeFrom = $monthly ? $monthly[0]['month'] : null;
+                            $rangeTo   = $monthly ? $monthly[count($monthly)-1]['month'] : null;
+
+                            $stars = $this->calcularEstrellas(
+                                (float) ($agg['win_rate'] ?? 0),
+                                (float) ($agg['sharpe_ratio'] ?? 0),
+                                (float) $avgRet,
+                                (float) $consist,
+                                (float) ($agg['profit_factor'] ?? 0)
+                            );
+                            $result['stars']      = $stars;
+                            $result['consist_pct'] = $consist;
+                            $result['range_from']  = $rangeFrom;
+                            $result['range_to']    = $rangeTo;
+                        }
                     } else {
                         $error = 'Error del motor: ' . $response->body();
                     }
