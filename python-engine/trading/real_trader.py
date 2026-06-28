@@ -61,40 +61,6 @@ class BybitClient:
         self.api_secret = api_secret
         self.base_url   = BYBIT_TESTNET if account_type == 'demo' else BYBIT_MAINNET
 
-    async def set_trading_stop(self, symbol: str, sl: float, tp: float) -> bool:
-        """Actualiza SL/TP de una posicion abierta via trading-stop."""
-        body = {
-            'category':    'linear',
-            'symbol':      symbol,
-            'positionIdx': 0,
-            'stopLoss':    str(round(sl, 8)),
-            'slTriggerBy': 'LastPrice',
-            'takeProfit':  str(round(tp, 8)),
-            'tpTriggerBy': 'LastPrice',
-        }
-        headers = self._sign_body(body)
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    r = await client.post(
-                        f'{self.base_url}/v5/position/trading-stop',
-                        content=json.dumps(body, separators=(',', ':')).encode(),
-                        headers=headers,
-                    )
-                data = r.json()
-                if data.get('retCode') == 0:
-                    logger.info(f"[BYBIT] trading-stop OK: {symbol} sl={sl} tp={tp}")
-                    return True
-                else:
-                    logger.error(f"[BYBIT] trading-stop error (attempt {attempt+1}): {data.get('retMsg')}")
-                    if attempt < 2:
-                        await asyncio.sleep(2)
-            except Exception as e:
-                logger.error(f"[BYBIT] trading-stop exception: {e}")
-                if attempt < 2:
-                    await asyncio.sleep(2)
-        return False
-
     async def get_closed_pnl(self, symbol: str) -> dict | None:
         """Obtiene el ultimo trade cerrado de Bybit para obtener precio de salida y razon."""
         params = {'category': 'linear', 'limit': '1', 'symbol': symbol}
@@ -312,7 +278,7 @@ class BybitClient:
 
         return None
 
-    async def set_trading_stop(self, symbol: str, side: str, sl: float, tp: float) -> bool:
+    async def set_trading_stop(self, symbol: str, sl: float, tp: float, side: str = None) -> bool:
         """
         Configura SL y TP en Bybit para una posicion abierta.
         Se llama despues de confirmar la apertura de la orden.
@@ -1023,7 +989,7 @@ class RealTrader:
             )
         # Actualizar SL en Bybit para que este protegido aunque caiga el servidor
         if client and symbol and side:
-            await client.set_trading_stop(symbol, side, new_sl, tp or 0)
+            await client.set_trading_stop(symbol, new_sl, tp or 0)
             logger.info(f"[REAL] BE activado — SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
 
     # ─────────────────────────────────────────────
