@@ -181,6 +181,7 @@ async def reconcile(
                 api_secret   = account.api_secret,
                 account_type = account.account_type,
             )
+            open_trades = await trader.get_open_trades(account.id)
             for trade in open_trades:
                 symbol   = trade['symbol']
                 # No reconciliar trades con menos de 10 minutos
@@ -349,8 +350,25 @@ async def reconcile(
                                 sub.interval, db_side,
                                 entry_price, pos_size
                             )
+                        # Aplicar SL/TP reales via trading-stop
+                        params = sub.config_params if isinstance(sub.config_params, dict) else {}
+                        sl_pct = float(params.get('sl_pct', 0.8)) / 100
+                        tp_pct = float(params.get('tp_pct', 1.6)) / 100
+                        if db_side == 'short':
+                            sl_real = round(entry_price * (1 + sl_pct), 8)
+                            tp_real = round(entry_price * (1 - tp_pct), 8)
+                        else:
+                            sl_real = round(entry_price * (1 - sl_pct), 8)
+                            tp_real = round(entry_price * (1 + tp_pct), 8)
+                        ts_ok = await client.set_trading_stop(sub.symbol, sl_real, tp_real)
+                        if ts_ok:
+                            async with pool.acquire() as conn:
+                                await conn.execute(
+                                    "UPDATE real_trades SET sl=$1, tp=$2 WHERE broker_account_id=$3 AND symbol=$4 AND status='open' AND sl=0",
+                                    sl_real, tp_real, account.id, sub.symbol
+                                )
                         results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': 'registrada en DB'})
-                        logger.warning(f"[RECONCILE] Posicion huerfana registrada en DB: {sub.symbol} {pos_side} size={pos_size} @ {entry_price}")
+                        logger.warning(f"[RECONCILE] Posicion huerfana registrada en DB: {sub.symbol} {pos_side} size={pos_size} @ {entry_price} sl={sl_real} tp={tp_real} ts={'OK' if ts_ok else 'FALLO'}")
                     except Exception as e:
                         logger.error(f"[RECONCILE] No se pudo registrar posicion huerfana {sub.symbol}: {e}")
                         results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': f'ERROR: {str(e)}'})
