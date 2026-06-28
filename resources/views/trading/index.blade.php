@@ -220,11 +220,13 @@
                             @php
                                 $statusColors = [
                                     'pending_open'  => ['bg'=>'#3A2E0E','color'=>'#EF9F27'],
-                                    'open'          => ['bg'=>'#16331F','color'=>'var(--color-profit)'],
+                                    'open'          => ['bg'=>'#16331F','color'=>'#1D9E75'],
                                     'orphaned'      => ['bg'=>'#2D1B69','color'=>'#8B5CF6'],
                                     'pending_close' => ['bg'=>'#1A2B3C','color'=>'var(--color-info)'],
+                                    'failed'        => ['bg'=>'#3A1A1C','color'=>'#E24B4A'],
+                                    'error'         => ['bg'=>'#1F2937','color'=>'#374151'],
                                 ];
-                                $sc = $statusColors[$trade->status] ?? ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'];
+                                $sc = $statusColors[$trade->status] ?? ['bg'=>'#1F2937','color'=>'#374151'];
                             @endphp
                             <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style="background:{{ $sc['bg'] }}; color:{{ $sc['color'] }};">
@@ -325,13 +327,13 @@
                             <td class="py-2 px-3">
                                 @php
                                     $histStatusColors = [
-                                        'closed'   => ['bg'=>'#16331F','color'=>'var(--color-profit)'],
-                                        'failed'   => ['bg'=>'#3A1A1C','color'=>'var(--color-loss)'],
-                                        'error'    => ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'],
+                                        'closed'   => ['bg'=>'#16331F','color'=>'#1D9E75'],
+                                        'failed'   => ['bg'=>'#3A1A1C','color'=>'#E24B4A'],
+                                        'error'    => ['bg'=>'#1F2937','color'=>'#374151'],
                                         'orphaned' => ['bg'=>'#2D1B69','color'=>'#8B5CF6'],
-                                        'ignored'  => ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'],
+                                        'ignored'  => ['bg'=>'#1F2937','color'=>'#374151'],
                                     ];
-                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#16331F','color'=>'var(--color-profit)'];
+                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#16331F','color'=>'#1D9E75'];
                                 @endphp
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                       style="background:{{ $hsc['bg'] }}; color:{{ $hsc['color'] }};">
