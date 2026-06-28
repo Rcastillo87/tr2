@@ -233,17 +233,21 @@ class BybitClient:
         # Calcular SL/TP provisionales basados en mark_price actual
         mark_price = await self.get_market_price(symbol)
         if mark_price:
+            # SL provisional: 5% para demo (testnet volatil), 3% para mainnet
+            is_demo = 'testnet' in self.base_url
+            sl_margin = 1.05 if is_demo else 1.03
+            tp_margin = 0.93 if is_demo else 0.95
             if side == 'Sell':  # SHORT
-                sl_prov = round(mark_price * 1.03, 8)
-                tp_prov = round(mark_price * 0.95, 8)
+                sl_prov = round(mark_price * sl_margin, 8)
+                tp_prov = round(mark_price * (2 - tp_margin), 8)
             else:  # LONG
-                sl_prov = round(mark_price * 0.97, 8)
-                tp_prov = round(mark_price * 1.05, 8)
+                sl_prov = round(mark_price * (2 - sl_margin), 8)
+                tp_prov = round(mark_price * tp_margin, 8)
             body['stopLoss']    = str(sl_prov)
             body['slTriggerBy'] = 'LastPrice'
             body['takeProfit']  = str(tp_prov)
             body['tpTriggerBy'] = 'LastPrice'
-            logger.info(f"[BYBIT] SL provisional={sl_prov} TP provisional={tp_prov} mark={mark_price} side={side} symbol={symbol}")
+            logger.info(f"[BYBIT] SL provisional={sl_prov} TP provisional={tp_prov} mark={mark_price} side={side} symbol={symbol} demo={is_demo}")
         else:
             # Sin mark price — incluir SL/TP originales si existen
             if sl and sl > 0:
