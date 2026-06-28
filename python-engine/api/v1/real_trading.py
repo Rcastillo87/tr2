@@ -193,15 +193,20 @@ async def reconcile(
                     exit_price  = None
                     exit_reason = 'reconciled_sl_tp_bybit'
                     try:
+                        # Buscar en historial de cierres filtrando por entry_price para identificar el trade correcto
                         closed_pnl = await client.get_closed_pnl(symbol)
                         if closed_pnl:
-                            exit_price  = float(closed_pnl.get('avgExitPrice') or closed_pnl.get('exitPrice') or 0) or None
-                            close_side  = closed_pnl.get('side', '')
-                            # Determinar razon de cierre
-                            if closed_pnl.get('orderType') == 'StopLoss':
-                                exit_reason = 'stop_loss'
-                            elif closed_pnl.get('orderType') in ('TakeProfit', 'PartialTakeProfit'):
-                                exit_reason = 'take_profit_1'
+                            # Verificar que el avgEntryPrice coincide con el entry del trade
+                            closed_entry = float(closed_pnl.get('avgEntryPrice', 0) or 0)
+                            trade_entry  = float(trade['entry_price'])
+                            if abs(closed_entry - trade_entry) / trade_entry < 0.001:  # 0.1% tolerancia
+                                exit_price = float(closed_pnl.get('avgExitPrice') or closed_pnl.get('exitPrice') or 0) or None
+                                if closed_pnl.get('orderType') == 'StopLoss':
+                                    exit_reason = 'stop_loss'
+                                elif closed_pnl.get('orderType') in ('TakeProfit', 'PartialTakeProfit'):
+                                    exit_reason = 'take_profit_1'
+                            else:
+                                logger.warning(f"[RECONCILE] closed_pnl entry={closed_entry} no coincide con trade entry={trade_entry} — usando precio estimado")
                     except Exception as e:
                         logger.error(f"[RECONCILE] Error obteniendo closed PnL: {e}")
 
