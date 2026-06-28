@@ -181,11 +181,18 @@ async def reconcile(
                 api_secret   = account.api_secret,
                 account_type = account.account_type,
             )
-
-            open_trades = await trader.get_open_trades(account.id)
-
             for trade in open_trades:
                 symbol   = trade['symbol']
+                # No reconciliar trades con menos de 10 minutos
+                from datetime import timezone as tz, timedelta
+                trade_time = trade['entry_time']
+                if trade_time.tzinfo is None:
+                    trade_time = trade_time.replace(tzinfo=tz.utc)
+                trade_age = datetime.now(tz.utc) - trade_time
+                if trade_age.total_seconds() < 600:
+                    logger.info(f"[RECONCILE] Trade #{trade['id']} {symbol} < 10min — omitiendo")
+                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
+                    continue
                 position = await client.get_open_position(symbol)
 
                 if not position:
