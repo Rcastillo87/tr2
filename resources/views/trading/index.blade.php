@@ -122,6 +122,45 @@
 </div>
 @endif
 
+{{-- Guia de estados --}}
+<div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+    <button type="button" onclick="toggleTradingGuide()"
+            class="w-full flex items-center justify-between px-4 py-3 text-left"
+            style="color:var(--color-text-secondary);">
+        <span class="text-xs font-medium">📖 Guía de estados y columnas</span>
+        <span id="tradingGuideChevron" class="text-[11px]" style="color:var(--color-text-muted);">▼ Mostrar</span>
+    </button>
+    <div id="tradingGuideContent" class="hidden px-4 pb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-[11px]" style="color:var(--color-text-muted);">
+            <div class="space-y-2">
+                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Estados de operación</p>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#EF9F27;"></span><span class="font-medium" style="color:var(--color-text-primary);">pending_open</span> — Orden enviada a Bybit, esperando confirmación de ejecución.</div>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#1D9E75;"></span><span class="font-medium" style="color:var(--color-text-primary);">open</span> — Posición confirmada y activa en Bybit. El monitor la vigila cada 5 min.</div>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#6B7280;"></span><span class="font-medium" style="color:var(--color-text-primary);">closed</span> — Cerrada correctamente. PnL, comisión y balance calculados.</div>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#8B5CF6;"></span><span class="font-medium" style="color:var(--color-text-primary);">orphaned</span> — No confirmada en 38s. El reconciliador la adopta si existe en Bybit.</div>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#E24B4A;"></span><span class="font-medium" style="color:var(--color-text-primary);">failed</span> — No se pudo abrir. Señal expiró o Bybit rechazó la orden.</div>
+                <div><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:#374151;"></span><span class="font-medium" style="color:var(--color-text-primary);">error</span> — Error técnico durante la apertura.</div>
+            </div>
+            <div class="space-y-2">
+                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Columnas — Posiciones abiertas</p>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Precio actual</span> — Precio en tiempo real del mercado. ▲ verde = precio a favor · ▼ rojo = en contra.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">SL</span> — Stop Loss: precio al que Bybit cierra automáticamente para limitar la pérdida.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">TP</span> — Take Profit: precio al que Bybit cierra automáticamente para capturar la ganancia.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">P&L flotante</span> — Ganancia/pérdida no realizada en % sobre el capital. Se actualiza cada 20s.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Estado</span> — Badge de color indicando el estado actual de la operación.</div>
+            </div>
+            <div class="space-y-2">
+                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Columnas — Historial</p>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Razón de cierre</span> — stop_loss · take_profit_1-4 · time_exit · reconciled_sl_tp_bybit.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Comisión</span> — Costo de la operación (taker fee Bybit ~0.055%).</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">P&L neto</span> — Ganancia/pérdida real en USDT después de comisiones.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Bal. antes/después</span> — Balance de la cuenta antes y después de la operación.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">DEMO/REAL</span> — Indica si la cuenta es testnet (demo) o mainnet (real).</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- Posiciones abiertas --}}
 @if ($openTrades->isNotEmpty())
 <div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
@@ -129,7 +168,7 @@
         <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
             Posiciones abiertas ({{ $openTrades->count() }})
         </h3>
-        <span class="text-[10px]" style="color:var(--color-text-muted);">Precio actualizado cada 30s</span>
+        <span class="text-[10px]" style="color:var(--color-text-muted);">Precio actualizado cada 20s</span>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
@@ -145,6 +184,7 @@
                     <th class="py-2 px-3 text-left font-normal">TP</th>
                     <th class="py-2 px-3 text-left font-normal">P&L flotante</th>
                     <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
+                    <th class="py-2 px-3 text-left font-normal">Estado</th>
                     <th class="py-2 px-3 text-left font-normal">Cuenta</th>
                 </tr>
             </thead>
@@ -175,6 +215,21 @@
                         </td>
                         <td class="py-2 px-3">
                             {{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}
+                        </td>
+                        <td class="py-2 px-3">
+                            @php
+                                $statusColors = [
+                                    'pending_open'  => ['bg'=>'#3A2E0E','color'=>'#EF9F27'],
+                                    'open'          => ['bg'=>'#16331F','color'=>'var(--color-profit)'],
+                                    'orphaned'      => ['bg'=>'#2D1B69','color'=>'#8B5CF6'],
+                                    'pending_close' => ['bg'=>'#1A2B3C','color'=>'var(--color-info)'],
+                                ];
+                                $sc = $statusColors[$trade->status] ?? ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'];
+                            @endphp
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style="background:{{ $sc['bg'] }}; color:{{ $sc['color'] }};">
+                                {{ str_replace('_', ' ', $trade->status) }}
+                            </span>
                         </td>
                         <td class="py-2 px-3">
                             @php
@@ -337,6 +392,23 @@ new Chart(ctx, {
 @endif
 
 // Precio en tiempo real (cada 30s)
+function toggleTradingGuide() {
+    const content = document.getElementById('tradingGuideContent');
+    const chevron = document.getElementById('tradingGuideChevron');
+    const isHidden = content.classList.contains('hidden');
+    content.classList.toggle('hidden', !isHidden);
+    chevron.textContent = isHidden ? '▲ Ocultar' : '▼ Mostrar';
+    localStorage.setItem('tradingGuideOpen', isHidden ? '1' : '0');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (localStorage.getItem('tradingGuideOpen') === '1') {
+        document.getElementById('tradingGuideContent')?.classList.remove('hidden');
+        const chevron = document.getElementById('tradingGuideChevron');
+        if (chevron) chevron.textContent = '▲ Ocultar';
+    }
+});
+
 async function refreshLivePrices() {
     try {
         const res = await fetch('{{ route("trading.live-prices") }}', {
