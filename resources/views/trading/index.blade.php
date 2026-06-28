@@ -327,13 +327,13 @@
                             <td class="py-2 px-3">
                                 @php
                                     $histStatusColors = [
-                                        'closed'   => ['bg'=>'#16331F','color'=>'#1D9E75'],
+                                        'closed'   => ['bg'=>'#1F2937','color'=>'#6B7280'],
                                         'failed'   => ['bg'=>'#3A1A1C','color'=>'#E24B4A'],
                                         'error'    => ['bg'=>'#1F2937','color'=>'#374151'],
                                         'orphaned' => ['bg'=>'#2D1B69','color'=>'#8B5CF6'],
                                         'ignored'  => ['bg'=>'#1F2937','color'=>'#374151'],
                                     ];
-                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#16331F','color'=>'#1D9E75'];
+                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#1F2937','color'=>'#6B7280'];
                                 @endphp
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                       style="background:{{ $hsc['bg'] }}; color:{{ $hsc['color'] }};">
