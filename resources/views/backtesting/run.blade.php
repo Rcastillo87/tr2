@@ -515,6 +515,29 @@
                                     @else — @endif
                                 </td>
                             </tr>
+                            @if ($existingConfig->star_rating)
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación</td>
+                                <td class="py-1.5 text-right font-mono" style="color:var(--color-info);">
+                                    {{ $existingConfig->star_rating ?? '—' }}⭐
+                                    @if($existingConfig->backtest_range_from)
+                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1.5 text-right font-mono" style="color:var(--color-info);">
+                                    {{ $result['stars']['starRating'] ?? '—' }}⭐
+                                    @if(!empty($result['range_from']))
+                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
+                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
+                                        <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
+                                    @else — @endif
+                                </td>
+                            </tr>
+                            @endif
                         </tbody>
                     </table>
                     @if ($fewerMonths)
@@ -527,46 +550,55 @@
         {{-- Calificacion estrellas --}}
         @if (!empty($result['stars']))
         @php
-            $stars     = $result['stars'];
-            $rating    = $stars['starRating'] ?? 0;
-            $rangeFrom = $result['range_from'] ?? null;
-            $rangeTo   = $result['range_to'] ?? null;
+            $stars      = $result['stars'];
+            $rating     = (float)($stars['starRating'] ?? 0);
+            $rangeFrom  = $result['range_from'] ?? null;
+            $rangeTo    = $result['range_to'] ?? null;
             $consistPct = $result['consist_pct'] ?? null;
-            function renderStars(float $val): string {
-                $full  = floor($val);
-                $half  = ($val - $full) >= 0.5 ? 1 : 0;
-                $empty = 5 - $full - $half;
-                return str_repeat('★', $full) . str_repeat('½', $half) . str_repeat('☆', $empty);
-            }
-            $starColor = match(true) {
+            $avgRetVal  = $avgMonthlyPnl;
+            $starColor  = match(true) {
                 $rating >= 4.5 => '#1D9E75',
                 $rating >= 3.5 => '#4D8FE8',
                 $rating >= 2.5 => '#EF9F27',
                 default        => '#E24B4A',
             };
+            // Renderizar estrellas con media estrella como ✦
+            $full  = (int)floor($rating);
+            $half  = ($rating - $full) >= 0.5 ? 1 : 0;
+            $empty = 5 - $full - $half;
+            $starsHtml = str_repeat('★', $full) . ($half ? '✦' : '') . str_repeat('☆', $empty);
         @endphp
-        <div class="rounded-md border p-3 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+        <div class="rounded-md border p-2.5 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
             <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
                 <div class="flex items-center gap-2">
-                    <span class="text-xl font-mono" style="color:{{ $starColor }};">{{ renderStars($rating) }}</span>
-                    <span class="text-lg font-mono font-medium" style="color:{{ $starColor }};">{{ $rating }} / 5.0</span>
+                    <span class="text-2xl leading-none" style="color:{{ $starColor }};">{{ $starsHtml }}</span>
+                    <span class="text-xl font-mono font-bold" style="color:{{ $starColor }};">{{ $rating }}<span class="text-sm font-normal" style="color:var(--color-text-muted);"> / 5.0</span></span>
                 </div>
                 @if ($rangeFrom && $rangeTo)
-                <span class="text-[10px]" style="color:var(--color-text-muted);">Período: {{ $rangeFrom }} → {{ $rangeTo }}</span>
+                <span class="text-[10px]" style="color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
                 @endif
             </div>
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                @foreach ([
-                    ['Win Rate',     $stars['starWr'] ?? 0,          isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
-                    ['Sharpe',       $stars['starSharpe'] ?? 0,       $agg['sharpe_ratio'] ?? '—'],
-                    ['Ret. prom/mes',$stars['starRet'] ?? 0,          isset($result['consist_pct']) ? round(collect($result['monthly_breakdown'] ?? [])->pluck('total_pnl_pct')->average(), 2).'%' : '—'],
-                    ['Consistencia', $stars['starConsistency'] ?? 0,  $consistPct !== null ? $consistPct.'%' : '—'],
-                    ['Profit Factor',$stars['starPf'] ?? 0,           $agg['profit_factor'] ?? '—'],
-                ] as [$label, $val, $display])
-                <div class="text-center rounded p-1.5" style="background:var(--color-surface); border:1px solid var(--color-border-soft);">
-                    <p class="text-[10px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
-                    <p class="text-[11px] font-mono" style="color:{{ $starColor }};">{{ str_repeat('★', (int)$val) }}{{ str_repeat('☆', 5-(int)$val) }}</p>
-                    <p class="text-[10px] font-mono" style="color:var(--color-text-secondary);">{{ $display }}</p>
+            <div class="grid grid-cols-5 gap-1.5">
+                @php
+                    $metricItems = [
+                        ['WR',    $stars['starWr'] ?? 0,           isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
+                        ['Sharpe',$stars['starSharpe'] ?? 0,        $agg['sharpe_ratio'] ?? '—'],
+                        ['Ret/mes',$stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
+                        ['Consist.',$stars['starConsistency'] ?? 0, $consistPct !== null ? $consistPct.'%' : '—'],
+                        ['PF',    $stars['starPf'] ?? 0,            $agg['profit_factor'] ?? '—'],
+                    ];
+                @endphp
+                @foreach ($metricItems as [$label, $val, $display])
+                @php
+                    $mFull  = (int)floor($val);
+                    $mHalf  = ($val - $mFull) >= 0.5 ? 1 : 0;
+                    $mEmpty = 5 - $mFull - $mHalf;
+                    $mStars = str_repeat('★',$mFull).($mHalf?'✦':'').str_repeat('☆',$mEmpty);
+                @endphp
+                <div class="text-center rounded p-1" style="background:var(--color-surface); border:1px solid var(--color-border-soft);">
+                    <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
+                    <p class="text-[10px]" style="color:{{ $starColor }};">{{ $mStars }}</p>
+                    <p class="text-[9px] font-mono" style="color:var(--color-text-secondary);">{{ $display }}</p>
                 </div>
                 @endforeach
             </div>
