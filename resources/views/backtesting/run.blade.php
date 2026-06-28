@@ -568,24 +568,26 @@
             $empty = 5 - $full - $half;
             $starsHtml = str_repeat('★', $full) . ($half ? '✦' : '') . str_repeat('☆', $empty);
         @endphp
-        <div class="rounded-md border p-2.5 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-            <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-                <div class="flex items-center gap-2">
-                    <span class="text-2xl leading-none" style="color:{{ $starColor }};">{{ $starsHtml }}</span>
-                    <span class="text-xl font-mono font-bold" style="color:{{ $starColor }};">{{ $rating }}<span class="text-sm font-normal" style="color:var(--color-text-muted);"> / 5.0</span></span>
+        <div class="rounded-md border p-2 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+            {{-- Fila principal: estrellas promedio + rango --}}
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-3xl leading-none" style="color:{{ $starColor }};">{{ $starsHtml }}</span>
+                    <span class="font-mono font-bold text-lg" style="color:{{ $starColor }};">{{ $rating }}<span class="text-xs font-normal" style="color:var(--color-text-muted);"> / 5</span></span>
                 </div>
                 @if ($rangeFrom && $rangeTo)
-                <span class="text-[10px]" style="color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
+                <span class="text-[9px]" style="color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
                 @endif
             </div>
-            <div class="grid grid-cols-5 gap-1.5">
+            {{-- 5 métricas en una sola línea --}}
+            <div class="grid grid-cols-5 gap-1">
                 @php
                     $metricItems = [
-                        ['WR',    $stars['starWr'] ?? 0,           isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
-                        ['Sharpe',$stars['starSharpe'] ?? 0,        $agg['sharpe_ratio'] ?? '—'],
-                        ['Ret/mes',$stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
-                        ['Consist.',$stars['starConsistency'] ?? 0, $consistPct !== null ? $consistPct.'%' : '—'],
-                        ['PF',    $stars['starPf'] ?? 0,            $agg['profit_factor'] ?? '—'],
+                        ['WR',      $stars['starWr'] ?? 0,          isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
+                        ['Sharpe',  $stars['starSharpe'] ?? 0,       $agg['sharpe_ratio'] ?? '—'],
+                        ['Ret/mes', $stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
+                        ['Consist.',$stars['starConsistency'] ?? 0,  $consistPct !== null ? $consistPct.'%' : '—'],
+                        ['PF',      $stars['starPf'] ?? 0,           $agg['profit_factor'] ?? '—'],
                     ];
                 @endphp
                 @foreach ($metricItems as [$label, $val, $display])
@@ -595,10 +597,10 @@
                     $mEmpty = 5 - $mFull - $mHalf;
                     $mStars = str_repeat('★',$mFull).($mHalf?'✦':'').str_repeat('☆',$mEmpty);
                 @endphp
-                <div class="text-center rounded p-1" style="background:var(--color-surface); border:1px solid var(--color-border-soft);">
-                    <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
-                    <p class="text-[10px]" style="color:{{ $starColor }};">{{ $mStars }}</p>
-                    <p class="text-[9px] font-mono" style="color:var(--color-text-secondary);">{{ $display }}</p>
+                <div class="text-center rounded px-1 py-0.5" style="background:var(--color-surface); border:1px solid var(--color-border-soft);">
+                    <p class="text-[8px] leading-tight" style="color:var(--color-text-muted);">{{ $label }}</p>
+                    <p class="text-[11px] leading-tight" style="color:{{ $starColor }};">{{ $mStars }}</p>
+                    <p class="text-[8px] font-mono leading-tight" style="color:var(--color-text-secondary);">{{ $display }}</p>
                 </div>
                 @endforeach
             </div>
