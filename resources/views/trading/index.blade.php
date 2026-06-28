@@ -288,6 +288,7 @@
                         <th class="py-2 px-3 text-left font-normal">Dir.</th>
                         <th class="py-2 px-3 text-left font-normal">Entrada</th>
                         <th class="py-2 px-3 text-left font-normal">Salida</th>
+                        <th class="py-2 px-3 text-left font-normal">Estado</th>
                         <th class="py-2 px-3 text-left font-normal">Razón</th>
                         <th class="py-2 px-3 text-left font-normal">Tamaño</th>
                         <th class="py-2 px-3 text-left font-normal">Comisión</th>
@@ -319,6 +320,22 @@
                                 {{ number_format($trade->exit_price, 2) }}<br>
                                 <span style="color:var(--color-text-muted);">
                                     {{ $trade->exit_time ? \Carbon\Carbon::parse($trade->exit_time)->timezone('America/Bogota')->format('d/m H:i') : '—' }}
+                                </span>
+                            </td>
+                            <td class="py-2 px-3">
+                                @php
+                                    $histStatusColors = [
+                                        'closed'   => ['bg'=>'#16331F','color'=>'var(--color-profit)'],
+                                        'failed'   => ['bg'=>'#3A1A1C','color'=>'var(--color-loss)'],
+                                        'error'    => ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'],
+                                        'orphaned' => ['bg'=>'#2D1B69','color'=>'#8B5CF6'],
+                                        'ignored'  => ['bg'=>'#1F2937','color'=>'var(--color-text-muted)'],
+                                    ];
+                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#16331F','color'=>'var(--color-profit)'];
+                                @endphp
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                      style="background:{{ $hsc['bg'] }}; color:{{ $hsc['color'] }};">
+                                    {{ str_replace('_', ' ', $trade->status ?? 'closed') }}
                                 </span>
                             </td>
                             <td class="py-2 px-3">{{ str_replace('_', ' ', $trade->exit_reason ?? '—') }}</td>
