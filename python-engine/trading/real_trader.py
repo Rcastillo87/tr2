@@ -303,11 +303,12 @@ class BybitClient:
                     headers=headers,
                 )
             data = r.json()
+            logger.info(f"[BYBIT] trading-stop response: retCode={data.get('retCode')} msg={data.get('retMsg')} symbol={symbol}")
             if data.get('retCode') == 0:
                 logger.info(f"[BYBIT] SL/TP configurado en Bybit: {symbol} SL={sl} TP={tp}")
                 return True
             else:
-                logger.error(f"[BYBIT] set_trading_stop error: {data.get('retMsg')} code={data.get('retCode')}")
+                logger.error(f"[BYBIT] set_trading_stop error: {data.get('retMsg')} code={data.get('retCode')} body={body}")
                 return False
         except Exception as e:
             logger.error(f"[BYBIT] set_trading_stop exception: {e}")
