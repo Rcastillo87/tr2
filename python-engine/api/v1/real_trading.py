@@ -252,14 +252,35 @@ async def reconcile(
                 position = await client.get_open_position(symbol)
                 if position and float(position.get('size', 0) or 0) > 0:
                     avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
+                    # Calcular SL/TP reales con avgPrice real
+                    async with pool.acquire() as conn:
+                        row = await conn.fetchrow(
+                            "SELECT psc.params FROM real_trades rt"
+                            " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+                            " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+                            " WHERE rt.id = $1", trade['id']
+                        )
+                    params = row['params'] if row else {}
+                    sl_pct = float(params.get('sl_pct', 0.8)) / 100
+                    tp_pct = float(params.get('tp_pct', 1.6)) / 100
+                    t_side = trade['side']
+                    if t_side == 'short':
+                        sl_real = round(avg_price * (1 + sl_pct), 8)
+                        tp_real = round(avg_price * (1 - tp_pct), 8)
+                    else:
+                        sl_real = round(avg_price * (1 - sl_pct), 8)
+                        tp_real = round(avg_price * (1 + tp_pct), 8)
+                    # Aplicar SL/TP reales via trading-stop
+                    ts_ok = await client.set_trading_stop(symbol, sl_real, tp_real)
                     async with pool.acquire() as conn:
                         await conn.execute(
                             """UPDATE real_trades SET status='open', entry_price=$1,
-                               updated_at=now(), error_message='Adoptado por reconciliador'
-                               WHERE id=$2""",
-                            avg_price, trade['id']
+                               sl=$2, tp=$3, updated_at=now(),
+                               error_message='Adoptado por reconciliador'
+                               WHERE id=$4""",
+                            avg_price, sl_real, tp_real, trade['id']
                         )
-                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} adoptado @ {avg_price}")
+                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} adoptado @ {avg_price} sl={sl_real} tp={tp_real} ts={'OK' if ts_ok else 'FALLO'}")
                     results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted'})
                 else:
                     async with pool.acquire() as conn:
