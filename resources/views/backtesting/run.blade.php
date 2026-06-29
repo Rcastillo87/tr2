@@ -231,7 +231,7 @@
         {{-- SECCIÓN 3: Filtros --}}
         <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
             <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Filtros</h4>
-            <div class="flex flex-wrap items-center gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
                 <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
                     <input type="checkbox" name="regime_filter" id="regime_filter" value="1"
                            {{ ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')) ? 'checked' : '' }}
@@ -271,14 +271,14 @@
         </div>
 
         {{-- SECCIÓN 4: Opcionales avanzados (Trailing + Volatilidad en 2 columnas) --}}
-        <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-            <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Opcionales avanzados</h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div class="border-t pt-3" style="border-color:var(--color-border-soft);">
+            <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Opcionales avanzados</h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {{-- Trailing Stop --}}
                 <div>
-                    <label class="block text-[11px] mb-1.5" style="color:var(--color-text-muted);">Trailing Stop</label>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Trailing Stop</label>
                     <select name="trailing_mode" id="trailing_mode" onchange="toggleTrailingFields()"
-                            class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
+                            class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none mb-2"
                             style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                         <option value="none" {{ ($old['trailing_mode'] ?? request('trailing_mode', 'none')) === 'none' ? 'selected' : '' }}>Ninguno</option>
                         <option value="fixed" {{ ($old['trailing_mode'] ?? request('trailing_mode')) === 'fixed' ? 'selected' : '' }}>Fijo (distancia constante)</option>
@@ -309,9 +309,9 @@
                 </div>
                 {{-- Protección por volatilidad --}}
                 <div>
-                    <label class="block text-[11px] mb-1.5" style="color:var(--color-text-muted);">Protección por volatilidad</label>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Protección por volatilidad</label>
                     <select name="volatility_protection_mode" id="volatility_protection_mode" onchange="toggleVolatilityFields()"
-                            class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none mb-3"
+                            class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none mb-2"
                             style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                         <option value="none" {{ ($old['volatility_protection_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguna</option>
                         <option value="close" {{ ($old['volatility_protection_mode'] ?? '') === 'close' ? 'selected' : '' }}>Cerrar si se dispara</option>
@@ -515,6 +515,55 @@
                                     @else — @endif
                                 </td>
                             </tr>
+                            {{-- Sharpe --}}
+                            @if ($existingConfig->star_sharpe || !empty($result['stars']['starSharpe']))
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Sharpe Ratio</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->star_sharpe ? ($existingConfig->params['sharpe_ratio'] ?? '—') : '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $agg['sharpe_ratio'] ?? '—' }}</td>
+                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                            </tr>
+                            @endif
+                            {{-- Consistencia --}}
+                            @if (!empty($result['consist_pct']))
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Consistencia</td>
+                                <td class="py-1.5 text-right">—</td>
+                                <td class="py-1.5 text-right">{{ $result['consist_pct'] }}%</td>
+                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                            </tr>
+                            @endif
+                            {{-- Profit Factor --}}
+                            @if (!empty($agg['profit_factor']))
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Profit Factor</td>
+                                <td class="py-1.5 text-right">—</td>
+                                <td class="py-1.5 text-right">{{ $agg['profit_factor'] }}</td>
+                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                            </tr>
+                            @endif
+                            {{-- Calificacion --}}
+                            <tr class="border-t" style="border-color:var(--color-border-soft);">
+                                <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación ⭐</td>
+                                <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
+                                    {{ $existingConfig->star_rating ? $existingConfig->star_rating.'★' : '—' }}
+                                    @if($existingConfig->backtest_range_from)
+                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
+                                    {{ !empty($result['stars']['starRating']) ? $result['stars']['starRating'].'★' : '—' }}
+                                    @if(!empty($result['range_from']))
+                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
+                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
+                                        <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
+                                    @else — @endif
+                                </td>
+                            </tr>
                             @if ($existingConfig->star_rating)
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación</td>
@@ -557,50 +606,46 @@
             $consistPct = $result['consist_pct'] ?? null;
             $avgRetVal  = $avgMonthlyPnl;
             $starColor  = match(true) {
-                $rating >= 4.5 => '#1D9E75',
-                $rating >= 3.5 => '#4D8FE8',
-                $rating >= 2.5 => '#EF9F27',
+                $rating >= 4.0 => '#F5C518',
+                $rating >= 3.0 => '#EF9F27',
+                $rating >= 2.0 => '#E8832A',
                 default        => '#E24B4A',
             };
             // Renderizar estrellas con media estrella como ✦
-            $full  = (int)floor($rating);
-            $half  = ($rating - $full) >= 0.5 ? 1 : 0;
-            $empty = 5 - $full - $half;
-            $starsHtml = str_repeat('★', $full) . ($half ? '✦' : '') . str_repeat('☆', $empty);
+            $fullRating = (int)floor($rating);
+            $starsHtml = str_repeat('★', $fullRating) . str_repeat('☆', 5 - $fullRating);
         @endphp
         <div class="rounded-md border p-2 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
             {{-- Fila principal: estrellas promedio + rango --}}
-            <div class="flex items-center justify-between gap-2 mb-1.5">
-                <div class="flex items-center gap-1.5">
-                    <span class="text-3xl leading-none" style="color:{{ $starColor }};">{{ $starsHtml }}</span>
-                    <span class="font-mono font-bold text-lg" style="color:{{ $starColor }};">{{ $rating }}<span class="text-xs font-normal" style="color:var(--color-text-muted);"> / 5</span></span>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:2.2rem; line-height:1; color:{{ $starColor }};">{{ $starsHtml }}</span>
+                    <span style="font-family:monospace; font-weight:700; font-size:1.6rem; color:{{ $starColor }};">{{ $rating }}<span style="font-size:0.9rem; font-weight:400; color:var(--color-text-muted);"> / 5</span></span>
                 </div>
                 @if ($rangeFrom && $rangeTo)
-                <span class="text-[9px]" style="color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
+                <span style="font-size:9px; color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
                 @endif
             </div>
-            {{-- 5 métricas en una sola línea --}}
-            <div class="grid grid-cols-5 gap-1">
+            {{-- 5 métricas en una sola fila --}}
+            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:4px;">
                 @php
                     $metricItems = [
-                        ['WR',      $stars['starWr'] ?? 0,          isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
-                        ['Sharpe',  $stars['starSharpe'] ?? 0,       $agg['sharpe_ratio'] ?? '—'],
-                        ['Ret/mes', $stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
-                        ['Consist.',$stars['starConsistency'] ?? 0,  $consistPct !== null ? $consistPct.'%' : '—'],
-                        ['PF',      $stars['starPf'] ?? 0,           $agg['profit_factor'] ?? '—'],
+                        ['Win Rate',      $stars['starWr'] ?? 0,          isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
+                        ['Sharpe Ratio',  $stars['starSharpe'] ?? 0,       $agg['sharpe_ratio'] ?? '—'],
+                        ['Ret. prom/mes', $stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
+                        ['Consistencia',  $stars['starConsistency'] ?? 0,  $consistPct !== null ? $consistPct.'%' : '—'],
+                        ['Profit Factor', $stars['starPf'] ?? 0,           $agg['profit_factor'] ?? '—'],
                     ];
                 @endphp
                 @foreach ($metricItems as [$label, $val, $display])
                 @php
-                    $mFull  = (int)floor($val);
-                    $mHalf  = ($val - $mFull) >= 0.5 ? 1 : 0;
-                    $mEmpty = 5 - $mFull - $mHalf;
-                    $mStars = str_repeat('★',$mFull).($mHalf?'✦':'').str_repeat('☆',$mEmpty);
+                    $mFull  = (int)$val;
+                    $mStars = str_repeat('★',$mFull).str_repeat('☆',5-$mFull);
                 @endphp
-                <div class="text-center rounded px-1 py-0.5" style="background:var(--color-surface); border:1px solid var(--color-border-soft);">
-                    <p class="text-[8px] leading-tight" style="color:var(--color-text-muted);">{{ $label }}</p>
-                    <p class="text-[11px] leading-tight" style="color:{{ $starColor }};">{{ $mStars }}</p>
-                    <p class="text-[8px] font-mono leading-tight" style="color:var(--color-text-secondary);">{{ $display }}</p>
+                <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface); border:1px solid var(--color-border-soft);">
+                    <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 2px;">{{ $label }}</p>
+                    <p style="font-size:16px; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mStars }}</p>
+                    <p style="font-size:11px; font-family:monospace; color:var(--color-text-secondary); margin:0;">{{ $display }}</p>
                 </div>
                 @endforeach
             </div>
@@ -608,10 +653,10 @@
         @endif
 
         {{-- KPIs --}}
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Total trades</p>
-                <p class="font-mono text-base font-medium" style="color:var(--color-text-primary);">{{ $agg['total_trades'] ?? '—' }}</p>
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:16px;">
+            <div style="border-radius:6px; border:1px solid var(--color-border-strong); padding:8px; background:var(--color-surface-raised);">
+                <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 3px;">Total trades</p>
+                <p style="font-family:monospace; font-size:13px; font-weight:600; color:var(--color-text-primary); margin:0;">{{ $agg['total_trades'] ?? '—' }}</p>
             </div>
             <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
                 <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Win rate</p>
@@ -670,23 +715,40 @@
             <div class="overflow-x-auto">
                 <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
                     <thead>
-                        <tr class="border-b" style="border-color:var(--color-border-soft);">
+                        <tr class="border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
                             <th class="py-2 px-2 font-normal">Mes</th>
-                            <th class="py-2 px-2 font-normal">Trades</th>
-                            <th class="py-2 px-2 font-normal">G/P</th>
-                            <th class="py-2 px-2 font-normal">Win rate</th>
-                            <th class="py-2 px-2 font-normal">P&L %</th>
+                            <th class="py-2 px-2 font-normal text-right">Trades</th>
+                            <th class="py-2 px-2 font-normal text-right">G/P</th>
+                            <th class="py-2 px-2 font-normal text-right">Win rate</th>
+                            <th class="py-2 px-2 font-normal text-right">P&L %</th>
+                            <th class="py-2 px-2 font-normal text-right">Acumulado</th>
+                            <th class="py-2 px-2 font-normal">Barra</th>
                         </tr>
                     </thead>
                     <tbody>
+                        @php $acum = 0; $maxPnl = collect($monthly)->max('total_pnl_pct'); $minPnl = collect($monthly)->min('total_pnl_pct'); $absMax = max(abs($maxPnl), abs($minPnl), 1); @endphp
                         @foreach ($monthly as $m)
+                        @php
+                            $acum += $m['total_pnl_pct'];
+                            $pct   = $m['total_pnl_pct'];
+                            $barW  = round(abs($pct) / $absMax * 100);
+                            $barColor = $pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)';
+                        @endphp
                             <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $m['month'] }}</td>
-                                <td class="py-2 px-2">{{ $m['total_trades'] }}</td>
-                                <td class="py-2 px-2">{{ $m['wins'] }}/{{ $m['losses'] }}</td>
-                                <td class="py-2 px-2">{{ $m['win_rate'] }}%</td>
-                                <td class="py-2 px-2" style="color: {{ $m['total_pnl_pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                    {{ $m['total_pnl_pct'] >= 0 ? '+' : '' }}{{ $m['total_pnl_pct'] }}%
+                                <td class="py-1.5 px-2" style="color:var(--color-text-primary);">{{ $m['month'] }}</td>
+                                <td class="py-1.5 px-2 text-right">{{ $m['total_trades'] }}</td>
+                                <td class="py-1.5 px-2 text-right">{{ $m['wins'] }}/{{ $m['losses'] }}</td>
+                                <td class="py-1.5 px-2 text-right">{{ $m['win_rate'] }}%</td>
+                                <td class="py-1.5 px-2 text-right" style="color:{{ $barColor }};">
+                                    {{ $pct >= 0 ? '+' : '' }}{{ $pct }}%
+                                </td>
+                                <td class="py-1.5 px-2 text-right" style="color: {{ $acum >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                    {{ $acum >= 0 ? '+' : '' }}{{ round($acum, 2) }}%
+                                </td>
+                                <td class="py-1.5 px-2" style="width:80px;">
+                                    <div style="background:var(--color-border-soft); border-radius:2px; height:6px; width:100%;">
+                                        <div style="height:6px; border-radius:2px; width:{{ $barW }}%; background:{{ $barColor }};"></div>
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach
