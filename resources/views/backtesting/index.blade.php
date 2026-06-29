@@ -119,7 +119,10 @@
                          data-state="{{ $config->active ? 'activa' : 'inactiva' }}">
                         {{-- Cabecera: nombre + estado + acciones --}}
                         <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
-                            <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
+                                <span class="text-[10px] font-mono" style="color:var(--color-text-muted);">{{ $config->symbol }} · {{ $iLabel }}</span>
+                            </div>
                             <div class="flex items-center gap-3">
                                 <span class="px-1.5 py-0.5 rounded text-[10px]"
                                       style="background:{{ $config->active ? '#16331F' : '#3A1A1C' }}; color:{{ $config->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
@@ -139,17 +142,15 @@
                             </div>
                         </div>
                         {{-- Parámetros --}}
-                        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
+                        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
                             @foreach([
-                                ['Símbolo',      $config->symbol],
-                                ['Intervalo',    $iLabel],
                                 ['Stop Loss',    ($params['sl_pct'] ?? '—').'%'],
                                 ['Take Profit',  ($params['tp_pct'] ?? '—').'%'],
                                 ['Break-even',   ($params['be_pct'] ?? '—').'%'],
                                 ['Duración',     ($params['max_duration'] ?? '—').' velas'],
                                 ['Riesgo/trade', ($params['risk_per_trade_pct'] ?? '—').'%'],
                             ] as [$label, $value])
-                            <div class="px-3 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
+                            <div class="px-2 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
                                 <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
                                 <p class="text-[9px] font-mono font-medium" style="color:var(--color-text-primary);">{{ $value }}</p>
                             </div>
@@ -166,7 +167,7 @@
                                 <span class="text-[11px]" style="color:var(--color-text-muted);">📅 {{ $config->backtest_range_from }} → {{ $config->backtest_range_to }}</span>
                                 @endif
                             </div>
-                            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:4px;">
+                            <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px;">
                                 @foreach($metrics as [$mlabel, $mstar, $mval, $mcolor])
                                 @php
                                     $mFull  = (int)($mstar ?? 0);
@@ -174,7 +175,8 @@
                                 @endphp
                                 <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
                                     <p style="font-size:11px; color:var(--color-text-muted); margin:0 0 3px;">{{ $mlabel }}</p>
-                                    <p style="font-size:15px; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★',$mFull).str_repeat('☆',$mEmpty) }}</p>
+                                    <p class="hidden sm:block" style="font-size:15px; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★',$mFull).str_repeat('☆',$mEmpty) }}</p>
+                                    <p class="sm:hidden" style="font-size:13px; font-weight:700; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ $mFull }}★</p>
                                     <p style="font-size:11px; font-family:monospace; color:{{ $mcolor }}; margin:0;">{{ $mval }}</p>
                                 </div>
                                 @endforeach

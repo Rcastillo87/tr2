@@ -3,7 +3,7 @@
 @section('header', 'Configurar Backtest')
 
 @section('content')
-<style>button, a[href] { cursor: pointer; }</style>
+<style>button, a[href] { cursor: pointer; } @media(min-width:640px){ .kpi-grid{ grid-template-columns:repeat(7,1fr) !important; } }</style>
 
 <div class="mb-3">
     <a href="{{ route('backtesting.index') }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">
@@ -32,10 +32,6 @@
                 <div>
                     <span class="font-medium" style="color:var(--color-text-primary);">Símbolo e Intervalo</span> —
                     Par de trading (BTCUSDT, ETHUSDT, SOLUSDT) y temporalidad de las velas (H1=1 hora, H2=2 horas). Cada combinación puede tener parámetros distintos.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Desde / Hasta</span> —
-                    Rango de fechas del backtest. Si se dejan vacíos, usa todos los datos disponibles. Más datos = resultados más confiables pero más tiempo de procesamiento.
                 </div>
                 <div>
                     <span class="font-medium" style="color:var(--color-text-primary);">Stop Loss %</span> —
@@ -73,6 +69,18 @@
                 <div>
                     <span class="font-medium" style="color:var(--color-text-primary);">Volumen mínimo</span> —
                     Solo opera si el volumen de la vela actual supera el promedio de las últimas N velas × multiplicador. Evita señales en mercados sin liquidez. Período=20, Mult=1.2 es el punto de partida recomendado.
+                </div>
+                <div>
+                    <span class="font-medium" style="color:var(--color-text-primary);">Bloquear horas (UTC)</span> —
+                    Bloquea señales en horas específicas del día. Basado en análisis histórico: 10:00-11:00 UTC tienen menor WR en BTC/ETH. Al activar carga por defecto horas 10 y 11.
+                </div>
+                <div>
+                    <span class="font-medium" style="color:var(--color-text-primary);">Bloquear días</span> —
+                    Bloquea señales en días específicos de la semana. Basado en análisis histórico: Lunes tiene menor WR. Al activar carga Lunes por defecto.
+                </div>
+                <div>
+                    <span class="font-medium" style="color:var(--color-text-primary);">Break-even %</span> —
+                    (Opcionales avanzados) Cuando la ganancia flotante llega a este %, el SL se mueve al precio de entrada — ya no puedes perder. Recomendado entre TP1 y TP2.
                 </div>
                 <div>
                     <span class="font-medium" style="color:var(--color-text-primary);">Trailing Stop — Fijo</span> —
@@ -116,8 +124,12 @@
                     Suma de todos los retornos mensuales del período. Representa el retorno total obtenido si hubieras operado todo el período.
                 </div>
                 <div>
+                    <span class="font-medium" style="color:var(--color-text-primary);">Calificación ⭐</span> —
+                    Promedio de 5 métricas: Win Rate, Sharpe, Ret. prom/mes, Consistencia mensual y Profit Factor. Cada una se califica de 1 a 5 con igual peso (20%). Se guarda al implementar en Paper Trading.
+                </div>
+                <div>
                     <span class="font-medium" style="color:var(--color-text-primary);">Criterios de aprobación</span> —
-                    La estrategia se aprueba si cumple: win rate &gt;45%, Sharpe &gt;1, retorno prom. mensual &gt;1%, drawdown &lt;15%.
+                    La estrategia se aprueba si cumple: win rate &gt;45%, Sharpe &gt;1, drawdown &lt;15%.
                 </div>
             </div>
         </div>
@@ -710,7 +722,7 @@
         @endif
 
         {{-- KPIs --}}
-        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:16px;">
+        <div class="kpi-grid grid gap-2 mb-4" style="grid-template-columns:repeat(4,1fr);">
             <div style="border-radius:6px; border:1px solid var(--color-border-strong); padding:8px; background:var(--color-surface-raised);">
                 <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 3px;">Total trades</p>
                 <p style="font-family:monospace; font-size:13px; font-weight:600; color:var(--color-text-primary); margin:0;">{{ $agg['total_trades'] ?? '—' }}</p>
