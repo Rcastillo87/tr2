@@ -915,7 +915,7 @@ function loadParams() {
         if (bhEl) {
             const hasBlockedHours = p.blocked_hours && p.blocked_hours.length > 0;
             bhEl.checked = hasBlockedHours;
-            toggleBlockedHours();
+            toggleBlockedHours(false);
             if (hasBlockedHours) {
                 document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
                     cb.checked = p.blocked_hours.includes(parseInt(cb.value));
@@ -928,7 +928,7 @@ function loadParams() {
         if (bdEl) {
             const hasBlockedDays = p.blocked_days && p.blocked_days.length > 0;
             bdEl.checked = hasBlockedDays;
-            toggleBlockedDays();
+            toggleBlockedDays(false);
             if (hasBlockedDays) {
                 document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
                     cb.checked = p.blocked_days.includes(parseInt(cb.value));
@@ -995,7 +995,7 @@ function toggleVolumeFields() {
     fields.querySelectorAll('input').forEach(el => el.disabled = !checked);
 }
 
-function toggleBlockedHours() {
+function toggleBlockedHours(loadDefaults = true) {
     const checked = document.getElementById('blocked_hours_active').checked;
     const fields  = document.getElementById('blockedHoursFields');
     fields.classList.toggle('hidden', !checked);
@@ -1003,12 +1003,12 @@ function toggleBlockedHours() {
     document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
         cb.disabled = !checked;
         if (!checked) cb.checked = false;
-        // Al activar cargar defaults 10 y 11
-        if (checked) cb.checked = [10,11].includes(parseInt(cb.value));
+        // Solo cargar defaults si se activa manualmente (no desde loadParams)
+        if (checked && loadDefaults) cb.checked = [10,11].includes(parseInt(cb.value));
     });
 }
 
-function toggleBlockedDays() {
+function toggleBlockedDays(loadDefaults = true) {
     const checked = document.getElementById('blocked_days_active').checked;
     const fields  = document.getElementById('blockedDaysFields');
     fields.classList.toggle('hidden', !checked);
@@ -1016,8 +1016,8 @@ function toggleBlockedDays() {
     document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
         cb.disabled = !checked;
         if (!checked) cb.checked = false;
-        // Al activar cargar default Lunes (0)
-        if (checked) cb.checked = parseInt(cb.value) === 0;
+        // Solo cargar defaults si se activa manualmente (no desde loadParams)
+        if (checked && loadDefaults) cb.checked = parseInt(cb.value) === 0;
     });
 }
 
