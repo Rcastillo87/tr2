@@ -475,6 +475,9 @@
                         <input type="hidden" name="star_rating"        value="{{ $result['stars']['starRating'] ?? '' }}">
                         <input type="hidden" name="backtest_range_from" value="{{ $result['range_from'] ?? '' }}">
                         <input type="hidden" name="backtest_range_to"   value="{{ $result['range_to'] ?? '' }}">
+                        <input type="hidden" name="sharpe_ratio"        value="{{ $agg['sharpe_ratio'] ?? '' }}">
+                        <input type="hidden" name="consistency_pct"     value="{{ $result['consist_pct'] ?? '' }}">
+                        <input type="hidden" name="profit_factor"       value="{{ $agg['profit_factor'] ?? '' }}">
                     </form>
                 @endcan
             </div>
@@ -575,32 +578,41 @@
                                 </td>
                             </tr>
                             {{-- Sharpe --}}
-                            @if ($existingConfig->star_sharpe || !empty($result['stars']['starSharpe']))
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Sharpe Ratio</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->star_sharpe ? ($existingConfig->params['sharpe_ratio'] ?? '—') : '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->sharpe_ratio ?? '—' }}</td>
                                 <td class="py-1.5 text-right">{{ $agg['sharpe_ratio'] ?? '—' }}</td>
-                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->sharpe_ratio && !empty($agg['sharpe_ratio']))
+                                        @php $dSh = round($agg['sharpe_ratio'] - $existingConfig->sharpe_ratio, 2); @endphp
+                                        <span style="color:{{ $dSh >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dSh >= 0 ? '▲ +' : '▼ ' }}{{ $dSh }}</span>
+                                    @else — @endif
+                                </td>
                             </tr>
-                            @endif
                             {{-- Consistencia --}}
-                            @if (!empty($result['consist_pct']))
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Consistencia</td>
-                                <td class="py-1.5 text-right">—</td>
-                                <td class="py-1.5 text-right">{{ $result['consist_pct'] }}%</td>
-                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->consistency_pct !== null ? $existingConfig->consistency_pct.'%' : '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $result['consist_pct'] ?? '—' }}{{ isset($result['consist_pct']) ? '%' : '' }}</td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->consistency_pct !== null && !empty($result['consist_pct']))
+                                        @php $dCo = round($result['consist_pct'] - $existingConfig->consistency_pct, 1); @endphp
+                                        <span style="color:{{ $dCo >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dCo >= 0 ? '▲ +' : '▼ ' }}{{ $dCo }}%</span>
+                                    @else — @endif
+                                </td>
                             </tr>
-                            @endif
                             {{-- Profit Factor --}}
-                            @if (!empty($agg['profit_factor']))
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Profit Factor</td>
-                                <td class="py-1.5 text-right">—</td>
-                                <td class="py-1.5 text-right">{{ $agg['profit_factor'] }}</td>
-                                <td class="py-1.5 text-right" style="color:var(--color-text-muted);">—</td>
+                                <td class="py-1.5 text-right">{{ $existingConfig->profit_factor ?? '—' }}</td>
+                                <td class="py-1.5 text-right">{{ $agg['profit_factor'] ?? '—' }}</td>
+                                <td class="py-1.5 text-right">
+                                    @if ($existingConfig->profit_factor && !empty($agg['profit_factor']))
+                                        @php $dPf = round($agg['profit_factor'] - $existingConfig->profit_factor, 2); @endphp
+                                        <span style="color:{{ $dPf >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dPf >= 0 ? '▲ +' : '▼ ' }}{{ $dPf }}</span>
+                                    @else — @endif
+                                </td>
                             </tr>
-                            @endif
                             {{-- Calificacion --}}
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación ⭐</td>

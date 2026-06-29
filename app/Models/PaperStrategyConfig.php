@@ -17,6 +17,9 @@ class PaperStrategyConfig extends Model
         'avg_monthly_pnl',
         'avg_monthly_trades',
         'total_return_pct',
+        'star_wr', 'star_sharpe', 'star_ret', 'star_consistency', 'star_pf', 'star_rating',
+        'backtest_range_from', 'backtest_range_to',
+        'sharpe_ratio', 'consistency_pct', 'profit_factor',
     ];
     protected $casts = [
         'params' => 'array',

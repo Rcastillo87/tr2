@@ -38,6 +38,9 @@ class PaperStrategyConfigController extends Controller
             'star_rating'        => ['nullable', 'numeric'],
             'backtest_range_from'=> ['nullable', 'string'],
             'backtest_range_to'  => ['nullable', 'string'],
+            'sharpe_ratio'       => ['nullable', 'numeric'],
+            'consistency_pct'    => ['nullable', 'numeric'],
+            'profit_factor'      => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -66,6 +69,9 @@ class PaperStrategyConfigController extends Controller
                 'star_rating'        => $validated['star_rating'] ?? null,
                 'backtest_range_from'=> $validated['backtest_range_from'] ?? null,
                 'backtest_range_to'  => $validated['backtest_range_to'] ?? null,
+                'sharpe_ratio'       => $validated['sharpe_ratio'] ?? null,
+                'consistency_pct'    => $validated['consistency_pct'] ?? null,
+                'profit_factor'      => $validated['profit_factor'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
@@ -97,6 +103,9 @@ class PaperStrategyConfigController extends Controller
             'star_rating'        => ['nullable', 'numeric'],
             'backtest_range_from'=> ['nullable', 'string'],
             'backtest_range_to'  => ['nullable', 'string'],
+            'sharpe_ratio'       => ['nullable', 'numeric'],
+            'consistency_pct'    => ['nullable', 'numeric'],
+            'profit_factor'      => ['nullable', 'numeric'],
         ]);
 
         $params = json_decode($validated['params'], true);
@@ -125,6 +134,9 @@ class PaperStrategyConfigController extends Controller
                 'star_rating'        => $validated['star_rating'] ?? null,
                 'backtest_range_from'=> $validated['backtest_range_from'] ?? null,
                 'backtest_range_to'  => $validated['backtest_range_to'] ?? null,
+                'sharpe_ratio'       => $validated['sharpe_ratio'] ?? null,
+                'consistency_pct'    => $validated['consistency_pct'] ?? null,
+                'profit_factor'      => $validated['profit_factor'] ?? null,
             ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
