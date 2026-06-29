@@ -225,6 +225,7 @@ async function loadConfigAndRun(event, configId) {
             volatility_protection_mode: data.params.volatility_protection_mode ?? 'none',
             volatility_atr_multiplier:  data.params.volatility_atr_multiplier ?? '',
             preload_from:       data.strategy_name,
+            config_id:          configId,
         });
         // Agregar blocked_hours y blocked_days como arrays
         if (data.params.blocked_hours?.length) {
