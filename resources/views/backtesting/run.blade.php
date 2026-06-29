@@ -186,18 +186,6 @@
                 </select>
                 @if($isEditing) <input type="hidden" name="interval" value="{{ request('interval') }}"> @endif
             </div>
-            <div>
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Desde (opcional)</label>
-                <input type="date" name="start_date" id="start_date" value="{{ $old['start_date'] ?? '' }}"
-                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-            </div>
-            <div>
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Hasta (opcional)</label>
-                <input type="date" name="end_date" id="end_date" value="{{ $old['end_date'] ?? '' }}"
-                       class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-            </div>
         </div>
         <p id="dataRangeInfo" class="text-[11px]" style="color:var(--color-text-muted);"></p>
 
@@ -238,7 +226,7 @@
                     Régimen de mercado
                 </label>
                 <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                    <input type="checkbox" name="macro_trend_filter" value="1"
+                    <input type="checkbox" name="macro_trend_filter" id="macro_trend_filter" value="1"
                            {{ ($old['macro_trend_filter'] ?? request('macro_trend_filter')) ? 'checked' : '' }}
                            class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
                     Tendencia macro H4
@@ -884,6 +872,54 @@ function loadParams() {
         if (p.tp4_pct !== undefined)      document.getElementById('tp4_pct').value = p.tp4_pct ?? '';
         const iv = document.getElementById('interval');
         if (config.interval) for (let o of iv.options) if (o.value === config.interval) { o.selected = true; break; }
+
+        // Filtros
+        const regimeEl = document.getElementById('regime_filter');
+        if (regimeEl) regimeEl.checked = !!p.regime_filter;
+        const macroEl = document.getElementById('macro_trend_filter');
+        if (macroEl) macroEl.checked = !!p.macro_trend_filter;
+
+        // Volumen
+        const volEl = document.getElementById('volume_filter');
+        if (volEl) {
+            volEl.checked = !!p.volume_filter;
+            toggleVolumeFields();
+            if (p.volume_filter_period) document.querySelector('[name="volume_filter_period"]').value = p.volume_filter_period;
+            if (p.volume_filter_mult)   document.querySelector('[name="volume_filter_mult"]').value   = p.volume_filter_mult;
+        }
+
+        // Horas bloqueadas
+        const bhEl = document.getElementById('blocked_hours_active');
+        if (bhEl) {
+            const hasBlockedHours = p.blocked_hours && p.blocked_hours.length > 0;
+            bhEl.checked = hasBlockedHours;
+            toggleBlockedHours();
+            if (hasBlockedHours) {
+                document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
+                    cb.checked = p.blocked_hours.includes(parseInt(cb.value));
+                });
+            }
+        }
+
+        // Dias bloqueados
+        const bdEl = document.getElementById('blocked_days_active');
+        if (bdEl) {
+            const hasBlockedDays = p.blocked_days && p.blocked_days.length > 0;
+            bdEl.checked = hasBlockedDays;
+            toggleBlockedDays();
+            if (hasBlockedDays) {
+                document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
+                    cb.checked = p.blocked_days.includes(parseInt(cb.value));
+                });
+            }
+        }
+
+        // Trailing
+        if (p.trailing_mode) {
+            document.getElementById('trailing_mode').value = p.trailing_mode;
+            toggleTrailingFields();
+            if (p.trailing_distance_pct) document.querySelector('[name="trailing_distance_pct"]').value = p.trailing_distance_pct;
+        }
     }
 }
 
@@ -979,9 +1015,14 @@ function resetForm() {
             // Ocultar campos condicionales
             toggleTrailingFields();
             toggleVolatilityFields();
-            toggleVolumeFields();
             toggleBlockedHours();
             toggleBlockedDays();
+            // Volume fields
+            const vEl = document.getElementById('volume_filter');
+            if (vEl) {
+                const vFields = document.getElementById('volumeFields');
+                if (vFields) { vFields.classList.add('hidden'); vFields.classList.remove('flex'); }
+            }
             // Resetear horas bloqueadas a defaults (10 y 11)
             document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
                 cb.checked = [10,11].includes(parseInt(cb.value));
@@ -990,6 +1031,12 @@ function resetForm() {
             document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
                 cb.checked = parseInt(cb.value) === 0;
             });
+            // Limpiar volume fields
+            const vp = document.querySelector('[name="volume_filter_period"]');
+            const vm = document.querySelector('[name="volume_filter_mult"]');
+            if (vp) vp.value = '20';
+            if (vm) vm.value = '1.2';
+            toggleVolumeFields();
             Swal.fire({ title: '✓ Valores restablecidos', timer: 1200, timerProgressBar: true, showConfirmButton: false, background: '#11161F', color: '#E5E9F0' });
         }
     });
