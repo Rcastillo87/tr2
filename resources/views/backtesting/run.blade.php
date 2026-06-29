@@ -954,19 +954,30 @@ function resetForm() {
                 const el = document.getElementById(id) || document.querySelector(`[name="${id}"]`);
                 if (el) el.value = val;
             });
-            ['macro_trend_filter', 'volume_filter'].forEach(id => {
+            // Checkboxes — desactivar todos excepto regime_filter
+            ['macro_trend_filter','volume_filter','blocked_hours_active','blocked_days_active'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.checked = false;
             });
             const rf = document.getElementById('regime_filter');
             if (rf) rf.checked = true;
+            // Selects
             document.getElementById('trailing_mode').value = 'none';
             document.getElementById('volatility_protection_mode').value = 'none';
+            // Ocultar campos condicionales
             toggleTrailingFields();
             toggleVolatilityFields();
             toggleVolumeFields();
-            document.getElementById('start_date').value = '';
-            document.getElementById('end_date').value = '';
+            toggleBlockedHours();
+            toggleBlockedDays();
+            // Resetear horas bloqueadas a defaults (10 y 11)
+            document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
+                cb.checked = [10,11].includes(parseInt(cb.value));
+            });
+            // Resetear dias bloqueados a default (Lunes=0)
+            document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
+                cb.checked = parseInt(cb.value) === 0;
+            });
             Swal.fire({ title: '✓ Valores restablecidos', timer: 1200, timerProgressBar: true, showConfirmButton: false, background: '#11161F', color: '#E5E9F0' });
         }
     });

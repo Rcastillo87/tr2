@@ -336,6 +336,13 @@ class BacktestingController extends Controller
             $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
             $payload['volume_filter_mult']   = (float) $request->input('volume_filter_mult', 1.2);
         }
+        // Horas y dias bloqueados
+        if ($request->has('blocked_hours_active')) {
+            $payload['blocked_hours'] = array_map('intval', $request->input('blocked_hours', [10, 11]));
+        }
+        if ($request->has('blocked_days_active')) {
+            $payload['blocked_days'] = array_map('intval', $request->input('blocked_days', [0]));
+        }
 
         // Trailing
         $trailingMode = $request->input('trailing_mode');
