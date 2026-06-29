@@ -986,9 +986,6 @@ function toggleBlockedDays() {
     fields.classList.toggle('flex', checked);
 }
 
-    });
-}
-
 document.getElementById('backtestForm').addEventListener('submit', function () {
     Swal.fire({ title: 'Ejecutando backtest...', html: 'Procesando datos históricos, esto puede tardar unos segundos.', allowOutsideClick: false, allowEscapeKey: false, background: '#11161F', color: '#E5E9F0', didOpen: () => Swal.showLoading() });
 });

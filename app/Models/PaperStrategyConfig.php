@@ -99,8 +99,18 @@ class PaperStrategyConfig extends Model
 
         // Siempre crear nueva config — permite multiples configuraciones del mismo par/estrategia
         // (bloque de busqueda de existente deshabilitado intencionalmente)
-        }
 
+        // Verificar si ya existe config con exactamente los mismos parametros
+        $paramsJson = json_encode($params, JSON_UNESCAPED_UNICODE);
+        $duplicate = self::where('strategy_class', $map['class'])
+            ->where('symbol', $symbol)
+            ->where('interval', $interval)
+            ->whereRaw('params::text = ?', [$paramsJson])
+            ->first();
+        if ($duplicate) {
+            $duplicate->update(['display_name' => $displayName, 'active' => true]);
+            return $duplicate->fresh();
+        }
         return self::create([
             'display_name'   => $displayName,
             'strategy_class' => $map['class'],

@@ -270,6 +270,11 @@ async def run_backtest(request: BacktestRequest):
                 result['monthly_breakdown'] = build_monthly_breakdown(
                     full_result['trades'], request.initial_balance
                 )
+                # Reemplazar metricas agregadas con las del backtest completo
+                # para que KPIs y desglose mensual sean consistentes
+                result['aggregate_metrics'] = full_result.get('metrics', result.get('aggregate_metrics', {}))
+                result['passed']            = full_result.get('passed', result.get('passed', False))
+                result['pass_reasons']      = full_result.get('pass_reasons', result.get('pass_reasons', []))
         else:
             engine = BacktestEngine(
                 strategy=strategy, df=df,
