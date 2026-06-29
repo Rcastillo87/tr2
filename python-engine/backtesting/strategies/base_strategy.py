@@ -46,6 +46,10 @@ class BaseStrategy(ABC):
         self.volume_filter          = params.get('volume_filter', False)
         self.volume_filter_period   = params.get('volume_filter_period', 20)
         self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
+        # Filtro horario — solo opera en horas de alta liquidez
+        self.hour_filter            = params.get('hour_filter', False)
+        self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
+        self.hour_filter_end        = params.get('hour_filter_end', 21)    # UTC
 
         # Take profit escalonado — hasta 4 niveles, todos opcionales
         self.tp2_pct = params.get('tp2_pct', None)
@@ -97,6 +101,21 @@ class BaseStrategy(ABC):
         # Anular señales donde el volumen es insuficiente
         if 'signal' in df.columns:
             df.loc[~df['volume_ok'], 'signal'] = 0
+        return df
+
+    def apply_hour_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filtra señales fuera del horario configurado (UTC).
+        Si hour_filter=False no hace nada.
+        """
+        if not self.hour_filter:
+            return df
+        df = df.copy()
+        # Obtener hora UTC de cada vela
+        hours = pd.to_datetime(df['time']).dt.hour
+        in_range = (hours >= self.hour_filter_start) & (hours < self.hour_filter_end)
+        if 'signal' in df.columns:
+            df.loc[~in_range, 'signal'] = 0
         return df
 
     def should_operate(self, regime: str) -> bool:

@@ -58,4 +58,5 @@ class MeanReversionStrategy(BaseStrategy):
                 df.at[df.index[i], 'signal'] = -1
 
         df = self.apply_volume_filter(df)
+        df = self.apply_hour_filter(df)
         return df

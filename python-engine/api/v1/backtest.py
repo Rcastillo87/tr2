@@ -71,6 +71,10 @@ class BacktestRequest(BaseModel):
     volume_filter:              bool          = False
     volume_filter_period:       int           = 20
     volume_filter_mult:         float         = 1.2
+    # Filtro horario
+    hour_filter:                bool          = False
+    hour_filter_start:          int           = 7
+    hour_filter_end:            int           = 21
 
     # Si True, ademas de las metricas agregadas devuelve un desglose mes a mes
     monthly_breakdown: bool = False
@@ -136,6 +140,9 @@ def load_strategy(request: BacktestRequest):
         "volume_filter":              request.volume_filter,
         "volume_filter_period":       request.volume_filter_period,
         "volume_filter_mult":         request.volume_filter_mult,
+        "hour_filter":                request.hour_filter,
+        "hour_filter_start":          request.hour_filter_start,
+        "hour_filter_end":            request.hour_filter_end,
 
         "trend_persistence_filter": request.trend_persistence_filter,
         "trend_persistence_bars":   request.trend_persistence_bars,

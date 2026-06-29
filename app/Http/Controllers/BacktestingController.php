@@ -166,6 +166,12 @@ class BacktestingController extends Controller
                     $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
                     $payload['volume_filter_mult']   = (float) $request->input('volume_filter_mult', 1.2);
                 }
+                // Filtro horario
+                if ($request->has('hour_filter')) {
+                    $payload['hour_filter']       = true;
+                    $payload['hour_filter_start'] = (int) $request->input('hour_filter_start', 7);
+                    $payload['hour_filter_end']   = (int) $request->input('hour_filter_end', 21);
+                }
 
                 try {
                     $response = Http::withHeaders([

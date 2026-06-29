@@ -219,8 +219,9 @@ class VwapStrategy(BaseStrategy):
             df = self._signals_trend_follow(df)
         elif self.mode == 'reversion':
             df = self._signals_reversion(df)
-        # Aplicar filtro de volumen si esta activado
+        # Aplicar filtros
         df = self.apply_volume_filter(df)
+        df = self.apply_hour_filter(df)
         return df
 
     def _signals_trend_follow(self, df: pd.DataFrame) -> pd.DataFrame:

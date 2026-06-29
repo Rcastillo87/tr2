@@ -266,6 +266,30 @@
                         </div>
                     </div>
                 </div>
+                {{-- Filtro horario --}}
+                <div class="flex items-center gap-4 flex-wrap">
+                    <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
+                        <input type="checkbox" name="hour_filter" id="hour_filter" value="1"
+                               {{ (!empty($old['hour_filter'])) ? 'checked' : '' }}
+                               onchange="toggleHourFields()"
+                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                        Horario (UTC)
+                    </label>
+                    <div id="hourFields" class="{{ (!empty($old['hour_filter'])) ? 'flex' : 'hidden' }} items-end gap-3">
+                        <div>
+                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Desde (hora UTC)</label>
+                            <input type="number" step="1" min="0" max="23" name="hour_filter_start" value="{{ $old['hour_filter_start'] ?? '7' }}"
+                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Hasta (hora UTC)</label>
+                            <input type="number" step="1" min="0" max="23" name="hour_filter_end" value="{{ $old['hour_filter_end'] ?? '21' }}"
+                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -863,6 +887,13 @@ function toggleVolatilityFields() {
 function toggleVolumeFields() {
     const checked = document.getElementById('volume_filter').checked;
     const fields  = document.getElementById('volumeFields');
+    fields.classList.toggle('hidden', !checked);
+    fields.classList.toggle('flex', checked);
+}
+
+function toggleHourFields() {
+    const checked = document.getElementById('hour_filter').checked;
+    const fields  = document.getElementById('hourFields');
     fields.classList.toggle('hidden', !checked);
     fields.classList.toggle('flex', checked);
 }
