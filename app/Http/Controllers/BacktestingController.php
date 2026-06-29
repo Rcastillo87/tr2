@@ -61,9 +61,11 @@ class BacktestingController extends Controller
     {
         Gate::authorize('viewAnalysisTools');
 
-        $result          = null;
-        $error           = null;
-        $implementParams = null;
+        // Leer resultado de sesion (PRG pattern)
+        $result          = session()->pull('backtest_result');
+        $implementParams = session()->pull('backtest_implement_params');
+        $error           = session()->pull('backtest_error');
+        $old_session     = session()->pull('backtest_old');
 
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
@@ -213,6 +215,16 @@ class BacktestingController extends Controller
             }
         }
 
+        // PRG: guardar en sesion y redirigir para evitar alerta de recarga
+        if ($result || $error) {
+            session([
+                'backtest_result'          => $result,
+                'backtest_implement_params'=> $implementParams,
+                'backtest_error'           => $error,
+                'backtest_old'             => $request->all(),
+            ]);
+            return redirect()->route('backtesting.run');
+        }
         return view('backtesting.run', [
             'strategies'             => self::STRATEGY_OPTIONS,
             'symbols'                => $symbols,
@@ -221,7 +233,7 @@ class BacktestingController extends Controller
             'result'                 => $result,
             'implementParams'        => $implementParams,
             'error'                  => $error,
-            'old'                    => $request->all(),
+            'old'                    => $old_session ?? $request->all(),
         ]);
     }
 
@@ -229,6 +241,128 @@ class BacktestingController extends Controller
      * Endpoint AJAX: devuelve los parametros exactos de una config activa de
      * Paper Trading, para precargar el formulario de Backtesting al re-testear.
      */
+    public function runAjax(Request $request)
+    {
+        Gate::authorize('viewAnalysisTools');
+        // Misma logica que run() pero devuelve JSON
+        $symbols   = CollectorConfig::activeSymbols();
+        $intervals = CollectorConfig::activeIntervals();
+        $payload   = $this->buildPayload($request);
+
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(180)->post(
+                config('trading.python_engine_url') . '/v1/backtest/run',
+                $payload
+            );
+            if ($response->successful()) {
+                $result = $response->json('result');
+                $implementParams = collect($payload)->except([
+                    'strategy', 'symbol', 'interval', 'walk_forward', 'n_windows',
+                    'train_pct', 'monthly_breakdown', 'initial_balance',
+                ])->filter(fn ($v) => $v !== null)->toArray();
+
+                // Calcular estrellas
+                $agg      = $result['aggregate_metrics'] ?? [];
+                $monthly  = $result['monthly_breakdown'] ?? [];
+                $pnls     = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
+                $avgRet   = $pnls->count() > 0 ? $pnls->average() : 0;
+                $mesesPos = $pnls->filter(fn($p) => $p > 0)->count();
+                $consist  = $pnls->count() > 0 ? round($mesesPos / $pnls->count() * 100, 1) : 0;
+                $rangeFrom = $monthly ? $monthly[0]['month'] : null;
+                $rangeTo   = $monthly ? $monthly[count($monthly)-1]['month'] : null;
+                $stars = $this->calcularEstrellas(
+                    (float) ($agg['win_rate'] ?? 0),
+                    (float) ($agg['sharpe_ratio'] ?? 0),
+                    (float) $avgRet,
+                    (float) $consist,
+                    (float) ($agg['profit_factor'] ?? 0)
+                );
+                $result['stars']       = $stars;
+                $result['consist_pct'] = $consist;
+                $result['range_from']  = $rangeFrom;
+                $result['range_to']    = $rangeTo;
+
+                return response()->json([
+                    'success'        => true,
+                    'result'         => $result,
+                    'implementParams'=> $implementParams,
+                ]);
+            } else {
+                return response()->json(['success' => false, 'error' => 'Error del motor: ' . $response->body()], 500);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'error' => 'No se pudo conectar al motor.'], 500);
+        }
+    }
+
+    private function buildPayload(Request $request): array
+    {
+        $strategy  = $request->input('strategy', 'VWAP Tendencia');
+        $symbol    = $request->input('symbol', 'BTCUSDT');
+        $interval  = $request->input('interval', '60');
+        $options   = self::STRATEGY_OPTIONS[$strategy] ?? self::STRATEGY_OPTIONS['VWAP Tendencia'];
+
+        $payload = [
+            'strategy'           => $options['class'],
+            'symbol'             => $symbol,
+            'interval'           => $interval,
+            'initial_balance'    => 10000,
+            'sl_pct'             => (float) $request->input('sl_pct', 1.5),
+            'tp_pct'             => (float) $request->input('tp_pct', 3.0),
+            'be_pct'             => (float) $request->input('be_pct', 2.0),
+            'max_duration'       => (int) $request->input('max_duration', 24),
+            'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
+            'monthly_breakdown'  => true,
+            'mode'               => $options['mode'] ?? null,
+        ];
+
+        // TPs opcionales
+        foreach (['tp2_pct','tp3_pct','tp4_pct'] as $tp) {
+            $val = $request->input($tp);
+            if ($val !== null && $val !== '') $payload[$tp] = (float)$val;
+        }
+
+        // Filtros
+        if ($request->has('regime_filter'))      $payload['regime_filter']      = true;
+        if ($request->has('macro_trend_filter')) $payload['macro_trend_filter'] = true;
+        if ($request->has('volume_filter')) {
+            $payload['volume_filter']        = true;
+            $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
+            $payload['volume_filter_mult']   = (float) $request->input('volume_filter_mult', 1.2);
+        }
+
+        // Trailing
+        $trailingMode = $request->input('trailing_mode');
+        if ($trailingMode && $trailingMode !== 'none') {
+            $payload['trailing_mode'] = $trailingMode;
+            if ($trailingMode === 'fixed') {
+                $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
+            } elseif ($trailingMode === 'stepped') {
+                $gains = $request->input('trailing_step_gain', []);
+                $sls   = $request->input('trailing_step_sl', []);
+                $steps = [];
+                foreach ($gains as $i => $g) {
+                    if ($g !== null && isset($sls[$i])) $steps[] = [(float)$g, (float)$sls[$i]];
+                }
+                if (!empty($steps)) $payload['trailing_steps'] = $steps;
+            }
+        }
+
+        // Volatilidad
+        $volMode = $request->input('volatility_protection_mode');
+        if ($volMode && $volMode !== 'none') {
+            $payload['volatility_protection_mode'] = $volMode;
+            $payload['volatility_atr_multiplier']  = (float) $request->input('volatility_atr_multiplier', 2.5);
+            if ($volMode === 'widen') {
+                $payload['volatility_widen_pct'] = (float) $request->input('volatility_widen_pct', 1.0);
+            }
+        }
+
+        return $payload;
+    }
+
     public function retest(PaperStrategyConfig $config)
     {
         Gate::authorize('viewAnalysisTools');

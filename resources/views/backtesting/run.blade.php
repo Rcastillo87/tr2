@@ -211,7 +211,6 @@
                     ['tp2_pct',            'Take Profit 2 %', ''],
                     ['tp3_pct',            'Take Profit 3 %', ''],
                     ['tp4_pct',            'Take Profit 4 %', ''],
-                    ['be_pct',             'Break-even %',    '2.0'],
                     ['max_duration',       'Duración (velas)','24'],
                     ['risk_per_trade_pct', 'Riesgo/trade %',  '1.0'],
                 ] as [$name, $label, $default])
@@ -273,7 +272,16 @@
         {{-- SECCIÓN 4: Opcionales avanzados (Trailing + Volatilidad en 2 columnas) --}}
         <div class="border-t pt-3" style="border-color:var(--color-border-soft);">
             <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Opcionales avanzados</h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {{-- Break-even --}}
+                <div>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Break-even %</label>
+                    <input type="number" step="0.1" name="be_pct" id="be_pct"
+                           value="{{ $old['be_pct'] ?? request('be_pct', '2.0') }}"
+                           class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none font-mono mb-1"
+                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <p class="text-[10px]" style="color:var(--color-text-muted);">Cuando la ganancia llega a este %, el SL sube al precio de entrada — ya no puedes perder.</p>
+                </div>
                 {{-- Trailing Stop --}}
                 <div>
                     <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Trailing Stop</label>

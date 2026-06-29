@@ -45,6 +45,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/',                               [BacktestingController::class, 'index'])->name('index');
         Route::get('/run',                            [BacktestingController::class, 'run'])->name('run');
         Route::post('/run',                           [BacktestingController::class, 'run'])->name('execute');
+        Route::post('/run-ajax',                      [BacktestingController::class, 'runAjax'])->name('run-ajax');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
         Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
