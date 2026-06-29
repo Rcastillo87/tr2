@@ -235,11 +235,12 @@ class BybitClient:
         if mark_price:
             # SL provisional: 5% para demo (testnet volatil), 3% para mainnet
             is_demo = 'testnet' in self.base_url
-            sl_margin = 1.05 if is_demo else 1.03
-            tp_margin = 0.93 if is_demo else 0.95
+            # Demo: SL=5%, TP=10% | Mainnet: SL=2%, TP=4%
+            sl_margin = 1.05 if is_demo else 1.02
+            tp_margin = 0.90 if is_demo else 0.96
             if side == 'Sell':  # SHORT
-                sl_prov = round(mark_price * sl_margin, 8)    # SL arriba
-                tp_prov = round(mark_price * tp_margin, 8)    # TP abajo
+                sl_prov = round(mark_price * sl_margin, 8)         # SL arriba
+                tp_prov = round(mark_price * tp_margin, 8)         # TP abajo
             else:  # LONG
                 sl_prov = round(mark_price * (2 - sl_margin), 8)  # SL abajo
                 tp_prov = round(mark_price * (2 - tp_margin), 8)  # TP arriba
@@ -728,10 +729,10 @@ class RealTrader:
 
         order_id = result.get('orderId')
 
-        # 7. Esperar confirmacion — 3s inicial
+        # 7. Esperar confirmacion — 1s inicial
         filled_price = entry_signal_price
         filled = False
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
         position = await client.get_open_position(symbol)
         if position and float(position.get('size', 0) or 0) > 0:
             filled_price = float(position.get('avgPrice', entry_signal_price) or entry_signal_price)

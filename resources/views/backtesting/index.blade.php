@@ -57,6 +57,24 @@
                     <option value="H2">H2</option>
                 </select>
 
+                {{-- Filtro estado --}}
+                <select id="filterState" onchange="applyFilters()"
+                        class="rounded-lg px-3 py-1.5 text-[11px] border focus:outline-none"
+                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <option value="">Todos los estados</option>
+                    <option value="activa">Activa</option>
+                    <option value="inactiva">Inactiva</option>
+                </select>
+                {{-- Filtro estrellas (multiselect) --}}
+                <div class="flex items-center gap-1">
+                    @foreach ([1,2,3,4,5] as $star)
+                    <label class="flex items-center gap-0.5 cursor-pointer text-[11px]" title="{{ $star }} estrella(s)">
+                        <input type="checkbox" class="star-filter w-3 h-3" value="{{ $star }}" onchange="applyFilters()"
+                               style="accent-color:#EF9F27;">
+                        <span style="color:#EF9F27;">{{ str_repeat('★', $star) }}</span>
+                    </label>
+                    @endforeach
+                </div>
                 <button type="button" onclick="clearFilters()" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">
                     Limpiar filtros
                 </button>
@@ -96,7 +114,9 @@
                     <div class="rounded-lg border config-row"
                          data-strategy="{{ $strategyPrefix }}"
                          data-symbol="{{ $config->symbol }}"
-                         data-interval="{{ $iLabel }}">
+                         data-interval="{{ $iLabel }}"
+                         data-star="{{ $config->star_rating ?? '0' }}"
+                         data-state="{{ $config->active ? 'activa' : 'inactiva' }}">
                         {{-- Cabecera: nombre + estado + acciones --}}
                         <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                             <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
@@ -131,19 +151,19 @@
                             ] as [$label, $value])
                             <div class="px-3 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
                                 <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
-                                <p class="text-[11px] font-mono font-medium" style="color:var(--color-text-primary);">{{ $value }}</p>
+                                <p class="text-[9px] font-mono font-medium" style="color:var(--color-text-primary);">{{ $value }}</p>
                             </div>
                             @endforeach
                         </div>
                         {{-- Calificación + 5 métricas --}}
                         <div class="px-4 py-2.5">
                             <div class="flex items-center justify-between mb-2">
-                                <div style="display:inline-flex; align-items:center; gap:5px; background:var(--color-surface-raised); border-radius:5px; padding:3px 8px;">
-                                    <span style="font-size:14px; color:{{ $starColor }};">{{ str_repeat('★',$fullR).str_repeat('☆',$emptyR) }}</span>
-                                    <span style="font-size:12px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
+                                <div style="display:inline-flex; align-items:center; gap:6px; background:var(--color-surface-raised); border-radius:5px; padding:4px 10px;">
+                                    <span style="font-size:20px; line-height:1; color:{{ $starColor }};">{{ str_repeat('★',$fullR).str_repeat('☆',$emptyR) }}</span>
+                                    <span style="font-size:16px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
                                 </div>
                                 @if($config->backtest_range_from)
-                                <span style="font-size:9px; color:var(--color-text-muted);">📅 {{ $config->backtest_range_from }} → {{ $config->backtest_range_to }}</span>
+                                <span class="text-[11px]" style="color:var(--color-text-muted);">📅 {{ $config->backtest_range_from }} → {{ $config->backtest_range_to }}</span>
                                 @endif
                             </div>
                             <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:4px;">
@@ -152,10 +172,10 @@
                                     $mFull  = (int)($mstar ?? 0);
                                     $mEmpty = 5 - $mFull;
                                 @endphp
-                                <div style="text-align:center; border-radius:4px; padding:4px 2px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                    <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 2px;">{{ $mlabel }}</p>
-                                    <p style="font-size:12px; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 2px; line-height:1;">{{ str_repeat('★',$mFull).str_repeat('☆',$mEmpty) }}</p>
-                                    <p style="font-size:10px; font-family:monospace; color:{{ $mcolor }}; margin:0;">{{ $mval }}</p>
+                                <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
+                                    <p style="font-size:11px; color:var(--color-text-muted); margin:0 0 3px;">{{ $mlabel }}</p>
+                                    <p style="font-size:15px; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★',$mFull).str_repeat('☆',$mEmpty) }}</p>
+                                    <p style="font-size:11px; font-family:monospace; color:{{ $mcolor }}; margin:0;">{{ $mval }}</p>
                                 </div>
                                 @endforeach
                             </div>
@@ -206,15 +226,22 @@ async function loadConfigAndRun(event, configId) {
 }
 
 function applyFilters() {
-    const strategy = document.getElementById('filterStrategy').value;
-    const symbol   = document.getElementById('filterSymbol').value;
-    const interval = document.getElementById('filterInterval').value;
-    const rows     = document.querySelectorAll('.config-row');
-    let visible    = 0;
+    const strategy   = document.getElementById('filterStrategy').value;
+    const symbol     = document.getElementById('filterSymbol').value;
+    const interval   = document.getElementById('filterInterval').value;
+    const state      = document.getElementById('filterState').value;
+    const starChecks = [...document.querySelectorAll('.star-filter:checked')].map(cb => parseInt(cb.value));
+    const rows       = document.querySelectorAll('.config-row');
+    let visible = 0;
     rows.forEach(row => {
+        const rowStar  = parseFloat(row.dataset.star || '0');
+        const rowState = row.dataset.state || '';
+        const starOk   = starChecks.length === 0 || starChecks.includes(Math.floor(rowStar));
+        const stateOk  = !state || rowState === state;
         const ok = (!strategy || row.dataset.strategy === strategy)
                 && (!symbol   || row.dataset.symbol   === symbol)
-                && (!interval || row.dataset.interval === interval);
+                && (!interval || row.dataset.interval === interval)
+                && stateOk && starOk;
         row.style.display = ok ? '' : 'none';
         if (ok) visible++;
     });
@@ -226,6 +253,8 @@ function clearFilters() {
     document.getElementById('filterStrategy').value = '';
     document.getElementById('filterSymbol').value   = '';
     document.getElementById('filterInterval').value = '';
+    document.getElementById('filterState').value    = '';
+    document.querySelectorAll('.star-filter').forEach(cb => cb.checked = false);
     applyFilters();
 }
 
