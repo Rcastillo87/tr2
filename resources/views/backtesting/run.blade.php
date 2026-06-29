@@ -157,6 +157,7 @@
     <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="space-y-4">
         @csrf
         <input type="hidden" name="preload_from" value="{{ request('preload_from') ?: ($old['preload_from'] ?? '') }}">
+        <input type="hidden" name="config_id" value="{{ request('config_id') ?: ($old['config_id'] ?? '') }}">
         @php $isEditing = (bool) (request('preload_from') ?: ($old['preload_from'] ?? '')); @endphp
 
         {{-- SECCIÓN 1: Estrategia / Símbolo / Intervalo / Desde / Hasta --}}
