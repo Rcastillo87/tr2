@@ -241,17 +241,17 @@
                                class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
                         Volumen mínimo
                     </label>
-                    <div id="volumeFields" class="{{ (!empty($old['volume_filter'])) ? 'flex' : 'hidden' }} items-end gap-3">
+                    <div id="volumeFields" class="{{ (!empty($old['volume_filter'])) ? 'grid' : 'hidden' }} grid-cols-2 gap-2 mt-2">
                         <div>
                             <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Período</label>
                             <input type="number" step="1" name="volume_filter_period" value="{{ $old['volume_filter_period'] ?? '20' }}"
-                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
+                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                         </div>
                         <div>
                             <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Multiplicador</label>
                             <input type="number" step="0.1" name="volume_filter_mult" value="{{ $old['volume_filter_mult'] ?? '1.2' }}"
-                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
+                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                         </div>
                     </div>
@@ -847,6 +847,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     toggleTrailingFields();
     toggleVolatilityFields();
+    toggleBlockedHours();
+    toggleBlockedDays();
+    toggleVolumeFields();
     loadDataRange();
     @if (empty($old) && !request('preload_from'))
         loadParams();
@@ -949,8 +952,12 @@ async function loadDataRange() {
 
 function toggleTrailingFields() {
     const mode = document.getElementById('trailing_mode').value;
-    document.getElementById('trailingFixedFields').classList.toggle('hidden', mode !== 'fixed');
-    document.getElementById('trailingSteppedFields').classList.toggle('hidden', mode !== 'stepped');
+    const fixedFields   = document.getElementById('trailingFixedFields');
+    const steppedFields = document.getElementById('trailingSteppedFields');
+    fixedFields.classList.toggle('hidden', mode !== 'fixed');
+    steppedFields.classList.toggle('hidden', mode !== 'stepped');
+    fixedFields.querySelectorAll('input').forEach(el => el.disabled = mode !== 'fixed');
+    steppedFields.querySelectorAll('input').forEach(el => el.disabled = mode !== 'stepped');
 }
 
 function addTrailingStep() {
@@ -962,7 +969,9 @@ function addTrailingStep() {
 
 function toggleVolatilityFields() {
     const mode = document.getElementById('volatility_protection_mode').value;
-    document.getElementById('volatilityFields').classList.toggle('hidden', mode === 'none');
+    const volFields = document.getElementById('volatilityFields');
+    volFields.classList.toggle('hidden', mode === 'none');
+    volFields.querySelectorAll('input').forEach(el => el.disabled = mode === 'none');
     document.getElementById('volatilityWidenField').classList.toggle('hidden', mode !== 'widen');
 }
 
@@ -970,7 +979,8 @@ function toggleVolumeFields() {
     const checked = document.getElementById('volume_filter').checked;
     const fields  = document.getElementById('volumeFields');
     fields.classList.toggle('hidden', !checked);
-    fields.classList.toggle('flex', checked);
+    fields.classList.toggle('grid', checked);
+    fields.querySelectorAll('input').forEach(el => el.disabled = !checked);
 }
 
 function toggleBlockedHours() {
@@ -978,6 +988,12 @@ function toggleBlockedHours() {
     const fields  = document.getElementById('blockedHoursFields');
     fields.classList.toggle('hidden', !checked);
     fields.classList.toggle('flex', checked);
+    document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
+        cb.disabled = !checked;
+        if (!checked) cb.checked = false;
+        // Al activar cargar defaults 10 y 11
+        if (checked) cb.checked = [10,11].includes(parseInt(cb.value));
+    });
 }
 
 function toggleBlockedDays() {
@@ -985,6 +1001,12 @@ function toggleBlockedDays() {
     const fields  = document.getElementById('blockedDaysFields');
     fields.classList.toggle('hidden', !checked);
     fields.classList.toggle('flex', checked);
+    document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
+        cb.disabled = !checked;
+        if (!checked) cb.checked = false;
+        // Al activar cargar default Lunes (0)
+        if (checked) cb.checked = parseInt(cb.value) === 0;
+    });
 }
 
 document.getElementById('backtestForm').addEventListener('submit', function () {
