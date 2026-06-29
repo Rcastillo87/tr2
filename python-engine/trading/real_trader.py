@@ -102,7 +102,7 @@ class BybitClient:
 
     def _sign(self, params: dict) -> dict:
         timestamp   = str(int(time.time() * 1000))
-        recv_window = '5000'
+        recv_window = '10000'
 
         # Bybit V5 GET: param_str = timestamp + api_key + recv_window + query_string
         query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
@@ -125,7 +125,7 @@ class BybitClient:
     def _sign_body(self, body: dict) -> dict:
         """Firma para requests con body JSON (POST). Bybit V5: timestamp+key+recv+body."""
         timestamp   = str(int(time.time() * 1000))
-        recv_window = '5000'
+        recv_window = '10000'
         body_str    = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
 
         param_str = timestamp + self.api_key + recv_window + body_str
@@ -238,11 +238,11 @@ class BybitClient:
             sl_margin = 1.05 if is_demo else 1.03
             tp_margin = 0.93 if is_demo else 0.95
             if side == 'Sell':  # SHORT
-                sl_prov = round(mark_price * sl_margin, 8)
-                tp_prov = round(mark_price * (2 - tp_margin), 8)
+                sl_prov = round(mark_price * sl_margin, 8)    # SL arriba
+                tp_prov = round(mark_price * tp_margin, 8)    # TP abajo
             else:  # LONG
-                sl_prov = round(mark_price * (2 - sl_margin), 8)
-                tp_prov = round(mark_price * tp_margin, 8)
+                sl_prov = round(mark_price * (2 - sl_margin), 8)  # SL abajo
+                tp_prov = round(mark_price * (2 - tp_margin), 8)  # TP arriba
             body['stopLoss']    = str(sl_prov)
             body['slTriggerBy'] = 'LastPrice'
             body['takeProfit']  = str(tp_prov)
