@@ -61,11 +61,10 @@ class BacktestingController extends Controller
     {
         Gate::authorize('viewAnalysisTools');
 
-        // Leer resultado de sesion (PRG pattern)
-        $result          = session()->pull('backtest_result');
-        $implementParams = session()->pull('backtest_implement_params');
-        $error           = session()->pull('backtest_error');
-        $old_session     = session()->pull('backtest_old');
+        $result          = null;
+        $implementParams = null;
+        $error           = null;
+        $old_session     = null;
 
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
@@ -229,16 +228,7 @@ class BacktestingController extends Controller
             }
         }
 
-        // PRG: guardar en sesion y redirigir para evitar alerta de recarga
-        if ($result || $error) {
-            session([
-                'backtest_result'          => $result,
-                'backtest_implement_params'=> $implementParams,
-                'backtest_error'           => $error,
-                'backtest_old'             => $request->all(),
-            ]);
-            return redirect()->route('backtesting.run');
-        }
+
         return view('backtesting.run', [
             'strategies'             => self::STRATEGY_OPTIONS,
             'symbols'                => $symbols,
