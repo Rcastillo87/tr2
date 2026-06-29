@@ -458,6 +458,7 @@
                         <input type="hidden" name="star_consistency"   value="{{ $result['stars']['starConsistency'] ?? '' }}">
                         <input type="hidden" name="star_pf"            value="{{ $result['stars']['starPf'] ?? '' }}">
                         <input type="hidden" name="star_rating"        value="{{ $result['stars']['starRating'] ?? '' }}">
+                        <input type="hidden" name="config_id" value="{{ $existingConfig->id ?? '' }}">
                         <input type="hidden" name="backtest_range_from" value="{{ $result['range_from'] ?? '' }}">
                         <input type="hidden" name="backtest_range_to"   value="{{ $result['range_to'] ?? '' }}">
                         <input type="hidden" name="sharpe_ratio"        value="{{ $agg['sharpe_ratio'] ?? '' }}">

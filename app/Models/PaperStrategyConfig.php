@@ -101,11 +101,12 @@ class PaperStrategyConfig extends Model
         // (bloque de busqueda de existente deshabilitado intencionalmente)
 
         // Verificar si ya existe config con exactamente los mismos parametros
+        // Usar @> y <@ para comparacion JSONB sin importar orden de keys
         $paramsJson = json_encode($params, JSON_UNESCAPED_UNICODE);
         $duplicate = self::where('strategy_class', $map['class'])
             ->where('symbol', $symbol)
             ->where('interval', $interval)
-            ->whereRaw('params::text = ?', [$paramsJson])
+            ->whereRaw('params @> ?::jsonb AND params <@ ?::jsonb', [$paramsJson, $paramsJson])
             ->first();
         if ($duplicate) {
             $duplicate->update(['display_name' => $displayName, 'active' => true]);

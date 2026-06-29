@@ -21,6 +21,7 @@ class PaperStrategyConfigController extends Controller
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
+            'config_id'          => ['nullable', 'integer'],
             'strategy_name'      => ['required', 'string'],
             'symbol'             => ['required', 'string', 'max:20'],
             'interval'           => ['required', 'string', 'max:10'],
@@ -49,12 +50,18 @@ class PaperStrategyConfigController extends Controller
         }
 
         try {
-            $config = PaperStrategyConfig::implementFromBacktest(
-                $validated['strategy_name'],
-                $validated['symbol'],
-                $validated['interval'],
-                $params
-            );
+            // Si viene config_id — actualizar config existente directamente
+            if (!empty($validated['config_id'])) {
+                $config = PaperStrategyConfig::findOrFail($validated['config_id']);
+                $config->update(['params' => $params, 'active' => true]);
+            } else {
+                $config = PaperStrategyConfig::implementFromBacktest(
+                    $validated['strategy_name'],
+                    $validated['symbol'],
+                    $validated['interval'],
+                    $params
+                );
+            }
             $config->update([
                 'audited_months'     => $validated['audited_months'] ?? null,
                 'avg_win_rate'       => $validated['avg_win_rate'] ?? null,
@@ -86,6 +93,7 @@ class PaperStrategyConfigController extends Controller
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
+            'config_id'          => ['nullable', 'integer'],
             'strategy_name'      => ['required', 'string'],
             'symbol'             => ['required', 'string', 'max:20'],
             'interval'           => ['required', 'string', 'max:10'],
@@ -114,12 +122,18 @@ class PaperStrategyConfigController extends Controller
         }
 
         try {
-            $config = PaperStrategyConfig::implementFromBacktest(
-                $validated['strategy_name'],
-                $validated['symbol'],
-                $validated['interval'],
-                $params
-            );
+            // Si viene config_id — actualizar config existente directamente
+            if (!empty($validated['config_id'])) {
+                $config = PaperStrategyConfig::findOrFail($validated['config_id']);
+                $config->update(['params' => $params, 'active' => true]);
+            } else {
+                $config = PaperStrategyConfig::implementFromBacktest(
+                    $validated['strategy_name'],
+                    $validated['symbol'],
+                    $validated['interval'],
+                    $params
+                );
+            }
             $config->update([
                 'audited_months'     => $validated['audited_months'] ?? null,
                 'avg_win_rate'       => $validated['avg_win_rate'] ?? null,
