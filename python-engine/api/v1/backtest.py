@@ -272,9 +272,20 @@ async def run_backtest(request: BacktestRequest):
                 )
                 # Reemplazar metricas agregadas con las del backtest completo
                 # para que KPIs y desglose mensual sean consistentes
-                result['aggregate_metrics'] = full_result.get('metrics', result.get('aggregate_metrics', {}))
-                result['passed']            = full_result.get('passed', result.get('passed', False))
-                result['pass_reasons']      = full_result.get('pass_reasons', result.get('pass_reasons', []))
+                full_metrics = full_result.get('metrics', {})
+                result['aggregate_metrics'] = full_metrics
+                # Recalcular passed y pass_reasons con metricas del full_result
+                full_reasons = []
+                if full_metrics.get('win_rate', 0) < 45:
+                    full_reasons.append(f"Win Rate bajo: {full_metrics.get('win_rate')}% (mínimo 45%)")
+                if full_metrics.get('sharpe_ratio', 0) < 1:
+                    full_reasons.append(f"Sharpe Ratio bajo: {full_metrics.get('sharpe_ratio')} (mínimo 1)")
+                if full_metrics.get('avg_monthly_return', 0) < 1:
+                    full_reasons.append(f"Retorno mensual bajo: {full_metrics.get('avg_monthly_return')}% (mínimo 1%)")
+                if full_metrics.get('max_drawdown', 100) > 15:
+                    full_reasons.append(f"Drawdown alto: {full_metrics.get('max_drawdown')}% (máximo 15%)")
+                result['passed']       = len(full_reasons) == 0
+                result['pass_reasons'] = full_reasons
         else:
             engine = BacktestEngine(
                 strategy=strategy, df=df,
