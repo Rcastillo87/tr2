@@ -423,10 +423,8 @@
         if ($result['strategy'] === 'VWAP') {
             $strategyDisplayName = ($implementParams['mode'] ?? '') === 'reversion' ? 'VWAP Reversión' : 'VWAP Tendencia';
         }
-        $existingConfig = \App\Models\PaperStrategyConfig::where('display_name', 'like', $strategyDisplayName . '%')
-            ->where('symbol', $result['symbol'])
-            ->where('interval', $result['interval'])
-            ->first();
+        $configId = request('config_id') ?: ($old['config_id'] ?? null);
+        $existingConfig = $configId ? \App\Models\PaperStrategyConfig::find($configId) : null;
     @endphp
 
     <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
