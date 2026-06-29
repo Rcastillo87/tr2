@@ -71,95 +71,89 @@
                     </a>
                 </div>
             @else
-                <div class="overflow-x-auto">
-                    <table class="w-full text-[11px] text-left" style="color:var(--color-text-muted);">
-                        <thead>
-                            <tr class="border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
-                                <th class="py-2.5 px-4 font-medium">Estrategia</th>
-                                <th class="py-2.5 px-3 font-medium">Símbolo</th>
-                                <th class="py-2.5 px-3 font-medium">Int.</th>
-                                <th class="py-2.5 px-3 font-medium">SL</th>
-                                <th class="py-2.5 px-3 font-medium">TP1</th>
-                                <th class="py-2.5 px-3 font-medium">TP2</th>
-                                <th class="py-2.5 px-3 font-medium">TP3</th>
-                                <th class="py-2.5 px-3 font-medium">TP4</th>
-                                <th class="py-2.5 px-3 font-medium">BE</th>
-                                <th class="py-2.5 px-3 font-medium">Dur.</th>
-                                <th class="py-2.5 px-3 font-medium" title="Meses auditados en el último backtest">Meses</th>
-                                <th class="py-2.5 px-3 font-medium" title="Win rate promedio mensual">WR prom.</th>
-                                <th class="py-2.5 px-3 font-medium" title="Retorno promedio mensual">Ret. prom./mes</th>
-                                <th class="py-2.5 px-3 font-medium" title="Promedio de trades por mes">Trades/mes</th>
-                                <th class="py-2.5 px-3 font-medium">Estado</th>
-                                <th class="py-2.5 px-4 font-medium">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($paperConfigs as $config)
-                                @php
-                                    $strategyPrefix = str_contains($config->display_name, 'VWAP Tendencia') ? 'VWAP Tendencia' :
-                                        (str_contains($config->display_name, 'VWAP Reversión') ? 'VWAP Reversión' :
-                                        (str_contains($config->display_name, 'Reversión a la Media') ? 'Reversión a la Media' : 'Tendencia EMA/Donchian'));
-                                    $iLabel = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m'][$config->interval] ?? $config->interval;
-                                @endphp
-                                <tr class="config-row border-b transition-colors"
-                                    data-strategy="{{ $strategyPrefix }}"
-                                    data-symbol="{{ $config->symbol }}"
-                                    data-interval="{{ $iLabel }}"
-                                    style="border-color:var(--color-border-soft);"
-                                    onmouseover="this.style.background='var(--color-surface-raised)'"
-                                    onmouseout="this.style.background='transparent'">
-                                    <td class="py-2.5 px-4 font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->symbol }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $iLabel }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['sl_pct'] ?? '—' }}%</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['tp_pct'] ?? '—' }}%</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['tp2_pct'] ?? '—' }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['tp3_pct'] ?? '—' }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['tp4_pct'] ?? '—' }}</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['be_pct'] ?? '—' }}%</td>
-                                    <td class="py-2.5 px-3 font-mono">{{ $config->params['max_duration'] ?? '—' }}h</td>
-
-                                    {{-- 3 campos de stats del último backtest --}}
-                                    <td class="py-2.5 px-3 font-mono">
-                                        {{ $config->audited_months ? $config->audited_months . 'm' : '—' }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono"
-                                        style="color: {{ $config->avg_win_rate ? ($config->avg_win_rate >= 50 ? 'var(--color-profit)' : 'var(--color-neutral)') : 'var(--color-text-muted)' }};">
-                                        {{ $config->avg_win_rate ? $config->avg_win_rate . '%' : '—' }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono"
-                                        style="color: {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)' }};">
-                                        {{ $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? '+' : '') . $config->avg_monthly_pnl . '%' : '—' }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono" style="color:var(--color-text-muted);">
-                                        {{ $config->avg_monthly_trades ?? '—' }}
-                                    </td>
-
-                                    <td class="py-2.5 px-3">
-                                        <span class="px-1.5 py-0.5 rounded text-[10px]"
-                                              style="background: {{ $config->active ? '#16331F' : '#3A1A1C' }}; color: {{ $config->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                            {{ $config->active ? 'ACTIVA' : 'INACTIVA' }}
-                                        </span>
-                                    </td>
-                                    <td class="py-2.5 px-4">
-                                        <div class="flex items-center gap-3">
-                                            <a href="{{ route('backtesting.retest', $config) }}"
-                                               onclick="return loadConfigAndRun(event, {{ $config->id }})"
-                                               class="transition-colors" style="color:var(--color-info);">Editar</a>
-                                            <form method="POST" action="{{ route('paper-trading.configs.toggle', $config) }}"
-                                                  onsubmit="return confirmToggle(event, '{{ $config->display_name }}', {{ $config->active ? 'true' : 'false' }})">
-                                                @csrf @method('PATCH')
-                                                <button type="submit" class="transition-colors"
-                                                        style="color: {{ $config->active ? 'var(--color-loss)' : 'var(--color-profit)' }};">
-                                                    {{ $config->active ? 'Deshabilitar' : 'Activar' }}
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
+                <div class="space-y-3">
+                    @foreach ($paperConfigs as $config)
+                    @php
+                        $iLabel  = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m'][$config->interval] ?? $config->interval;
+                        $params  = is_array($config->params) ? $config->params : json_decode($config->params, true);
+                        $rating  = (float)($config->star_rating ?? 0);
+                        $fullR   = (int)floor($rating);
+                        $emptyR  = 5 - $fullR;
+                        $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : ($rating > 0 ? '#E24B4A' : '#374151')));
+                        $metrics = [
+                            ['Win Rate',      $config->star_wr,          $config->avg_win_rate ? $config->avg_win_rate.'%' : '—',        $config->avg_win_rate ? ($config->avg_win_rate >= 50 ? 'var(--color-profit)' : 'var(--color-neutral)') : 'var(--color-text-muted)'],
+                            ['Sharpe',        $config->star_sharpe,      $config->sharpe_ratio ?? '—',                                    'var(--color-text-secondary)'],
+                            ['Ret. prom/mes', $config->star_ret,         $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? '+' : '').$config->avg_monthly_pnl.'%' : '—', $config->avg_monthly_pnl !== null ? ($config->avg_monthly_pnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)'],
+                            ['Consistencia',  $config->star_consistency, $config->consistency_pct !== null ? $config->consistency_pct.'%' : '—', 'var(--color-text-secondary)'],
+                            ['Profit Factor', $config->star_pf,          $config->profit_factor ?? '—',                                  'var(--color-text-secondary)'],
+                        ];
+                    @endphp
+                    <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+                        {{-- Cabecera: nombre + estado + acciones --}}
+                        <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
+                            <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
+                            <div class="flex items-center gap-3">
+                                <span class="px-1.5 py-0.5 rounded text-[10px]"
+                                      style="background:{{ $config->active ? '#16331F' : '#3A1A1C' }}; color:{{ $config->active ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                    {{ $config->active ? 'ACTIVA' : 'INACTIVA' }}
+                                </span>
+                                <a href="{{ route('backtesting.retest', $config) }}"
+                                   onclick="return loadConfigAndRun(event, {{ $config->id }})"
+                                   class="text-[11px]" style="color:var(--color-info);">Editar</a>
+                                <form method="POST" action="{{ route('paper-trading.configs.toggle', $config) }}"
+                                      onsubmit="return confirmToggle(event, '{{ $config->display_name }}', {{ $config->active ? 'true' : 'false' }})">
+                                    @csrf @method('PATCH')
+                                    <button type="submit" class="text-[11px]"
+                                            style="color:{{ $config->active ? 'var(--color-loss)' : 'var(--color-profit)' }};">
+                                        {{ $config->active ? 'Deshabilitar' : 'Activar' }}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                        {{-- Parámetros --}}
+                        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
+                            @foreach([
+                                ['Símbolo',      $config->symbol],
+                                ['Intervalo',    $iLabel],
+                                ['Stop Loss',    ($params['sl_pct'] ?? '—').'%'],
+                                ['Take Profit',  ($params['tp_pct'] ?? '—').'%'],
+                                ['Break-even',   ($params['be_pct'] ?? '—').'%'],
+                                ['Duración',     ($params['max_duration'] ?? '—').' velas'],
+                                ['Riesgo/trade', ($params['risk_per_trade_pct'] ?? '—').'%'],
+                            ] as [$label, $value])
+                            <div class="px-3 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
+                                <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
+                                <p class="text-[11px] font-mono font-medium" style="color:var(--color-text-primary);">{{ $value }}</p>
+                            </div>
                             @endforeach
-                        </tbody>
-                    </table>
+                        </div>
+                        {{-- Calificación + 5 métricas --}}
+                        <div class="px-4 py-2.5">
+                            <div class="flex items-center justify-between mb-2">
+                                <div style="display:inline-flex; align-items:center; gap:5px; background:var(--color-surface-raised); border-radius:5px; padding:3px 8px;">
+                                    <span style="font-size:14px; color:{{ $starColor }};">{{ str_repeat('★',$fullR).str_repeat('☆',$emptyR) }}</span>
+                                    <span style="font-size:12px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
+                                </div>
+                                @if($config->backtest_range_from)
+                                <span style="font-size:9px; color:var(--color-text-muted);">📅 {{ $config->backtest_range_from }} → {{ $config->backtest_range_to }}</span>
+                                @endif
+                            </div>
+                            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:4px;">
+                                @foreach($metrics as [$mlabel, $mstar, $mval, $mcolor])
+                                @php
+                                    $mFull  = (int)($mstar ?? 0);
+                                    $mEmpty = 5 - $mFull;
+                                @endphp
+                                <div style="text-align:center; border-radius:4px; padding:4px 2px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
+                                    <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 2px;">{{ $mlabel }}</p>
+                                    <p style="font-size:12px; color:{{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 2px; line-height:1;">{{ str_repeat('★',$mFull).str_repeat('☆',$mEmpty) }}</p>
+                                    <p style="font-size:10px; font-family:monospace; color:{{ $mcolor }}; margin:0;">{{ $mval }}</p>
+                                </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                    @endforeach
                 </div>
             @endif
         </div>

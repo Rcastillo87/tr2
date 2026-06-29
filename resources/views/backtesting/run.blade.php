@@ -124,6 +124,8 @@
     </div>
 </div>
 
+{{-- ── Layout: formulario izquierda, resultados derecha ── --}}
+<div class="{{ $result ? 'grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 items-start' : '' }}">
 {{-- ── Formulario ──────────────────────────────────────────────────── --}}
 <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
     <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Configurar backtest</h3>
@@ -383,12 +385,6 @@
             </div>
         </div>
 
-        <div class="border-t pt-4 flex items-center justify-between" style="border-color:var(--color-border-soft);">
-            <button type="button" onclick="resetForm()"
-                    class="text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-                    style="background:var(--color-surface-raised); color:var(--color-text-muted); border:1px solid var(--color-border-strong);">
-                ↺ Restablecer valores
-            </button>
             <button type="submit" class="text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
                     style="background:var(--color-info); color:#fff;">
                 Ejecutar backtest
@@ -399,6 +395,7 @@
 
 {{-- ── Resultados ───────────────────────────────────────────────────── --}}
 @if ($result)
+<div>
     @php
         $agg = $result['aggregate_metrics'];
         $monthly = $result['monthly_breakdown'] ?? [];
@@ -816,7 +813,9 @@
             </div>
         </div>
     @endif
+</div>
 @endif
+</div>
 
 @endsection
 
@@ -854,8 +853,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadParams() {
-    const strategy = document.getElementById('strategy').value;
-    const symbol   = document.getElementById('symbol').value;
+    // En modo edicion el select esta disabled — leer del hidden input si existe
+    const strategyEl = document.getElementById('strategy');
+    const strategy = strategyEl.disabled 
+        ? (document.querySelector('input[type="hidden"][name="strategy"]')?.value || strategyEl.value)
+        : strategyEl.value;
+    const symbolEl = document.getElementById('symbol');
+    const symbol = symbolEl.disabled
+        ? (document.querySelector('input[type="hidden"][name="symbol"]')?.value || symbolEl.value)
+        : symbolEl.value;
     const config = paperConfigs.find(c => {
         const mode = c.params?.mode || '';
         const key  = c.strategy_class + '_' + mode;
@@ -980,65 +986,6 @@ function toggleBlockedDays() {
     fields.classList.toggle('flex', checked);
 }
 
-function resetForm() {
-    Swal.fire({
-        title: '¿Restablecer valores?',
-        html: 'Se limpiarán todos los parámetros y se cargarán los valores por defecto.',
-        icon: 'question', showCancelButton: true,
-        confirmButtonText: 'Restablecer', cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
-    }).then((r) => {
-        if (r.isConfirmed) {
-            const defaults = {
-                'sl_pct': '1.5', 'tp_pct': '3.0', 'be_pct': '2.0',
-                'max_duration': '24', 'risk_per_trade_pct': '1.0',
-                'tp2_pct': '', 'tp3_pct': '', 'tp4_pct': '',
-                'trailing_distance_pct': '1.0',
-                'volatility_atr_multiplier': '2.5', 'volatility_widen_pct': '1.0',
-                'volume_filter_period': '20', 'volume_filter_mult': '1.2',
-            };
-            Object.entries(defaults).forEach(([id, val]) => {
-                const el = document.getElementById(id) || document.querySelector(`[name="${id}"]`);
-                if (el) el.value = val;
-            });
-            // Checkboxes — desactivar todos excepto regime_filter
-            ['macro_trend_filter','volume_filter','blocked_hours_active','blocked_days_active'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.checked = false;
-            });
-            const rf = document.getElementById('regime_filter');
-            if (rf) rf.checked = true;
-            // Selects
-            document.getElementById('trailing_mode').value = 'none';
-            document.getElementById('volatility_protection_mode').value = 'none';
-            // Ocultar campos condicionales
-            toggleTrailingFields();
-            toggleVolatilityFields();
-            toggleBlockedHours();
-            toggleBlockedDays();
-            // Volume fields
-            const vEl = document.getElementById('volume_filter');
-            if (vEl) {
-                const vFields = document.getElementById('volumeFields');
-                if (vFields) { vFields.classList.add('hidden'); vFields.classList.remove('flex'); }
-            }
-            // Resetear horas bloqueadas a defaults (10 y 11)
-            document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
-                cb.checked = [10,11].includes(parseInt(cb.value));
-            });
-            // Resetear dias bloqueados a default (Lunes=0)
-            document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
-                cb.checked = parseInt(cb.value) === 0;
-            });
-            // Limpiar volume fields
-            const vp = document.querySelector('[name="volume_filter_period"]');
-            const vm = document.querySelector('[name="volume_filter_mult"]');
-            if (vp) vp.value = '20';
-            if (vm) vm.value = '1.2';
-            toggleVolumeFields();
-            Swal.fire({ title: '✓ Valores restablecidos', timer: 1200, timerProgressBar: true, showConfirmButton: false, background: '#11161F', color: '#E5E9F0' });
-        }
     });
 }
 
