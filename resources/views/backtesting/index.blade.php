@@ -213,14 +213,26 @@ async function loadConfigAndRun(event, configId) {
             be_pct:             data.params.be_pct ?? '',
             max_duration:       data.params.max_duration ?? '',
             risk_per_trade_pct: data.params.risk_per_trade_pct ?? '',
-            regime_filter:       data.params.regime_filter ? '1' : '',
-            macro_trend_filter:  data.params.macro_trend_filter ? '1' : '',
-            trailing_mode:       data.params.trailing_mode ?? 'none',
+            regime_filter:      data.params.regime_filter ? '1' : '',
+            macro_trend_filter: data.params.macro_trend_filter ? '1' : '',
+            volume_filter:      data.params.volume_filter ? '1' : '',
+            volume_filter_period: data.params.volume_filter_period ?? '',
+            volume_filter_mult:   data.params.volume_filter_mult ?? '',
+            blocked_hours_active: data.params.blocked_hours?.length ? '1' : '',
+            blocked_days_active:  data.params.blocked_days?.length ? '1' : '',
+            trailing_mode:        data.params.trailing_mode ?? 'none',
             trailing_distance_pct: data.params.trailing_distance_pct ?? '',
             volatility_protection_mode: data.params.volatility_protection_mode ?? 'none',
-            volatility_atr_multiplier: data.params.volatility_atr_multiplier ?? '',
+            volatility_atr_multiplier:  data.params.volatility_atr_multiplier ?? '',
             preload_from:       data.strategy_name,
         });
+        // Agregar blocked_hours y blocked_days como arrays
+        if (data.params.blocked_hours?.length) {
+            data.params.blocked_hours.forEach(h => params.append('blocked_hours[]', h));
+        }
+        if (data.params.blocked_days?.length) {
+            data.params.blocked_days.forEach(d => params.append('blocked_days[]', d));
+        }
         window.location.href = `/backtesting/run?${params.toString()}`;
     } catch (e) {
         Swal.fire({ title: 'Error', text: 'No se pudo cargar la configuración.', icon: 'error', background: '#11161F', color: '#E5E9F0' });

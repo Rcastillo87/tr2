@@ -633,29 +633,6 @@
                                     @else — @endif
                                 </td>
                             </tr>
-                            @if ($existingConfig->star_rating)
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación</td>
-                                <td class="py-1.5 text-right font-mono" style="color:var(--color-info);">
-                                    {{ $existingConfig->star_rating ?? '—' }}⭐
-                                    @if($existingConfig->backtest_range_from)
-                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
-                                    @endif
-                                </td>
-                                <td class="py-1.5 text-right font-mono" style="color:var(--color-info);">
-                                    {{ $result['stars']['starRating'] ?? '—' }}⭐
-                                    @if(!empty($result['range_from']))
-                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
-                                    @endif
-                                </td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
-                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
-                                        <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            @endif
                         </tbody>
                     </table>
                     @if ($fewerMonths)
