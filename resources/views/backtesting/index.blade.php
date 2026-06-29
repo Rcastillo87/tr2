@@ -88,7 +88,7 @@
                             ['Profit Factor', $config->star_pf,          $config->profit_factor ?? '—',                                  'var(--color-text-secondary)'],
                         ];
                     @endphp
-                    <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+                    <div class="rounded-lg border">
                         {{-- Cabecera: nombre + estado + acciones --}}
                         <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                             <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
