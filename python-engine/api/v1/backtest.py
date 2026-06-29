@@ -280,12 +280,10 @@ async def run_backtest(request: BacktestRequest):
                     full_reasons.append(f"Win Rate bajo: {full_metrics.get('win_rate')}% (mínimo 45%)")
                 if full_metrics.get('sharpe_ratio', 0) < 1:
                     full_reasons.append(f"Sharpe Ratio bajo: {full_metrics.get('sharpe_ratio')} (mínimo 1)")
-                if full_metrics.get('avg_monthly_return', 0) < 1:
-                    full_reasons.append(f"Retorno mensual bajo: {full_metrics.get('avg_monthly_return')}% (mínimo 1%)")
-                if full_metrics.get('max_drawdown', 100) > 15:
-                    full_reasons.append(f"Drawdown alto: {full_metrics.get('max_drawdown')}% (máximo 15%)")
+                if full_metrics.get('max_drawdown_pct', 100) > 15:
+                    full_reasons.append(f"Drawdown alto: {full_metrics.get('max_drawdown_pct')}% (máximo 15%)")
                 result['passed']       = len(full_reasons) == 0
-                result['pass_reasons'] = full_reasons
+                result['pass_reasons'] = full_reasons if full_reasons else ['Estrategia aprobada para paper trading']
         else:
             engine = BacktestEngine(
                 strategy=strategy, df=df,
