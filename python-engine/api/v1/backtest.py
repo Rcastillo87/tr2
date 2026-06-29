@@ -75,6 +75,12 @@ class BacktestRequest(BaseModel):
     hour_filter:                bool          = False
     hour_filter_start:          int           = 7
     hour_filter_end:            int           = 21
+    # Filtro fin de semana
+    weekend_filter:             bool          = False
+    # Horas bloqueadas (lista de horas UTC 0-23)
+    blocked_hours:              list          = []
+    # Dias bloqueados (0=Lun,1=Mar,2=Mie,3=Jue,4=Vie,5=Sab,6=Dom)
+    blocked_days:               list          = []
 
     # Si True, ademas de las metricas agregadas devuelve un desglose mes a mes
     monthly_breakdown: bool = False
@@ -143,6 +149,9 @@ def load_strategy(request: BacktestRequest):
         "hour_filter":                request.hour_filter,
         "hour_filter_start":          request.hour_filter_start,
         "hour_filter_end":            request.hour_filter_end,
+        "weekend_filter":             request.weekend_filter,
+        "blocked_hours":              request.blocked_hours,
+        "blocked_days":               request.blocked_days,
 
         "trend_persistence_filter": request.trend_persistence_filter,
         "trend_persistence_bars":   request.trend_persistence_bars,

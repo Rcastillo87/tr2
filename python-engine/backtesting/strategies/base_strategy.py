@@ -50,6 +50,18 @@ class BaseStrategy(ABC):
         self.hour_filter            = params.get('hour_filter', False)
         self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
         self.hour_filter_end        = params.get('hour_filter_end', 21)    # UTC
+        # Filtro fin de semana — bloquea sabado y domingo
+        self.weekend_filter         = params.get('weekend_filter', False)
+        # Bloquear horas especificas (lista de horas UTC 0-23)
+        self.blocked_hours          = params.get('blocked_hours', [])
+        # Bloquear dias especificos (lista: 0=Lun,1=Mar,...,6=Dom)
+        self.blocked_days           = params.get('blocked_days', [])
+        # Filtro fin de semana — bloquea sabado y domingo
+        self.weekend_filter         = params.get('weekend_filter', False)
+        # Bloquear horas especificas (lista de horas UTC 0-23)
+        self.blocked_hours          = params.get('blocked_hours', [])
+        # Bloquear dias especificos (lista: 0=Lun,1=Mar,...,6=Dom)
+        self.blocked_days           = params.get('blocked_days', [])
 
         # Take profit escalonado — hasta 4 niveles, todos opcionales
         self.tp2_pct = params.get('tp2_pct', None)
@@ -111,11 +123,46 @@ class BaseStrategy(ABC):
         if not self.hour_filter:
             return df
         df = df.copy()
-        # Obtener hora UTC de cada vela
         hours = pd.to_datetime(df['time']).dt.hour
         in_range = (hours >= self.hour_filter_start) & (hours < self.hour_filter_end)
         if 'signal' in df.columns:
             df.loc[~in_range, 'signal'] = 0
+        return df
+
+    def apply_weekend_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Bloquea señales en sabado (5) y domingo (6) UTC.
+        Si weekend_filter=False no hace nada.
+        """
+        if not self.weekend_filter:
+            return df
+        df = df.copy()
+        weekday = pd.to_datetime(df['time']).dt.dayofweek
+        is_weekend = weekday >= 5
+        if 'signal' in df.columns:
+            df.loc[is_weekend, 'signal'] = 0
+        return df
+
+    def apply_blocked_hours(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Bloquea señales en horas UTC especificas."""
+        if not self.blocked_hours:
+            return df
+        df = df.copy()
+        hours = pd.to_datetime(df['time']).dt.hour
+        blocked = hours.isin(self.blocked_hours)
+        if 'signal' in df.columns:
+            df.loc[blocked, 'signal'] = 0
+        return df
+
+    def apply_blocked_days(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Bloquea señales en dias de la semana especificos (0=Lun ... 6=Dom)."""
+        if not self.blocked_days:
+            return df
+        df = df.copy()
+        weekday = pd.to_datetime(df['time']).dt.dayofweek
+        blocked = weekday.isin(self.blocked_days)
+        if 'signal' in df.columns:
+            df.loc[blocked, 'signal'] = 0
         return df
 
     def should_operate(self, regime: str) -> bool:

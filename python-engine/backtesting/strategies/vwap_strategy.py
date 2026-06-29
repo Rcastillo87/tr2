@@ -222,6 +222,9 @@ class VwapStrategy(BaseStrategy):
         # Aplicar filtros
         df = self.apply_volume_filter(df)
         df = self.apply_hour_filter(df)
+        df = self.apply_weekend_filter(df)
+        df = self.apply_blocked_hours(df)
+        df = self.apply_blocked_days(df)
         return df
 
     def _signals_trend_follow(self, df: pd.DataFrame) -> pd.DataFrame:

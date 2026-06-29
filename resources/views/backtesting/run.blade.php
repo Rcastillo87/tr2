@@ -266,28 +266,55 @@
                         </div>
                     </div>
                 </div>
-                {{-- Filtro horario --}}
-                <div class="flex items-center gap-4 flex-wrap">
-                    <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                        <input type="checkbox" name="hour_filter" id="hour_filter" value="1"
-                               {{ (!empty($old['hour_filter'])) ? 'checked' : '' }}
-                               onchange="toggleHourFields()"
+                {{-- Bloquear horas especificas --}}
+                <div>
+                    <label class="flex items-center gap-2 text-sm mb-2" style="color:var(--color-text-secondary);">
+                        <input type="checkbox" name="blocked_hours_active" id="blocked_hours_active" value="1"
+                               {{ (!empty($old['blocked_hours_active'])) ? 'checked' : '' }}
+                               onchange="toggleBlockedHours()"
                                class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                        Horario (UTC)
+                        Bloquear horas (UTC)
                     </label>
-                    <div id="hourFields" class="{{ (!empty($old['hour_filter'])) ? 'flex' : 'hidden' }} items-end gap-3">
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Desde (hora UTC)</label>
-                            <input type="number" step="1" min="0" max="23" name="hour_filter_start" value="{{ $old['hour_filter_start'] ?? '7' }}"
-                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Hasta (hora UTC)</label>
-                            <input type="number" step="1" min="0" max="23" name="hour_filter_end" value="{{ $old['hour_filter_end'] ?? '21' }}"
-                                   class="w-20 rounded-lg px-3 py-2 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
+                    <div id="blockedHoursFields" class="{{ (!empty($old['blocked_hours_active'])) ? 'flex' : 'hidden' }} flex-wrap gap-1">
+                        @php $defaultBlockedHours = [10, 11]; @endphp
+                        @for ($h = 0; $h < 24; $h++)
+                        @php
+                            $oldHours = !empty($old['blocked_hours']) ? (array)$old['blocked_hours'] : $defaultBlockedHours;
+                            $checked = in_array($h, $oldHours) ? 'checked' : '';
+                        @endphp
+                        <label class="flex flex-col items-center gap-0.5 cursor-pointer">
+                            <input type="checkbox" name="blocked_hours[]" value="{{ $h }}" {{ $checked }}
+                                   class="w-3.5 h-3.5 rounded" style="accent-color:var(--color-loss);">
+                            <span class="text-[9px] font-mono" style="color:var(--color-text-muted);">{{ str_pad($h,2,'0',STR_PAD_LEFT) }}</span>
+                        </label>
+                        @endfor
+                    </div>
+                </div>
+                {{-- Bloquear dias --}}
+                <div>
+                    <label class="flex items-center gap-2 text-sm mb-2" style="color:var(--color-text-secondary);">
+                        <input type="checkbox" name="blocked_days_active" id="blocked_days_active" value="1"
+                               {{ (!empty($old['blocked_days_active'])) ? 'checked' : '' }}
+                               onchange="toggleBlockedDays()"
+                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                        Bloquear días
+                    </label>
+                    <div id="blockedDaysFields" class="{{ (!empty($old['blocked_days_active'])) ? 'flex' : 'hidden' }} gap-2">
+                        @php
+                            $dayNames = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+                            $defaultBlockedDays = [0];
+                        @endphp
+                        @foreach ($dayNames as $di => $dn)
+                        @php
+                            $oldDays = !empty($old['blocked_days']) ? (array)$old['blocked_days'] : $defaultBlockedDays;
+                            $checked = in_array($di, $oldDays) ? 'checked' : '';
+                        @endphp
+                        <label class="flex flex-col items-center gap-0.5 cursor-pointer">
+                            <input type="checkbox" name="blocked_days[]" value="{{ $di }}" {{ $checked }}
+                                   class="w-3.5 h-3.5 rounded" style="accent-color:var(--color-loss);">
+                            <span class="text-[9px]" style="color:var(--color-text-muted);">{{ $dn }}</span>
+                        </label>
+                        @endforeach
                     </div>
                 </div>
             </div>
@@ -891,9 +918,16 @@ function toggleVolumeFields() {
     fields.classList.toggle('flex', checked);
 }
 
-function toggleHourFields() {
-    const checked = document.getElementById('hour_filter').checked;
-    const fields  = document.getElementById('hourFields');
+function toggleBlockedHours() {
+    const checked = document.getElementById('blocked_hours_active').checked;
+    const fields  = document.getElementById('blockedHoursFields');
+    fields.classList.toggle('hidden', !checked);
+    fields.classList.toggle('flex', checked);
+}
+
+function toggleBlockedDays() {
+    const checked = document.getElementById('blocked_days_active').checked;
+    const fields  = document.getElementById('blockedDaysFields');
     fields.classList.toggle('hidden', !checked);
     fields.classList.toggle('flex', checked);
 }

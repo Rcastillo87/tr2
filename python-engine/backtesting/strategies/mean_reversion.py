@@ -59,4 +59,7 @@ class MeanReversionStrategy(BaseStrategy):
 
         df = self.apply_volume_filter(df)
         df = self.apply_hour_filter(df)
+        df = self.apply_weekend_filter(df)
+        df = self.apply_blocked_hours(df)
+        df = self.apply_blocked_days(df)
         return df

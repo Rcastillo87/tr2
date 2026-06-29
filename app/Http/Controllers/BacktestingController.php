@@ -172,6 +172,14 @@ class BacktestingController extends Controller
                     $payload['hour_filter_start'] = (int) $request->input('hour_filter_start', 7);
                     $payload['hour_filter_end']   = (int) $request->input('hour_filter_end', 21);
                 }
+                // Horas bloqueadas
+                if ($request->has('blocked_hours_active')) {
+                    $payload['blocked_hours'] = array_map('intval', $request->input('blocked_hours', [10, 11]));
+                }
+                // Dias bloqueados
+                if ($request->has('blocked_days_active')) {
+                    $payload['blocked_days'] = array_map('intval', $request->input('blocked_days', [0]));
+                }
 
                 try {
                     $response = Http::withHeaders([
