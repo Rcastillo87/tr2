@@ -905,3 +905,63 @@ A: Yes, as long as their `params` JSON differ in at least one value. See GOTCHA 
 ---
 
 *End of CONTEXT.md. This document, together with 01_GENERAL.md (narrative overview) and 02_TECHNICAL.md (exhaustive function-by-function reference), constitutes the complete documentation set for tr-bot V2 as of this exploration.*
+
+---
+
+## PENDING WORK — as of 2026-06-30 (pick up here in next session)
+
+### Real Trading
+- [ ] **Circuit breaker auto-reactivation** — currently a paused `broker_accounts` row (`status='paused'`) requires manual admin intervention. Implement timed auto-resume after N hours with no new errors (analogous to daily_drawdown auto-resume in RiskManager).
+- [ ] **Telegram / email notifications** — alert on: trade opened, trade closed (with PnL), error status, account paused by circuit breaker. No notification system exists yet anywhere in the codebase.
+- [ ] **Real Trading dashboard** — a summary view (balance / open positions / daily PnL / total PnL). Currently `TradingController@index` shows a trade list but no executive summary widget.
+- [ ] **Mainnet go-live** — system is validated on Bybit testnet (demo account id:9, ~168 USDT virtual balance). When ready: create real `broker_account` row with `account_type='real'`, verify `BYBIT_BASE_URL` env var points to mainnet, subscribe strategies.
+- [ ] **`balance_before=0` on orphaned trades** — when `RealTradingReconcileJob` adopts an orphaned position (inserts new `real_trades` row), `balance_before` is set to 0 because the real balance at open time is unknown. Should query current balance at adoption time instead.
+- [ ] **Drawdown protection for Real Trading** — `RiskManager` is Paper Trading only. Real trading has no strategy-performance-based drawdown protection, only the API-failure circuit breaker. Before committing significant real capital, implement equivalent daily/total drawdown limits for real accounts.
+
+### Backtesting
+- [ ] **Excel export — expand to 4 sheets** — `BacktestMonthlyExport` currently generates 3 sheets (Resumen, Parámetros completos, Mes a mes). Add a 4th sheet: walk-forward window results (one row per `n_windows=5` windows, with their individual out-of-sample metrics).
+- [ ] **ADX threshold configurable** — regime classifier uses hardcoded `ADX > 25` for TRENDING. Make this configurable per backtest run (e.g. `regime_adx_threshold` param in `BacktestRequest`) so users can test impact of different thresholds without code changes. This was explicitly discussed and deferred to a future session.
+- [ ] **Re-implement active configs with blocked_hours/blocked_days** — the 7 currently active `paper_strategy_configs` do NOT have `blocked_hours`/`blocked_days` in their `params` JSON (column exists in DB, not populated). Must re-run backtest with those filters configured and re-implement from the results page. User will do this manually from the UI, no code change required — just a reminder.
+
+### Paper Trading
+- [ ] **TP3/TP4 evaluation in live monitor** — `paper_trades` table has no `tp3`/`tp4` columns. `PaperTrader.monitor_open_trades()` only evaluates TP1/TP2 priority. If a strategy config has `tp3_pct`/`tp4_pct` set, those levels are ignored in live paper execution (they only affect backtest simulation). To fix: add `tp3`/`tp4` columns to `paper_trades` (migration needed) and add evaluation logic in `monitor_open_trades()`.
+
+### Code Quality (non-urgent, from gotchas list)
+- [ ] **`broker.py` triple duplication** — `account_info()` function defined 3× identically, only last definition is active. Remove the first two copies.
+- [ ] **`BacktestingController` dual payload building** — `run()` (inline) and `buildPayload()` (used by `runAjax()`) are two independent implementations of the same logic. Refactor `run()` to use `buildPayload()` as well, single source of truth.
+- [ ] **`real_trader.py::close_trade()` NameError** — override branch references undefined `symbol` variable in a log statement (only `trade['symbol']` exists in scope). Fix before the override path gets exercised with real live trades (it was exercised in testnet sessions but the NameError may have been swallowed by the surrounding try/except).
+- [ ] **`get_last_error_messages()` / `clear_non_critical_errors()` duplication** — defined twice in `RealTrader`. Remove duplicate definitions.
+- [ ] **Legacy strategy files** — `vwap_intraday.py` and `vwap_reversion.py` are confirmed unused (no router imports them). Archive or delete to reduce confusion.
+- [ ] **`/v1/prices` endpoint** — referenced in `TradingController::getLivePrices()` fallback but not implemented in any Python router. Either implement it (probably a simple endpoint returning current mark prices from Bybit for a list of symbols) or remove the fallback branch and rely solely on the Redis cache path.
+
+### Star Ratings — current state in production DB (2026-06-30)
+```
+⭐4.2 Tendencia EMA/Donchian — SOLUSDT H1   (ACTIVE)
+⭐4.0 VWAP Tendencia — SOLUSDT H1            (ACTIVE)
+⭐3.8 VWAP Reversión — BTCUSDT H1            (ACTIVE)
+⭐3.6 VWAP Tendencia — ETHUSDT H1            (ACTIVE)
+⭐3.4 VWAP Tendencia — ETHUSDT H2            (ACTIVE)
+⭐3.4 VWAP Reversión — ETHUSDT H2            (ACTIVE)
+⭐3.2 VWAP Tendencia — BTCUSDT H1            (ACTIVE)
+⭐2.4 Reversión a la Media — ETHUSDT H1      (inactive)
+⭐1.6 Tendencia EMA/Donchian — BTCUSDT H1    (inactive)
+⭐1.2 Reversión a la Media — BTCUSDT H2      (inactive)
+⭐1.2 Tendencia EMA/Donchian — ETHUSDT H2    (inactive)
+⭐1.2 Tendencia EMA/Donchian — BTCUSDT H2    (inactive)
+⭐1.0 Reversión a la Media — SOLUSDT H1      (inactive)
+```
+
+### Production environment — current state
+```
+systemd service:   trading2-engine (running ~23h continuous, port 8002)
+internal API key:  trading2_internal_key_2026
+engine path:       /home/tr2/htdocs/tr2.srv685835.hstgr.cloud/python-engine
+DB name:           trading2
+DB user:           trading2_user
+broker:            Bybit testnet only (demo account id:9, ~168 USDT virtual)
+paper_trades:      TRUNCATED (clean slate as of 2026-06-30 session)
+real_trades:       TRUNCATED (clean slate as of 2026-06-30 session)
+active configs:    7 (see star ratings above)
+cron:              * * * * * php artisan schedule:run (running correctly, confirmed)
+last engine restart: 2026-06-29 15:33:30 UTC
+```
