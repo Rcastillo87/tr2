@@ -32,7 +32,7 @@ import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from trading.bybit_client import get_current_price
+from trading.bybit_client import get_current_price, bybit_sign
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.base_strategy import calculate_trailing_sl_standalone
 
@@ -123,48 +123,19 @@ class BybitClient:
         return None
 
     def _sign(self, params: dict) -> dict:
-        timestamp   = str(int(time.time() * 1000))
-        recv_window = '10000'
-
-        # Bybit V5 GET: param_str = timestamp + api_key + recv_window + query_string
+        """Firma para requests GET. Delega la firma HMAC a bybit_sign (bybit_client.py) -
+        antes esta formula estaba duplicada aca y en broker.py por separado."""
         query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
-        param_str = timestamp + self.api_key + recv_window + query_string
-
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            param_str.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
-        return {
-            'X-BAPI-API-KEY':     self.api_key,
-            'X-BAPI-TIMESTAMP':   timestamp,
-            'X-BAPI-SIGN':        signature,
-            'X-BAPI-RECV-WINDOW': recv_window,
-            'Content-Type':       'application/json',
-        }
+        headers = bybit_sign(self.api_key, self.api_secret, query_string, recv_window='10000')
+        headers['Content-Type'] = 'application/json'
+        return headers
 
     def _sign_body(self, body: dict) -> dict:
-        """Firma para requests con body JSON (POST). Bybit V5: timestamp+key+recv+body."""
-        timestamp   = str(int(time.time() * 1000))
-        recv_window = '10000'
-        body_str    = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
-
-        param_str = timestamp + self.api_key + recv_window + body_str
-
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            param_str.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
-        return {
-            'X-BAPI-API-KEY':     self.api_key,
-            'X-BAPI-TIMESTAMP':   timestamp,
-            'X-BAPI-SIGN':        signature,
-            'X-BAPI-RECV-WINDOW': recv_window,
-            'Content-Type':       'application/json',
-        }
+        """Firma para requests con body JSON (POST). Delega la firma HMAC a bybit_sign."""
+        body_str = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
+        headers = bybit_sign(self.api_key, self.api_secret, body_str, recv_window='10000')
+        headers['Content-Type'] = 'application/json'
+        return headers
 
     async def get_balance(self) -> float | None:
         """Obtiene el balance disponible (USDT) de la cuenta UNIFIED."""
