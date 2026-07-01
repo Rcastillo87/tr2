@@ -869,6 +869,7 @@ class RealTrader:
     async def close_trade(self, trade: dict, exit_reason: str, client: BybitClient,
                            account_id: int, exit_price_override: float = None) -> bool:
         side   = trade['side']
+        symbol = trade['symbol']
         # Si viene exit_price_override — posicion ya cerrada en Bybit por SL/TP
         if exit_price_override:
             entry_price = float(trade["entry_price"])
@@ -1041,13 +1042,25 @@ class RealTrader:
                         elif close_type in ("TakeProfit", "PartialTakeProfit"):
                             exit_reason = "take_profit_1"
                         else:
-                            # Determinar por precio si fue SL o TP
+                            # Determinar el motivo real usando ambos niveles (SL y TP),
+                            # no solo el SL — un cierre que no llegó a ninguno de los
+                            # dos (trailing, manual, liquidación parcial) NO es un TP.
                             sl_val = float(trade["sl"])
                             tp_val = float(trade["tp"])
                             if side == "short":
-                                exit_reason = "stop_loss" if exit_price >= sl_val else "take_profit_1"
+                                if exit_price >= sl_val:
+                                    exit_reason = "stop_loss"
+                                elif exit_price <= tp_val:
+                                    exit_reason = "take_profit_1"
+                                else:
+                                    exit_reason = "closed_other"
                             else:
-                                exit_reason = "stop_loss" if exit_price <= sl_val else "take_profit_1"
+                                if exit_price <= sl_val:
+                                    exit_reason = "stop_loss"
+                                elif exit_price >= tp_val:
+                                    exit_reason = "take_profit_1"
+                                else:
+                                    exit_reason = "closed_other"
                     else:
                         exit_price  = entry
                         exit_reason = "reconciled_sl_tp_bybit"
