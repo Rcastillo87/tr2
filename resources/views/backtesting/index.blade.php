@@ -95,7 +95,7 @@
                         $iLabel  = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m'][$config->interval] ?? $config->interval;
                         $params  = is_array($config->params) ? $config->params : json_decode($config->params, true);
                         $rating  = (float)($config->star_rating ?? 0);
-                        $fullR   = (int)floor($rating);
+                        $fullR   = (int)round($rating);
                         $emptyR  = 5 - $fullR;
                         $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : ($rating > 0 ? '#E24B4A' : '#374151')));
                         $metrics = [
@@ -121,7 +121,6 @@
                         <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                             <div class="flex items-center gap-2">
                                 <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $config->display_name }}</span>
-                                <span class="text-[10px] font-mono" style="color:var(--color-text-muted);">{{ $config->symbol }} · {{ $iLabel }}</span>
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="px-1.5 py-0.5 rounded text-[10px]"
@@ -251,7 +250,7 @@ function applyFilters() {
     rows.forEach(row => {
         const rowStar  = parseFloat(row.dataset.star || '0');
         const rowState = row.dataset.state || '';
-        const starOk   = starChecks.length === 0 || starChecks.includes(Math.floor(rowStar));
+        const starOk   = starChecks.length === 0 || starChecks.includes(Math.round(rowStar));
         const stateOk  = !state || rowState === state;
         const ok = (!strategy || row.dataset.strategy === strategy)
                 && (!symbol   || row.dataset.symbol   === symbol)

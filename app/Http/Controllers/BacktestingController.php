@@ -39,6 +39,8 @@ class BacktestingController extends Controller
         $starPf = match(true) {
             $pf >= 2.5 => 5, $pf >= 2.0 => 4, $pf >= 1.5 => 3, $pf >= 1.0 => 2, default => 1,
         };
+        // Entero, redondeado SIEMPRE hacia arriba al próximo valor de estrella
+        // Entero, redondeado al más cercano (4.1 -> 4, 4.5 -> 5)
         $starRating = round(($starWr + $starSharpe + $starRet + $starConsistency + $starPf) / 5, 1);
         return compact('starWr','starSharpe','starRet','starConsistency','starPf','starRating');
     }

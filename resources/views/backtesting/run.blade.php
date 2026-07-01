@@ -614,20 +614,20 @@
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación ⭐</td>
                                 <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ $existingConfig->star_rating ? $existingConfig->star_rating.'★' : '—' }}
+                                    {{ $existingConfig->star_rating ? (int)round($existingConfig->star_rating).'★' : '—' }}
                                     @if($existingConfig->backtest_range_from)
                                         <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
                                     @endif
                                 </td>
                                 <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ !empty($result['stars']['starRating']) ? $result['stars']['starRating'].'★' : '—' }}
+                                    {{ !empty($result['stars']['starRating']) ? (int)round($result['stars']['starRating']).'★' : '—' }}
                                     @if(!empty($result['range_from']))
                                         <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
                                     @endif
                                 </td>
                                 <td class="py-1.5 text-right">
                                     @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
-                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
+                                        @php $diffStar = (int)round($result['stars']['starRating']) - (int)round($existingConfig->star_rating); @endphp
                                         <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
                                     @else — @endif
                                 </td>
@@ -657,7 +657,7 @@
                 default        => '#E24B4A',
             };
             // Renderizar estrellas con media estrella como ✦
-            $fullRating = (int)floor($rating);
+            $fullRating = (int)round($rating);
             $starsHtml = str_repeat('★', $fullRating) . str_repeat('☆', 5 - $fullRating);
         @endphp
         <div class="rounded-md border p-2 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
@@ -689,7 +689,8 @@
                 @endphp
                 <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface); border:1px solid var(--color-border-soft);">
                     <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 2px;">{{ $label }}</p>
-                    <p style="font-size:16px; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mStars }}</p>
+                    <p class="hidden sm:block" style="font-size:16px; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mStars }}</p>
+                    <p class="sm:hidden" style="font-size:13px; font-weight:700; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mFull }}★</p>
                     <p style="font-size:11px; font-family:monospace; color:var(--color-text-secondary); margin:0;">{{ $display }}</p>
                 </div>
                 @endforeach
