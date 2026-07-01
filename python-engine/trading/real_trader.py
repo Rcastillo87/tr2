@@ -284,6 +284,47 @@ class BybitClient:
 
         return None
 
+    async def place_reduce_only_order(self, symbol: str, side: str, qty: float) -> dict | None:
+        """
+        Coloca una orden MARKET reduceOnly para cerrar parcialmente una
+        posicion (usada para TP2/TP3/TP4 manuales). No adjunta SL/TP -
+        Bybit rechaza la orden si reduceOnly=true viene junto con
+        stopLoss/takeProfit en el mismo request.
+        """
+        body = {
+            "category":   "linear",
+            "symbol":     symbol,
+            "side":       side,
+            "orderType":  "Market",
+            "qty":        str(qty),
+            "reduceOnly": True,
+        }
+        headers = self._sign_body(body)
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    r = await client.post(
+                        f"{self.base_url}/v5/order/create",
+                        content=json.dumps(body, separators=(",", ":"), ensure_ascii=True).encode(),
+                        headers=headers,
+                    )
+                data = r.json()
+                if data.get("retCode") == 0:
+                    return data["result"]
+                else:
+                    retmsg = data.get("retMsg")
+                    retcode = data.get("retCode")
+                    logger.error(f"[BYBIT] place_reduce_only_order error (attempt {attempt+1}): {retmsg} code={retcode}")
+                    if attempt < 2:
+                        await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"[BYBIT] place_reduce_only_order exception (attempt {attempt+1}): {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2)
+
+        return None
+
     async def set_trading_stop(self, symbol: str, sl: float, tp: float, side: str = None) -> bool:
         """
         Configura SL y TP en Bybit para una posicion abierta.
@@ -415,7 +456,8 @@ class RealTrader:
                 """
                 SELECT id, subscription_id, strategy, symbol, interval, side,
                        entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated,
-                       size, entry_time, order_id, balance_before, status
+                       size, original_size, tp2_hit, tp3_hit, tp4_hit, realized_pnl_partial,
+                       entry_time, order_id, balance_before, status
                 FROM real_trades
                 WHERE broker_account_id = $1
                   AND status IN ('open', 'pending_close')
@@ -670,13 +712,13 @@ class RealTrader:
                     (user_id, subscription_id, broker_account_id, paper_strategy_config_id,
                      strategy, symbol, broker, interval, side,
                      entry_price, entry_price_signal, sl, tp, tp2, tp3, tp4,
-                     be_level, be_activated, size, leverage,
+                     be_level, be_activated, size, original_size, leverage,
                      balance_before, regime, entry_time,
                      status, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                      $10, $11, $12, $13, $14, $15, $16,
-                     $17, false, $18, 1,
+                     $17, false, $18, $18, 1,
                      $19, $20, $21,
                      'pending_open', now(), now())
                 RETURNING id
@@ -919,10 +961,13 @@ class RealTrader:
                 trade['id']
             )
 
-        # Orden de cierre (lado contrario)
-        close_side = 'Sell' if side == 'long' else 'Buy'
-        size       = float(trade['size'])
-        result     = await client.place_market_order(symbol, close_side, size)
+        # Orden de cierre (lado contrario) - usa el tamano REAL de la posicion
+        # en Bybit (no el guardado en DB), por si ya hubo un cierre parcial
+        # de TP2/TP3/TP4 en este mismo ciclo que dejo el size de la DB desactualizado.
+        close_side  = 'Sell' if side == 'long' else 'Buy'
+        live_size   = float(position.get('size', 0) or 0)
+        size        = live_size if live_size > 0 else float(trade['size'])
+        result      = await client.place_market_order(symbol, close_side, size)
 
         if result is None:
             async with self.pool.acquire() as conn:
@@ -952,12 +997,16 @@ class RealTrader:
         # Balance real despues del cierre
         balance_after = await client.get_balance()
 
-        # Calcular PnL
+        # Calcular PnL - suma esta pierna final mas lo ya realizado en
+        # cierres parciales previos (TP2/TP3/TP4), si hubo.
         entry_price = float(trade['entry_price'])
         if side == 'long':
-            pnl = (exit_price - entry_price) * size
+            pnl_leg = (exit_price - entry_price) * size
         else:
-            pnl = (entry_price - exit_price) * size
+            pnl_leg = (entry_price - exit_price) * size
+
+        partial_pnl = float(trade.get('realized_pnl_partial') or 0)
+        pnl = pnl_leg + partial_pnl
 
         commission = abs(exit_price * size * BYBIT_TAKER_FEE)
         net_pnl    = pnl - commission
@@ -1008,6 +1057,43 @@ class RealTrader:
             await client.set_trading_stop(symbol, new_sl, tp or 0)
             logger.info(f"[REAL] BE activado — SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
 
+    async def close_partial(self, trade, level, client, current_price, original_size):
+        symbol   = trade["symbol"]
+        side     = trade["side"]
+        trade_id = trade["id"]
+
+        close_side = "Sell" if side == "long" else "Buy"
+        min_qty, qty_step = await client.get_min_qty(symbol)
+        qty_to_close = original_size * 0.25
+        if qty_step > 0:
+            qty_to_close = round(qty_to_close / qty_step) * qty_step
+        qty_to_close = round(qty_to_close, 8)
+
+        if qty_to_close < min_qty:
+            logger.warning(f"[REAL] {level} trade #{trade_id}: qty parcial {qty_to_close} menor a min_qty {min_qty}, se omite")
+            return False
+
+        result = await client.place_reduce_only_order(symbol, close_side, qty_to_close)
+        if result is None:
+            logger.error(f"[REAL] {level} trade #{trade_id}: orden reduceOnly rechazada por Bybit")
+            return False
+
+        entry_price = float(trade["entry_price"])
+        if side == "long":
+            pnl = (current_price - entry_price) * qty_to_close
+        else:
+            pnl = (entry_price - current_price) * qty_to_close
+
+        hit_columns = {"take_profit_2": "tp2_hit", "take_profit_3": "tp3_hit", "take_profit_4": "tp4_hit"}
+        hit_column = hit_columns[level]
+
+        async with self.pool.acquire() as conn:
+            query = "UPDATE real_trades SET size = size - $1, " + hit_column + " = true, realized_pnl_partial = realized_pnl_partial + $2, updated_at = now() WHERE id = $3"
+            await conn.execute(query, qty_to_close, round(pnl, 8), trade_id)
+
+        logger.info(f"[REAL] Cierre parcial {level}: {symbol} qty={qty_to_close} price={current_price} pnl={round(pnl, 4)}")
+        return True
+
     # ─────────────────────────────────────────────
     # Monitor: revisar posiciones abiertas
     # ─────────────────────────────────────────────
@@ -1024,6 +1110,10 @@ class RealTrader:
             entry    = float(trade["entry_price"])
             sl       = float(trade["sl"])
             tp       = float(trade["tp"])
+            tp2      = float(trade["tp2"]) if trade.get("tp2") is not None else None
+            tp3      = float(trade["tp3"]) if trade.get("tp3") is not None else None
+            tp4      = float(trade["tp4"]) if trade.get("tp4") is not None else None
+            original_size = float(trade["original_size"]) if trade.get("original_size") else float(trade["size"])
             be_level = float(trade["be_level"]) if trade.get("be_level") else 0
             trade_id = trade["id"]
 
@@ -1147,7 +1237,21 @@ class RealTrader:
                             sl = new_sl
                             logger.info(f"[MONITOR] Trailing aplicado: {symbol} sl movido a {new_sl}")
 
-                # 6. Cierre por duracion maxima
+                # 6. Take Profit parcial - TP4 > TP3 > TP2 (prioridad), 25% cada uno.
+                # No cierra si ya se disparo ese nivel antes.
+                for level, tp_level, hit_flag in [
+                    ("take_profit_4", tp4, trade.get("tp4_hit")),
+                    ("take_profit_3", tp3, trade.get("tp3_hit")),
+                    ("take_profit_2", tp2, trade.get("tp2_hit")),
+                ]:
+                    if tp_level is None or hit_flag:
+                        continue
+                    reached = (side == "long" and current_price >= tp_level) or (side == "short" and current_price <= tp_level)
+                    if reached:
+                        await self.close_partial(trade, level, client, current_price, original_size)
+                        break
+
+                # 7. Cierre por duracion maxima
                 q2 = "SELECT psc.params->>'max_duration' as max_duration FROM real_trades rt"
                 q2 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
                 q2 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
