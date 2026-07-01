@@ -44,6 +44,27 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 BYBIT_MAINNET = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 BYBIT_TESTNET = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
 
+
+def compute_native_trailing_params(entry_price, side, trailing_distance_pct):
+    """
+    Calcula trailingStop (distancia en precio absoluto, no %) y activePrice
+    (nivel donde arma el trailing nativo de Bybit) a partir del
+    trailing_distance_pct configurado en la estrategia.
+
+    activePrice queda apenas mas favorable que el precio de ENTRADA (buffer
+    de 0.05%), para que arme apenas la posicion entra en ganancia - mismo
+    criterio que el trailing del bot (gain_pct > 0). Confirmado contra
+    Bybit testnet: activePrice se valida contra el precio de entrada de la
+    posicion, no contra el precio de mercado actual.
+    """
+    trailing_stop_price = entry_price * (trailing_distance_pct / 100)
+    buffer_pct = 0.0005
+    if side == 'long':
+        active_price = entry_price * (1 + buffer_pct)
+    else:
+        active_price = entry_price * (1 - buffer_pct)
+    return round(trailing_stop_price, 8), round(active_price, 8)
+
 # Circuit breaker: pausar cuenta tras N errores consecutivos de API
 CIRCUIT_BREAKER_THRESHOLD = 3
 
@@ -325,11 +346,44 @@ class BybitClient:
 
         return None
 
-    async def set_trading_stop(self, symbol: str, sl: float, tp: float, side: str = None) -> bool:
+    async def get_native_trailing_level(self, symbol):
+        """
+        Consulta el nivel actual del trailing NATIVO de Bybit (orden
+        condicional tipo TrailingProfit, aun no disparada). Bybit no
+        expone este nivel en position/list, solo en order/realtime.
+        Devuelve None si no hay trailing armado.
+        """
+        params = {'category': 'linear', 'orderFilter': 'StopOrder', 'symbol': symbol}
+        query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
+        headers = self._sign(params)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f'{self.base_url}/v5/order/realtime?{query_string}',
+                    headers=headers,
+                )
+            data = r.json()
+            if data.get('retCode') != 0:
+                return None
+            for order in data.get('result', {}).get('list', []):
+                if order.get('stopOrderType') == 'TrailingProfit' and order.get('orderStatus') == 'Untriggered':
+                    return float(order.get('triggerPrice'))
+        except Exception as e:
+            logger.error(f"[BYBIT] get_native_trailing_level exception: {e}")
+        return None
+
+    async def set_trading_stop(self, symbol: str, sl: float, tp: float, side: str = None,
+                                trailing_stop: float = None, active_price: float = None) -> bool:
         """
         Configura SL y TP en Bybit para una posicion abierta.
         Se llama despues de confirmar la apertura de la orden.
         side: 'long' o 'short' (se convierte a Buy/Sell internamente)
+
+        trailing_stop / active_price: si se pasan, arma ADEMAS el trailing
+        NATIVO de Bybit. No reemplaza el stopLoss fijo - coexisten
+        (confirmado empiricamente contra Bybit testnet). activePrice debe
+        ser mas favorable que el precio de ENTRADA de la posicion, no que
+        el precio de mercado actual, o Bybit rechaza el pedido.
         """
         position_idx = 0  # one-way mode
         body = {
@@ -341,6 +395,10 @@ class BybitClient:
             'slTriggerBy': 'LastPrice',
             'tpTriggerBy': 'LastPrice',
         }
+        if trailing_stop is not None:
+            body['trailingStop'] = str(round(trailing_stop, 8))
+        if active_price is not None:
+            body['activePrice'] = str(round(active_price, 8))
         headers = self._sign_body(body)
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -853,8 +911,21 @@ class RealTrader:
             be  = round(avg_price * (1 - strategy_instance.be_pct/100), 8)
         logger.info(f"[REAL] SL/TP reales calculados: sl={sl} tp={tp1} be={be} avg={avg_price}")
 
-        # 7c. Actualizar SL/TP reales en Bybit via trading-stop
-        ts_ok = await client.set_trading_stop(symbol, sl, tp1)
+        # 7c. Actualizar SL/TP reales en Bybit via trading-stop.
+        # Si trailing_mode='fixed', se arma ADEMAS el trailing NATIVO de
+        # Bybit (Bybit lo gestiona solo desde este momento). Modo 'stepped'
+        # no tiene equivalente nativo, lo sigue manejando el bot.
+        trailing_stop_price = None
+        active_price = None
+        if getattr(strategy_instance, 'trailing_mode', None) == 'fixed':
+            trailing_stop_price, active_price = compute_native_trailing_params(
+                avg_price, side, strategy_instance.trailing_distance_pct
+            )
+            logger.info(f"[REAL] Trailing NATIVO armado: {symbol} trailingStop={trailing_stop_price} activePrice={active_price}")
+
+        ts_ok = await client.set_trading_stop(
+            symbol, sl, tp1, trailing_stop=trailing_stop_price, active_price=active_price
+        )
         if not ts_ok:
             logger.error(f"[REAL] trading-stop fallo para {symbol} — posicion con SL provisional")
 
@@ -1206,8 +1277,11 @@ class RealTrader:
                             results["be_activated"] += 1
                             logger.info(f"[MONITOR] BE activado: {symbol} sl movido a entry={entry}")
 
-                # 5. Trailing Stop via trading-stop (mismo mecanismo que el break-even:
-                # Bybit sigue siendo la fuente de verdad del SL, solo lo ajustamos)
+                # 5. Trailing Stop: modo 'fixed' usa el trailing NATIVO de Bybit,
+                # armado una sola vez al abrir el trade (ver open_trade) - Bybit
+                # lo gestiona en su propio motor, sin depender de que el bot este
+                # corriendo. Modo 'stepped' no tiene equivalente nativo en Bybit,
+                # sigue gestionado por el bot aca.
                 q3 = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
                 q3 += "psc.params->>'trailing_distance_pct' as trailing_distance_pct, "
                 q3 += "psc.params->>'trailing_steps' as trailing_steps FROM real_trades rt"
@@ -1218,7 +1292,7 @@ class RealTrader:
                     row3 = await conn.fetchrow(q3, trade_id)
 
                 trailing_mode = row3["trailing_mode"] if row3 else None
-                if trailing_mode:
+                if trailing_mode == "stepped":
                     trailing_distance_pct = float(row3["trailing_distance_pct"]) if row3["trailing_distance_pct"] else 1.0
                     trailing_steps = json.loads(row3["trailing_steps"]) if row3["trailing_steps"] else []
 
@@ -1235,7 +1309,17 @@ class RealTrader:
                                     new_sl, trade_id
                                 )
                             sl = new_sl
-                            logger.info(f"[MONITOR] Trailing aplicado: {symbol} sl movido a {new_sl}")
+                            logger.info(f"[MONITOR] Trailing aplicado (bot, modo stepped): {symbol} sl movido a {new_sl}")
+                elif trailing_mode == "fixed":
+                    native_sl = await client.get_native_trailing_level(symbol)
+                    if native_sl is not None and round(native_sl, 8) != round(sl, 8):
+                        async with self.pool.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE real_trades SET sl=$1, trailing_applied=true, updated_at=now() WHERE id=$2",
+                                native_sl, trade_id
+                            )
+                        sl = native_sl
+                        logger.info(f"[MONITOR] Trailing nativo sincronizado: {symbol} sl={native_sl}")
 
                 # 6. Take Profit parcial - TP4 > TP3 > TP2 (prioridad), 25% cada uno.
                 # No cierra si ya se disparo ese nivel antes.
