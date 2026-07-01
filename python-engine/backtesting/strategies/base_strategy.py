@@ -223,43 +223,10 @@ class BaseStrategy(ABC):
         Solo mueve el SL a favor del trade, nunca lo retrocede.
         Si trailing_mode es None, retorna current_sl sin cambios.
         """
-        if self.trailing_mode is None:
-            return current_sl
-
-        if side == 'long':
-            gain_pct = (current_price - entry_price) / entry_price * 100
-        else:
-            gain_pct = (entry_price - current_price) / entry_price * 100
-
-        if gain_pct <= 0:
-            return current_sl
-
-        new_sl = current_sl
-
-        if self.trailing_mode == 'fixed':
-            if side == 'long':
-                candidate = current_price * (1 - self.trailing_distance_pct / 100)
-                new_sl = max(current_sl, candidate)
-            else:
-                candidate = current_price * (1 + self.trailing_distance_pct / 100)
-                new_sl = min(current_sl, candidate)
-
-        elif self.trailing_mode == 'stepped':
-            # trailing_steps: [[gain_pct_threshold, new_sl_pct_from_entry], ...]
-            # Se aplica el escalon mas alto cuyo umbral ya fue alcanzado.
-            applicable = [s for s in self.trailing_steps if gain_pct >= s[0]]
-            if applicable:
-                best_step = max(applicable, key=lambda s: s[0])
-                sl_pct_from_entry = best_step[1]
-
-                if side == 'long':
-                    candidate = entry_price * (1 + sl_pct_from_entry / 100)
-                    new_sl = max(current_sl, candidate)
-                else:
-                    candidate = entry_price * (1 - sl_pct_from_entry / 100)
-                    new_sl = min(current_sl, candidate)
-
-        return round(new_sl, 8)
+        return calculate_trailing_sl_standalone(
+            self.trailing_mode, self.trailing_distance_pct, self.trailing_steps,
+            entry_price, side, current_price, current_sl,
+        )
 
     def check_volatility_protection(self, current_sl: float, side: str,
                                      current_atr: float, avg_atr: float) -> dict:
@@ -284,3 +251,49 @@ class BaseStrategy(ABC):
             return {'action': 'widen', 'new_sl': round(new_sl, 8)}
 
         return {'action': None, 'new_sl': None}
+
+
+def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
+                                      trailing_steps, entry_price, side,
+                                      current_price, current_sl):
+    """
+    Version standalone (sin instancia de estrategia) de calculate_trailing_sl,
+    para modulos que no necesitan una instancia completa de estrategia solo
+    para este calculo (ej. real_trader.py). La logica es identica a
+    BaseStrategy.calculate_trailing_sl, que delega aca para no duplicarla.
+    """
+    if trailing_mode is None:
+        return current_sl
+
+    if side == 'long':
+        gain_pct = (current_price - entry_price) / entry_price * 100
+    else:
+        gain_pct = (entry_price - current_price) / entry_price * 100
+
+    if gain_pct <= 0:
+        return current_sl
+
+    new_sl = current_sl
+
+    if trailing_mode == 'fixed':
+        if side == 'long':
+            candidate = current_price * (1 - trailing_distance_pct / 100)
+            new_sl = max(current_sl, candidate)
+        else:
+            candidate = current_price * (1 + trailing_distance_pct / 100)
+            new_sl = min(current_sl, candidate)
+
+    elif trailing_mode == 'stepped':
+        applicable = [s for s in (trailing_steps or []) if gain_pct >= s[0]]
+        if applicable:
+            best_step = max(applicable, key=lambda s: s[0])
+            sl_pct_from_entry = best_step[1]
+
+            if side == 'long':
+                candidate = entry_price * (1 + sl_pct_from_entry / 100)
+                new_sl = max(current_sl, candidate)
+            else:
+                candidate = entry_price * (1 - sl_pct_from_entry / 100)
+                new_sl = min(current_sl, candidate)
+
+    return round(new_sl, 8)

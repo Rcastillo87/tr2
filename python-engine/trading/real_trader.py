@@ -34,6 +34,7 @@ from dotenv import load_dotenv
 
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
+from backtesting.strategies.base_strategy import calculate_trailing_sl_standalone
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -1115,7 +1116,38 @@ class RealTrader:
                             results["be_activated"] += 1
                             logger.info(f"[MONITOR] BE activado: {symbol} sl movido a entry={entry}")
 
-                # 5. Cierre por duracion maxima
+                # 5. Trailing Stop via trading-stop (mismo mecanismo que el break-even:
+                # Bybit sigue siendo la fuente de verdad del SL, solo lo ajustamos)
+                q3 = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
+                q3 += "psc.params->>'trailing_distance_pct' as trailing_distance_pct, "
+                q3 += "psc.params->>'trailing_steps' as trailing_steps FROM real_trades rt"
+                q3 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+                q3 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+                q3 += " WHERE rt.id = $1"
+                async with self.pool.acquire() as conn:
+                    row3 = await conn.fetchrow(q3, trade_id)
+
+                trailing_mode = row3["trailing_mode"] if row3 else None
+                if trailing_mode:
+                    trailing_distance_pct = float(row3["trailing_distance_pct"]) if row3["trailing_distance_pct"] else 1.0
+                    trailing_steps = json.loads(row3["trailing_steps"]) if row3["trailing_steps"] else []
+
+                    new_sl = calculate_trailing_sl_standalone(
+                        trailing_mode, trailing_distance_pct, trailing_steps,
+                        entry, side, current_price, sl
+                    )
+                    if new_sl != sl:
+                        ts_ok = await client.set_trading_stop(symbol, new_sl, tp)
+                        if ts_ok:
+                            async with self.pool.acquire() as conn:
+                                await conn.execute(
+                                    "UPDATE real_trades SET sl=$1, trailing_applied=true, updated_at=now() WHERE id=$2",
+                                    new_sl, trade_id
+                                )
+                            sl = new_sl
+                            logger.info(f"[MONITOR] Trailing aplicado: {symbol} sl movido a {new_sl}")
+
+                # 6. Cierre por duracion maxima
                 q2 = "SELECT psc.params->>'max_duration' as max_duration FROM real_trades rt"
                 q2 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
                 q2 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
