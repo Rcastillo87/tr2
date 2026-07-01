@@ -119,8 +119,8 @@ class PaperTrader:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, strategy, symbol, interval, side, entry_price, sl, tp, tp2,
-                       be_level, be_activated, size, entry_time, regime,
+                SELECT id, strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4,
+                       be_level, be_activated, trailing_applied, size, entry_time, regime,
                        max_profit_pct, max_loss_pct
                 FROM paper_trades
                 WHERE status = 'open'
@@ -162,14 +162,15 @@ class PaperTrader:
         cfg_params = self._get_params_for(display_name, symbol)
 
         # Actualizar instancia con params correctos de la config
-        for attr in ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration']:
+        for attr in ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
+                     'trailing_mode', 'trailing_distance_pct', 'trailing_steps']:
             if attr in cfg_params:
                 setattr(strategy_instance, attr, cfg_params[attr])
 
-        sl, tp = strategy_instance.calculate_sl_tp(entry_price, side)
+        sl, _  = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
-        tp2 = strategy_instance.calculate_tp2(entry_price, side) \
-              if hasattr(strategy_instance, 'calculate_tp2') else None
+        tp_levels = strategy_instance.calculate_tp_levels(entry_price, side)
+        tp, tp2, tp3, tp4 = tp_levels['tp1'], tp_levels['tp2'], tp_levels['tp3'], tp_levels['tp4']
         risk_pct = cfg_params.get('risk_per_trade_pct',
                    self.default_params.get('risk_per_trade_pct', 1.0))
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
@@ -183,19 +184,19 @@ class PaperTrader:
             await conn.execute(
                 """
                 INSERT INTO paper_trades
-                    (strategy, symbol, interval, side, entry_price, sl, tp, tp2, be_level,
+                    (strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be_level,
                      be_activated, size, regime, entry_time, status,
                      max_profit_pct, max_loss_pct, created_at, updated_at)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10, $11, $12, 'open', 0, 0, now(), now())
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, $12, $13, $14, 'open', 0, 0, now(), now())
                 """,
-                display_name, symbol, interval, side, entry_price, sl, tp, tp2, be,
+                display_name, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be,
                 size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
             )
 
         logger.info(
             f"[PAPER] OPEN {display_name} {symbol} {side.upper()} @ {entry_price} "
-            f"SL={sl} TP1={tp} TP2={tp2} BE={be} regime={regime} interval={interval}"
+            f"SL={sl} TP1={tp} TP2={tp2} TP3={tp3} TP4={tp4} BE={be} regime={regime} interval={interval}"
         )
 
     # ─────────────────────────────────────────────
@@ -245,6 +246,13 @@ class PaperTrader:
                 new_sl, trade_id
             )
 
+    async def update_trailing_sl(self, trade_id: int, new_sl: float):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE paper_trades SET sl = $1, trailing_applied = true, updated_at = now() WHERE id = $2",
+                new_sl, trade_id
+            )
+
     async def update_max_excursion(self, trade_id: int, floating_pnl_pct: float,
                                     current_max_profit: float, current_max_loss: float):
         new_max_profit = max(current_max_profit, floating_pnl_pct)
@@ -290,9 +298,13 @@ class PaperTrader:
 
             current_price = price_cache[symbol]
             side     = trade['side']
+            strategy_instance = strategy_instances.get(trade['strategy'],
+                                list(strategy_instances.values())[0])
             sl       = float(trade['sl'])
             tp       = float(trade['tp'])
             tp2      = float(trade['tp2']) if trade.get('tp2') is not None else None
+            tp3      = float(trade['tp3']) if trade.get('tp3') is not None else None
+            tp4      = float(trade['tp4']) if trade.get('tp4') is not None else None
             be_level = float(trade['be_level'])
             entry    = float(trade['entry_price'])
             size     = float(trade['size'])
@@ -312,25 +324,40 @@ class PaperTrader:
             if not trade['be_activated']:
                 if side == 'long' and current_price >= be_level:
                     await self.update_breakeven(trade['id'], entry)
+                    sl = entry
                     results["be_activated"] += 1
                 elif side == 'short' and current_price <= be_level:
                     await self.update_breakeven(trade['id'], entry)
+                    sl = entry
                     results["be_activated"] += 1
 
-            # Stop Loss
+            # Stop Loss — se evalua con el SL vigente ANTES de aplicar el trailing
+            # de este ciclo, igual que se corrigio en el motor de backtest: no hay
+            # que asumir que el trailing ya se movio antes de chequear la salida.
             if side == 'long' and current_price <= sl:
                 exit_price, exit_reason = sl, 'stop_loss'
             elif side == 'short' and current_price >= sl:
                 exit_price, exit_reason = sl, 'stop_loss'
 
-            # Take Profit — TP2 tiene prioridad si esta definido y se alcanzo,
-            # si no se evalua TP1 (replica el sistema TP1/TP2 de E-13 original).
+            # Trailing Stop — solo se aplica si no se salio por SL en este ciclo
             if exit_price is None:
-                if tp2 is not None:
-                    if side == 'long' and current_price >= tp2:
-                        exit_price, exit_reason = tp2, 'take_profit_2'
-                    elif side == 'short' and current_price <= tp2:
-                        exit_price, exit_reason = tp2, 'take_profit_2'
+                if getattr(strategy_instance, 'trailing_mode', None) is not None:
+                    new_sl = strategy_instance.calculate_trailing_sl(entry, side, current_price, sl)
+                    if new_sl != sl:
+                        await self.update_trailing_sl(trade['id'], new_sl)
+                        sl = new_sl
+
+            # Take Profit — prioridad TP4 > TP3 > TP2 > TP1, igual que el backtest
+            if exit_price is None:
+                for level, label in [(tp4, 'take_profit_4'), (tp3, 'take_profit_3'), (tp2, 'take_profit_2')]:
+                    if level is None:
+                        continue
+                    if side == 'long' and current_price >= level:
+                        exit_price, exit_reason = level, label
+                        break
+                    elif side == 'short' and current_price <= level:
+                        exit_price, exit_reason = level, label
+                        break
 
                 if exit_price is None:
                     if side == 'long' and current_price >= tp:
@@ -340,16 +367,12 @@ class PaperTrader:
 
             # Cierre por tiempo — usa max_duration de la estrategia especifica
             if exit_price is None:
-                strategy_name = trade['strategy']
-                instance = strategy_instances.get(strategy_name,
-                           list(strategy_instances.values())[0])
-
                 entry_time = trade['entry_time']
                 if entry_time.tzinfo is None:
                     entry_time = entry_time.replace(tzinfo=timezone.utc)
                 hours_open = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
 
-                if hours_open >= instance.max_duration:
+                if hours_open >= strategy_instance.max_duration:
                     exit_price, exit_reason = current_price, 'time_exit'
 
             if exit_price is not None:
