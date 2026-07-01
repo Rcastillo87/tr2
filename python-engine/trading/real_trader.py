@@ -1321,7 +1321,52 @@ class RealTrader:
                         sl = native_sl
                         logger.info(f"[MONITOR] Trailing nativo sincronizado: {symbol} sl={native_sl}")
 
-                # 6. Take Profit parcial - TP4 > TP3 > TP2 (prioridad), 25% cada uno.
+                # 6. Proteccion por volatilidad - usa ATR de las ultimas velas reales.
+                # mode="close": cierra la posicion completa (como time_exit).
+                # mode="widen": ensancha el SL fijo via set_trading_stop.
+                q4 = "SELECT psc.params->>'volatility_protection_mode' as volatility_protection_mode, "
+                q4 += "psc.params->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
+                q4 += "psc.params->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
+                q4 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+                q4 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+                q4 += " WHERE rt.id = $1"
+                async with self.pool.acquire() as conn:
+                    row4 = await conn.fetchrow(q4, trade_id)
+
+                vol_mode = row4["volatility_protection_mode"] if row4 else None
+                if vol_mode in ("close", "widen"):
+                    bars = await self.get_bars(symbol, trade["interval"])
+                    if len(bars) >= 51:
+                        atr_multiplier = float(row4["volatility_atr_multiplier"]) if row4["volatility_atr_multiplier"] else 2.5
+                        widen_pct = float(row4["volatility_widen_pct"]) if row4["volatility_widen_pct"] else 1.0
+                        atr_series = calculate_atr(bars)
+                        current_atr = float(atr_series.iloc[-1])
+                        avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
+
+                        if avg_atr > 0 and current_atr > avg_atr * atr_multiplier:
+                            if vol_mode == "close":
+                                success = await self.close_trade(trade, "volatility_protection", client, account_id)
+                                if success:
+                                    results["closed"] += 1
+                                else:
+                                    results["errors"] += 1
+                                continue
+                            elif vol_mode == "widen":
+                                if side == "long":
+                                    new_sl_v = round(sl * (1 - widen_pct / 100), 8)
+                                else:
+                                    new_sl_v = round(sl * (1 + widen_pct / 100), 8)
+                                ts_ok = await client.set_trading_stop(symbol, new_sl_v, tp)
+                                if ts_ok:
+                                    async with self.pool.acquire() as conn:
+                                        await conn.execute(
+                                            "UPDATE real_trades SET sl=$1, updated_at=now() WHERE id=$2",
+                                            new_sl_v, trade_id
+                                        )
+                                    sl = new_sl_v
+                                    logger.info(f"[MONITOR] SL ensanchado por volatilidad: {symbol} nuevo_sl={new_sl_v}")
+
+                # 7. Take Profit parcial - TP4 > TP3 > TP2 (prioridad), 25% cada uno.
                 # No cierra si ya se disparo ese nivel antes.
                 for level, tp_level, hit_flag in [
                     ("take_profit_4", tp4, trade.get("tp4_hit")),
@@ -1335,7 +1380,7 @@ class RealTrader:
                         await self.close_partial(trade, level, client, current_price, original_size)
                         break
 
-                # 7. Cierre por duracion maxima
+                # 8. Cierre por duracion maxima
                 q2 = "SELECT psc.params->>'max_duration' as max_duration FROM real_trades rt"
                 q2 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
                 q2 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"

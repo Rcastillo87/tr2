@@ -253,6 +253,13 @@ class PaperTrader:
                 new_sl, trade_id
             )
 
+    async def update_volatility_widen(self, trade_id: int, new_sl: float):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE paper_trades SET sl = $1, updated_at = now() WHERE id = $2",
+                new_sl, trade_id
+            )
+
     async def update_max_excursion(self, trade_id: int, floating_pnl_pct: float,
                                     current_max_profit: float, current_max_loss: float):
         new_max_profit = max(current_max_profit, floating_pnl_pct)
@@ -346,6 +353,20 @@ class PaperTrader:
                     if new_sl != sl:
                         await self.update_trailing_sl(trade['id'], new_sl)
                         sl = new_sl
+
+            # Proteccion por volatilidad - usa ATR de las ultimas velas reales
+            if exit_price is None and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
+                bars = await self.get_bars(symbol, trade['interval'])
+                if not bars.empty and len(bars) >= 51:
+                    atr_series = calculate_atr(bars)
+                    current_atr = float(atr_series.iloc[-1])
+                    avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
+                    vol_check = strategy_instance.check_volatility_protection(sl, side, current_atr, avg_atr)
+                    if vol_check['action'] == 'close':
+                        exit_price, exit_reason = current_price, 'volatility_protection'
+                    elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
+                        await self.update_volatility_widen(trade['id'], vol_check['new_sl'])
+                        sl = vol_check['new_sl']
 
             # Take Profit — prioridad TP4 > TP3 > TP2 > TP1, igual que el backtest
             if exit_price is None:
