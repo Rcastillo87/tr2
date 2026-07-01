@@ -58,7 +58,15 @@ class BacktestMonthlyExport
         $avgMonthlyPnl = $auditedMonths > 0 ? round($monthlyPnls->average(), 2) : null;
         $bestMonth     = $auditedMonths > 0 ? round($monthlyPnls->max(), 2) : null;
         $worstMonth    = $auditedMonths > 0 ? round($monthlyPnls->min(), 2) : null;
-        $totalReturnPct = $auditedMonths > 0 ? round($monthlyPnls->sum(), 2) : null;
+        // Retorno total real (compuesto), calculado sobre el mismo período in-sample
+        // que muestra la tabla mensual — NO la suma aritmética de los % mensuales,
+        // que es matemáticamente inválida cuando el balance va creciendo (compounding):
+        // sumar porcentajes calculados sobre bases distintas subestima brutalmente
+        // el crecimiento real de la cuenta.
+        $inSampleReturn = $result['in_sample_metrics']['total_return_pct'] ?? null;
+        $totalReturnPct = $inSampleReturn !== null
+            ? round((float) $inSampleReturn, 2)
+            : ($auditedMonths > 0 ? round($monthlyPnls->sum(), 2) : null); // fallback si no viene in_sample_metrics
         $avgWinRate    = $auditedMonths > 0
             ? round(collect($monthly)->pluck('win_rate')->map(fn($v) => (float)$v)->average(), 2)
             : null;
@@ -221,7 +229,7 @@ class BacktestMonthlyExport
             $sheet->setCellValue("F{$row}", "=AVERAGE(F2:F" . ($row-1) . ")");
             $sheet->getStyle("A{$row}:F{$row}")->getFont()->setBold(true);
             $row++;
-            $sheet->setCellValue("A{$row}", 'TOTAL P&L %');
+            $sheet->setCellValue("A{$row}", 'SUMA SIMPLE MENSUAL % (no compuesta — solo referencial)');
             $sheet->getStyle("A{$row}")->getFont()->setBold(true);
             $sheet->setCellValue("F{$row}", "=SUM(F2:F" . ($row-2) . ")");
             $sheet->getStyle("A{$row}:F{$row}")->getFont()->setBold(true);

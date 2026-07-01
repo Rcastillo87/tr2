@@ -270,20 +270,14 @@ async def run_backtest(request: BacktestRequest):
                 result['monthly_breakdown'] = build_monthly_breakdown(
                     full_result['trades'], request.initial_balance
                 )
-                # Reemplazar metricas agregadas con las del backtest completo
-                # para que KPIs y desglose mensual sean consistentes
-                full_metrics = full_result.get('metrics', {})
-                result['aggregate_metrics'] = full_metrics
-                # Recalcular passed y pass_reasons con metricas del full_result
-                full_reasons = []
-                if full_metrics.get('win_rate', 0) < 45:
-                    full_reasons.append(f"Win Rate bajo: {full_metrics.get('win_rate')}% (mínimo 45%)")
-                if full_metrics.get('sharpe_ratio', 0) < 1:
-                    full_reasons.append(f"Sharpe Ratio bajo: {full_metrics.get('sharpe_ratio')} (mínimo 1)")
-                if full_metrics.get('max_drawdown_pct', 100) > 15:
-                    full_reasons.append(f"Drawdown alto: {full_metrics.get('max_drawdown_pct')}% (máximo 15%)")
-                result['passed']       = len(full_reasons) == 0
-                result['pass_reasons'] = full_reasons if full_reasons else ['Estrategia aprobada para paper trading']
+                # Se guarda el backtest completo (in-sample, sobre el 100% del histórico)
+                # como referencia informativa para el desglose mensual — pero SIN
+                # sobreescribir aggregate_metrics/passed/pass_reasons, que deben seguir
+                # siendo las del walk-forward (fuera de muestra). Sobreescribirlas
+                # anulaba por completo el propósito de la validación walk-forward:
+                # el badge "Aprobada" y el rating de estrellas terminaban reflejando
+                # desempeño in-sample, mucho más propenso a sobreajuste.
+                result['in_sample_metrics'] = full_result.get('metrics', {})
         else:
             engine = BacktestEngine(
                 strategy=strategy, df=df,
