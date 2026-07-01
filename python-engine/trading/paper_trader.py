@@ -173,7 +173,6 @@ class PaperTrader:
         risk_pct = cfg_params.get('risk_per_trade_pct',
                    self.default_params.get('risk_per_trade_pct', 1.0))
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
-        risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
         size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0.0
 
