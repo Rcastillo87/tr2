@@ -35,6 +35,11 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
     avg_win  = wins['pnl'].mean() if len(wins) > 0 else 0.0
     avg_loss = losses['pnl'].mean() if len(losses) > 0 else 0.0
 
+    # Promedios en % reales (relativos al balance en el momento del trade),
+    # para no confundir con el monto absoluto en USDT (que crece por compounding)
+    avg_win_pct  = wins['pnl_pct'].mean() if len(wins) > 0 and 'pnl_pct' in wins.columns else 0.0
+    avg_loss_pct = losses['pnl_pct'].mean() if len(losses) > 0 and 'pnl_pct' in losses.columns else 0.0
+
     # Expectancy: ganancia promedio esperada por operación
     expectancy = (df['pnl'].mean())
 
@@ -79,6 +84,8 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
         "profit_factor":     round(profit_factor, 2) if profit_factor != float('inf') else None,
         "avg_win":           round(float(avg_win), 2),
         "avg_loss":          round(float(avg_loss), 2),
+        "avg_win_pct":       round(float(avg_win_pct), 2),
+        "avg_loss_pct":      round(float(avg_loss_pct), 2),
         "expectancy":        round(float(expectancy), 2),
         "sharpe_ratio":      round(float(sharpe_ratio), 2),
         "max_drawdown_pct":  round(float(max_drawdown), 2),
@@ -99,6 +106,8 @@ def _empty_metrics() -> dict:
         "profit_factor": None,
         "avg_win": 0.0,
         "avg_loss": 0.0,
+        "avg_win_pct": 0.0,
+        "avg_loss_pct": 0.0,
         "expectancy": 0.0,
         "sharpe_ratio": 0.0,
         "max_drawdown_pct": 0.0,

@@ -95,8 +95,22 @@ class BacktestEngine:
                         position['sl'] = position['entry_price']
                         position['be_activated'] = True
 
+                # Stop Loss — se evalúa con el SL vigente ANTES de aplicar el
+                # trailing de esta vela. Evita look-ahead bias: no podemos
+                # asumir que el high (usado para mover el trailing) ocurrió
+                # antes que el low (usado para disparar el SL) dentro de la
+                # misma vela OHLC.
+                if position['side'] == 'long' and low <= position['sl']:
+                    exit_price  = position['sl']
+                    exit_reason = 'stop_loss'
+                elif position['side'] == 'short' and high >= position['sl']:
+                    exit_price  = position['sl']
+                    exit_reason = 'stop_loss'
+
                 # Trailing Stop (independiente del break-even, puede moverlo mas)
-                if hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
+                # Solo se aplica si la posición no se cerró por SL en esta vela;
+                # su efecto rige recién desde la vela siguiente.
+                if exit_price is None and hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
                     ref_price = high if position['side'] == 'long' else low
                     new_sl = self.strategy.calculate_trailing_sl(
                         position['entry_price'], position['side'], ref_price, position['sl']
@@ -106,7 +120,7 @@ class BacktestEngine:
                         position['trailing_applied'] = True
 
                 # Proteccion por volatilidad
-                if needs_atr and hasattr(self.strategy, 'check_volatility_protection'):
+                if exit_price is None and needs_atr and hasattr(self.strategy, 'check_volatility_protection'):
                     current_atr = float(row['_atr']) if pd.notna(row['_atr']) else 0
                     avg_atr     = float(row['_atr_avg']) if pd.notna(row['_atr_avg']) else 0
 
@@ -119,15 +133,6 @@ class BacktestEngine:
                         exit_reason = 'volatility_protection'
                     elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
                         position['sl'] = vol_check['new_sl']
-
-                # Stop Loss
-                if exit_price is None:
-                    if position['side'] == 'long' and low <= position['sl']:
-                        exit_price  = position['sl']
-                        exit_reason = 'stop_loss'
-                    elif position['side'] == 'short' and high >= position['sl']:
-                        exit_price  = position['sl']
-                        exit_reason = 'stop_loss'
 
                 # Take Profit — evaluar niveles de mayor a menor prioridad
                 if exit_price is None:

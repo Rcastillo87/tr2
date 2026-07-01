@@ -87,8 +87,8 @@ class BacktestMonthlyExport
             ['Retorno total (%)',        $totalReturnPct ?? '—'],
             ['Mejor mes (%)',            $bestMonth ?? '—'],
             ['Peor mes (%)',             $worstMonth ?? '—'],
-            ['Avg win (%)',              $agg['avg_win'] ?? 0],
-            ['Avg loss (%)',             $agg['avg_loss'] ?? 0],
+            ['Avg win (%)',              $agg['avg_win_pct'] ?? 0],
+            ['Avg loss (%)',             $agg['avg_loss_pct'] ?? 0],
             ['Max drawdown (%)',         $agg['max_drawdown_pct'] ?? 0],
         ];
 
