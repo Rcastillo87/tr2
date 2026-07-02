@@ -5,6 +5,7 @@ y las desencripta usando la APP_KEY de Laravel). Python nunca lee
 credenciales directamente de la DB para evitar el problema de encriptacion.
 """
 
+import asyncio
 import asyncpg
 import json as _json
 import importlib
@@ -79,6 +80,64 @@ async def _setup_jsonb_codec(conn):
     await conn.set_type_codec('jsonb', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
     await conn.set_type_codec('json', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
 
+async def _process_account(trader, account):
+    account_key     = f"account_{account.id}_{account.broker}"
+    account_results = {}
+    try:
+        error_count = await trader.get_circuit_breaker_errors(account.id)
+        if error_count >= CIRCUIT_BREAKER_THRESHOLD:
+            last_errors = await trader.get_last_error_messages(account.id)
+            non_critical_patterns = [
+                'firma', 'timestamp', '10001', 'stopLoss', 'takeProfit',
+                'rechazada por bybit', 'qty', 'invalid', 'no confirmada'
+            ]
+            critical = any(
+                msg and not any(p in msg.lower() for p in non_critical_patterns)
+                for msg in last_errors
+                if msg
+            )
+            if critical:
+                await trader.pause_account(
+                    account.id,
+                    f"{error_count} errores criticos en las ultimas 2h"
+                )
+                logger.error(f"[CIRCUIT] Cuenta {account.id} pausada por {error_count} errores criticos")
+                return account_key, {
+                    "error": f"Circuit breaker activado ({error_count} errores criticos) - cuenta pausada"
+                }
+            else:
+                await trader.clear_non_critical_errors(account.id)
+                logger.warning(f"[CIRCUIT] {error_count} errores no criticos ignorados para cuenta {account.id}")
+
+        client = BybitClient(
+            api_key      = account.api_key,
+            api_secret   = account.api_secret,
+            account_type = account.account_type,
+        )
+
+        monitor_result = await trader.monitor_open_trades(account.id, client)
+        account_results["monitor"] = monitor_result
+
+        signal_results = {}
+        for sub in account.subscriptions:
+            sub_dict = sub.dict()
+            try:
+                strategy = instantiate_strategy(sub)
+                sub_dict["broker"] = account.broker
+                result   = await trader.check_new_signals(sub_dict, strategy, client)
+                signal_results[sub.strategy] = result
+            except Exception as e:
+                logger.error(f"[REAL] Error procesando {sub.strategy}: {e}")
+                signal_results[sub.strategy] = f"ERROR: {str(e)}"
+
+        account_results["signals"] = signal_results
+        return account_key, account_results
+
+    except Exception as e:
+        logger.error(f"[REAL] Error procesando cuenta {account.id}: {e}")
+        return account_key, {"error": f"Error inesperado procesando la cuenta: {str(e)}"}
+
+
 @router.post('/real/tick')
 async def real_tick(
     request: RealTickRequest,
@@ -95,65 +154,15 @@ async def real_tick(
         if not request.accounts:
             return {'status': 'ok', 'message': 'Sin cuentas activas', 'results': {}}
 
-        for account in request.accounts:
-            account_key     = f"account_{account.id}_{account.broker}"
-            account_results = {}
-
-            # Circuit breaker — solo pausa si los errores son criticos
-            # Errores de parametros (10001) o precios desactualizados no pausan la cuenta
-            error_count = await trader.get_circuit_breaker_errors(account.id)
-            if error_count >= CIRCUIT_BREAKER_THRESHOLD:
-                last_errors = await trader.get_last_error_messages(account.id)
-                # No critico: errores de parametros, SL/TP invalido, orden rechazada por params
-                non_critical_patterns = [
-                    'firma', 'timestamp', '10001', 'stopLoss', 'takeProfit',
-                    'rechazada por bybit', 'qty', 'invalid', 'no confirmada'
-                ]
-                critical = any(
-                    msg and not any(p in msg.lower() for p in non_critical_patterns)
-                    for msg in last_errors
-                    if msg
-                )
-                if critical:
-                    await trader.pause_account(
-                        account.id,
-                        f'{error_count} errores criticos en las ultimas 2h'
-                    )
-                    results[account_key] = {
-                        'error': f'Circuit breaker activado ({error_count} errores criticos) — cuenta pausada'
-                    }
-                    logger.error(f"[CIRCUIT] Cuenta {account.id} pausada por {error_count} errores criticos")
-                    continue
-                else:
-                    # Errores no criticos — limpiar y continuar
-                    await trader.clear_non_critical_errors(account.id)
-                    logger.warning(f"[CIRCUIT] {error_count} errores no criticos ignorados para cuenta {account.id}")
-
-            # Cliente Bybit con credenciales desencriptadas por Laravel
-            client = BybitClient(
-                api_key      = account.api_key,
-                api_secret   = account.api_secret,
-                account_type = account.account_type,
-            )
-
-            # 1. Monitorear posiciones abiertas
-            monitor_result = await trader.monitor_open_trades(account.id, client)
-            account_results['monitor'] = monitor_result
-
-            # 2. Buscar nuevas señales
-            signal_results = {}
-            for sub in account.subscriptions:
-                sub_dict = sub.dict()
-                try:
-                    strategy = instantiate_strategy(sub)
-                    sub_dict['broker'] = account.broker  # agregar broker desde account
-                    result   = await trader.check_new_signals(sub_dict, strategy, client)
-                    signal_results[sub.strategy] = result
-                except Exception as e:
-                    logger.error(f"[REAL] Error procesando {sub.strategy}: {e}")
-                    signal_results[sub.strategy] = f"ERROR: {str(e)}"
-
-            account_results['signals'] = signal_results
+        account_results_list = await asyncio.gather(
+            *[_process_account(trader, account) for account in request.accounts],
+            return_exceptions=True
+        )
+        for item in account_results_list:
+            if isinstance(item, Exception):
+                logger.error(f"[REAL] Excepcion no capturada procesando una cuenta: {item}")
+                continue
+            account_key, account_results = item
             results[account_key] = account_results
 
     finally:
