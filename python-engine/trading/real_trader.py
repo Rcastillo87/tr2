@@ -83,6 +83,46 @@ class BybitClient:
         self.api_secret = api_secret
         self.base_url   = BYBIT_TESTNET if account_type == 'demo' else BYBIT_MAINNET
 
+    async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20):
+        """
+        Trae el historial de cierres de Bybit para este simbolo, filtrado a
+        los que pertenecen a ESTA posicion especifica (mismo precio de
+        entrada, cerrados despues de since_time_ms). Usado para capturar
+        TODOS los tramos cuando Bybit divide el cierre en varias ordenes
+        por iliquidez, en vez de quedarnos solo con el ultimo tramo.
+        """
+        params = {"category": "linear", "limit": str(limit), "symbol": symbol}
+        query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        headers = self._sign(params)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f"{self.base_url}/v5/position/closed-pnl?{query_string}",
+                    headers=headers,
+                )
+            data = r.json()
+            if data.get("retCode") != 0:
+                retmsg_hist = data.get("retMsg")
+                logger.error(f"[BYBIT] get_closed_pnl_history error: {retmsg_hist}")
+                return []
+
+            matching = []
+            for item in data.get("result", {}).get("list", []):
+                try:
+                    item_entry = float(item.get("avgEntryPrice", 0))
+                    item_time  = int(item.get("createdTime", 0))
+                except (TypeError, ValueError):
+                    continue
+                if item_time < since_time_ms:
+                    continue
+                if entry_price_hint > 0 and abs(item_entry - entry_price_hint) / entry_price_hint > 0.0005:
+                    continue
+                matching.append(item)
+            return matching
+        except Exception as e:
+            logger.error(f"[BYBIT] get_closed_pnl_history exception: {e}")
+            return []
+
     async def get_closed_pnl(self, symbol: str) -> dict | None:
         """Obtiene el ultimo trade cerrado de Bybit para obtener precio de salida y razon."""
         params = {'category': 'linear', 'limit': '1', 'symbol': symbol}
@@ -487,7 +527,7 @@ class RealTrader:
                 SELECT id, subscription_id, strategy, symbol, interval, side,
                        entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated,
                        size, original_size, tp2_hit, tp3_hit, tp4_hit, realized_pnl_partial,
-                       entry_time, order_id, balance_before, status
+                       entry_time, updated_at, order_id, balance_before, status
                 FROM real_trades
                 WHERE broker_account_id = $1
                   AND status IN ('open', 'pending_close')
@@ -1166,35 +1206,50 @@ class RealTrader:
                 pos_size = float(position.get("size", 0) or 0) if position else 0
 
                 if pos_size <= 0:
-                    # Posicion ya no existe — cerrada por SL/TP en Bybit
-                    closed = await client.get_closed_pnl(symbol)
-                    if closed:
-                        exit_price = float(closed.get("avgExitPrice", 0) or entry)
-                        close_type = closed.get("orderType", "")
-                        if close_type == "StopLoss":
-                            exit_reason = "stop_loss"
-                        elif close_type in ("TakeProfit", "PartialTakeProfit"):
-                            exit_reason = "take_profit_1"
-                        else:
-                            # Determinar el motivo real usando ambos niveles (SL y TP),
-                            # no solo el SL — un cierre que no llegó a ninguno de los
-                            # dos (trailing, manual, liquidación parcial) NO es un TP.
-                            sl_val = float(trade["sl"])
-                            tp_val = float(trade["tp"])
-                            if side == "short":
-                                if exit_price >= sl_val:
-                                    exit_reason = "stop_loss"
-                                elif exit_price <= tp_val:
-                                    exit_reason = "take_profit_1"
-                                else:
-                                    exit_reason = "closed_other"
+                    since_time_ms = 0
+                    ref_time = trade.get("updated_at") or trade.get("entry_time")
+                    if ref_time:
+                        if ref_time.tzinfo is None:
+                            ref_time = ref_time.replace(tzinfo=timezone.utc)
+                        since_time_ms = int(ref_time.timestamp() * 1000)
+
+                    history = await client.get_closed_pnl_history(symbol, entry, since_time_ms)
+
+                    if history:
+                        total_pnl  = sum(float(h.get("closedPnl", 0)) for h in history)
+                        total_size = sum(float(h.get("closedSize", 0)) for h in history)
+                        last_entry = max(history, key=lambda h: int(h.get("updatedTime", 0)))
+                        exit_price = float(last_entry.get("avgExitPrice", entry))
+
+                        if len(history) > 1:
+                            logger.info(
+                                f"[REAL] {symbol}: cierre dividido en {len(history)} tramos por Bybit "
+                                f"(iliquidez) - pnl total sumado={round(total_pnl, 4)}"
+                            )
+
+                        sl_val = float(trade["sl"])
+                        tp_val = float(trade["tp"])
+                        if side == "short":
+                            if exit_price >= sl_val:
+                                exit_reason = "stop_loss"
+                            elif exit_price <= tp_val:
+                                exit_reason = "take_profit_1"
                             else:
-                                if exit_price <= sl_val:
-                                    exit_reason = "stop_loss"
-                                elif exit_price >= tp_val:
-                                    exit_reason = "take_profit_1"
-                                else:
-                                    exit_reason = "closed_other"
+                                exit_reason = "closed_other"
+                        else:
+                            if exit_price <= sl_val:
+                                exit_reason = "stop_loss"
+                            elif exit_price >= tp_val:
+                                exit_reason = "take_profit_1"
+                            else:
+                                exit_reason = "closed_other"
+
+                        remaining_size = float(trade["size"])
+                        if remaining_size > 0 and total_size > 0:
+                            if side == "long":
+                                exit_price = entry + (total_pnl / remaining_size)
+                            else:
+                                exit_price = entry - (total_pnl / remaining_size)
                     else:
                         exit_price  = entry
                         exit_reason = "reconciled_sl_tp_bybit"
