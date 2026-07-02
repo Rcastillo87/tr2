@@ -536,6 +536,20 @@ class RealTrader:
             )
         return [dict(r) for r in rows]
 
+    async def get_trailing_config(self, trade_id):
+        q = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
+        q += "psc.params->>'trailing_distance_pct' as trailing_distance_pct FROM real_trades rt"
+        q += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+        q += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+        q += " WHERE rt.id = $1"
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(q, trade_id)
+        if not row:
+            return None, None
+        mode = row["trailing_mode"]
+        dist = float(row["trailing_distance_pct"]) if row["trailing_distance_pct"] else None
+        return mode, dist
+
     async def has_open_trade(self, subscription_id: int, symbol: str) -> bool:
         # Verifica por simbolo Y por broker_account_id — evita duplicados entre suscripciones del mismo simbolo
         async with self.pool.acquire() as conn:
@@ -1135,10 +1149,13 @@ class RealTrader:
                 "UPDATE real_trades SET sl = $1, be_activated = true, updated_at = now() WHERE id = $2",
                 new_sl, trade_id
             )
-        # Actualizar SL en Bybit para que este protegido aunque caiga el servidor
         if client and symbol and side:
-            await client.set_trading_stop(symbol, new_sl, tp or 0)
-            logger.info(f"[REAL] BE activado — SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
+            trailing_stop_price, active_price_v = None, None
+            trailing_mode_v, trailing_dist_v = await self.get_trailing_config(trade_id)
+            if trailing_mode_v == "fixed" and trailing_dist_v:
+                trailing_stop_price, active_price_v = compute_native_trailing_params(new_sl, side, trailing_dist_v)
+            await client.set_trading_stop(symbol, new_sl, tp or 0, trailing_stop=trailing_stop_price, active_price=active_price_v)
+            logger.info(f"[REAL] BE activado - SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
 
     async def close_partial(self, trade, level, client, current_price, original_size):
         symbol   = trade["symbol"]
@@ -1275,7 +1292,15 @@ class RealTrader:
                         sl_real = round(entry * (1 + strategy_sl_pct/100), 8)
                     else:
                         sl_real = round(entry * (1 - strategy_sl_pct/100), 8)
-                    ts_ok = await client.set_trading_stop(symbol, sl_real, tp)
+                    trailing_stop_price, active_price_v = None, None
+                    trailing_mode_v, trailing_dist_v = await self.get_trailing_config(trade_id)
+                    if trailing_mode_v == "fixed" and trailing_dist_v:
+                        trailing_stop_price, active_price_v = compute_native_trailing_params(
+                            entry, side, trailing_dist_v
+                        )
+                    ts_ok = await client.set_trading_stop(
+                        symbol, sl_real, tp, trailing_stop=trailing_stop_price, active_price=active_price_v
+                    )
                     if ts_ok:
                         async with self.pool.acquire() as conn:
                             await conn.execute("UPDATE real_trades SET sl=$1, updated_at=now() WHERE id=$2", sl_real, trade_id)
@@ -1294,7 +1319,15 @@ class RealTrader:
                     be_reached = (side == "long" and current_price >= be_level) or \
                                  (side == "short" and current_price <= be_level)
                     if be_reached:
-                        ts_ok = await client.set_trading_stop(symbol, entry, tp)
+                        trailing_stop_price, active_price_v = None, None
+                        trailing_mode_v, trailing_dist_v = await self.get_trailing_config(trade_id)
+                        if trailing_mode_v == "fixed" and trailing_dist_v:
+                            trailing_stop_price, active_price_v = compute_native_trailing_params(
+                                entry, side, trailing_dist_v
+                            )
+                        ts_ok = await client.set_trading_stop(
+                            symbol, entry, tp, trailing_stop=trailing_stop_price, active_price=active_price_v
+                        )
                         if ts_ok:
                             async with self.pool.acquire() as conn:
                                 await conn.execute(
@@ -1383,7 +1416,15 @@ class RealTrader:
                                     new_sl_v = round(sl * (1 - widen_pct / 100), 8)
                                 else:
                                     new_sl_v = round(sl * (1 + widen_pct / 100), 8)
-                                ts_ok = await client.set_trading_stop(symbol, new_sl_v, tp)
+                                trailing_stop_price, active_price_v = None, None
+                                trailing_mode_v, trailing_dist_v = await self.get_trailing_config(trade_id)
+                                if trailing_mode_v == "fixed" and trailing_dist_v:
+                                    trailing_stop_price, active_price_v = compute_native_trailing_params(
+                                        entry, side, trailing_dist_v
+                                    )
+                                ts_ok = await client.set_trading_stop(
+                                    symbol, new_sl_v, tp, trailing_stop=trailing_stop_price, active_price=active_price_v
+                                )
                                 if ts_ok:
                                     async with self.pool.acquire() as conn:
                                         await conn.execute(
