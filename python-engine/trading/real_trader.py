@@ -361,6 +361,7 @@ class BybitClient:
             'category':    'linear',
             'symbol':      symbol,
             'positionIdx': position_idx,
+            'tpslMode':    'Full',
             'stopLoss':    str(round(sl, 8)),
             'takeProfit':  str(round(tp, 8)),
             'slTriggerBy': 'LastPrice',
