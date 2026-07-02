@@ -85,6 +85,9 @@ class WalkForwardValidator:
                 atr_avg=float(atr_avg.iloc[i]),
                 bb_width=float(bb_width.iloc[i]),
                 bb_width_avg=float(bb_width_avg.iloc[i]),
+                trending_threshold=getattr(self.strategy, "regime_adx_trending", 25),
+                ranging_threshold=getattr(self.strategy, "regime_adx_ranging", 20),
+                ambiguous_as=getattr(self.strategy, "regime_ambiguous_as", "RANGING"),
             )
             ts = str(df.iloc[i]['time'])
             regime_data[ts] = regime

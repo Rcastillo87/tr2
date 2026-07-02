@@ -73,23 +73,30 @@ def calculate_bb_width(df: pd.DataFrame, period: int = 20, std_dev: float = 2.0)
     return width
 
 
-def classify_regime(adx: float, atr: float, atr_avg: float, bb_width: float, bb_width_avg: float) -> str:
+def classify_regime(adx: float, atr: float, atr_avg: float, bb_width: float, bb_width_avg: float,
+                     trending_threshold: float = 25, ranging_threshold: float = 20,
+                     ambiguous_as: str = "RANGING") -> str:
     """
-    Clasifica el régimen de mercado:
-      - VOLATILE: ATR muy por encima del promedio histórico
-      - TRENDING: ADX alto (tendencia fuerte)
-      - RANGING: ADX bajo + BB estrecho (mercado lateral)
-    """
+    Clasifica el regimen de mercado:
+      - VOLATILE: ATR muy por encima del promedio historico
+      - TRENDING: ADX por encima de trending_threshold (tendencia fuerte)
+      - RANGING: ADX por debajo de ranging_threshold + BB estrecho (mercado lateral)
+      - Zona ambigua: ningun caso anterior aplica (ej. ADX entre ambos
+        umbrales, o ADX bajo pero BB ancho) - se clasifica como
+        ambiguous_as ("RANGING" por defecto, preserva el comportamiento
+        historico; "TRENDING" para estrategias que prefieren ser cautelosas
+        ante la incertidumbre, como las de reversion a la media).
 
+    trending_threshold / ranging_threshold / ambiguous_as son configurables
+    por estrategia (ver regime_adx_trending / regime_adx_ranging /
+    regime_ambiguous_as en base_strategy.py).
+    """
     # Volatilidad extrema tiene prioridad sobre todo
     if atr > atr_avg * 1.8:
         return "VOLATILE"
-
-    if adx > 25:
+    if adx > trending_threshold:
         return "TRENDING"
-
-    if adx < 20 and bb_width < bb_width_avg:
+    if adx < ranging_threshold and bb_width < bb_width_avg:
         return "RANGING"
-
-    # Zona ambigua (ADX entre 20-25, o BB ancho pero ADX bajo)
-    return "RANGING"
+    # Zona ambigua - ni TRENDING confirmado ni RANGING confirmado
+    return ambiguous_as

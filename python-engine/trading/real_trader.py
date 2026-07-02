@@ -701,7 +701,8 @@ class RealTrader:
             df[col] = df[col].astype(float)
         return df
 
-    async def get_current_regime(self, df) -> str:
+    async def get_current_regime(self, df, trending_threshold: float = 25, ranging_threshold: float = 20,
+                                  ambiguous_as: str = "RANGING") -> str:
         if len(df) < 64:
             return "RANGING"
         atr      = calculate_atr(df)
@@ -716,6 +717,9 @@ class RealTrader:
             atr_avg=float(atr_avg.iloc[last]),
             bb_width=float(bb_width.iloc[last]),
             bb_width_avg=float(bb_width_avg.iloc[last]),
+            trending_threshold=trending_threshold,
+            ranging_threshold=ranging_threshold,
+            ambiguous_as=ambiguous_as,
         )
 
     # ─────────────────────────────────────────────
@@ -1511,7 +1515,11 @@ class RealTrader:
         if len(df) < 64:
             return f"{symbol}: datos insuficientes"
 
-        regime = await self.get_current_regime(df)
+        regime = await self.get_current_regime(
+            df, trending_threshold=strategy_instance.regime_adx_trending,
+            ranging_threshold=strategy_instance.regime_adx_ranging,
+            ambiguous_as=strategy_instance.regime_ambiguous_as
+        )
         if not strategy_instance.should_operate(regime):
             return f"{symbol}: regimen no permitido ({regime})"
 

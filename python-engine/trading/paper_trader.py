@@ -92,7 +92,8 @@ class PaperTrader:
 
         return df
 
-    async def get_current_regime(self, df: pd.DataFrame) -> str:
+    async def get_current_regime(self, df: pd.DataFrame, trending_threshold: float = 25,
+                                  ranging_threshold: float = 20, ambiguous_as: str = "RANGING") -> str:
         if len(df) < 64:
             return "RANGING"
 
@@ -109,6 +110,9 @@ class PaperTrader:
             atr_avg=float(atr_avg.iloc[last]),
             bb_width=float(bb_width.iloc[last]),
             bb_width_avg=float(bb_width_avg.iloc[last]),
+            trending_threshold=trending_threshold,
+            ranging_threshold=ranging_threshold,
+            ambiguous_as=ambiguous_as,
         )
 
     # ─────────────────────────────────────────────
@@ -474,7 +478,11 @@ class PaperTrader:
 
             params = self._get_params_for(display_name, symbol)
             strategy = strategy_cls(params)
-            regime   = await self.get_current_regime(df)
+            regime   = await self.get_current_regime(
+                df, trending_threshold=strategy.regime_adx_trending,
+                ranging_threshold=strategy.regime_adx_ranging,
+                ambiguous_as=strategy.regime_ambiguous_as
+            )
 
             if not strategy.should_operate(regime):
                 results[display_name] = f"{symbol}: regimen no permitido ({regime})"

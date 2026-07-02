@@ -111,6 +111,9 @@ class BacktestingController extends Controller
                     'be_pct'             => (float) $request->input('be_pct', 2.0),
                     'max_duration'       => (int) $request->input('max_duration', 24),
                     'regime_filter'      => $request->has('regime_filter'), // fix: checkbox desmarcado = false
+                    'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
+                    'regime_adx_ranging'  => (float) $request->input('regime_adx_ranging', 20),
+                    'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
                     'walk_forward'       => true,
                     'n_windows'          => 5,
                     'monthly_breakdown'  => true,
@@ -331,7 +334,12 @@ class BacktestingController extends Controller
         }
 
         // Filtros
-        if ($request->has('regime_filter'))      $payload['regime_filter']      = true;
+        if ($request->has('regime_filter')) {
+            $payload['regime_filter']       = true;
+            $payload['regime_adx_trending'] = (float) $request->input('regime_adx_trending', 25);
+            $payload['regime_adx_ranging']  = (float) $request->input('regime_adx_ranging', 20);
+            $payload['regime_ambiguous_as'] = $request->input('regime_ambiguous_as', 'RANGING');
+        }
         if ($request->has('macro_trend_filter')) $payload['macro_trend_filter'] = true;
         if ($request->has('volume_filter')) {
             $payload['volume_filter']        = true;

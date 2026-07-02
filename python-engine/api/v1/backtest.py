@@ -38,6 +38,9 @@ class BacktestRequest(BaseModel):
     be_pct:              float           = 2.0
     max_duration:        int             = 24
     regime_filter:       bool            = True
+    regime_adx_trending: float           = 25
+    regime_adx_ranging:  float           = 20
+    regime_ambiguous_as: str             = "RANGING"
     walk_forward:        bool            = True
     n_windows:           int             = 5
     train_pct:           float           = 0.7
@@ -135,6 +138,9 @@ def load_strategy(request: BacktestRequest):
         "be_pct":        request.be_pct,
         "max_duration":  request.max_duration,
         "regime_filter": request.regime_filter,
+        "regime_adx_trending": request.regime_adx_trending,
+        "regime_adx_ranging":  request.regime_adx_ranging,
+        "regime_ambiguous_as": request.regime_ambiguous_as,
 
         "trailing_mode":          request.trailing_mode,
         "trailing_distance_pct":  request.trailing_distance_pct,

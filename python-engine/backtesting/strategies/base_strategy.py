@@ -42,6 +42,9 @@ class BaseStrategy(ABC):
         self.be_pct       = params.get('be_pct', 0.8)
         self.max_duration = params.get('max_duration', 24)
         self.regime_filter = params.get('regime_filter', True)
+        self.regime_adx_trending = params.get('regime_adx_trending', 25)
+        self.regime_adx_ranging  = params.get('regime_adx_ranging', 20)
+        self.regime_ambiguous_as = params.get('regime_ambiguous_as', 'RANGING')
         # Filtro de volumen — solo opera si el volumen actual > promedio * multiplicador
         self.volume_filter          = params.get('volume_filter', False)
         self.volume_filter_period   = params.get('volume_filter_period', 20)

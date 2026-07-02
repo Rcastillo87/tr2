@@ -234,12 +234,41 @@
         <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
             <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Filtros</h4>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-                <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                    <input type="checkbox" name="regime_filter" id="regime_filter" value="1"
-                           {{ ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')) ? 'checked' : '' }}
-                           class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                    Régimen de mercado
-                </label>
+                <div>
+                    <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
+                        <input type="checkbox" name="regime_filter" id="regime_filter" value="1"
+                               {{ ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')) ? 'checked' : '' }}
+                               onchange="toggleRegimeFields()"
+                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
+                        Régimen de mercado
+                    </label>
+                    @php $regimeChecked = ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')); @endphp
+                    <div id="regimeFields" class="{{ $regimeChecked ? 'grid' : 'hidden' }} grid-cols-3 gap-2 mt-2">
+                        <div>
+                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX tendencia (mayor a)</label>
+                            <input type="number" step="1" name="regime_adx_trending" value="{{ $old['regime_adx_trending'] ?? request('regime_adx_trending', '25') }}"
+                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX lateral (menor a)</label>
+                            <input type="number" step="1" name="regime_adx_ranging" value="{{ $old['regime_adx_ranging'] ?? request('regime_adx_ranging', '20') }}"
+                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
+                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Caso ambiguo (ni claro ni claro)</label>
+                            @php $ambigVal = $old['regime_ambiguous_as'] ?? request('regime_ambiguous_as', 'RANGING'); @endphp
+                            <select name="regime_ambiguous_as"
+                                    class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
+                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                <option value="RANGING" {{ $ambigVal === 'RANGING' ? 'selected' : '' }}>Tratar como lateral</option>
+                                <option value="TRENDING" {{ $ambigVal === 'TRENDING' ? 'selected' : '' }}>Tratar como tendencia</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">El caso ambiguo es cuando el ADX no cae claramente en ninguno de los dos rangos de arriba (ej. entre "lateral" y "tendencia", o ADX bajo con bandas de Bollinger anchas).</p>
+                </div>
                 <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
                     <input type="checkbox" name="macro_trend_filter" id="macro_trend_filter" value="1"
                            {{ ($old['macro_trend_filter'] ?? request('macro_trend_filter')) ? 'checked' : '' }}
@@ -874,7 +903,13 @@ function loadParams() {
 
         // Filtros
         const regimeEl = document.getElementById('regime_filter');
-        if (regimeEl) regimeEl.checked = !!p.regime_filter;
+        if (regimeEl) {
+            regimeEl.checked = !!p.regime_filter;
+            if (p.regime_adx_trending !== undefined) document.querySelector('[name="regime_adx_trending"]').value = p.regime_adx_trending;
+            if (p.regime_adx_ranging !== undefined) document.querySelector('[name="regime_adx_ranging"]').value = p.regime_adx_ranging;
+            if (p.regime_ambiguous_as !== undefined) document.querySelector('[name="regime_ambiguous_as"]').value = p.regime_ambiguous_as;
+            toggleRegimeFields();
+        }
         const macroEl = document.getElementById('macro_trend_filter');
         if (macroEl) macroEl.checked = !!p.macro_trend_filter;
 
@@ -962,6 +997,14 @@ function toggleVolatilityFields() {
     volFields.classList.toggle('hidden', mode === 'none');
     volFields.querySelectorAll('input').forEach(el => el.disabled = mode === 'none');
     document.getElementById('volatilityWidenField').classList.toggle('hidden', mode !== 'widen');
+}
+
+function toggleRegimeFields() {
+    const checked = document.getElementById('regime_filter').checked;
+    const fields  = document.getElementById('regimeFields');
+    fields.classList.toggle('hidden', !checked);
+    fields.classList.toggle('grid', checked);
+    fields.querySelectorAll('input').forEach(el => el.disabled = !checked);
 }
 
 function toggleVolumeFields() {
