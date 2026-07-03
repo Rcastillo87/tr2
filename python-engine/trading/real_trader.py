@@ -1261,44 +1261,70 @@ class RealTrader:
 
                 history = await client.get_closed_pnl_history(symbol, entry, since_time_ms)
 
-                if history:
-                    total_pnl  = sum(float(h.get("closedPnl", 0)) for h in history)
-                    total_size = sum(float(h.get("closedSize", 0)) for h in history)
-                    last_entry = max(history, key=lambda h: int(h.get("updatedTime", 0)))
-                    exit_price = float(last_entry.get("avgExitPrice", entry))
+                if not history:
+                    # Bybit puede tardar en indexar el cierre — reintentar una vez
+                    # antes de rendirnos, en vez de asumir pnl=0 de entrada.
+                    await asyncio.sleep(3)
+                    history = await client.get_closed_pnl_history(symbol, entry, since_time_ms)
 
-                    if len(history) > 1:
-                        logger.info(
-                            f"[REAL] {symbol}: cierre dividido en {len(history)} tramos por Bybit "
-                            f"(iliquidez) - pnl total sumado={round(total_pnl, 4)}"
+                if not history:
+                    # Segundo intento tambien vacio: NO inventar pnl=0 (corrompe
+                    # las estadisticas reales vs paper). Se marca 'orphaned' para
+                    # revision manual — la posicion SI cerro en Bybit (pos_size<=0)
+                    # pero no pudimos determinar el pnl real del cierre.
+                    logger.error(
+                        f"[REAL] {symbol} #{trade_id}: posicion cerrada en Bybit pero "
+                        f"closed-pnl vacio tras reintento — marcando 'orphaned' para revision manual"
+                    )
+                    async with self.pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            UPDATE real_trades
+                            SET status = 'orphaned',
+                                error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (closed-pnl vacio tras reintento)',
+                                updated_at = now()
+                            WHERE id = $1
+                            """,
+                            trade_id
                         )
+                    outcome["errors"] += 1
+                    return outcome
 
-                    sl_val = float(trade["sl"])
-                    tp_val = float(trade["tp"])
-                    if side == "short":
-                        if exit_price >= sl_val:
-                            exit_reason = "stop_loss"
-                        elif exit_price <= tp_val:
-                            exit_reason = "take_profit_1"
-                        else:
-                            exit_reason = "closed_other"
+                total_pnl  = sum(float(h.get("closedPnl", 0)) for h in history)
+                total_size = sum(float(h.get("closedSize", 0)) for h in history)
+                last_entry = max(history, key=lambda h: int(h.get("updatedTime", 0)))
+                exit_price = float(last_entry.get("avgExitPrice", entry))
+
+                if len(history) > 1:
+                    logger.info(
+                        f"[REAL] {symbol}: cierre dividido en {len(history)} tramos por Bybit "
+                        f"(iliquidez) - pnl total sumado={round(total_pnl, 4)}"
+                    )
+
+                sl_val = float(trade["sl"])
+                tp_val = float(trade["tp"])
+                if side == "short":
+                    if exit_price >= sl_val:
+                        exit_reason = "stop_loss"
+                    elif exit_price <= tp_val:
+                        exit_reason = "take_profit_1"
                     else:
-                        if exit_price <= sl_val:
-                            exit_reason = "stop_loss"
-                        elif exit_price >= tp_val:
-                            exit_reason = "take_profit_1"
-                        else:
-                            exit_reason = "closed_other"
-
-                    remaining_size = float(trade["size"])
-                    if remaining_size > 0 and total_size > 0:
-                        if side == "long":
-                            exit_price = entry + (total_pnl / remaining_size)
-                        else:
-                            exit_price = entry - (total_pnl / remaining_size)
+                        exit_reason = "closed_other"
                 else:
-                    exit_price  = entry
-                    exit_reason = "reconciled_sl_tp_bybit"
+                    if exit_price <= sl_val:
+                        exit_reason = "stop_loss"
+                    elif exit_price >= tp_val:
+                        exit_reason = "take_profit_1"
+                    else:
+                        exit_reason = "closed_other"
+
+                remaining_size = float(trade["size"])
+                if remaining_size > 0 and total_size > 0:
+                    if side == "long":
+                        exit_price = entry + (total_pnl / remaining_size)
+                    else:
+                        exit_price = entry - (total_pnl / remaining_size)
+
                 success = await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price)
                 if success:
                     outcome["closed"] += 1
