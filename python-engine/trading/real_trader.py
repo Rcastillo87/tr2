@@ -76,6 +76,12 @@ BYBIT_TAKER_FEE = 0.00055  # 0.055%
 # Cliente Bybit autenticado
 # ─────────────────────────────────────────────────────────────────
 
+class BybitAPIError(Exception):
+    """Error real de comunicacion con la API de Bybit (HTTP/retCode/red).
+    Distinto de 'no hay posicion' — nunca debe interpretarse como cierre."""
+    pass
+
+
 class BybitClient:
 
     def __init__(self, api_key: str, api_secret: str, account_type: str = 'real'):
@@ -452,7 +458,13 @@ class BybitClient:
         return None
 
     async def get_open_position(self, symbol: str) -> dict | None:
-        """Verifica si hay posicion abierta en Bybit para ese simbolo."""
+        """
+        Verifica si hay posicion abierta en Bybit para ese simbolo.
+        IMPORTANTE: lanza BybitAPIError si la consulta falla (HTTP, retCode!=0,
+        excepcion de red). Un error de API NUNCA debe interpretarse como
+        "no hay posicion" — confundir ambos casos causaba que trades reales
+        abiertos se marcaran como cerrados con pnl falso.
+        """
         params = {'category': 'linear', 'symbol': symbol}
         headers = self._sign(params)
         try:
@@ -462,17 +474,23 @@ class BybitClient:
                     params=params,
                     headers=headers,
                 )
-            if not r.text or r.status_code in (401, 403):
-                logger.error(f"[BYBIT] get_position auth error: HTTP {r.status_code}")
-                return None
-            data = r.json()
-            if data.get('retCode') == 0:
-                positions = data['result']['list']
-                for pos in positions:
-                    if float(pos.get('size', 0)) > 0:
-                        return pos
         except Exception as e:
-            logger.error(f"[BYBIT] get_position exception: {e}")
+            logger.error(f"[BYBIT] get_position network exception: {e}")
+            raise BybitAPIError(f"network error: {e}") from e
+
+        if not r.text or r.status_code in (401, 403):
+            logger.error(f"[BYBIT] get_position auth error: HTTP {r.status_code}")
+            raise BybitAPIError(f"HTTP {r.status_code}")
+
+        data = r.json()
+        if data.get('retCode') != 0:
+            logger.error(f"[BYBIT] get_position retCode error: {data.get('retMsg')}")
+            raise BybitAPIError(data.get('retMsg') or f"retCode={data.get('retCode')}")
+
+        positions = data['result']['list']
+        for pos in positions:
+            if float(pos.get('size', 0)) > 0:
+                return pos
         return None
 
 
@@ -1041,7 +1059,11 @@ class RealTrader:
             return True
 
         # Verificar que hay posicion abierta en Bybit
-        position = await client.get_open_position(symbol)
+        try:
+            position = await client.get_open_position(symbol)
+        except BybitAPIError as e:
+            logger.error(f"[REAL] close_trade #{trade['id']} {symbol}: error consultando Bybit ({e}) — abortando cierre, no se puede confirmar estado")
+            return False
         if not position:
             # Posicion ya cerrada en Bybit — reconciliar DB
             logger.warning(f"[REAL] Trade #{trade['id']} no tiene posicion en Bybit — reconciliando")
@@ -1151,7 +1173,7 @@ class RealTrader:
                                client: 'BybitClient' = None, symbol: str = None, side: str = None, tp: float = None):
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE real_trades SET sl = $1, be_activated = true, updated_at = now() WHERE id = $2",
+                "UPDATE real_trades SET sl = $1, be_activated = true WHERE id = $2",
                 new_sl, trade_id
             )
         if client and symbol and side:
@@ -1221,7 +1243,12 @@ class RealTrader:
 
         try:
             # 1. Verificar si posicion existe en Bybit
-            position = await client.get_open_position(symbol)
+            try:
+                position = await client.get_open_position(symbol)
+            except BybitAPIError as e:
+                logger.error(f"[MONITOR] {symbol} #{trade_id}: error consultando Bybit ({e}) — se omite este ciclo, NO se marca cerrado")
+                outcome["errors"] += 1
+                return outcome
             pos_size = float(position.get("size", 0) or 0) if position else 0
 
             if pos_size <= 0:
@@ -1297,7 +1324,7 @@ class RealTrader:
                 ts_ok = await client.set_trading_stop(symbol, sl_real)
                 if ts_ok:
                     async with self.pool.acquire() as conn:
-                        await conn.execute("UPDATE real_trades SET sl=$1, updated_at=now() WHERE id=$2", sl_real, trade_id)
+                        await conn.execute("UPDATE real_trades SET sl=$1 WHERE id=$2", sl_real, trade_id)
                     logger.info(f"[MONITOR] SL provisional actualizado a real: {symbol} sl={sl_real}")
                 else:
                     logger.warning(f"[MONITOR] Fallo al actualizar SL provisional: {symbol} sl_intentado={sl_real}")
@@ -1316,7 +1343,7 @@ class RealTrader:
                     if ts_ok:
                         async with self.pool.acquire() as conn:
                             await conn.execute(
-                                "UPDATE real_trades SET be_activated=true, sl=$1, updated_at=now() WHERE id=$2",
+                                "UPDATE real_trades SET be_activated=true, sl=$1 WHERE id=$2",
                                 entry, trade_id
                             )
                         outcome["be_activated"] += 1
@@ -1358,7 +1385,7 @@ class RealTrader:
                     if ts_ok:
                         async with self.pool.acquire() as conn:
                             await conn.execute(
-                                "UPDATE real_trades SET sl=$1, trailing_applied=true, updated_at=now() WHERE id=$2",
+                                "UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
                                 new_sl, trade_id
                             )
                         sl = new_sl
@@ -1368,7 +1395,7 @@ class RealTrader:
                 if native_sl is not None and round(native_sl, 8) != round(sl, 8):
                     async with self.pool.acquire() as conn:
                         await conn.execute(
-                            "UPDATE real_trades SET sl=$1, trailing_applied=true, updated_at=now() WHERE id=$2",
+                            "UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
                             native_sl, trade_id
                         )
                     sl = native_sl
@@ -1404,7 +1431,7 @@ class RealTrader:
                             if ts_ok:
                                 async with self.pool.acquire() as conn:
                                     await conn.execute(
-                                        "UPDATE real_trades SET sl=$1, updated_at=now() WHERE id=$2",
+                                        "UPDATE real_trades SET sl=$1 WHERE id=$2",
                                         new_sl_v, trade_id
                                     )
                                 sl = new_sl_v
@@ -1503,7 +1530,10 @@ class RealTrader:
             return f"{symbol}: ya tiene posicion abierta"
 
         # Verificar duplicado en Bybit (doble verificacion)
-        bybit_position = await client.get_open_position(symbol)
+        try:
+            bybit_position = await client.get_open_position(symbol)
+        except BybitAPIError as e:
+            return f"{symbol}: error consultando Bybit, se omite apertura por seguridad ({e})"
         if bybit_position:
             return f"{symbol}: posicion abierta en Bybit (no registrada en DB)"
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 
-from trading.real_trader import RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD
+from trading.real_trader import RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -208,7 +208,12 @@ async def reconcile(
                     logger.info(f"[RECONCILE] Trade #{trade['id']} {symbol} < 10min — omitiendo")
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
                     continue
-                position = await client.get_open_position(symbol)
+                try:
+                    position = await client.get_open_position(symbol)
+                except BybitAPIError as e:
+                    logger.error(f"[RECONCILE] {symbol} #{trade['id']}: error consultando Bybit ({e}) — se omite, NO se marca cerrado")
+                    results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'error': str(e)})
+                    continue
 
                 if not position:
                     # Obtener precio de cierre real del historial de Bybit
