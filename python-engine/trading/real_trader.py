@@ -1329,19 +1329,25 @@ class RealTrader:
             # lo gestiona en su propio motor, sin depender de que el bot este
             # corriendo. Modo 'stepped' no tiene equivalente nativo en Bybit,
             # sigue gestionado por el bot aca.
-            q3 = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
-            q3 += "psc.params->>'trailing_distance_pct' as trailing_distance_pct, "
-            q3 += "psc.params->>'trailing_steps' as trailing_steps FROM real_trades rt"
-            q3 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q3 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-            q3 += " WHERE rt.id = $1"
+            # 6. Proteccion por volatilidad, mas abajo, usa los mismos datos
+            # (params de la config, via el mismo JOIN) - se trae todo en UNA
+            # sola consulta en vez de dos separadas.
+            q_cfg = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
+            q_cfg += "psc.params->>'trailing_distance_pct' as trailing_distance_pct, "
+            q_cfg += "psc.params->>'trailing_steps' as trailing_steps, "
+            q_cfg += "psc.params->>'volatility_protection_mode' as volatility_protection_mode, "
+            q_cfg += "psc.params->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
+            q_cfg += "psc.params->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
+            q_cfg += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+            q_cfg += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+            q_cfg += " WHERE rt.id = $1"
             async with self.pool.acquire() as conn:
-                row3 = await conn.fetchrow(q3, trade_id)
+                row_cfg = await conn.fetchrow(q_cfg, trade_id)
 
-            trailing_mode = row3["trailing_mode"] if row3 else None
+            trailing_mode = row_cfg["trailing_mode"] if row_cfg else None
             if trailing_mode == "stepped":
-                trailing_distance_pct = float(row3["trailing_distance_pct"]) if row3["trailing_distance_pct"] else 1.0
-                trailing_steps = json.loads(row3["trailing_steps"]) if row3["trailing_steps"] else []
+                trailing_distance_pct = float(row_cfg["trailing_distance_pct"]) if row_cfg["trailing_distance_pct"] else 1.0
+                trailing_steps = json.loads(row_cfg["trailing_steps"]) if row_cfg["trailing_steps"] else []
 
                 new_sl = calculate_trailing_sl_standalone(
                     trailing_mode, trailing_distance_pct, trailing_steps,
@@ -1371,21 +1377,12 @@ class RealTrader:
             # 6. Proteccion por volatilidad - usa ATR de las ultimas velas reales.
             # mode="close": cierra la posicion completa (como time_exit).
             # mode="widen": ensancha el SL fijo via set_trading_stop.
-            q4 = "SELECT psc.params->>'volatility_protection_mode' as volatility_protection_mode, "
-            q4 += "psc.params->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
-            q4 += "psc.params->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
-            q4 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q4 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-            q4 += " WHERE rt.id = $1"
-            async with self.pool.acquire() as conn:
-                row4 = await conn.fetchrow(q4, trade_id)
-
-            vol_mode = row4["volatility_protection_mode"] if row4 else None
+            vol_mode = row_cfg["volatility_protection_mode"] if row_cfg else None
             if vol_mode in ("close", "widen"):
                 bars = await self.get_bars(symbol, trade["interval"])
                 if len(bars) >= 51:
-                    atr_multiplier = float(row4["volatility_atr_multiplier"]) if row4["volatility_atr_multiplier"] else 2.5
-                    widen_pct = float(row4["volatility_widen_pct"]) if row4["volatility_widen_pct"] else 1.0
+                    atr_multiplier = float(row_cfg["volatility_atr_multiplier"]) if row_cfg["volatility_atr_multiplier"] else 2.5
+                    widen_pct = float(row_cfg["volatility_widen_pct"]) if row_cfg["volatility_widen_pct"] else 1.0
                     atr_series = calculate_atr(bars)
                     current_atr = float(atr_series.iloc[-1])
                     avg_atr = float(atr_series.rolling(50).mean().iloc[-1])

@@ -146,7 +146,12 @@ async def real_tick(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10, init=_setup_jsonb_codec)
+    # max_size=5: cada pedido ahora maneja tipicamente UNA cuenta (desde
+    # RealTradingAccountTickJob), coincide con el limite de 5 trades
+    # simultaneos por cuenta (semaphore en monitor_open_trades). Antes
+    # necesitaba mas margen porque un solo pedido procesaba TODAS las
+    # cuentas juntas.
+    pool    = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=5, init=_setup_jsonb_codec)
     trader  = RealTrader(pool)
     results = {}
 
