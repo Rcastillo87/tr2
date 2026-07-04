@@ -237,37 +237,37 @@ async def reconcile(
                     except Exception as e:
                         logger.error(f"[RECONCILE] Error obteniendo closed PnL: {e}")
 
-                    # Calcular PnL si tenemos precio de salida
-                    pnl = None
                     if exit_price:
-                        entry = float(trade['entry_price'])
-                        size  = float(trade['size'])
-                        side  = trade['side']
-                        if side == 'long':
-                            pnl = (exit_price - entry) * size
-                        else:
-                            pnl = (entry - exit_price) * size
-
-                    async with pool.acquire() as conn:
-                        await conn.execute(
-                            """
-                            UPDATE real_trades
-                            SET status = 'closed',
-                                exit_reason = $2,
-                                exit_price = $3,
-                                pnl = $4,
-                                net_pnl = $4,
-                                exit_time = now(), updated_at = now()
-                            WHERE id = $1
-                            """,
-                            trade['id'], exit_reason, exit_price, pnl
+                        # Reusar close_trade() en vez de duplicar la logica de cierre:
+                        # calcula commission, balance_after y pnl_pct correctamente,
+                        # que la version anterior (UPDATE manual aqui mismo) nunca hacia.
+                        await trader.close_trade(
+                            trade, exit_reason, client, account.id,
+                            exit_price_override=exit_price
                         )
-                    results['reconciled'].append({
-                        'trade_id': trade['id'],
-                        'symbol':   symbol,
-                        'reason':   exit_reason,
-                        'pnl':      pnl,
-                    })
+                        results['reconciled'].append({
+                            'trade_id': trade['id'],
+                            'symbol':   symbol,
+                            'reason':   exit_reason,
+                        })
+                    else:
+                        # No se pudo determinar el pnl real (get_closed_pnl sin match).
+                        # NO cerrar con datos incompletos — marcar 'orphaned' para que
+                        # el reconciliador de orphaned lo reintente con get_closed_pnl_history
+                        # (mas robusto, con reintento y ventana mas amplia).
+                        logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol}: posicion cerrada pero no se encontro closed_pnl — marcando orphaned")
+                        async with pool.acquire() as conn:
+                            await conn.execute(
+                                """
+                                UPDATE real_trades
+                                SET status = 'orphaned',
+                                    error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (get_closed_pnl sin match)',
+                                    updated_at = now()
+                                WHERE id = $1
+                                """,
+                                trade['id']
+                            )
+                        results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'no_exit_price_found'})
                     logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol} reconciliado exit={exit_price} pnl={pnl} reason={exit_reason}")
                 else:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
