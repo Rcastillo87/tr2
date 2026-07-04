@@ -199,7 +199,7 @@ async def reconcile(
             for trade in open_trades:
                 symbol   = trade['symbol']
                 # No reconciliar trades con menos de 10 minutos
-                from datetime import timezone as tz, timedelta
+                from datetime import datetime, timezone as tz, timedelta
                 trade_time = trade['entry_time']
                 if trade_time.tzinfo is None:
                     trade_time = trade_time.replace(tzinfo=tz.utc)
