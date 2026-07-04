@@ -281,7 +281,52 @@ async def reconcile(
                 )
             for trade in orphaned_trades:
                 symbol = trade['symbol']
-                position = await client.get_open_position(symbol)
+
+                # Distinguir el origen del 'orphaned': si viene de un CIERRE ya
+                # confirmado (Bug B: pos_size<=0 detectado, pero closed-pnl vacio),
+                # NO tiene sentido volver a chequear si hay posicion abierta —
+                # ya sabemos que no la hay. Hay que reintentar el pnl del cierre,
+                # no tratarlo como si nunca se hubiera confirmado la apertura.
+                if trade['error_message'] and 'no se pudo obtener pnl real' in trade['error_message']:
+                    from datetime import timezone as _tz
+                    ref_time = trade['entry_time']
+                    if ref_time.tzinfo is None:
+                        ref_time = ref_time.replace(tzinfo=_tz.utc)
+                    since_ms = int(ref_time.timestamp() * 1000)
+                    history = await client.get_closed_pnl_history(
+                        symbol, float(trade['entry_price']), since_ms, limit=50
+                    )
+                    if history:
+                        total_pnl  = sum(float(h.get('closedPnl', 0)) for h in history)
+                        total_size = sum(float(h.get('closedSize', 0)) for h in history)
+                        last_entry = max(history, key=lambda h: int(h.get('updatedTime', 0)))
+                        exit_price = float(last_entry.get('avgExitPrice', trade['entry_price']))
+                        size = float(trade['size'])
+                        if size > 0 and total_size > 0:
+                            entry_f = float(trade['entry_price'])
+                            if trade['side'] == 'long':
+                                exit_price = entry_f + (total_pnl / size)
+                            else:
+                                exit_price = entry_f - (total_pnl / size)
+                        success = await trader.close_trade(
+                            trade, 'reconciled_sl_tp_bybit', client, account.id,
+                            exit_price_override=exit_price
+                        )
+                        logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} pnl recuperado en reintento: exit={exit_price} pnl_total={round(total_pnl,4)}")
+                        results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_pnl_recovered'})
+                else:
+                    # Sigue sin aparecer — se deja 'orphaned' para el proximo
+                    # ciclo de reconciliacion, en vez de descartarlo como failed.
+                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: closed-pnl aun vacio, se reintentara en el proximo ciclo")
+                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
+                continue
+
+                try:
+                    position = await client.get_open_position(symbol)
+                except BybitAPIError as e:
+                    logger.error(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: error consultando Bybit ({e}) — se reintenta en el proximo ciclo")
+                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
+                    continue
                 if position and float(position.get('size', 0) or 0) > 0:
                     avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
                     # Calcular SL/TP reales con avgPrice real
