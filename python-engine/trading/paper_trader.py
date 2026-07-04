@@ -125,7 +125,7 @@ class PaperTrader:
                 """
                 SELECT id, strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4,
                        be_level, be_activated, trailing_applied, size, entry_time, regime,
-                       max_profit_pct, max_loss_pct
+                       max_profit_pct, max_loss_pct, last_monitored_at
                 FROM paper_trades
                 WHERE status = 'open'
                 """
@@ -287,28 +287,30 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def monitor_open_trades(self) -> dict:
+        """
+        Evalua cada trade abierto recorriendo, vela a vela, las velas de 1min
+        acumuladas desde el ultimo chequeo (no solo el precio actual). Esto
+        replica la logica del motor de backtest (BE, luego SL con el SL
+        previo a esta vela, luego trailing, luego volatilidad, luego TP, en
+        ese orden por vela) en vez de mirar una sola foto de precio cada 5
+        minutos. Sin esto, una mecha que toca SL/trailing y se recupera antes
+        del proximo ciclo de paper queda invisible para paper pero SI la
+        detecta el trailing nativo de Bybit en real, sesgando a paper hacia
+        mejores resultados de forma sistematica, no solo por ruido.
+        """
         open_trades = await self.get_open_trades()
         results     = {"checked": 0, "closed": 0, "be_activated": 0}
-        price_cache: dict[str, float] = {}
-
-        # Instanciar estrategias con sus params especificos para obtener max_duration
         strategy_instances = {}
         for display_name, cls in self.strategies.items():
             params = self._get_params_for(display_name, '')
             strategy_instances[display_name] = cls(params)
 
+        now = datetime.now(timezone.utc)
+
         for trade in open_trades:
             results["checked"] += 1
             symbol = trade['symbol']
-
-            if symbol not in price_cache:
-                price = await get_current_price(symbol)
-                if price is None:
-                    continue
-                price_cache[symbol] = price
-
-            current_price = price_cache[symbol]
-            side     = trade['side']
+            side   = trade['side']
             strategy_instance = strategy_instances.get(trade['strategy'],
                                 list(strategy_instances.values())[0])
             sl       = float(trade['sl'])
@@ -317,91 +319,131 @@ class PaperTrader:
             tp3      = float(trade['tp3']) if trade.get('tp3') is not None else None
             tp4      = float(trade['tp4']) if trade.get('tp4') is not None else None
             be_level = float(trade['be_level'])
+            be_activated = bool(trade['be_activated'])
+            trailing_applied = bool(trade.get('trailing_applied', False))
             entry    = float(trade['entry_price'])
             size     = float(trade['size'])
+            max_profit_pct = float(trade.get('max_profit_pct', 0) or 0)
+            max_loss_pct   = float(trade.get('max_loss_pct', 0) or 0)
 
-            # Actualizar Max G/Max P flotante
-            floating_pnl_pct = self.calculate_floating_pnl_pct(entry, current_price, side, size)
-            await self.update_max_excursion(
-                trade['id'], floating_pnl_pct,
-                float(trade.get('max_profit_pct', 0)),
-                float(trade.get('max_loss_pct', 0)),
-            )
+            last_checkpoint = trade.get('last_monitored_at') or trade['entry_time']
+            if last_checkpoint.tzinfo is None:
+                last_checkpoint = last_checkpoint.replace(tzinfo=timezone.utc)
 
-            exit_price  = None
-            exit_reason = None
+            async with self.pool.acquire() as conn:
+                bars = await conn.fetch(
+                    """
+                    SELECT time, open, high, low, close
+                    FROM ohlcv_data
+                    WHERE symbol = $1 AND interval = '1' AND time > $2 AND time <= $3
+                    ORDER BY time ASC
+                    """,
+                    symbol, last_checkpoint, now
+                )
 
-            # Break-even
-            if not trade['be_activated']:
-                if side == 'long' and current_price >= be_level:
-                    await self.update_breakeven(trade['id'], entry)
-                    sl = entry
-                    results["be_activated"] += 1
-                elif side == 'short' and current_price <= be_level:
-                    await self.update_breakeven(trade['id'], entry)
-                    sl = entry
-                    results["be_activated"] += 1
+            exit_price    = None
+            exit_reason   = None
+            last_bar_time = last_checkpoint
 
-            # Stop Loss — se evalua con el SL vigente ANTES de aplicar el trailing
-            # de este ciclo, igual que se corrigio en el motor de backtest: no hay
-            # que asumir que el trailing ya se movio antes de chequear la salida.
-            if side == 'long' and current_price <= sl:
-                exit_price, exit_reason = sl, 'stop_loss'
-            elif side == 'short' and current_price >= sl:
-                exit_price, exit_reason = sl, 'stop_loss'
+            for bar in bars:
+                high  = float(bar['high'])
+                low   = float(bar['low'])
+                last_bar_time = bar['time']
 
-            # Trailing Stop — solo se aplica si no se salio por SL en este ciclo
-            if exit_price is None:
-                if getattr(strategy_instance, 'trailing_mode', None) is not None:
-                    new_sl = strategy_instance.calculate_trailing_sl(entry, side, current_price, sl)
+                if not be_activated:
+                    if side == 'long' and high >= be_level:
+                        sl = entry
+                        be_activated = True
+                        results["be_activated"] += 1
+                    elif side == 'short' and low <= be_level:
+                        sl = entry
+                        be_activated = True
+                        results["be_activated"] += 1
+
+                if side == 'long' and low <= sl:
+                    exit_price, exit_reason = sl, 'stop_loss'
+                elif side == 'short' and high >= sl:
+                    exit_price, exit_reason = sl, 'stop_loss'
+
+                if exit_price is None and getattr(strategy_instance, 'trailing_mode', None) is not None:
+                    ref_price = high if side == 'long' else low
+                    new_sl = strategy_instance.calculate_trailing_sl(entry, side, ref_price, sl)
                     if new_sl != sl:
-                        await self.update_trailing_sl(trade['id'], new_sl)
                         sl = new_sl
+                        trailing_applied = True
 
-            # Proteccion por volatilidad - usa ATR de las ultimas velas reales
-            if exit_price is None and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
-                bars = await self.get_bars(symbol, trade['interval'])
-                if not bars.empty and len(bars) >= 51:
-                    atr_series = calculate_atr(bars)
-                    current_atr = float(atr_series.iloc[-1])
-                    avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
-                    vol_check = strategy_instance.check_volatility_protection(sl, side, current_atr, avg_atr)
-                    if vol_check['action'] == 'close':
-                        exit_price, exit_reason = current_price, 'volatility_protection'
-                    elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
-                        await self.update_volatility_widen(trade['id'], vol_check['new_sl'])
-                        sl = vol_check['new_sl']
-
-            # Take Profit — prioridad TP4 > TP3 > TP2 > TP1, igual que el backtest
-            if exit_price is None:
-                for level, label in [(tp4, 'take_profit_4'), (tp3, 'take_profit_3'), (tp2, 'take_profit_2')]:
-                    if level is None:
-                        continue
-                    if side == 'long' and current_price >= level:
-                        exit_price, exit_reason = level, label
-                        break
-                    elif side == 'short' and current_price <= level:
-                        exit_price, exit_reason = level, label
-                        break
+                if exit_price is None and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
+                    vbars = await self.get_bars(symbol, trade['interval'])
+                    if not vbars.empty and len(vbars) >= 51:
+                        atr_series = calculate_atr(vbars)
+                        current_atr = float(atr_series.iloc[-1])
+                        avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
+                        vol_check = strategy_instance.check_volatility_protection(sl, side, current_atr, avg_atr)
+                        if vol_check['action'] == 'close':
+                            exit_price, exit_reason = float(bar['close']), 'volatility_protection'
+                        elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
+                            sl = vol_check['new_sl']
 
                 if exit_price is None:
-                    if side == 'long' and current_price >= tp:
-                        exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
-                    elif side == 'short' and current_price <= tp:
-                        exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
+                    for level, label in [(tp4, 'take_profit_4'), (tp3, 'take_profit_3'), (tp2, 'take_profit_2')]:
+                        if level is None:
+                            continue
+                        if side == 'long' and high >= level:
+                            exit_price, exit_reason = level, label
+                            break
+                        elif side == 'short' and low <= level:
+                            exit_price, exit_reason = level, label
+                            break
+                    if exit_price is None:
+                        if side == 'long' and high >= tp:
+                            exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
+                        elif side == 'short' and low <= tp:
+                            exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
 
-            # Cierre por tiempo — usa max_duration de la estrategia especifica
-            if exit_price is None:
-                entry_time = trade['entry_time']
-                if entry_time.tzinfo is None:
-                    entry_time = entry_time.replace(tzinfo=timezone.utc)
-                hours_open = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
+                fav_price = high if side == 'long' else low
+                adv_price = low if side == 'long' else high
+                fav_pct = self.calculate_floating_pnl_pct(entry, fav_price, side, size)
+                adv_pct = self.calculate_floating_pnl_pct(entry, adv_price, side, size)
+                if fav_pct > max_profit_pct:
+                    max_profit_pct = fav_pct
+                if adv_pct < max_loss_pct:
+                    max_loss_pct = adv_pct
 
-                if hours_open >= strategy_instance.max_duration:
-                    exit_price, exit_reason = current_price, 'time_exit'
+                if exit_price is not None:
+                    break
 
             if exit_price is not None:
                 await self.close_trade(trade, exit_price, exit_reason)
+                results["closed"] += 1
+                continue
+
+            checkpoint_to_store = last_bar_time.replace(tzinfo=None) if last_bar_time.tzinfo else last_bar_time
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE paper_trades
+                    SET sl = $1, be_activated = $2, trailing_applied = $3,
+                        max_profit_pct = $4, max_loss_pct = $5,
+                        last_monitored_at = $6, updated_at = now()
+                    WHERE id = $7
+                    """,
+                    sl, be_activated, trailing_applied,
+                    round(max_profit_pct, 4), round(max_loss_pct, 4),
+                    checkpoint_to_store, trade['id']
+                )
+
+            entry_time = trade['entry_time']
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=timezone.utc)
+            hours_open = (now - entry_time).total_seconds() / 3600
+            if hours_open >= strategy_instance.max_duration:
+                if bars:
+                    last_price = float(bars[-1]['close'])
+                else:
+                    last_price = await get_current_price(symbol)
+                    if last_price is None:
+                        last_price = sl
+                await self.close_trade(trade, last_price, 'time_exit')
                 results["closed"] += 1
 
         return results
