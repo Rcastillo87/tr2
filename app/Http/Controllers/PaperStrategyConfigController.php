@@ -1,16 +1,48 @@
 <?php
 namespace App\Http\Controllers;
+use App\Models\BrokerAccount;
 use App\Models\PaperStrategyConfig;
+use App\Models\RealStrategySubscription;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 class PaperStrategyConfigController extends Controller
 {
+    /**
+     * Cuando una config de paper trading se activa, crea (si no existe ya)
+     * una suscripcion PAUSADA en cada cuenta broker activa — asi la seccion
+     * del simbolo aparece automaticamente en /trading/accounts sin que el
+     * usuario tenga que agregarla a mano, pero sin operar en real hasta que
+     * el usuario mismo decida activarla.
+     */
+    protected function ensurePausedSubscriptions(PaperStrategyConfig $config): void
+    {
+        $accounts = BrokerAccount::where('status', 'active')->get();
+        foreach ($accounts as $account) {
+            RealStrategySubscription::firstOrCreate(
+                [
+                    'broker_account_id'        => $account->id,
+                    'paper_strategy_config_id' => $config->id,
+                ],
+                [
+                    'user_id'  => $account->user_id,
+                    'strategy' => $config->display_name,
+                    'symbol'   => $config->symbol,
+                    'interval' => $config->interval,
+                    'status'   => 'paused',
+                ]
+            );
+        }
+    }
+
     public function toggleActive(PaperStrategyConfig $config)
     {
         Gate::authorize('manageUsers');
         $config->active = !$config->active;
         $config->save();
+        if ($config->active) {
+            $this->ensurePausedSubscriptions($config);
+        }
         return back()->with('status', $config->active
             ? "Configuración \"{$config->display_name}\" activada."
             : "Configuración \"{$config->display_name}\" desactivada.");
@@ -84,6 +116,8 @@ class PaperStrategyConfigController extends Controller
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }
 
+        $this->ensurePausedSubscriptions($config);
+
         return redirect()->route('backtesting.index')
             ->with('status', "Configuración \"{$config->display_name}\" creada.");
     }
@@ -155,6 +189,8 @@ class PaperStrategyConfigController extends Controller
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['strategy_name' => $e->getMessage()]);
         }
+
+        $this->ensurePausedSubscriptions($config);
 
         return redirect()->route('backtesting.index')
             ->with('status', "✓ Configuración \"{$config->display_name}\" implementada en Paper Trading.");
