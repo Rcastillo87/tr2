@@ -19,11 +19,13 @@ class BrokerAccount extends Model
         'api_key',
         'api_secret',
         'status',
+        'single_position_per_symbol',
     ];
 
     protected $casts = [
         'api_key' => 'encrypted',
         'api_secret' => 'encrypted',
+        'single_position_per_symbol' => 'boolean',
     ];
 
     /**

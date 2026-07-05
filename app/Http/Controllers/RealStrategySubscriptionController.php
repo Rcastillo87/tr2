@@ -11,6 +11,27 @@ use Illuminate\Support\Facades\Gate;
 class RealStrategySubscriptionController extends Controller
 {
     /**
+     * Si la cuenta exige una sola posicion por simbolo (regla configurable
+     * via broker_accounts.single_position_per_symbol, pensada para el limite
+     * real de Bybit en modo One-Way), pausa cualquier OTRA suscripcion activa
+     * del mismo simbolo en esta cuenta, dejando como unica activa a
+     * $keepSubscriptionId. Si el flag esta en false (broker/modo que permite
+     * varias posiciones simultaneas del mismo simbolo), no hace nada.
+     */
+    protected function enforceSingleActivePerSymbol(BrokerAccount $account, string $symbol, int $keepSubscriptionId): void
+    {
+        if (!$account->single_position_per_symbol) {
+            return;
+        }
+
+        RealStrategySubscription::where('broker_account_id', $account->id)
+            ->where('symbol', $symbol)
+            ->where('id', '!=', $keepSubscriptionId)
+            ->where('status', 'active')
+            ->update(['status' => 'paused']);
+    }
+
+    /**
      * Suscribir una estrategia activa de paper_strategy_configs a una cuenta.
      */
     public function store(Request $request, BrokerAccount $account)
@@ -40,7 +61,7 @@ class RealStrategySubscriptionController extends Controller
             return back()->withErrors(['config' => 'Esta estrategia ya está suscrita a esta cuenta.']);
         }
 
-        RealStrategySubscription::create([
+        $subscription = RealStrategySubscription::create([
             'user_id'                  => auth()->id(),
             'broker_account_id'        => $account->id,
             'paper_strategy_config_id' => $config->id,
@@ -49,6 +70,8 @@ class RealStrategySubscriptionController extends Controller
             'interval'                 => $config->interval,
             'status'                   => 'active',
         ]);
+
+        $this->enforceSingleActivePerSymbol($account, $config->symbol, $subscription->id);
 
         return back()->with('status', "Estrategia \"{$config->display_name}\" suscrita a {$account->label}.");
     }
@@ -86,6 +109,23 @@ class RealStrategySubscriptionController extends Controller
             }
         }
 
+        if ($account->single_position_per_symbol && $added > 0) {
+            // Tras agregar todas, dejar activa solo la de mejor rating por
+            // simbolo (evita quedar con varias activas a la vez cuando el
+            // broker/modo no lo permite).
+            $account->load(['subscriptions.paperStrategyConfig']);
+            $account->subscriptions
+                ->groupBy('symbol')
+                ->each(function ($subsForSymbol, $symbol) use ($account) {
+                    $best = $subsForSymbol
+                        ->sortByDesc(fn ($s) => $s->paperStrategyConfig->star_rating ?? 0)
+                        ->first();
+                    if ($best) {
+                        $this->enforceSingleActivePerSymbol($account, $symbol, $best->id);
+                    }
+                });
+        }
+
         return back()->with('status', $added > 0
             ? "{$added} estrategia(s) añadidas a {$account->label}."
             : "Todas las estrategias ya estaban suscritas a {$account->label}.");
@@ -98,8 +138,14 @@ class RealStrategySubscriptionController extends Controller
             abort(403);
         }
 
-        $subscription->status = $subscription->status === 'active' ? 'paused' : 'active';
+        $activating = $subscription->status !== 'active';
+
+        $subscription->status = $activating ? 'active' : 'paused';
         $subscription->save();
+
+        if ($activating) {
+            $this->enforceSingleActivePerSymbol($account, $subscription->symbol, $subscription->id);
+        }
 
         return back()->with('status', $subscription->status === 'active'
             ? "Estrategia \"{$subscription->strategy}\" activada."
