@@ -257,19 +257,7 @@
     <div class="px-4 py-3 border-b" style="border-color:var(--color-border-soft);">
         <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
             Historial de operaciones — {{ ucfirst($month->translatedFormat('F Y')) }}
-            {{-- Cuenta --}}
-        <select name="account" onchange="document.getElementById('filterForm').submit()"
-                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
-                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-            <option value="all" {{ $filterAccount === 'all' ? 'selected' : '' }}>Todas las cuentas</option>
-            @foreach ($filterOptions['accounts'] as $acc)
-                <option value="{{ $acc->id }}" {{ $filterAccount == $acc->id ? 'selected' : '' }}>
-                    {{ ucfirst($acc->broker) }} {{ strtoupper($acc->account_type) }} — {{ $acc->label }}
-                </option>
-            @endforeach
-        </select>
-
-        @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
+            @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
                 <span class="text-[10px] ml-2" style="color:var(--color-info);">(filtrado)</span>
             @endif
         </h3>

@@ -38,7 +38,7 @@ class TradingController extends Controller
         // Posiciones abiertas (sin filtro de mes)
         $openQuery = RealTrade::whereIn('broker_account_id', $accountIds)->open()
             ->orderBy('entry_time', 'desc');
-        if ($filterStrategy !== 'all') $openQuery->where('strategy', $filterStrategy);
+        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'LIKE', $filterStrategy . ' —%');
         if ($filterSymbol   !== 'all') $openQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $openQuery->where('interval', $filterInterval);
         if ($filterAccount  !== 'all') $openQuery->where('broker_account_id', $filterAccount);
@@ -65,7 +65,7 @@ class TradingController extends Controller
         $closedQuery = RealTrade::whereIn('broker_account_id', $accountIds)
             ->closed()
             ->whereBetween('entry_time', [$start, $end]);
-        if ($filterStrategy !== 'all') $closedQuery->where('strategy', $filterStrategy);
+        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'LIKE', $filterStrategy . ' —%');
         if ($filterSymbol   !== 'all') $closedQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $closedQuery->where('interval', $filterInterval);
         if ($filterResult === 'win')   $closedQuery->where('pnl', '>', 0);
@@ -95,7 +95,9 @@ class TradingController extends Controller
             ->get(['id', 'label', 'account_type', 'broker']);
 
         $filterOptions = [
-            'strategies' => (clone $allTrades)->distinct()->pluck('strategy')->sort()->values()->toArray(),
+            'strategies' => (clone $allTrades)->pluck('strategy')
+                ->map(fn ($s) => trim(explode('—', $s)[0]))
+                ->unique()->sort()->values()->toArray(),
             'symbols'    => (clone $allTrades)->distinct()->pluck('symbol')->sort()->values()->toArray(),
             'intervals'  => (clone $allTrades)->distinct()->pluck('interval')->filter()->sort()->values()->toArray(),
             'accounts'   => $userAccounts,

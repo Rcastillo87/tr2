@@ -190,16 +190,7 @@
     <div class="px-4 py-3 border-b" style="border-color:var(--color-border-soft);">
         <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
             Historial de operaciones — {{ ucfirst($selectedMonth->translatedFormat('F Y')) }}
-            {{-- Filtro resultado --}}
-        <select name="result" onchange="document.getElementById('filterForm').submit()"
-                class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
-                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-            <option value="all"  {{ $filterResult === 'all'  ? 'selected' : '' }}>Todos los resultados</option>
-            <option value="win"  {{ $filterResult === 'win'  ? 'selected' : '' }}>Ganadoras</option>
-            <option value="loss" {{ $filterResult === 'loss' ? 'selected' : '' }}>Perdedoras</option>
-        </select>
-
-        @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all')
+            @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all')
                 <span class="text-[10px] ml-2" style="color:var(--color-info);">(filtrado)</span>
             @endif
         </h3>
