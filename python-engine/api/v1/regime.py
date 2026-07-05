@@ -9,7 +9,7 @@ import json
 import os
 from fastapi import APIRouter, HTTPException
 from dotenv import load_dotenv
-from collectors.regime_detector import RegimeDetector, SYMBOLS
+from collectors.regime_detector import RegimeDetector
 
 load_dotenv()
 
@@ -51,13 +51,18 @@ async def run_regime_detector():
 async def regime_status():
     """Retorna el régimen actual cacheado en Redis para cada símbolo."""
     try:
-        rds = await get_redis()
-        results = {}
+        pool = await get_pool()
+        rds  = await get_redis()
 
-        for symbol in SYMBOLS:
+        detector = RegimeDetector(pool, rds)
+        symbols  = await detector.get_active_symbols()
+
+        results = {}
+        for symbol in symbols:
             cached = await rds.get(f"regime:{symbol}")
             results[symbol] = json.loads(cached) if cached else None
 
+        await pool.close()
         await rds.close()
 
         return {"status": "ok", "data": results}

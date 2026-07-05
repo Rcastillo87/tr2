@@ -22,7 +22,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-SYMBOLS = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
+# Fallback si collector_configs no existe o falla — mismo patron que
+# ohlcv_collector.py, para no depender de una lista fija desincronizada.
+FALLBACK_SYMBOLS = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
 
 REGIME_INTERVAL = '60'   # H1
 LOOKBACK_BARS   = 100    # velas necesarias para indicadores estables
@@ -35,6 +37,24 @@ class RegimeDetector:
     def __init__(self, pool: asyncpg.Pool, redis_client):
         self.pool  = pool
         self.redis = redis_client
+
+    async def get_active_symbols(self) -> list[str]:
+        """
+        Simbolos activos segun collector_configs (misma fuente de verdad que
+        usa el collector de OHLCV) en vez de una lista fija en variable de
+        entorno, que quedaba desincronizada cada vez que se activaba o
+        desactivaba un simbolo desde la UI (ej. BNBUSDT, XRPUSDT).
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT DISTINCT symbol FROM collector_configs WHERE active = true ORDER BY symbol"
+                )
+            if rows:
+                return [r['symbol'] for r in rows]
+        except Exception as e:
+            logger.warning(f"[RegimeDetector] Error leyendo collector_configs, usando fallback: {e}")
+        return FALLBACK_SYMBOLS
 
     async def get_bars(self, symbol: str) -> pd.DataFrame:
         """Obtiene las últimas N velas H1 de la DB."""
@@ -103,8 +123,9 @@ class RegimeDetector:
     async def detect_all(self) -> dict:
         """Calcula y guarda el régimen para todos los símbolos configurados."""
         results = {}
+        symbols = await self.get_active_symbols()
 
-        for symbol in SYMBOLS:
+        for symbol in symbols:
             try:
                 result = await self.detect(symbol)
                 if result:
