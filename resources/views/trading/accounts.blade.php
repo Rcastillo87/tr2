@@ -140,9 +140,16 @@
         {{-- Estrategias --}}
         <div class="p-4">
             <div class="flex items-center justify-between mb-3">
-                <h4 class="text-[11px] font-medium" style="color:var(--color-text-secondary);">
-                    Estrategias suscritas ({{ $account->subscriptions->count() }})
-                </h4>
+                <div class="flex items-center gap-3">
+                    <h4 class="text-[11px] font-medium" style="color:var(--color-text-secondary);">
+                        Estrategias suscritas ({{ $account->subscriptions->count() }})
+                    </h4>
+                    @if ($account->subscriptions->isNotEmpty())
+                        <button type="button" onclick="showMetricsGuideModal()" class="text-[11px] transition-colors" style="color:var(--color-info);">
+                            ¿Qué significan estas métricas?
+                        </button>
+                    @endif
+                </div>
                 @if ($unsubscribed->isNotEmpty())
                     <button type="button" onclick="openSubscribeModal({{ $account->id }}, '{{ $account->label }}')"
                             class="text-[11px] px-3 py-1 rounded transition-colors"
@@ -155,60 +162,98 @@
             @if ($account->subscriptions->isEmpty())
                 <p class="text-[11px]" style="color:var(--color-text-muted);">No hay estrategias suscritas aún.</p>
             @else
-                <table class="w-full text-[11px]" style="color:var(--color-text-muted);">
-                    <thead>
-                        <tr class="border-b" style="border-color:var(--color-border-soft);">
-                            <th class="py-2 px-2 text-left font-medium">Estrategia</th>
-                            <th class="py-2 px-2 text-left font-medium">Símbolo</th>
-                            <th class="py-2 px-2 text-left font-medium">Int.</th>
-                            <th class="py-2 px-2 text-left font-medium">Estado</th>
-                            <th class="py-2 px-2 text-left font-medium">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($account->subscriptions as $sub)
-                            @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <td class="py-2 px-2" style="color:var(--color-text-primary);">{{ $sub->strategy }}</td>
-                                <td class="py-2 px-2 font-mono">{{ $sub->symbol }}</td>
-                                <td class="py-2 px-2 font-mono">{{ $lbs[$sub->interval] ?? $sub->interval }}</td>
-                                <td class="py-2 px-2">
-                                    <span class="px-1.5 py-0.5 rounded text-[10px]"
-                                          style="background: {{ $sub->status === 'active' ? '#16331F' : '#3A1A1C' }};
-                                                 color: {{ $sub->status === 'active' ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                        {{ $sub->status === 'active' ? 'ACTIVA' : 'PAUSADA' }}
-                                    </span>
-                                </td>
-                                <td class="py-2 px-2">
-                                    <div class="flex items-center gap-3">
-                                        @if ($sub->paperStrategyConfig)
-                                            <button type="button"
-                                                    onclick="showConfigModal({{ json_encode($sub->paperStrategyConfig->params) }}, '{{ $sub->strategy }}')"
-                                                    class="transition-colors" style="color:var(--color-info);">
-                                                Ver config
-                                            </button>
-                                        @endif
-                                        <form method="POST" action="{{ route('trading.subscriptions.toggle', [$account, $sub]) }}"
-                                              onsubmit="return confirmSubToggle(event, '{{ $sub->strategy }}', {{ $sub->status === 'active' ? 'true' : 'false' }})">
-                                            @csrf @method('PATCH')
-                                            <button type="submit" class="transition-colors"
-                                                    style="color: {{ $sub->status === 'active' ? 'var(--color-loss)' : 'var(--color-profit)' }};">
-                                                {{ $sub->status === 'active' ? 'Pausar' : 'Activar' }}
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="{{ route('trading.subscriptions.destroy', [$account, $sub]) }}"
-                                              onsubmit="return confirmSubDelete(event, '{{ $sub->strategy }}')">
-                                            @csrf @method('DELETE')
-                                            <button type="submit" class="transition-colors" style="color:var(--color-text-muted);">
-                                                Quitar
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                @php
+                    $groupedBySymbol = $account->subscriptions
+                        ->groupBy('symbol')
+                        ->map(function ($subs) {
+                            return $subs->sortByDesc(fn ($s) => $s->paperStrategyConfig->star_rating ?? 0)->values();
+                        })
+                        ->sortKeys();
+                    $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m'];
+                @endphp
+                <div class="space-y-4">
+                    @foreach ($groupedBySymbol as $symbol => $subsForSymbol)
+                        <div class="rounded-lg border" style="border-color:var(--color-border-soft);">
+                            <div class="flex items-center justify-between px-3 py-2 border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
+                                <span class="text-[12px] font-mono font-medium" style="color:var(--color-text-primary);">{{ $symbol }}</span>
+                                @if ($account->single_position_per_symbol)
+                                    <span class="text-[10px]" style="color:var(--color-text-muted);">Solo 1 estrategia activa a la vez para este símbolo</span>
+                                @endif
+                            </div>
+                            <div class="p-3 space-y-3">
+                                @foreach ($subsForSymbol as $sub)
+                                    @php
+                                        $cfg = $sub->paperStrategyConfig;
+                                        $rating = (float) ($cfg->star_rating ?? 0);
+                                        $fullR  = (int) round($rating);
+                                        $emptyR = 5 - $fullR;
+                                        $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : ($rating > 0 ? '#E24B4A' : '#374151')));
+                                        $isActive = $sub->status === 'active';
+                                        $willPauseOther = $account->single_position_per_symbol
+                                            && $subsForSymbol->contains(fn ($s) => $s->id !== $sub->id && $s->status === 'active');
+                                        $metrics = [
+                                            ['Win Rate', $cfg->star_wr ?? 0, $cfg?->avg_win_rate !== null ? number_format($cfg->avg_win_rate, 1).'%' : '—', $cfg?->avg_win_rate !== null ? ($cfg->avg_win_rate >= 50 ? 'var(--color-profit)' : 'var(--color-neutral)') : 'var(--color-text-muted)'],
+                                            ['Sharpe', $cfg->star_sharpe ?? 0, $cfg?->sharpe_ratio !== null ? number_format($cfg->sharpe_ratio, 2) : '—', 'var(--color-text-secondary)'],
+                                            ['Ret. prom/mes', $cfg->star_ret ?? 0, $cfg?->avg_monthly_pnl !== null ? (($cfg->avg_monthly_pnl >= 0 ? '+' : '').number_format($cfg->avg_monthly_pnl, 1).'%') : '—', $cfg?->avg_monthly_pnl !== null ? ($cfg->avg_monthly_pnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)'],
+                                            ['Consistencia', $cfg->star_consistency ?? 0, $cfg?->consistency_pct !== null ? number_format($cfg->consistency_pct, 0).'%' : '—', 'var(--color-text-secondary)'],
+                                            ['P. Factor', $cfg->star_pf ?? 0, $cfg?->profit_factor !== null ? number_format($cfg->profit_factor, 2) : '—', 'var(--color-text-secondary)'],
+                                        ];
+                                    @endphp
+                                    <div class="rounded-lg border" style="border-color:var(--color-border-soft); {{ $isActive ? '' : 'opacity:0.75;' }}">
+                                        <div class="flex items-center justify-between px-3 py-2 border-b" style="border-color:var(--color-border-soft);">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <span class="text-[12px] font-medium truncate" style="color:var(--color-text-primary);">{{ $sub->strategy }}</span>
+                                                <span class="text-[9px] font-mono flex-shrink-0" style="color:var(--color-text-muted); background:var(--color-surface-raised); padding:1px 5px; border-radius:3px;">{{ $lbs[$sub->interval] ?? $sub->interval }}</span>
+                                            </div>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ml-2"
+                                                  style="background: {{ $isActive ? '#16331F' : '#3A1A1C' }};
+                                                         color: {{ $isActive ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                                {{ $isActive ? 'ACTIVA' : 'PAUSADA' }}
+                                            </span>
+                                        </div>
+                                        <div class="px-3 py-2.5">
+                                            <div class="mb-2" style="display:inline-flex; align-items:center; gap:6px; background:var(--color-surface-raised); border-radius:5px; padding:4px 10px;">
+                                                <span style="font-size:18px; line-height:1; color:{{ $starColor }};">{{ str_repeat('★', $fullR) }}{{ str_repeat('☆', $emptyR) }}</span>
+                                                <span style="font-size:15px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
+                                            </div>
+                                            <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px;">
+                                                @foreach ($metrics as [$mlabel, $mstar, $mval, $mcolor])
+                                                    @php
+                                                        $mFull  = (int) $mstar;
+                                                        $mEmpty = 5 - $mFull;
+                                                    @endphp
+                                                    <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
+                                                        <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 3px;">{{ $mlabel }}</p>
+                                                        <p class="hidden sm:block" style="font-size:13px; color: {{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $mFull) }}{{ str_repeat('☆', $mEmpty) }}</p>
+                                                        <p class="sm:hidden" style="font-size:11px; font-weight:700; color: {{ $mFull > 0 ? $starColor : '#374151' }}; margin:0 0 3px; line-height:1;">{{ $mFull }}★</p>
+                                                        <p style="font-size:10px; font-family:monospace; color: {{ $mcolor }}; margin:0;">{{ $mval }}</p>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-3 px-3 py-2 border-t text-[11px]" style="border-color:var(--color-border-soft);">
+                                            <form method="POST" action="{{ route('trading.subscriptions.toggle', [$account, $sub]) }}"
+                                                  onsubmit="return confirmSubToggle(event, '{{ $sub->strategy }}', {{ $isActive ? 'true' : 'false' }}, {{ $willPauseOther ? 'true' : 'false' }})">
+                                                @csrf @method('PATCH')
+                                                <button type="submit" class="transition-colors"
+                                                        style="color: {{ $isActive ? 'var(--color-loss)' : 'var(--color-profit)' }};">
+                                                    {{ $isActive ? 'Pausar' : 'Activar' }}
+                                                </button>
+                                            </form>
+                                            <form method="POST" action="{{ route('trading.subscriptions.destroy', [$account, $sub]) }}"
+                                                  onsubmit="return confirmSubDelete(event, '{{ $sub->strategy }}')">
+                                                @csrf @method('DELETE')
+                                                <button type="submit" class="transition-colors" style="color:var(--color-text-muted);">
+                                                    Quitar
+                                                </button>
+                                            </form>
+                                        </div>
+                                  </div>
+                            @endforeach
+                    </div>
+                </div>
+                    @endforeach
+                </div>
             @endif
         </div>
     </div>
@@ -303,6 +348,45 @@
     </div>
 </div>
 
+{{-- Modal guia de metricas --}}
+<div id="metricsGuideModalOverlay" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" style="background:rgba(0,0,0,0.8);">
+    <div class="rounded-lg border w-full max-w-lg" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <div class="flex items-center justify-between p-4 border-b" style="border-color:var(--color-border-soft);">
+            <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">Guía de métricas</h3>
+            <button type="button" onclick="closeMetricsGuideModal()" class="text-xl" style="color:var(--color-text-muted);">✕</button>
+        </div>
+        <div class="p-4 text-[12px] space-y-3" style="color:var(--color-text-muted);">
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">★ Calificación general</p>
+                <p>Puntaje de 1 a 5 estrellas que resume las 5 métricas de abajo en un solo número. Más estrellas, mejor desempeño histórico combinado.</p>
+            </div>
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">Win Rate</p>
+                <p>Porcentaje de operaciones del backtest que cerraron con ganancia.</p>
+            </div>
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">Sharpe</p>
+                <p>Retorno ajustado por riesgo. Compara la ganancia obtenida contra qué tan volátil fue el camino para lograrla. Más alto es mejor.</p>
+            </div>
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">Ret. prom/mes</p>
+                <p>Retorno promedio mensual obtenido durante el período del backtest.</p>
+            </div>
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">Consistencia</p>
+                <p>Porcentaje de meses del backtest que cerraron en positivo. Mide qué tan parejo fue el desempeño mes a mes, no solo el resultado total.</p>
+            </div>
+            <div>
+                <p style="color:var(--color-text-primary); font-weight:500;">P. Factor (Profit Factor)</p>
+                <p>Ganancia total dividida por pérdida total. Un valor mayor a 1 significa que las ganancias superaron a las pérdidas; por debajo de 1, lo contrario.</p>
+            </div>
+            <p class="pt-2 border-t" style="border-color:var(--color-border-soft); color:var(--color-text-muted);">
+                Todas estas métricas provienen del backtest de cada estrategia, no de su desempeño en real. Sirven para comparar estrategias entre sí antes de elegir cuál activar.
+            </p>
+        </div>
+    </div>
+</div>
+
 {{-- Modal ver config completa --}}
 <div id="configModalOverlay" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" style="background:rgba(0,0,0,0.8);">
     <div class="rounded-lg border w-full max-w-lg" style="background:var(--color-surface); border-color:var(--color-border-soft);">
@@ -363,6 +447,14 @@ function showConfigModal(params, title) {
 
 function closeConfigModal() {
     document.getElementById('configModalOverlay').classList.add('hidden');
+}
+
+function showMetricsGuideModal() {
+    document.getElementById('metricsGuideModalOverlay').classList.remove('hidden');
+}
+
+function closeMetricsGuideModal() {
+    document.getElementById('metricsGuideModalOverlay').classList.add('hidden');
 }
 
 function showSaving() {
@@ -434,12 +526,20 @@ function confirmAddAll(event, accountLabel, count) {
     return false;
 }
 
-function confirmSubToggle(event, name, isActive) {
+function confirmSubToggle(event, name, isActive, willPauseOther) {
     event.preventDefault();
     const form = event.target;
+    let html;
+    if (isActive) {
+        html = `¿Pausar <b>${name}</b>?`;
+    } else if (willPauseOther) {
+        html = `¿Activar <b>${name}</b>? Esto pausará automáticamente la otra estrategia activa para este mismo símbolo (solo puede haber una a la vez).`;
+    } else {
+        html = `¿Activar <b>${name}</b>?`;
+    }
     Swal.fire({
         title: isActive ? 'Pausar estrategia' : 'Activar estrategia',
-        html: isActive ? `¿Pausar <b>${name}</b>?` : `¿Activar <b>${name}</b>?`,
+        html: html,
         icon: 'warning', showCancelButton: true,
         confirmButtonText: isActive ? 'Pausar' : 'Activar', cancelButtonText: 'Cancelar',
         background: '#11161F', color: '#E5E9F0',
