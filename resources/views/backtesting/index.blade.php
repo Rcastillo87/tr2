@@ -44,7 +44,7 @@
                         class="rounded-lg px-3 py-1.5 text-[11px] border focus:outline-none"
                         style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     <option value="">Todos los símbolos</option>
-                    @foreach (['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as $sym)
+                    @foreach ($paperConfigs->pluck('symbol')->unique()->sort() as $sym)
                         <option value="{{ $sym }}">{{ $sym }}</option>
                     @endforeach
                 </select>

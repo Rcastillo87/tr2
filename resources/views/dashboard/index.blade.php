@@ -13,7 +13,7 @@
             <p class="text-sm" style="color:var(--color-text-muted);">Sin datos de régimen disponibles aún.</p>
         @else
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                @foreach (['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as $symbol)
+                @foreach (array_keys($regimes) as $symbol)
             @if (isset($regimes[$symbol]) && $regimes[$symbol])
                         @php
                             $data = $regimes[$symbol];
