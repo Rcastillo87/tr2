@@ -24,6 +24,7 @@ from api.v1.backtest import router as backtest_router
 from api.v1.paper_trading import router as paper_router
 from api.v1.broker import router as broker_router
 from api.v1.real_trading import router as real_trading_router
+from api.v1.prices import router as prices_router
 
 app = FastAPI(
     title="Trading Platform V2 — Python Engine",
@@ -51,6 +52,7 @@ app.include_router(backtest_router, prefix="/v1")
 app.include_router(paper_router, prefix="/v1")
 app.include_router(broker_router, prefix="/v1")
 app.include_router(real_trading_router, prefix="/v1")
+app.include_router(prices_router, prefix="/v1")
 
 @app.get("/health")
 async def health():

@@ -91,6 +91,30 @@ class DashboardController extends Controller
         ]);
     }
 
+    public function livePrices()
+    {
+        $symbols = \App\Models\CollectorConfig::activeSymbols();
+        if (empty($symbols)) {
+            return response()->json(['prices' => []]);
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(5)->get(config('trading.python_engine_url') . '/v1/prices', [
+                'symbols' => implode(',', $symbols),
+            ]);
+
+            if ($response->successful()) {
+                return response()->json(['prices' => $response->json('prices', [])]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Dashboard: error obteniendo precios en vivo — ' . $e->getMessage());
+        }
+
+        return response()->json(['prices' => []]);
+    }
+
     private function getRegimes(): array
     {
         try {

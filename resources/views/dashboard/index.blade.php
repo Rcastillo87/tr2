@@ -5,41 +5,15 @@
 
 @section('content')
 
-    {{-- 1. Régimen de mercado --}}
+    {{-- 1. Precios en vivo --}}
     <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Régimen de mercado</h3>
-
-        @if (count($regimes) === 0)
-            <p class="text-sm" style="color:var(--color-text-muted);">Sin datos de régimen disponibles aún.</p>
-        @else
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                @foreach (array_keys($regimes) as $symbol)
-            @if (isset($regimes[$symbol]) && $regimes[$symbol])
-                        @php
-                            $data = $regimes[$symbol];
-                            $regimeColors = [
-                                'TRENDING' => ['bg' => '#16331F', 'text' => 'var(--color-profit)'],
-                                'RANGING'  => ['bg' => '#3A2E0E', 'text' => 'var(--color-neutral)'],
-                                'VOLATILE' => ['bg' => '#3A1A1C', 'text' => 'var(--color-loss)'],
-                            ];
-                            $rc = $regimeColors[$data['regime']] ?? ['bg' => '#1E2530', 'text' => 'var(--color-text-secondary)'];
-                        @endphp
-                        <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-medium">{{ $symbol }}</span>
-                                <span class="text-[10px] font-medium px-1.5 py-0.5 rounded" style="background:{{ $rc['bg'] }}; color:{{ $rc['text'] }};">
-                                    {{ $data['regime'] }}
-                                </span>
-                            </div>
-                            <div class="font-mono text-[11px] flex justify-between" style="color:var(--color-text-muted);">
-                                <span>ADX {{ $data['adx'] }}</span>
-                                <span>ATR {{ $data['atr'] }}</span>
-                            </div>
-                        </div>
-                    @endif
-                @endforeach
-            </div>
-        @endif
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Precios en vivo</h3>
+            <span class="text-[10px]" style="color:var(--color-text-muted);">Se actualiza cada 10s</span>
+        </div>
+        <div id="livePricesGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <p class="text-sm" style="color:var(--color-text-muted);">Cargando precios...</p>
+        </div>
     </div>
 
     {{-- 2. Resumen del mes --}}
@@ -149,3 +123,53 @@
     @endcan
 
 @endsection
+
+@push('scripts')
+<script>
+let lastPrices = {};
+
+async function refreshLivePrices() {
+    try {
+        const res = await fetch("{{ route('dashboard.live-prices') }}");
+        const data = await res.json();
+        const prices = data.prices || {};
+        const symbols = Object.keys(prices).sort();
+        const grid = document.getElementById('livePricesGrid');
+        if (!grid) return;
+
+        if (symbols.length === 0) {
+            grid.innerHTML = '<p class="text-sm" style="color:var(--color-text-muted);">Sin datos de precio disponibles.</p>';
+            return;
+        }
+
+        grid.innerHTML = symbols.map(symbol => {
+            const price = prices[symbol];
+            const prev  = lastPrices[symbol];
+            let arrow = '—', color = 'var(--color-text-muted)';
+            if (prev !== undefined && price !== prev) {
+                if (price > prev) { arrow = '▲'; color = 'var(--color-profit)'; }
+                else              { arrow = '▼'; color = 'var(--color-loss)'; }
+            }
+            const decimals = price >= 100 ? 2 : 4;
+            const priceStr = price.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            return `
+                <div class="rounded-md border p-3" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium">${symbol}</span>
+                        <span style="color:${color}; font-size:13px;">${arrow}</span>
+                    </div>
+                    <p class="font-mono text-sm" style="color:${color};">${priceStr}</p>
+                </div>
+            `;
+        }).join('');
+
+        lastPrices = { ...prices };
+    } catch (e) {
+        console.error('Error actualizando precios en vivo', e);
+    }
+}
+
+refreshLivePrices();
+setInterval(refreshLivePrices, 10000);
+</script>
+@endpush
