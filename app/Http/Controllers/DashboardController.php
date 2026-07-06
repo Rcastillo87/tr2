@@ -79,15 +79,30 @@ class DashboardController extends Controller
         $winRate       = $totalTrades > 0 ? round($winningTrades / $totalTrades * 100, 2) : 0;
         $recentTrades  = PaperTrade::orderBy('updated_at', 'desc')->limit(10)->get();
 
+        // Resumen del mes — real trading (todas las cuentas del usuario)
+        $realAccountIds = \App\Models\BrokerAccount::where('user_id', auth()->id())->pluck('id');
+        $closedRealMonth = \App\Models\RealTrade::whereIn('broker_account_id', $realAccountIds)
+            ->closed()
+            ->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
+        $openRealTrades    = \App\Models\RealTrade::whereIn('broker_account_id', $realAccountIds)->open()->count();
+        $totalRealPnl      = (float) (clone $closedRealMonth)->get()->sum(fn ($t) => $t->net_pnl ?? $t->pnl);
+        $totalRealTrades   = (clone $closedRealMonth)->count();
+        $winningRealTrades = (clone $closedRealMonth)->where('pnl', '>', 0)->count();
+        $realWinRate       = $totalRealTrades > 0 ? round($winningRealTrades / $totalRealTrades * 100, 2) : 0;
+
         return view('dashboard.index', [
-            'regimes'     => $regimes,
-            'summary'     => $summary,
-            'collector'   => $collectorStatus,
-            'openTrades'  => $openTrades,
-            'totalPnlPct' => $totalPnlPct,
-            'totalTrades' => $totalTrades,
-            'winRate'     => $winRate,
-            'recentTrades'=> $recentTrades,
+            'regimes'         => $regimes,
+            'summary'         => $summary,
+            'collector'       => $collectorStatus,
+            'openTrades'      => $openTrades,
+            'totalPnlPct'     => $totalPnlPct,
+            'totalTrades'     => $totalTrades,
+            'winRate'         => $winRate,
+            'recentTrades'    => $recentTrades,
+            'openRealTrades'  => $openRealTrades,
+            'totalRealPnl'    => $totalRealPnl,
+            'totalRealTrades' => $totalRealTrades,
+            'realWinRate'     => $realWinRate,
         ]);
     }
 

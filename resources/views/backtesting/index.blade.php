@@ -165,6 +165,9 @@
                                 @if($config->backtest_range_from)
                                 <span class="text-[11px]" style="color:var(--color-text-muted);">📅 {{ $config->backtest_range_from }} → {{ $config->backtest_range_to }}</span>
                                 @endif
+                                @if($config->avg_monthly_trades !== null)
+                                <span class="text-[11px]" style="color:var(--color-text-muted);">🔁 {{ number_format($config->avg_monthly_trades, 1) }} op./mes</span>
+                                @endif
                             </div>
                             <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px;">
                                 @foreach($metrics as [$mlabel, $mstar, $mval, $mcolor])

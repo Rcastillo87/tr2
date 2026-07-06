@@ -212,9 +212,14 @@
                                             </span>
                                         </div>
                                         <div class="px-3 py-2.5">
-                                            <div class="mb-2" style="display:inline-flex; align-items:center; gap:6px; background:var(--color-surface-raised); border-radius:5px; padding:4px 10px;">
-                                                <span style="font-size:18px; line-height:1; color:{{ $starColor }};">{{ str_repeat('★', $fullR) }}{{ str_repeat('☆', $emptyR) }}</span>
-                                                <span style="font-size:15px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
+                                            <div class="mb-2 flex items-center gap-2 flex-wrap">
+                                                <div style="display:inline-flex; align-items:center; gap:6px; background:var(--color-surface-raised); border-radius:5px; padding:4px 10px;">
+                                                    <span style="font-size:18px; line-height:1; color:{{ $starColor }};">{{ str_repeat('★', $fullR) }}{{ str_repeat('☆', $emptyR) }}</span>
+                                                    <span style="font-size:15px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
+                                                </div>
+                                                @if ($cfg?->avg_monthly_trades !== null)
+                                                    <span class="text-[11px]" style="color:var(--color-text-muted);">🔁 {{ number_format($cfg->avg_monthly_trades, 1) }} op./mes</span>
+                                                @endif
                                             </div>
                                             <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px;">
                                                 @foreach ($metrics as [$mlabel, $mstar, $mval, $mcolor])

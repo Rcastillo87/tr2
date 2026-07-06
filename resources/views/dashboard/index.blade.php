@@ -16,7 +16,34 @@
         </div>
     </div>
 
-    {{-- 2. Resumen del mes --}}
+    @can('viewRealTrading')
+    {{-- 2. Resumen del mes — real trading --}}
+    <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Resumen de {{ ucfirst(now()->translatedFormat('F Y')) }} — real trading</h3>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">P&amp;L del mes</p>
+            <p class="font-mono text-lg font-medium" style="color: {{ $totalRealPnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                {{ $totalRealPnl >= 0 ? '+' : '' }}{{ number_format($totalRealPnl, 2) }} USDT
+            </p>
+        </div>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Win rate del mes</p>
+            <p class="font-mono text-lg font-medium">{{ $realWinRate }}%</p>
+        </div>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Cerradas en el mes</p>
+            <p class="font-mono text-lg font-medium">{{ $totalRealTrades }}</p>
+        </div>
+        <div class="rounded-lg border p-2.5" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+            <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Posiciones abiertas</p>
+            <p class="font-mono text-lg font-medium" style="color:var(--color-info);">{{ $openRealTrades }}</p>
+        </div>
+    </div>
+    @endcan
+
+    {{-- 2b. Resumen del mes — paper trading --}}
     <div class="flex items-center justify-between mb-2">
         <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Resumen de {{ ucfirst(now()->translatedFormat('F Y')) }} — paper trading</h3>
     </div>
