@@ -85,7 +85,8 @@ class DashboardController extends Controller
             ->closed()
             ->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
         $openRealTrades    = \App\Models\RealTrade::whereIn('broker_account_id', $realAccountIds)->open()->count();
-        $totalRealPnl      = (float) (clone $closedRealMonth)->get()->sum(fn ($t) => $t->net_pnl ?? $t->pnl);
+        $totalRealPnl = (float) (clone $closedRealMonth)->get()->sum(fn ($t) => $t->net_pnl ?? $t->pnl);
+
         $totalRealTrades   = (clone $closedRealMonth)->count();
         $winningRealTrades = (clone $closedRealMonth)->where('pnl', '>', 0)->count();
         $realWinRate       = $totalRealTrades > 0 ? round($winningRealTrades / $totalRealTrades * 100, 2) : 0;
