@@ -155,7 +155,7 @@
                 @foreach ($openTrades as $trade)
                     @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
                     <tr class="border-b" style="border-color:var(--color-border-soft);">
-                        <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
+                        <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>
                         <td class="py-2 px-3">{{ $trade->symbol }}</td>
                         <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? $trade->interval }}</td>
                         <td class="py-2 px-3">
@@ -222,7 +222,7 @@
                     @foreach ($closedTrades as $trade)
                         @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
                         <tr class="border-b" style="border-color:var(--color-border-soft);">
-                            <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ $trade->strategy }}</td>
+                            <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>
                             <td class="py-2 px-3">{{ $trade->symbol }}</td>
                             <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? $trade->interval }}</td>
                             <td class="py-2 px-3">
