@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import os
 
 from trading.bybit_client import bybit_sign
+from trading.ig_client import IGClient, IGAPIError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,6 +31,7 @@ class ValidateCredentialsRequest(BaseModel):
     account_type: str = 'real'
     api_key:      str
     api_secret:   str
+    credentials_extra: str | None = None
 
 
 @router.post('/broker/validate-credentials')
@@ -39,6 +41,38 @@ async def validate_credentials(
 ):
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
+
+    if request.broker.lower() == 'ig':
+        import json as _json
+        try:
+            extra = _json.loads(request.credentials_extra) if request.credentials_extra else {}
+        except Exception:
+            return {'valid': False, 'message': 'credentials_extra invalido (debe ser JSON con username/password).'}
+
+        username = extra.get('username', '')
+        password = extra.get('password', '')
+        if not username or not password:
+            return {'valid': False, 'message': 'Falta usuario o contraseña de IG.'}
+
+        client = IGClient(
+            api_key      = request.api_key,
+            username     = username,
+            password     = password,
+            account_type = request.account_type,
+        )
+        try:
+            await client._login()
+            balance = await client.get_balance()
+            return {
+                'valid':        True,
+                'message':      'Credenciales válidas.',
+                'total_equity': balance,
+            }
+        except IGAPIError as e:
+            return {'valid': False, 'message': f'Error validando con IG: {e}'}
+        except Exception as e:
+            logger.error(f'Error validando credenciales IG: {e}')
+            return {'valid': False, 'message': 'Error de conexión con IG.'}
 
     if request.broker.lower() != 'bybit':
         raise HTTPException(status_code=400, detail=f'Broker no soportado: {request.broker}')

@@ -14,6 +14,7 @@ import logging
 import os
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
+from trading.ig_client import IGClient
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -51,7 +52,30 @@ class AccountPayload(BaseModel):
     account_type: str
     api_key:      str
     api_secret:   str
+    credentials_extra: Optional[str] = None
     subscriptions: list[SubscriptionPayload]
+
+
+def _build_broker_client(account):
+    """
+    Instancia el cliente correcto segun account.broker.
+    IG requiere usuario+contraseña ademas de la api_key, viajan en
+    credentials_extra como JSON string: {"username": "...", "password": "..."}
+    """
+    if account.broker == 'ig':
+        import json as _json
+        extra = _json.loads(account.credentials_extra) if account.credentials_extra else {}
+        return IGClient(
+            api_key      = account.api_key,
+            username     = extra.get('username', ''),
+            password     = extra.get('password', ''),
+            account_type = account.account_type,
+        )
+    return BybitClient(
+        api_key      = account.api_key,
+        api_secret   = account.api_secret,
+        account_type = account.account_type,
+    )
 
 
 class RealTickRequest(BaseModel):
@@ -109,11 +133,7 @@ async def _process_account(trader, account):
                 await trader.clear_non_critical_errors(account.id)
                 logger.warning(f"[CIRCUIT] {error_count} errores no criticos ignorados para cuenta {account.id}")
 
-        client = BybitClient(
-            api_key      = account.api_key,
-            api_secret   = account.api_secret,
-            account_type = account.account_type,
-        )
+        client = _build_broker_client(account)
 
         monitor_result = await trader.monitor_open_trades(account.id, client)
         account_results["monitor"] = monitor_result
@@ -176,6 +196,47 @@ async def real_tick(
     return {'status': 'ok', 'results': results}
 
 
+@router.post('/real/circuit-breaker-max-loss')
+async def circuit_breaker_max_loss(
+    request: RealTickRequest,
+    x_internal_api_key: str = Header(None, alias='X-Internal-API-Key'),
+):
+    if x_internal_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+
+    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5, init=_setup_jsonb_codec)
+    trader  = RealTrader(pool)
+    results = {}
+
+    try:
+        if not request.accounts:
+            return {'status': 'ok', 'message': 'Sin cuentas activas', 'results': {}}
+
+        async def _check_account(account):
+            client = _build_broker_client(account)
+            try:
+                return account.id, await trader.check_max_loss_circuit_breaker(account.id, client)
+            except Exception as e:
+                logger.error(f"[CIRCUIT-MAXLOSS] Error inesperado en cuenta {account.id}: {e}")
+                return account.id, {"error": str(e)}
+
+        account_results_list = await asyncio.gather(
+            *[_check_account(account) for account in request.accounts],
+            return_exceptions=True
+        )
+        for item in account_results_list:
+            if isinstance(item, Exception):
+                logger.error(f"[CIRCUIT-MAXLOSS] Excepcion no capturada: {item}")
+                continue
+            account_id, account_result = item
+            results[f"account_{account_id}"] = account_result
+
+    finally:
+        await pool.close()
+
+    return {'status': 'ok', 'results': results}
+
+
 @router.post('/real/reconcile')
 async def reconcile(
     request: RealTickRequest,
@@ -190,11 +251,7 @@ async def reconcile(
 
     try:
         for account in request.accounts:
-            client = BybitClient(
-                api_key      = account.api_key,
-                api_secret   = account.api_secret,
-                account_type = account.account_type,
-            )
+            client = _build_broker_client(account)
             open_trades = await trader.get_open_trades(account.id)
             for trade in open_trades:
                 symbol   = trade['symbol']

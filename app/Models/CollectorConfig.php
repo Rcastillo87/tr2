@@ -8,7 +8,7 @@ class CollectorConfig extends Model
 {
     protected $table = 'collector_configs';
 
-    protected $fillable = ['symbol', 'interval', 'active', 'notes'];
+    protected $fillable = ['symbol', 'interval', 'broker', 'epic', 'active', 'notes'];
 
     protected $casts = ['active' => 'boolean'];
 

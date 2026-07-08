@@ -8,6 +8,7 @@ use App\Jobs\DetectMarketRegimeJob;
 use App\Jobs\PaperTradingTickJob;
 use App\Jobs\RealTradingTickJob;
 use App\Jobs\RealTradingReconcileJob;
+use App\Jobs\CircuitBreakerMaxLossJob;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -18,4 +19,5 @@ Schedule::job(new DetectMarketRegimeJob)->everyFifteenMinutes();
 Schedule::job(new PaperTradingTickJob)->everyFiveMinutes();
 Schedule::job(new RealTradingTickJob)->everyFiveMinutes();
 Schedule::job(new RealTradingReconcileJob)->everyFiveMinutes();
+Schedule::job(new CircuitBreakerMaxLossJob)->everyMinute();
 

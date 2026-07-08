@@ -43,6 +43,7 @@ class RealTradingAccountTickJob implements ShouldQueue
                 'account_type' => $account->account_type,
                 'api_key'      => $account->api_key,
                 'api_secret'   => $account->api_secret,
+                'credentials_extra' => $account->credentials_extra,
                 'subscriptions' => $account->subscriptions->map(function ($sub) {
                     $config = $sub->paperStrategyConfig;
                     return [

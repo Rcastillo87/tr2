@@ -22,8 +22,20 @@ class BrokerAccountController extends Controller
             'broker'       => ['required', 'string', 'max:50'],
             'account_type' => ['required', Rule::in($allowedTypes)],
             'api_key'      => ['required', 'string', 'min:10'],
-            'api_secret'   => ['required', 'string', 'min:10'],
+            'api_secret'   => ['required_if:broker,bybit', 'nullable', 'string', 'min:10'],
+            'ig_username'  => ['required_if:broker,ig', 'nullable', 'string'],
+            'ig_password'  => ['required_if:broker,ig', 'nullable', 'string'],
         ]);
+
+        // Para IG armamos credentials_extra como JSON; api_secret no aplica (queda vacio)
+        $credentialsExtra = null;
+        if ($validated['broker'] === 'ig') {
+            $credentialsExtra = json_encode([
+                'username' => $validated['ig_username'],
+                'password' => $validated['ig_password'],
+            ]);
+            $validated['api_secret'] = '';
+        }
 
         // Verificar unicidad broker + tipo con mensaje claro
         $exists = BrokerAccount::where('user_id', $user->id)
@@ -44,10 +56,11 @@ class BrokerAccountController extends Controller
             ])->timeout(15)->post(
                 config('trading.python_engine_url') . '/v1/broker/validate-credentials',
                 [
-                    'broker'       => $validated['broker'],
-                    'account_type' => $validated['account_type'],
-                    'api_key'      => $validated['api_key'],
-                    'api_secret'   => $validated['api_secret'],
+                    'broker'            => $validated['broker'],
+                    'account_type'      => $validated['account_type'],
+                    'api_key'           => $validated['api_key'],
+                    'api_secret'        => $validated['api_secret'],
+                    'credentials_extra' => $credentialsExtra,
                 ]
             );
 
@@ -71,12 +84,13 @@ class BrokerAccountController extends Controller
         $label = ucfirst($validated['broker']) . ' ' . ucfirst($validated['account_type']);
 
         $user->brokerAccounts()->create([
-            'broker'       => $validated['broker'],
-            'account_type' => $validated['account_type'],
-            'label'        => $label,
-            'api_key'      => $validated['api_key'],
-            'api_secret'   => $validated['api_secret'],
-            'status'       => 'active',
+            'broker'            => $validated['broker'],
+            'account_type'      => $validated['account_type'],
+            'label'             => $label,
+            'api_key'           => $validated['api_key'],
+            'api_secret'        => $validated['api_secret'],
+            'credentials_extra' => $credentialsExtra,
+            'status'            => 'active',
         ]);
 
         return redirect()->route('trading.accounts')
