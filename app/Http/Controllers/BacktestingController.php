@@ -142,6 +142,7 @@ class BacktestingController extends Controller
                     $payload['trailing_mode'] = $trailingMode;
                     if ($trailingMode === 'fixed') {
                         $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
+                        $payload['trailing_activation_buffer_pct'] = (float) $request->input('trailing_activation_buffer_pct', 0.3);
                     }
                     if ($trailingMode === 'stepped') {
                         $steps = [];
@@ -360,6 +361,7 @@ class BacktestingController extends Controller
             $payload['trailing_mode'] = $trailingMode;
             if ($trailingMode === 'fixed') {
                 $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
+                $payload['trailing_activation_buffer_pct'] = (float) $request->input('trailing_activation_buffer_pct', 0.3);
             } elseif ($trailingMode === 'stepped') {
                 $gains = $request->input('trailing_step_gain', []);
                 $sls   = $request->input('trailing_step_sl', []);

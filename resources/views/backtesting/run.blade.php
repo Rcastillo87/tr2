@@ -377,10 +377,16 @@
                     </select>
                     <div id="trailingFixedFields" class="hidden">
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia trailing %</label>
-                        <input type="number" step="0.1" name="trailing_distance_pct"
+                        <input type="number" step="0.01" name="trailing_distance_pct"
                                value="{{ $old['trailing_distance_pct'] ?? request('trailing_distance_pct', '1.0') }}"
+                               class="w-36 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono mb-2"
+                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Buffer de activación %</label>
+                        <input type="number" step="0.01" name="trailing_activation_buffer_pct"
+                               value="{{ $old['trailing_activation_buffer_pct'] ?? request('trailing_activation_buffer_pct', '0.3') }}"
                                class="w-36 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
                                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">Ganancia mínima antes de que el trailing empiece a moverse — replica el comportamiento real del trailing nativo de Bybit (default 0.3%, igual que en real trading).</p>
                     </div>
                     <div id="trailingSteppedFields" class="hidden">
                         <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Al alcanzar la ganancia indicada, el SL salta al % desde la entrada.</p>
@@ -953,6 +959,9 @@ function loadParams() {
             document.getElementById('trailing_mode').value = p.trailing_mode;
             toggleTrailingFields();
             if (p.trailing_distance_pct) document.querySelector('[name="trailing_distance_pct"]').value = p.trailing_distance_pct;
+            if (p.trailing_activation_buffer_pct !== undefined) {
+                document.querySelector('[name="trailing_activation_buffer_pct"]').value = p.trailing_activation_buffer_pct;
+            }
         }
     }
 }

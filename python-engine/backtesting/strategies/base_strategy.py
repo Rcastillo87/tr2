@@ -73,6 +73,11 @@ class BaseStrategy(ABC):
 
         # Trailing stop
         self.trailing_mode         = params.get('trailing_mode', None)  # None | "fixed" | "stepped"
+        # Buffer de activacion del trailing 'fixed', en % de ganancia minima
+        # antes de que el trailing empiece a moverse. Replica el activePrice
+        # del trailing nativo de Bybit en real_trader.py (default ahi: 0.3%).
+        # Default 0.0 aca por compatibilidad con configs existentes/'stepped'.
+        self.trailing_activation_buffer_pct = params.get('trailing_activation_buffer_pct', 0.0)
         self.trailing_distance_pct = params.get('trailing_distance_pct', 1.0)
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
 
@@ -229,6 +234,7 @@ class BaseStrategy(ABC):
         return calculate_trailing_sl_standalone(
             self.trailing_mode, self.trailing_distance_pct, self.trailing_steps,
             entry_price, side, current_price, current_sl,
+            activation_buffer_pct=self.trailing_activation_buffer_pct,
         )
 
     def check_volatility_protection(self, current_sl: float, side: str,
@@ -258,7 +264,8 @@ class BaseStrategy(ABC):
 
 def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
                                       trailing_steps, entry_price, side,
-                                      current_price, current_sl):
+                                      current_price, current_sl,
+                                      activation_buffer_pct=0.0):
     """
     Version standalone (sin instancia de estrategia) de calculate_trailing_sl,
     para modulos que no necesitan una instancia completa de estrategia solo
@@ -279,6 +286,11 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
     new_sl = current_sl
 
     if trailing_mode == 'fixed':
+        # activation_buffer_pct: replica que el trailing nativo de Bybit
+        # (activePrice) no se arma con cualquier ganancia minima/ruido, sino
+        # que exige que el precio se mueva al menos ese % a favor primero.
+        if gain_pct < activation_buffer_pct:
+            return current_sl
         if side == 'long':
             candidate = current_price * (1 - trailing_distance_pct / 100)
             new_sl = max(current_sl, candidate)
