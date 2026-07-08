@@ -1057,7 +1057,17 @@ class RealTrader:
         active_price = None
         if getattr(strategy_instance, 'trailing_mode', None) == 'fixed':
             configured_buffer = getattr(strategy_instance, 'trailing_activation_buffer_pct', None)
-            buffer_pct = (configured_buffer / 100) if configured_buffer is not None else 0.003
+            # Bybit exige activePrice distinto al precio de entrada (rechaza
+            # la orden si son iguales) - un buffer de 0 o ausente SIEMPRE
+            # falla contra el exchange, a diferencia del backtest donde 0
+            # es un valor valido (activacion inmediata simulada). Por eso
+            # aca tratamos None Y <=0 como "no configurado", usando el
+            # default seguro de 0.3%. Confirmado en real 2026-07-08: un
+            # trade con buffer=0.0 (default de config sin el campo) genero
+            # activePrice == entry_price exacto, Bybit lo rechazo con
+            # 'TrailingProfit... should be less than session_average_price',
+            # dejando la posicion con SL/TP provisional (5%/10%) sin trailing.
+            buffer_pct = (configured_buffer / 100) if configured_buffer and configured_buffer > 0 else 0.003
             trailing_stop_price, active_price = compute_native_trailing_params(
                 avg_price, side, strategy_instance.trailing_distance_pct, buffer_pct=buffer_pct
             )
@@ -1146,14 +1156,22 @@ class RealTrader:
             pnl_pct       = pnl / bal_before * 100 if bal_before > 0 else 0
             balance_after = await client.get_balance() or 0
             async with self.pool.acquire() as conn:
-                await conn.execute(
+                # Guarda status='open': evita que 2 ciclos de monitoreo que
+                # detectan el mismo cierre casi simultaneo (ej. via SL nativo
+                # de Bybit) se pisen entre si sobreescribiendo con un precio
+                # de cierre distinto - el primero en llegar gana, el segundo
+                # no encuentra fila que actualizar y no hace nada.
+                result = await conn.execute(
                     "UPDATE real_trades SET status='closed', exit_price=$1, exit_reason=$2,"
                     " exit_time=now(), pnl=$3, pnl_pct=$4, net_pnl=$5, commission=$6,"
-                    " balance_after=$7, updated_at=now() WHERE id=$8",
+                    " balance_after=$7, updated_at=now() WHERE id=$8 AND status='open'",
                     exit_price_override, exit_reason,
                     round(pnl,4), round(pnl_pct,4), round(net_pnl,4), round(commission,4),
                     balance_after, trade["id"]
                 )
+            if result == "UPDATE 0":
+                logger.info(f"[REAL] CLOSE #{trade['id']} {symbol} omitido — ya estaba cerrado (cierre concurrente detectado)")
+                return True
             logger.info(f"[REAL] CLOSE #{trade['id']} {symbol} override exit={exit_price_override} pnl={round(pnl,4)}")
             return True
 
