@@ -51,14 +51,17 @@ def compute_native_trailing_params(entry_price, side, trailing_distance_pct):
     (nivel donde arma el trailing nativo de Bybit) a partir del
     trailing_distance_pct configurado en la estrategia.
 
-    activePrice queda apenas mas favorable que el precio de ENTRADA (buffer
-    de 0.05%), para que arme apenas la posicion entra en ganancia - mismo
-    criterio que el trailing del bot (gain_pct > 0). Confirmado contra
-    Bybit testnet: activePrice se valida contra el precio de entrada de la
+    activePrice queda mas favorable que el precio de ENTRADA por un buffer
+    de 0.3% (subido desde 0.05% el 2026-07-06: con 0.05% el ruido normal de
+    precio en los primeros segundos post-apertura cruzaba el umbral casi de
+    inmediato, armando el trailing practicamente en la entrada y anulando el
+    margen real que la estrategia pretendia dar — confirmado empiricamente
+    contra Bybit Demo, ver sesion de diagnostico). Confirmado contra Bybit
+    testnet: activePrice se valida contra el precio de entrada de la
     posicion, no contra el precio de mercado actual.
     """
     trailing_stop_price = entry_price * (trailing_distance_pct / 100)
-    buffer_pct = 0.0005
+    buffer_pct = 0.003
     if side == 'long':
         active_price = entry_price * (1 + buffer_pct)
     else:
@@ -539,6 +542,88 @@ class RealTrader:
             )
         return [dict(r) for r in rows]
 
+    async def check_max_loss_circuit_breaker(self, account_id: int, client: BybitClient,
+                                              max_loss_multiplier: float = 1.2) -> dict:
+        """
+        Circuit breaker de perdida maxima. Corre independiente del monitoreo
+        normal (mas seguido, cada 1 min via Horizon) — red de seguridad ante
+        SL/trailing nativo de Bybit que no se dispara cuando deberia (ej.
+        activePrice mal calibrado, fallos del motor Demo, desincronizaciones).
+        No reemplaza el SL/trailing nativo, actua independientemente sin
+        confiar en que Bybit vaya a cerrar la posicion solo.
+
+        Logica hibrida de referencia (evidencia real del 2026-07-06):
+        - Si el trailing NO se activo todavia: referencia = original_sl
+          (columna fijada una unica vez al abrir, inmune a que la columna
+          `sl` se mueva despues por trailing/BE/bugs de sincronizacion),
+          anclada a entry_price. Con esto el circuit breaker respeta la
+          tolerancia de riesgo original de la estrategia mientras no haya
+          ganancia protegida en juego.
+        - Si el trailing YA se activo (trailing_applied=true): referencia =
+          trailing_distance_pct de la config, anclada al SL EN VIVO (no a
+          la entrada) — reacciona mucho mas rapido una vez que hay ganancia
+          protegida, en vez de tolerar retrocesos grandes calculados desde
+          la entrada (que fue el bug detectado: distancia entrada-a-SL deja
+          de tener sentido una vez que el SL cruza a zona de ganancia).
+        """
+        results = {"checked": 0, "closed": 0, "errors": 0}
+        open_trades = await self.get_open_trades(account_id)
+        for trade in open_trades:
+            if trade["status"] != "open":
+                continue
+            results["checked"] += 1
+            symbol      = trade["symbol"]
+            side        = trade["side"]
+            entry_price = float(trade["entry_price"])
+            live_sl     = float(trade["sl"]) if trade["sl"] else None
+            if entry_price <= 0:
+                continue
+
+            if trade.get("trailing_applied") and live_sl:
+                _, trailing_dist_pct = await self.get_trailing_config(trade["id"])
+                if trailing_dist_pct:
+                    reference_price = live_sl
+                    max_allowed_loss_pct = (trailing_dist_pct / 100) * max_loss_multiplier
+                else:
+                    reference_price = float(trade.get("original_sl") or live_sl)
+                    max_allowed_loss_pct = abs(entry_price - reference_price) / entry_price * max_loss_multiplier
+            else:
+                reference_price = float(trade.get("original_sl") or live_sl) if (trade.get("original_sl") or live_sl) else None
+                if not reference_price:
+                    continue
+                max_allowed_loss_pct = abs(entry_price - reference_price) / entry_price * max_loss_multiplier
+
+            try:
+                position = await client.get_open_position(symbol)
+            except BybitAPIError as e:
+                logger.error(f"[CIRCUIT-MAXLOSS] error consultando Bybit para {symbol}: {e}")
+                results["errors"] += 1
+                continue
+            if not position:
+                continue
+            mark_price = float(position.get("markPrice") or position.get("avgPrice") or 0)
+            if mark_price <= 0:
+                continue
+
+            if side == "long":
+                current_loss_pct = (reference_price - mark_price) / reference_price
+            else:
+                current_loss_pct = (mark_price - reference_price) / reference_price
+
+            if current_loss_pct > max_allowed_loss_pct:
+                logger.error(
+                    f"[CIRCUIT-MAXLOSS] Trade #{trade['id']} {symbol} retrocedio "
+                    f"{current_loss_pct*100:.3f}% desde el nivel de referencia "
+                    f"({reference_price}), supera {max_loss_multiplier}x el margen tolerado "
+                    f"({max_allowed_loss_pct*100:.3f}%) — forzando cierre"
+                )
+                closed = await self.close_trade(trade, "circuit_breaker_max_loss", client, account_id)
+                if closed:
+                    results["closed"] += 1
+                else:
+                    results["errors"] += 1
+        return results
+
     async def get_open_trades(self, account_id: int) -> list[dict]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -546,7 +631,8 @@ class RealTrader:
                 SELECT id, subscription_id, strategy, symbol, interval, side,
                        entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated,
                        size, original_size, tp2_hit, tp3_hit, tp4_hit, realized_pnl_partial,
-                       entry_time, updated_at, order_id, balance_before, status
+                       entry_time, updated_at, order_id, balance_before, status,
+                       trailing_applied, original_sl
                 FROM real_trades
                 WHERE broker_account_id = $1
                   AND status IN ('open', 'pending_close')
@@ -977,6 +1063,14 @@ class RealTrader:
         )
         if not ts_ok:
             logger.error(f"[REAL] trading-stop fallo para {symbol} — posicion con SL provisional")
+        else:
+            await self.log_audit(trade_id, 'sl_tp_final_set', {
+                'sl': sl, 'tp': tp1, 'avg_price': avg_price
+            })
+            if trailing_stop_price is not None:
+                await self.log_audit(trade_id, 'trailing_native_armed', {
+                    'trailing_stop': trailing_stop_price, 'active_price': active_price
+                })
 
         slippage_pct = abs(filled_price - entry_signal_price) / entry_signal_price * 100
 
@@ -991,7 +1085,7 @@ class RealTrader:
                         SET status = 'open', order_id = $1,
                             entry_price = $2, slippage_pct = $3,
                             sl = $4, tp = $5, tp2 = $6, tp3 = $7, tp4 = $8,
-                            be_level = $9, updated_at = now()
+                            be_level = $9, original_sl = $4, updated_at = now()
                         WHERE id = $10
                         """,
                         order_id, filled_price, round(slippage_pct, 6),
@@ -1179,6 +1273,7 @@ class RealTrader:
         if client and symbol and side:
             await client.set_trading_stop(symbol, new_sl)
             logger.info(f"[REAL] BE activado - SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
+        await self.log_audit(trade_id, 'breakeven_activated', {'new_sl': new_sl})
 
     async def close_partial(self, trade, level, client, current_price, original_size):
         symbol   = trade["symbol"]
@@ -1584,6 +1679,19 @@ class RealTrader:
 
         if signal == 0:
             return f"{symbol}: sin señal"
+        candle_time = last_closed['time']
+        if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
+            candle_time = candle_time.tz_localize(None)
+        async with self.pool.acquire() as conn:
+            already_traded = await conn.fetchrow(
+                """SELECT id FROM real_trades
+                   WHERE subscription_id = $1 AND symbol = $2
+                     AND entry_time >= $3
+                   ORDER BY entry_time DESC LIMIT 1""",
+                sub['subscription_id'], symbol, candle_time
+            )
+        if already_traded:
+            return f"{symbol}: señal ya operada en esta vela (trade #{already_traded['id']})"
 
         side        = 'long' if signal == 1 else 'short'
         entry_price = await client.get_market_price(symbol)

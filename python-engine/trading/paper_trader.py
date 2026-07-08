@@ -540,6 +540,21 @@ class PaperTrader:
                 results[display_name] = f"{symbol}: sin senal"
                 continue
 
+            candle_time = last_closed['time']
+            if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
+                candle_time = candle_time.tz_localize(None)
+            async with self.pool.acquire() as conn:
+                already_traded = await conn.fetchrow(
+                    """SELECT id FROM paper_trades
+                       WHERE strategy = $1 AND symbol = $2
+                         AND entry_time >= $3
+                       ORDER BY entry_time DESC LIMIT 1""",
+                    display_name, symbol, candle_time
+                )
+            if already_traded:
+                results[display_name] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
+                continue
+
             side        = 'long' if signal == 1 else 'short'
             entry_price = await get_current_price(symbol)
 
