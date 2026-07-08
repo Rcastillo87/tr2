@@ -649,20 +649,20 @@
                             <tr class="border-t" style="border-color:var(--color-border-soft);">
                                 <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación ⭐</td>
                                 <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ $existingConfig->star_rating ? (int)round($existingConfig->star_rating).'★' : '—' }}
+                                    {{ $existingConfig->star_rating ? number_format($existingConfig->star_rating, 1).'★' : '—' }}
                                     @if($existingConfig->backtest_range_from)
                                         <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
                                     @endif
                                 </td>
                                 <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ !empty($result['stars']['starRating']) ? (int)round($result['stars']['starRating']).'★' : '—' }}
+                                    {{ !empty($result['stars']['starRating']) ? number_format($result['stars']['starRating'], 1).'★' : '—' }}
                                     @if(!empty($result['range_from']))
                                         <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
                                     @endif
                                 </td>
                                 <td class="py-1.5 text-right">
                                     @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
-                                        @php $diffStar = (int)round($result['stars']['starRating']) - (int)round($existingConfig->star_rating); @endphp
+                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
                                         <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
                                     @else — @endif
                                 </td>
@@ -962,6 +962,10 @@ function loadParams() {
             if (p.trailing_activation_buffer_pct !== undefined) {
                 document.querySelector('[name="trailing_activation_buffer_pct"]').value = p.trailing_activation_buffer_pct;
             }
+            if (p.trailing_mode === 'stepped' && Array.isArray(p.trailing_steps) && p.trailing_steps.length > 0) {
+                document.getElementById('trailingStepsContainer').innerHTML = '';
+                p.trailing_steps.forEach(step => addTrailingStep(step[0], step[1]));
+            }
         }
     }
 }
@@ -993,10 +997,12 @@ function toggleTrailingFields() {
     steppedFields.querySelectorAll('input').forEach(el => el.disabled = mode !== 'stepped');
 }
 
-function addTrailingStep() {
+function addTrailingStep(gainVal, slVal) {
     const c = document.getElementById('trailingStepsContainer');
     const d = document.createElement('div'); d.className = 'flex items-center gap-2';
-    d.innerHTML = `<input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %" class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span><input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %" class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><button type="button" onclick="this.parentElement.remove()" style="color:var(--color-loss);">✕</button>`;
+    const gAttr = (gainVal !== undefined && gainVal !== null) ? ` value="${gainVal}"` : '';
+    const sAttr = (slVal   !== undefined && slVal   !== null) ? ` value="${slVal}"`   : '';
+    d.innerHTML = `<input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %"${gAttr} class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span><input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %"${sAttr} class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><button type="button" onclick="this.parentElement.remove()" style="color:var(--color-loss);">✕</button>`;
     c.appendChild(d);
 }
 
