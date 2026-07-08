@@ -33,7 +33,7 @@ class RealTradingTickJob implements ShouldQueue
         }
 
         foreach ($accountIds as $accountId) {
-            RealTradingAccountTickJob::dispatch($accountId);
+            RealTradingAccountTickJob::dispatch($accountId)->onQueue('high');
         }
 
         Log::debug('RealTradingTickJob: despachados ' . $accountIds->count() . ' job(s) de cuenta');
