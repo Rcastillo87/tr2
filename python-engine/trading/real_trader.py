@@ -45,23 +45,26 @@ BYBIT_MAINNET = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 BYBIT_TESTNET = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
 
 
-def compute_native_trailing_params(entry_price, side, trailing_distance_pct):
+def compute_native_trailing_params(entry_price, side, trailing_distance_pct, buffer_pct=0.003):
     """
     Calcula trailingStop (distancia en precio absoluto, no %) y activePrice
     (nivel donde arma el trailing nativo de Bybit) a partir del
     trailing_distance_pct configurado en la estrategia.
 
-    activePrice queda mas favorable que el precio de ENTRADA por un buffer
-    de 0.3% (subido desde 0.05% el 2026-07-06: con 0.05% el ruido normal de
-    precio en los primeros segundos post-apertura cruzaba el umbral casi de
-    inmediato, armando el trailing practicamente en la entrada y anulando el
-    margen real que la estrategia pretendia dar — confirmado empiricamente
-    contra Bybit Demo, ver sesion de diagnostico). Confirmado contra Bybit
-    testnet: activePrice se valida contra el precio de entrada de la
-    posicion, no contra el precio de mercado actual.
+    activePrice queda mas favorable que el precio de ENTRADA por buffer_pct
+    (default 0.3%, subido desde 0.05% el 2026-07-06: con 0.05% el ruido
+    normal de precio en los primeros segundos post-apertura cruzaba el
+    umbral casi de inmediato, armando el trailing practicamente en la
+    entrada y anulando el margen real que la estrategia pretendia dar —
+    confirmado empiricamente contra Bybit Demo, ver sesion de diagnostico).
+    Configurable desde 2026-07-08 via trailing_activation_buffer_pct en los
+    params de la estrategia (mismo campo que usa el motor de backtesting
+    para simular este mismo comportamiento) — se sincronizan solos, si se
+    cambia el default en el form de backtesting real lo hereda automatico.
+    Confirmado contra Bybit testnet: activePrice se valida contra el precio
+    de entrada de la posicion, no contra el precio de mercado actual.
     """
     trailing_stop_price = entry_price * (trailing_distance_pct / 100)
-    buffer_pct = 0.003
     if side == 'long':
         active_price = entry_price * (1 + buffer_pct)
     else:
@@ -1053,8 +1056,10 @@ class RealTrader:
         trailing_stop_price = None
         active_price = None
         if getattr(strategy_instance, 'trailing_mode', None) == 'fixed':
+            configured_buffer = getattr(strategy_instance, 'trailing_activation_buffer_pct', None)
+            buffer_pct = (configured_buffer / 100) if configured_buffer is not None else 0.003
             trailing_stop_price, active_price = compute_native_trailing_params(
-                avg_price, side, strategy_instance.trailing_distance_pct
+                avg_price, side, strategy_instance.trailing_distance_pct, buffer_pct=buffer_pct
             )
             logger.info(f"[REAL] Trailing NATIVO armado: {symbol} trailingStop={trailing_stop_price} activePrice={active_price}")
 
