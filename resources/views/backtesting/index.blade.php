@@ -264,6 +264,11 @@ function applyFilters() {
     });
     const counter = document.getElementById('filterCount');
     counter.textContent = visible === rows.length ? '' : `${visible} de ${rows.length} estrategias`;
+
+    // Persistir filtros para que sobrevivan la navegacion a /backtesting/run y "Volver"
+    sessionStorage.setItem('backtestingFilters', JSON.stringify({
+        strategy, symbol, interval, state, starChecks,
+    }));
 }
 
 function clearFilters() {
@@ -272,8 +277,32 @@ function clearFilters() {
     document.getElementById('filterInterval').value = '';
     document.getElementById('filterState').value    = '';
     document.querySelectorAll('.star-filter').forEach(cb => cb.checked = false);
+    sessionStorage.removeItem('backtestingFilters');
     applyFilters();
 }
+
+function restoreFilters() {
+    const saved = sessionStorage.getItem('backtestingFilters');
+    if (!saved) return;
+    try {
+        const f = JSON.parse(saved);
+        if (f.strategy) document.getElementById('filterStrategy').value = f.strategy;
+        if (f.symbol)   document.getElementById('filterSymbol').value   = f.symbol;
+        if (f.interval) document.getElementById('filterInterval').value = f.interval;
+        if (f.state)    document.getElementById('filterState').value    = f.state;
+        if (Array.isArray(f.starChecks)) {
+            f.starChecks.forEach(v => {
+                const cb = document.querySelector(`.star-filter[value="${v}"]`);
+                if (cb) cb.checked = true;
+            });
+        }
+        applyFilters();
+    } catch (e) {
+        sessionStorage.removeItem('backtestingFilters');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', restoreFilters);
 
 function confirmToggle(event, name, isActive) {
     event.preventDefault();

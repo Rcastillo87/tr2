@@ -85,7 +85,8 @@ class PaperStrategyConfigController extends Controller
             // Si viene config_id — actualizar config existente directamente
             if (!empty($validated['config_id'])) {
                 $config = PaperStrategyConfig::findOrFail($validated['config_id']);
-                $config->update(['params' => $params, 'active' => true]);
+                // No tocar 'active' al editar - se mantiene el estado que ya tenia
+                $config->update(['params' => $params]);
             } else {
                 $config = PaperStrategyConfig::implementFromBacktest(
                     $validated['strategy_name'],
@@ -159,7 +160,8 @@ class PaperStrategyConfigController extends Controller
             // Si viene config_id — actualizar config existente directamente
             if (!empty($validated['config_id'])) {
                 $config = PaperStrategyConfig::findOrFail($validated['config_id']);
-                $config->update(['params' => $params, 'active' => true]);
+                // No tocar 'active' al editar - se mantiene el estado que ya tenia
+                $config->update(['params' => $params]);
             } else {
                 $config = PaperStrategyConfig::implementFromBacktest(
                     $validated['strategy_name'],

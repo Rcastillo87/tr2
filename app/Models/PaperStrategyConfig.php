@@ -109,7 +109,7 @@ class PaperStrategyConfig extends Model
             ->whereRaw('params @> ?::jsonb AND params <@ ?::jsonb', [$paramsJson, $paramsJson])
             ->first();
         if ($duplicate) {
-            $duplicate->update(['display_name' => $displayName, 'active' => true]);
+            $duplicate->update(['display_name' => $displayName]);
             return $duplicate->fresh();
         }
         return self::create([
@@ -118,7 +118,7 @@ class PaperStrategyConfig extends Model
             'symbol'         => $symbol,
             'interval'       => $interval,
             'params'         => $params,
-            'active'         => true,
+            'active'         => false,
         ]);
     }
 }
