@@ -156,9 +156,18 @@ class BacktestEngine:
                 # Registrar trade cerrado
                 if exit_price is not None:
                     if position['side'] == 'long':
-                        pnl = (exit_price - position['entry_price']) * position['size']
+                        gross_pnl = (exit_price - position['entry_price']) * position['size']
                     else:
-                        pnl = (position['entry_price'] - exit_price) * position['size']
+                        gross_pnl = (position['entry_price'] - exit_price) * position['size']
+
+                    # Comision sobre el valor nocional, entrada + salida (mismo
+                    # criterio que BYBIT_TAKER_FEE en real_trader.py). Antes de
+                    # 2026-07-09 el backtest no descontaba ningun costo aca.
+                    commission_pct = getattr(self.strategy, 'commission_pct', 0.0) / 100
+                    entry_notional = position['entry_price'] * position['size']
+                    exit_notional  = exit_price * position['size']
+                    commission = (entry_notional + exit_notional) * commission_pct
+                    pnl = gross_pnl - commission
 
                     pnl_pct = pnl / self.balance * 100
                     self.balance += pnl
@@ -176,6 +185,8 @@ class BacktestEngine:
                         "tp3":          position.get('tp3'),
                         "tp4":          position.get('tp4'),
                         "size":         position['size'],
+                        "gross_pnl":    round(gross_pnl, 4),
+                        "commission":   round(commission, 4),
                         "pnl":          round(pnl, 4),
                         "pnl_pct":      round(pnl_pct, 4),
                         "exit_reason":  exit_reason,

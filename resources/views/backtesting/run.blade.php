@@ -209,17 +209,18 @@
             <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Parámetros</h4>
             <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
                 @foreach ([
-                    ['sl_pct',             'Stop Loss %',     '1.5'],
-                    ['tp_pct',             'Take Profit 1 %', '3.0'],
-                    ['tp2_pct',            'Take Profit 2 %', ''],
-                    ['tp3_pct',            'Take Profit 3 %', ''],
-                    ['tp4_pct',            'Take Profit 4 %', ''],
-                    ['max_duration',       'Duración (velas)','24'],
-                    ['risk_per_trade_pct', 'Riesgo/trade %',  '1.0'],
-                ] as [$name, $label, $default])
+                    ['sl_pct',             'Stop Loss %',     '1.5',   '0.1'],
+                    ['tp_pct',             'Take Profit 1 %', '3.0',   '0.1'],
+                    ['tp2_pct',            'Take Profit 2 %', '',      '0.1'],
+                    ['tp3_pct',            'Take Profit 3 %', '',      '0.1'],
+                    ['tp4_pct',            'Take Profit 4 %', '',      '0.1'],
+                    ['max_duration',       'Duración (velas)','24',    '1'],
+                    ['risk_per_trade_pct', 'Riesgo/trade %',  '1.0',   '0.1'],
+                    ['commission_pct',     'Comisión %',      '0.055', '0.001'],
+                ] as [$name, $label, $default, $step])
                     <div>
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">{{ $label }}</label>
-                        <input type="number" step="0.1" name="{{ $name }}" id="{{ $name }}"
+                        <input type="number" step="{{ $step }}" name="{{ $name }}" id="{{ $name }}"
                                value="{{ $old[$name] ?? request($name, $default) }}"
                                placeholder="{{ in_array($name, ['tp2_pct','tp3_pct','tp4_pct']) ? '—' : '' }}"
                                class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"

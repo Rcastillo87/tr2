@@ -78,6 +78,11 @@ class BaseStrategy(ABC):
         # del trailing nativo de Bybit en real_trader.py (default ahi: 0.3%).
         # Default 0.0 aca por compatibilidad con configs existentes/'stepped'.
         self.trailing_activation_buffer_pct = params.get('trailing_activation_buffer_pct', 0.0)
+        # Comision por operacion (% del valor nocional), aplicada en cada
+        # entrada Y cada salida. Default 0.055% = taker fee real de Bybit
+        # (BYBIT_TAKER_FEE en real_trader.py) - el motor de backtest no
+        # descontaba esto en absoluto, inflando artificialmente resultados.
+        self.commission_pct = params.get('commission_pct', 0.055)
         self.trailing_distance_pct = params.get('trailing_distance_pct', 1.0)
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
 

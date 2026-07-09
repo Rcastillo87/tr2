@@ -213,9 +213,20 @@ class PaperTrader:
         side        = trade['side']
 
         if side == 'long':
-            pnl = (exit_price - entry_price) * size
+            gross_pnl = (exit_price - entry_price) * size
         else:
-            pnl = (entry_price - exit_price) * size
+            gross_pnl = (entry_price - exit_price) * size
+
+        # Comision configurable por estrategia (misma logica que el motor de
+        # backtest: % del valor nocional, entrada + salida). Real NO necesita
+        # esto - ya descuenta la comision real de Bybit via BYBIT_TAKER_FEE.
+        # Paper si la necesita para reflejar el costo real de operar, igual
+        # que backtest - sin esto, Paper subestimaba resultados igual que
+        # el backtest lo hacia antes del fix de 2026-07-09.
+        cfg_params = self._get_params_for(trade['strategy'], trade['symbol'])
+        commission_pct = cfg_params.get('commission_pct', 0.055) / 100
+        commission = (entry_price * size + exit_price * size) * commission_pct
+        pnl = gross_pnl - commission
 
         pnl_pct = pnl / VIRTUAL_BALANCE * 100
 

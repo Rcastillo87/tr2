@@ -106,6 +106,7 @@ class BacktestingController extends Controller
                     'interval'           => $request->input('interval', '60'),
                     'initial_balance'    => 10000,
                     'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
+                    'commission_pct'     => (float) $request->input('commission_pct', 0.055),
                     'sl_pct'             => (float) $request->input('sl_pct', 1.5),
                     'tp_pct'             => (float) $request->input('tp_pct', 3.0),
                     'be_pct'             => (float) $request->input('be_pct', 2.0),
@@ -324,6 +325,7 @@ class BacktestingController extends Controller
             'be_pct'             => (float) $request->input('be_pct', 2.0),
             'max_duration'       => (int) $request->input('max_duration', 24),
             'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
+            'commission_pct'     => (float) $request->input('commission_pct', 0.055),
             'monthly_breakdown'  => true,
             'mode'               => $options['mode'] ?? null,
         ];
