@@ -149,6 +149,7 @@
                     <th class="py-2 px-3 text-left font-normal">TP</th>
                     <th class="py-2 px-3 text-left font-normal">P&L flotante</th>
                     <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
+                    <th class="py-2 px-3 text-left font-normal">Estado</th>
                 </tr>
             </thead>
             <tbody>
@@ -177,6 +178,12 @@
                             {{ $trade->floating_pnl_pct !== null ? ($trade->floating_pnl_pct >= 0 ? '+' : '') . number_format($trade->floating_pnl_pct, 3) . '%' : '—' }}
                         </td>
                         <td class="py-2 px-3">{{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}</td>
+                        <td class="py-2 px-3">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style="background:#1F2937; color:var(--color-info);">
+                                {{ strtoupper($trade->status ?? 'open') }}
+                            </span>
+                        </td>
                     </tr>
                 @endforeach
             </tbody>
@@ -211,7 +218,9 @@
                         <th class="py-2 px-3 text-left font-normal">Dir.</th>
                         <th class="py-2 px-3 text-left font-normal">Entrada</th>
                         <th class="py-2 px-3 text-left font-normal">Salida</th>
+                        <th class="py-2 px-3 text-left font-normal">Estado</th>
                         <th class="py-2 px-3 text-left font-normal">Razón</th>
+                        <th class="py-2 px-3 text-left font-normal">Comisión</th>
                         <th class="py-2 px-3 text-left font-normal">P&L %</th>
                         <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
                         <th class="py-2 px-3 text-left font-normal">Hora salida</th>
@@ -232,7 +241,20 @@
                             </td>
                             <td class="py-2 px-3">{{ number_format($trade->entry_price, 2) }}</td>
                             <td class="py-2 px-3">{{ number_format($trade->exit_price, 2) }}</td>
+                            <td class="py-2 px-3">
+                                @php
+                                    $histStatusColors = [
+                                        'closed'   => ['bg'=>'#1F2937','color'=>'#6B7280'],
+                                    ];
+                                    $hsc = $histStatusColors[$trade->status ?? 'closed'] ?? ['bg'=>'#1F2937','color'=>'#6B7280'];
+                                @endphp
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                      style="background:{{ $hsc['bg'] }}; color:{{ $hsc['color'] }};">
+                                    {{ str_replace('_', ' ', $trade->status ?? 'closed') }}
+                                </span>
+                            </td>
                             <td class="py-2 px-3">{{ str_replace('_', ' ', $trade->exit_reason ?? '—') }}</td>
+                            <td class="py-2 px-3">{{ $trade->commission ? number_format($trade->commission, 4) : '—' }}</td>
                             <td class="py-2 px-3 font-medium"
                                 style="color: {{ $trade->pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                                 {{ $trade->pnl_pct >= 0 ? '+' : '' }}{{ number_format($trade->pnl_pct, 2) }}%

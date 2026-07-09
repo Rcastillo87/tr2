@@ -286,7 +286,10 @@ async def reconcile(
                             if abs(closed_entry - trade_entry) / trade_entry < 0.001:  # 0.1% tolerancia
                                 exit_price = float(closed_pnl.get('avgExitPrice') or closed_pnl.get('exitPrice') or 0) or None
                                 if closed_pnl.get('orderType') == 'StopLoss':
-                                    exit_reason = 'stop_loss'
+                                    # Mismo criterio que real_trader.py: distinguir si el
+                                    # SL que disparo el cierre era el original o uno movido
+                                    # por el trailing nativo, en vez de 'stop_loss' generico.
+                                    exit_reason = 'trailing_stop' if trade.get('trailing_applied') else 'stop_loss'
                                 elif closed_pnl.get('orderType') in ('TakeProfit', 'PartialTakeProfit'):
                                     exit_reason = 'take_profit_1'
                             else:

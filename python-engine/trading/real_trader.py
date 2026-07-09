@@ -1421,16 +1421,22 @@ class RealTrader:
 
                 sl_val = float(trade["sl"])
                 tp_val = float(trade["tp"])
+                # NOTA (2026-07-09): trade["sl"] puede ser el SL original O
+                # el nivel movido por el trailing nativo (si trailing_applied
+                # ya sincronizo un valor nuevo) - distinguir la etiqueta para
+                # que el usuario sepa si lo protegio el trailing o el SL fijo
+                # original, en vez de "stop_loss" generico en ambos casos.
+                sl_label = "trailing_stop" if trade.get("trailing_applied") else "stop_loss"
                 if side == "short":
                     if exit_price >= sl_val:
-                        exit_reason = "stop_loss"
+                        exit_reason = sl_label
                     elif exit_price <= tp_val:
                         exit_reason = "take_profit_1"
                     else:
                         exit_reason = "closed_other"
                 else:
                     if exit_price <= sl_val:
-                        exit_reason = "stop_loss"
+                        exit_reason = sl_label
                     elif exit_price >= tp_val:
                         exit_reason = "take_profit_1"
                     else:

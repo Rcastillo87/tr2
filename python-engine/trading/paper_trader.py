@@ -252,13 +252,13 @@ class PaperTrader:
                 UPDATE paper_trades
                 SET exit_price = $1, pnl = $2, pnl_pct = $3, exit_reason = $4,
                     exit_time = $5, status = 'closed',
-                    max_profit_pct = $6, max_loss_pct = $7,
+                    max_profit_pct = $6, max_loss_pct = $7, commission = $8,
                     updated_at = now()
-                WHERE id = $8
+                WHERE id = $9
                 """,
                 exit_price, round(pnl, 4), round(pnl_pct, 4), exit_reason,
                 datetime.now(timezone.utc).replace(tzinfo=None),
-                round(max_profit_pct, 4), round(max_loss_pct, 4),
+                round(max_profit_pct, 4), round(max_loss_pct, 4), round(commission, 4),
                 trade['id']
             )
 

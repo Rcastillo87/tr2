@@ -280,7 +280,6 @@
                         <th class="py-2 px-3 text-left font-normal">Salida</th>
                         <th class="py-2 px-3 text-left font-normal">Estado</th>
                         <th class="py-2 px-3 text-left font-normal">Razón</th>
-                        <th class="py-2 px-3 text-left font-normal">Tamaño</th>
                         <th class="py-2 px-3 text-left font-normal">Comisión</th>
                         <th class="py-2 px-3 text-left font-normal">P&L neto</th>
                         <th class="py-2 px-3 text-left font-normal">Bal. antes</th>
@@ -329,7 +328,6 @@
                                 </span>
                             </td>
                             <td class="py-2 px-3">{{ str_replace('_', ' ', $trade->exit_reason ?? '—') }}</td>
-                            <td class="py-2 px-3">{{ $trade->size }}</td>
                             <td class="py-2 px-3">{{ $trade->commission ? number_format($trade->commission, 4) : '—' }}</td>
                             <td class="py-2 px-3 font-medium"
                                 style="color: {{ ($trade->net_pnl ?? $trade->pnl) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
