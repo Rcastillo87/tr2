@@ -224,7 +224,20 @@ class PaperTrader:
         # que backtest - sin esto, Paper subestimaba resultados igual que
         # el backtest lo hacia antes del fix de 2026-07-09.
         cfg_params = self._get_params_for(trade['strategy'], trade['symbol'])
-        commission_pct = cfg_params.get('commission_pct', 0.055) / 100
+        if 'commission_pct' in cfg_params:
+            commission_pct = cfg_params['commission_pct'] / 100
+        else:
+            # Config sin commission_pct guardado (creada antes de 2026-07-09,
+            # o manualmente sin pasar por un backtest reciente). Detectar
+            # broker por symbol en vez de asumir 0.055% (Bybit) a ciegas -
+            # evita cobrar comision de Bybit a un trade de IG.
+            async with self.pool.acquire() as conn:
+                broker_row = await conn.fetchrow(
+                    "SELECT broker FROM collector_configs WHERE symbol = $1 LIMIT 1",
+                    trade['symbol']
+                )
+            broker = broker_row['broker'] if broker_row else 'bybit'
+            commission_pct = (0.055 / 100) if broker == 'bybit' else 0.0
         commission = (entry_price * size + exit_price * size) * commission_pct
         pnl = gross_pnl - commission
 
