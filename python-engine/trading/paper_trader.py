@@ -509,9 +509,16 @@ class PaperTrader:
                 results[display_name] = f"{symbol}: ya tiene posicion abierta"
                 continue
 
-            if await self.risk_manager.is_paused(display_name, symbol):
-                results[display_name] = f"{symbol}: pausada por gestion de riesgo"
-                continue
+            # NOTA (2026-07-09): se quito el chequeo de is_paused() (pausas
+            # automaticas por volatilidad extrema, tabla risk_controls). Real
+            # Trading no tiene ningun filtro equivalente, y Paper existe para
+            # aproximar el comportamiento de Real lo mas fiel posible - un
+            # filtro exclusivo de Paper generaba divergencia silenciosa (una
+            # pausa automatica del 2026-07-06 bloqueo BTCUSDT en TODAS las
+            # estrategias de Paper durante 3 dias mientras Real seguia
+            # operando normal, sin que nadie lo supiera hasta revisar). El
+            # kill switch manual (is_kill_switch_active) SI se mantiene -
+            # es control explicito del usuario, no se dispara solo.
 
             df = await self.get_bars(symbol, interval)
             if len(df) < 64:
