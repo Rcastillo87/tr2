@@ -70,6 +70,13 @@ class BacktestingController extends Controller
 
         $symbols   = CollectorConfig::activeSymbols();
         $intervals = CollectorConfig::activeIntervals();
+        // Mapeo symbol -> broker, para que la vista sepa que comision aplicar
+        // automaticamente (Bybit cobra 0.055% taker fee explicito; IG no
+        // cobra comision separada, su costo va incorporado en el spread).
+        $symbolBrokerMap = CollectorConfig::query()
+            ->select('symbol', 'broker')
+            ->distinct()
+            ->pluck('broker', 'symbol');
 
         $paperConfigsForPreload = PaperStrategyConfig::active()
             ->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])
@@ -240,6 +247,7 @@ class BacktestingController extends Controller
             'strategies'             => self::STRATEGY_OPTIONS,
             'symbols'                => $symbols,
             'intervals'              => $intervals,
+            'symbolBrokerMap'        => $symbolBrokerMap,
             'paperConfigsForPreload' => $paperConfigsForPreload,
             'result'                 => $result,
             'implementParams'        => $implementParams,

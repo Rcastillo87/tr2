@@ -178,7 +178,7 @@
             </div>
             <div>
                 <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolo</label>
-                <select name="symbol" id="symbol" onchange="loadParams(); loadDataRange();"
+                <select name="symbol" id="symbol" onchange="loadParams(); loadDataRange(); updateCommission();"
                         @if($isEditing) disabled @endif
                         class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
                         style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary); @if($isEditing) opacity:0.6;cursor:not-allowed; @endif">
@@ -216,7 +216,6 @@
                     ['tp4_pct',            'Take Profit 4 %', '',      '0.1'],
                     ['max_duration',       'Duración (velas)','24',    '1'],
                     ['risk_per_trade_pct', 'Riesgo/trade %',  '1.0',   '0.1'],
-                    ['commission_pct',     'Comisión %',      '0.055', '0.001'],
                 ] as [$name, $label, $default, $step])
                     <div>
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">{{ $label }}</label>
@@ -227,6 +226,15 @@
                                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
                 @endforeach
+                <div>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión %</label>
+                    <div id="commissionDisplay" class="w-full rounded-lg px-3 py-2 text-sm border font-mono"
+                         style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-secondary);">
+                        0.055%
+                    </div>
+                    <input type="hidden" name="commission_pct" id="commission_pct" value="0.055">
+                    <p class="text-[9px] mt-1" style="color:var(--color-text-muted);">Automática según broker del símbolo</p>
+                </div>
             </div>
             <p class="text-[10px] mt-2" style="color:var(--color-text-muted);">TP2-4 opcionales — deja en blanco los que no uses. El motor cierra en el nivel más favorable (TP4 > TP3 > TP2 > TP1).</p>
         </div>
@@ -1087,5 +1095,18 @@ function confirmImplement() {
         }
     });
 }
+// Mapeo symbol -> broker para decidir la comision automatica.
+// Bybit: 0.055% (taker fee explicito). IG y cualquier otro broker no-bybit:
+// 0% (su costo va incorporado en el spread, no como comision separada).
+const SYMBOL_BROKER_MAP = @json($symbolBrokerMap);
+
+function updateCommission() {
+    const symbol = document.getElementById('symbol').value;
+    const broker = SYMBOL_BROKER_MAP[symbol] || 'bybit';
+    const commissionPct = (broker === 'bybit') ? 0.055 : 0.0;
+    document.getElementById('commissionDisplay').textContent = commissionPct.toFixed(3) + '%';
+    document.getElementById('commission_pct').value = commissionPct;
+}
+document.addEventListener('DOMContentLoaded', updateCommission);
 </script>
 @endpush
