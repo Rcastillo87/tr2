@@ -384,10 +384,15 @@ class PaperTrader:
                         be_activated = True
                         results["be_activated"] += 1
 
+                # NOTA (2026-07-09): distinguir si el SL que disparo el cierre
+                # es el original o uno ya movido por el trailing (mismo fix
+                # aplicado en real_trader.py) - trailing_applied refleja si
+                # el trailing ya actuo en una vela anterior de este mismo loop.
+                sl_label = 'trailing_stop' if trailing_applied else 'stop_loss'
                 if side == 'long' and low <= sl:
-                    exit_price, exit_reason = sl, 'stop_loss'
+                    exit_price, exit_reason = sl, sl_label
                 elif side == 'short' and high >= sl:
-                    exit_price, exit_reason = sl, 'stop_loss'
+                    exit_price, exit_reason = sl, sl_label
 
                 if exit_price is None and getattr(strategy_instance, 'trailing_mode', None) is not None:
                     ref_price = high if side == 'long' else low

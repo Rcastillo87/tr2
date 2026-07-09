@@ -284,6 +284,7 @@
                         <th class="py-2 px-3 text-left font-normal">P&L neto</th>
                         <th class="py-2 px-3 text-left font-normal">Bal. antes</th>
                         <th class="py-2 px-3 text-left font-normal">Bal. después</th>
+                        <th class="py-2 px-3 text-left font-normal">Duración</th>
                         <th class="py-2 px-3 text-left font-normal">Cuenta</th>
                     </tr>
                 </thead>
@@ -336,6 +337,18 @@
                             </td>
                             <td class="py-2 px-3">{{ $trade->balance_before ? number_format($trade->balance_before, 2) : '—' }}</td>
                             <td class="py-2 px-3">{{ $trade->balance_after ? number_format($trade->balance_after, 2) : '—' }}</td>
+                            <td class="py-2 px-3">
+                                @if ($trade->exit_time && $trade->entry_time)
+                                    @php
+                                        $mins = \Carbon\Carbon::parse($trade->entry_time)->diffInMinutes(\Carbon\Carbon::parse($trade->exit_time));
+                                        $h = intdiv($mins, 60);
+                                        $m = $mins % 60;
+                                    @endphp
+                                    {{ $h > 0 ? $h . 'h ' : '' }}{{ $m }}m
+                                @else
+                                    —
+                                @endif
+                            </td>
                             <td class="py-2 px-3">
                                 @php
                                     $acct2 = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);

@@ -222,9 +222,7 @@
                         <th class="py-2 px-3 text-left font-normal">Razón</th>
                         <th class="py-2 px-3 text-left font-normal">Comisión</th>
                         <th class="py-2 px-3 text-left font-normal">P&L %</th>
-                        <th class="py-2 px-3 text-left font-normal">Hora entrada</th>
-                        <th class="py-2 px-3 text-left font-normal">Hora salida</th>
-                                <th class="py-2 px-3 text-left font-normal">Duración</th>
+                        <th class="py-2 px-3 text-left font-normal">Duración</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -239,8 +237,18 @@
                                     {{ strtoupper($trade->side) }}
                                 </span>
                             </td>
-                            <td class="py-2 px-3">{{ number_format($trade->entry_price, 2) }}</td>
-                            <td class="py-2 px-3">{{ number_format($trade->exit_price, 2) }}</td>
+                            <td class="py-2 px-3">
+                                {{ number_format($trade->entry_price, 2) }}<br>
+                                <span style="color:var(--color-text-muted);">
+                                    {{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}
+                                </span>
+                            </td>
+                            <td class="py-2 px-3">
+                                {{ number_format($trade->exit_price, 2) }}<br>
+                                <span style="color:var(--color-text-muted);">
+                                    {{ $trade->exit_time ? \Carbon\Carbon::parse($trade->exit_time)->timezone('America/Bogota')->format('d/m H:i') : '—' }}
+                                </span>
+                            </td>
                             <td class="py-2 px-3">
                                 @php
                                     $histStatusColors = [
@@ -259,8 +267,6 @@
                                 style="color: {{ $trade->pnl_pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                                 {{ $trade->pnl_pct >= 0 ? '+' : '' }}{{ number_format($trade->pnl_pct, 2) }}%
                             </td>
-                            <td class="py-2 px-3">{{ \Carbon\Carbon::parse($trade->entry_time)->timezone('America/Bogota')->format('d/m H:i') }}</td>
-                            <td class="py-2 px-3">{{ $trade->exit_time ? \Carbon\Carbon::parse($trade->exit_time)->timezone('America/Bogota')->format('d/m H:i') : '—' }}</td>
                             <td class="py-2 px-3">
                                 @if ($trade->exit_time && $trade->entry_time)
                                     @php
