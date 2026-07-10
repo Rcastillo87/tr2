@@ -249,6 +249,24 @@ async def run_backtest(request: BacktestRequest):
         df       = await load_ohlcv(pool, request.symbol, request.interval,
                                      request.start_date, request.end_date)
         strategy = load_strategy(request)
+
+        # Datos de 1 min para simulacion de salida granular (2026-07-09):
+        # solo se cargan cuando aplican (interval >= H1 y trailing activo),
+        # para no pagar el costo de la consulta extra en el resto de casos.
+        INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
+        minute_df = None
+        if (request.trailing_mode is not None
+                and INTERVAL_MINUTES.get(request.interval, 0) >= 60):
+            try:
+                minute_df = await load_ohlcv(pool, request.symbol, '1',
+                                              request.start_date, request.end_date)
+            except ValueError:
+                logger.warning(
+                    f"Sin datos de 1 min para {request.symbol} — la simulacion "
+                    f"de trailing cae de vuelta al comportamiento por vela grande"
+                )
+                minute_df = None
+
         await pool.close()
 
         if request.walk_forward:
@@ -259,6 +277,7 @@ async def run_backtest(request: BacktestRequest):
                 risk_per_trade_pct=request.risk_per_trade_pct,
                 n_windows=request.n_windows,
                 train_pct=request.train_pct,
+                minute_df=minute_df,
             )
             result = validator.run()
             all_trades = []
@@ -275,6 +294,7 @@ async def run_backtest(request: BacktestRequest):
                     initial_balance=request.initial_balance,
                     risk_per_trade_pct=request.risk_per_trade_pct,
                     regime_data=_regime_data,
+                    minute_df=minute_df,
                 )
                 full_result = engine_full.run()
                 result['monthly_breakdown'] = build_monthly_breakdown(
@@ -293,6 +313,7 @@ async def run_backtest(request: BacktestRequest):
                 strategy=strategy, df=df,
                 initial_balance=request.initial_balance,
                 risk_per_trade_pct=request.risk_per_trade_pct,
+                minute_df=minute_df,
             )
             result = engine.run()
             if request.monthly_breakdown:

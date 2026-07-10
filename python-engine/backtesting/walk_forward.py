@@ -23,6 +23,7 @@ class WalkForwardValidator:
         train_pct: float = 0.7,
         n_windows: int = 5,
         regime_data: dict | None = None,
+        minute_df: pd.DataFrame | None = None,
     ):
         """
         strategy:           instancia de estrategia hija de BaseStrategy
@@ -40,6 +41,7 @@ class WalkForwardValidator:
         self.train_pct           = train_pct
         self.n_windows           = n_windows
         self.regime_data         = regime_data or {}
+        self.minute_df           = minute_df
 
     def _split_windows(self) -> list[dict]:
         """Divide el DataFrame en N ventanas walk-forward."""
@@ -123,6 +125,7 @@ class WalkForwardValidator:
                 initial_balance=self.initial_balance,
                 risk_per_trade_pct=self.risk_per_trade_pct,
                 regime_data=regime_data,
+                minute_df=self.minute_df,
             )
 
             result = engine.run()

@@ -7,7 +7,7 @@ Proteccion por volatilidad, Cierre por tiempo, Filtro de régimen.
 
 import pandas as pd
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from backtesting.metrics import calculate_metrics
 from backtesting.strategies.base_strategy import BaseStrategy
 from indicators.regime_indicators import calculate_atr
@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 class BacktestEngine:
 
+    # Duracion en minutos de cada intervalo soportado - usado para decidir
+    # si aplica la simulacion de salida granular (1 min) y para acotar el
+    # rango de velas de 1 min que corresponden a cada vela de la estrategia.
+    INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
+
     def __init__(
         self,
         strategy: BaseStrategy,
@@ -24,6 +29,7 @@ class BacktestEngine:
         initial_balance: float = 10000.0,
         risk_per_trade_pct: float = 1.0,
         regime_data: dict | None = None,
+        minute_df: pd.DataFrame | None = None,
     ):
         self.strategy            = strategy
         self.df                  = df.copy()
@@ -32,6 +38,26 @@ class BacktestEngine:
         self.risk_per_trade_pct  = risk_per_trade_pct
         self.regime_data         = regime_data or {}
         self.trades              = []
+
+        # Simulacion de salida granular (2026-07-09): para intervalos >= H1
+        # con trailing activo, el SL/BE/trailing/TP se evalua vela a vela de
+        # 1 minuto dentro de cada vela de la estrategia, en vez de una sola
+        # vez con el high/low agregado de toda la vela grande. Sin esto, el
+        # backtest le da al trailing hasta 1 vela COMPLETA de retraso (ver
+        # comentario historico mas abajo) - mucho mas permisivo que Paper
+        # (que ya monitorea a 1 min) y que el trailing nativo de Bybit en
+        # real (reacciona tick a tick). Resultado: backtest sistematicamente
+        # mas optimista que produccion para estrategias con trailing en H1+.
+        self.minute_df = None
+        if minute_df is not None and not minute_df.empty:
+            self.minute_df = minute_df.sort_values('time').reset_index(drop=True)
+
+        interval_minutes = self.INTERVAL_MINUTES.get(getattr(strategy, 'interval', None), 0)
+        self.use_minute_exit = (
+            self.minute_df is not None
+            and getattr(strategy, 'trailing_mode', None) is not None
+            and interval_minutes >= 60
+        )
 
     def _get_regime_at(self, timestamp) -> str:
         if not self.regime_data:
@@ -44,6 +70,69 @@ class BacktestEngine:
         if sl_distance == 0:
             return 0.0
         return round(risk_amount / sl_distance, 6)
+
+    def _simulate_exit_minute_bars(self, position: dict, row_time, interval_minutes: int) -> tuple[float | None, str | None, bool]:
+        """
+        Recorre las velas de 1 minuto correspondientes a la vela de la
+        estrategia (row_time, row_time + interval_minutes) evaluando BE, SL,
+        trailing y TP en orden cronologico real - mismo criterio y orden que
+        paper_trader.py's monitor_open_trades(). Actualiza position in-place
+        (sl, be_activated, trailing_applied). Devuelve (exit_price, exit_reason)
+        o (None, None) si no se cerro dentro de esta vela.
+
+        NOTA: si no hay velas de 1 min en el rango (hueco de datos), no hace
+        nada aca - el caller cae de vuelta al chequeo con el high/low de la
+        vela grande como fallback.
+        """
+        window_end = row_time + timedelta(minutes=interval_minutes)
+        mask = (self.minute_df['time'] >= row_time) & (self.minute_df['time'] < window_end)
+        minute_bars = self.minute_df.loc[mask]
+        if minute_bars.empty:
+            return None, None, False
+
+        for _, mbar in minute_bars.iterrows():
+            high = float(mbar['high'])
+            low  = float(mbar['low'])
+
+            if not position['be_activated']:
+                be_level = position['be_level']
+                if position['side'] == 'long' and high >= be_level:
+                    position['sl'] = position['entry_price']
+                    position['be_activated'] = True
+                elif position['side'] == 'short' and low <= be_level:
+                    position['sl'] = position['entry_price']
+                    position['be_activated'] = True
+
+            # SL - etiqueta segun si el trailing ya estaba activo ANTES de
+            # este chequeo (mismo criterio que el fix de 2026-07-09 en
+            # paper_trader.py/real_trader.py: distinguir stop_loss original
+            # de trailing_stop, no ambos como 'stop_loss' generico).
+            sl_label = 'trailing_stop' if position.get('trailing_applied') else 'stop_loss'
+            if position['side'] == 'long' and low <= position['sl']:
+                return position['sl'], sl_label, True
+            elif position['side'] == 'short' and high >= position['sl']:
+                return position['sl'], sl_label, True
+
+            if hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
+                ref_price = high if position['side'] == 'long' else low
+                new_sl = self.strategy.calculate_trailing_sl(
+                    position['entry_price'], position['side'], ref_price, position['sl']
+                )
+                if new_sl != position['sl']:
+                    position['sl'] = new_sl
+                    position['trailing_applied'] = True
+
+            for key, label in [('tp4', 'take_profit_4'), ('tp3', 'take_profit_3'),
+                                ('tp2', 'take_profit_2'), ('tp1', 'take_profit_1')]:
+                level = position.get(key)
+                if level is None:
+                    continue
+                if position['side'] == 'long' and high >= level:
+                    return level, label, True
+                elif position['side'] == 'short' and low <= level:
+                    return level, label, True
+
+        return None, None, True
 
     def _get_active_tp(self, position: dict) -> tuple[float | None, str | None]:
         """
@@ -85,39 +174,57 @@ class BacktestEngine:
                 exit_price  = None
                 exit_reason = None
 
-                # Break-even: mover SL a entrada si precio llegó al nivel BE
-                if not position['be_activated']:
-                    be_level = position['be_level']
-                    if position['side'] == 'long' and high >= be_level:
-                        position['sl'] = position['entry_price']
-                        position['be_activated'] = True
-                    elif position['side'] == 'short' and low <= be_level:
-                        position['sl'] = position['entry_price']
-                        position['be_activated'] = True
+                # Simulacion granular (1 min) para BE/SL/trailing, cuando
+                # aplica (interval >= H1, trailing activo, hay minute_df
+                # disponible). Reemplaza el chequeo con el high/low de la
+                # vela grande - actualiza position['sl']/be_activated/
+                # trailing_applied in-place y puede devolver un cierre ya
+                # resuelto (incluye su propio chequeo de TP internamente).
+                used_minute_bars = False
+                if self.use_minute_exit:
+                    row_time = row.get('time', None)
+                    if row_time is not None:
+                        interval_minutes = self.INTERVAL_MINUTES.get(self.strategy.interval, 60)
+                        exit_price, exit_reason, used_minute_bars = self._simulate_exit_minute_bars(
+                            position, row_time, interval_minutes
+                        )
 
-                # Stop Loss — se evalúa con el SL vigente ANTES de aplicar el
-                # trailing de esta vela. Evita look-ahead bias: no podemos
-                # asumir que el high (usado para mover el trailing) ocurrió
-                # antes que el low (usado para disparar el SL) dentro de la
-                # misma vela OHLC.
-                if position['side'] == 'long' and low <= position['sl']:
-                    exit_price  = position['sl']
-                    exit_reason = 'stop_loss'
-                elif position['side'] == 'short' and high >= position['sl']:
-                    exit_price  = position['sl']
-                    exit_reason = 'stop_loss'
+                if not used_minute_bars:
+                    # Fallback al comportamiento original: sin minute_df para
+                    # esta vela (hueco de datos), sin trailing, o interval < H1.
+                    # Break-even: mover SL a entrada si precio llegó al nivel BE
+                    if not position['be_activated']:
+                        be_level = position['be_level']
+                        if position['side'] == 'long' and high >= be_level:
+                            position['sl'] = position['entry_price']
+                            position['be_activated'] = True
+                        elif position['side'] == 'short' and low <= be_level:
+                            position['sl'] = position['entry_price']
+                            position['be_activated'] = True
 
-                # Trailing Stop (independiente del break-even, puede moverlo mas)
-                # Solo se aplica si la posición no se cerró por SL en esta vela;
-                # su efecto rige recién desde la vela siguiente.
-                if exit_price is None and hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
-                    ref_price = high if position['side'] == 'long' else low
-                    new_sl = self.strategy.calculate_trailing_sl(
-                        position['entry_price'], position['side'], ref_price, position['sl']
-                    )
-                    if new_sl != position['sl']:
-                        position['sl'] = new_sl
-                        position['trailing_applied'] = True
+                    # Stop Loss — se evalúa con el SL vigente ANTES de aplicar el
+                    # trailing de esta vela. Evita look-ahead bias: no podemos
+                    # asumir que el high (usado para mover el trailing) ocurrió
+                    # antes que el low (usado para disparar el SL) dentro de la
+                    # misma vela OHLC.
+                    if position['side'] == 'long' and low <= position['sl']:
+                        exit_price  = position['sl']
+                        exit_reason = 'stop_loss'
+                    elif position['side'] == 'short' and high >= position['sl']:
+                        exit_price  = position['sl']
+                        exit_reason = 'stop_loss'
+
+                    # Trailing Stop (independiente del break-even, puede moverlo mas)
+                    # Solo se aplica si la posición no se cerró por SL en esta vela;
+                    # su efecto rige recién desde la vela siguiente.
+                    if exit_price is None and hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
+                        ref_price = high if position['side'] == 'long' else low
+                        new_sl = self.strategy.calculate_trailing_sl(
+                            position['entry_price'], position['side'], ref_price, position['sl']
+                        )
+                        if new_sl != position['sl']:
+                            position['sl'] = new_sl
+                            position['trailing_applied'] = True
 
                 # Proteccion por volatilidad
                 if exit_price is None and needs_atr and hasattr(self.strategy, 'check_volatility_protection'):
