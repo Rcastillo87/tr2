@@ -50,7 +50,12 @@ class BacktestEngine:
         # mas optimista que produccion para estrategias con trailing en H1+.
         self.minute_df = None
         if minute_df is not None and not minute_df.empty:
-            self.minute_df = minute_df.sort_values('time').reset_index(drop=True)
+            # Indexado por tiempo (DatetimeIndex ordenado) en vez de solo
+            # ordenar + reset_index - permite busqueda binaria (searchsorted,
+            # O(log n)) en vez de escanear el dataset completo con una
+            # mascara booleana en cada vela con posicion abierta (era el
+            # cuello de botella real: O(n) por vela, ~1M filas en 2 años).
+            self.minute_df = minute_df.sort_values('time').set_index('time')
 
         interval_minutes = self.INTERVAL_MINUTES.get(getattr(strategy, 'interval', None), 0)
         self.use_minute_exit = (
@@ -85,8 +90,9 @@ class BacktestEngine:
         vela grande como fallback.
         """
         window_end = row_time + timedelta(minutes=interval_minutes)
-        mask = (self.minute_df['time'] >= row_time) & (self.minute_df['time'] < window_end)
-        minute_bars = self.minute_df.loc[mask]
+        start_idx = self.minute_df.index.searchsorted(row_time, side='left')
+        end_idx   = self.minute_df.index.searchsorted(window_end, side='left')
+        minute_bars = self.minute_df.iloc[start_idx:end_idx]
         if minute_bars.empty:
             return None, None, False
 
