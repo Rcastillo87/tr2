@@ -10,6 +10,7 @@ import pandas as pd
 import logging
 import os
 import json
+import importlib
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -24,6 +25,17 @@ logger = logging.getLogger(__name__)
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
 VIRTUAL_BALANCE = 10000.0
+
+
+# Mismo mapa que STRATEGY_CLASS_MAP en api/v1/paper_trading.py - duplicado
+# aca (no importado) para evitar import circular (paper_trading.py importa
+# PaperTrader). Usado solo como fallback cuando un trade abierto pertenece
+# a una estrategia que ya no esta activa (ver _get_strategy_instance_for_trade).
+STRATEGY_CLASS_MAP = {
+    'VwapStrategy':          ('backtesting.strategies.vwap_strategy',  'VwapStrategy'),
+    'MeanReversionStrategy': ('backtesting.strategies.mean_reversion',  'MeanReversionStrategy'),
+    'EmaDonchianStrategy':   ('backtesting.strategies.ema_donchian',    'EmaDonchianStrategy'),
+}
 
 
 class PaperTrader:
@@ -310,6 +322,57 @@ class PaperTrader:
     # Monitor: revisar posiciones abiertas
     # ─────────────────────────────────────────────
 
+    async def _get_strategy_instance_for_trade(self, trade: dict, strategy_instances: dict):
+        """
+        Devuelve la instancia de estrategia correcta para este trade abierto.
+        Si su config sigue activa, ya esta en strategy_instances (fast path).
+        Si no (se desactivo o se edito mientras el trade estaba abierto),
+        busca la config REAL de este trade directo en la DB (activa o no) -
+        antes de este fix, el fallback usaba 'la primera estrategia de la
+        lista' sin ninguna relacion con el trade, aplicando max_duration/
+        sl_pct/trailing de una estrategia completamente ajena. Cachea el
+        resultado en strategy_instances para no repetir la consulta si hay
+        varios trades abiertos de la misma estrategia ya inactiva.
+        """
+        display_name = trade['strategy']
+        if display_name in strategy_instances:
+            return strategy_instances[display_name]
+
+        logger.warning(
+            f"[PAPER] Trade #{trade['id']} pertenece a '{display_name}', que ya "
+            f"no esta activa - cargando su config original directo de la DB "
+            f"en vez de usar una estrategia ajena por error."
+        )
+        async with self.pool.acquire() as conn:
+            cfg = await conn.fetchrow(
+                "SELECT strategy_class, symbol, interval, params FROM paper_strategy_configs WHERE display_name = $1",
+                display_name
+            )
+        if not cfg:
+            logger.error(
+                f"[PAPER] Trade #{trade['id']} '{display_name}': config no "
+                f"encontrada en absoluto (borrada?) - usando defaults genericos "
+                f"como ultimo recurso, puede no reflejar la config real."
+            )
+            fallback = list(strategy_instances.values())[0] if strategy_instances else None
+            return fallback
+
+        class_name = cfg['strategy_class']
+        if class_name not in STRATEGY_CLASS_MAP:
+            logger.error(f"[PAPER] Trade #{trade['id']}: clase '{class_name}' no registrada")
+            return list(strategy_instances.values())[0] if strategy_instances else None
+
+        module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
+        module = importlib.import_module(module_path)
+        cls    = getattr(module, cls_name)
+        params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
+        params['symbol']   = cfg['symbol']
+        params['interval'] = cfg['interval']
+
+        instance = cls(params)
+        strategy_instances[display_name] = instance
+        return instance
+
     async def monitor_open_trades(self) -> dict:
         """
         Evalua cada trade abierto recorriendo, vela a vela, las velas de 1min
@@ -335,8 +398,10 @@ class PaperTrader:
             results["checked"] += 1
             symbol = trade['symbol']
             side   = trade['side']
-            strategy_instance = strategy_instances.get(trade['strategy'],
-                                list(strategy_instances.values())[0])
+            strategy_instance = await self._get_strategy_instance_for_trade(trade, strategy_instances)
+            if strategy_instance is None:
+                logger.error(f"[PAPER] Trade #{trade['id']}: no se pudo determinar la estrategia, saltando este ciclo")
+                continue
             sl       = float(trade['sl'])
             tp       = float(trade['tp'])
             tp2      = float(trade['tp2']) if trade.get('tp2') is not None else None

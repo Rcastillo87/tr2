@@ -224,6 +224,7 @@ async function loadConfigAndRun(event, configId) {
             blocked_days_active:  data.params.blocked_days?.length ? '1' : '',
             trailing_mode:        data.params.trailing_mode ?? 'none',
             trailing_distance_pct: data.params.trailing_distance_pct ?? '',
+            trailing_activation_buffer_pct: data.params.trailing_activation_buffer_pct ?? '',
             volatility_protection_mode: data.params.volatility_protection_mode ?? 'none',
             volatility_atr_multiplier:  data.params.volatility_atr_multiplier ?? '',
             preload_from:       data.strategy_name,
