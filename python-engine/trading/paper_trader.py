@@ -481,21 +481,12 @@ class PaperTrader:
                         elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
                             sl = vol_check['new_sl']
 
+                # Solo TP1 — mismo criterio que engine.py y real_trader.py
                 if exit_price is None:
-                    for level, label in [(tp4, 'take_profit_4'), (tp3, 'take_profit_3'), (tp2, 'take_profit_2')]:
-                        if level is None:
-                            continue
-                        if side == 'long' and high >= level:
-                            exit_price, exit_reason = level, label
-                            break
-                        elif side == 'short' and low <= level:
-                            exit_price, exit_reason = level, label
-                            break
-                    if exit_price is None:
-                        if side == 'long' and high >= tp:
-                            exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
-                        elif side == 'short' and low <= tp:
-                            exit_price, exit_reason = tp, 'take_profit' if tp2 is None else 'take_profit_1'
+                    if side == 'long' and high >= tp:
+                        exit_price, exit_reason = tp, 'take_profit_1'
+                    elif side == 'short' and low <= tp:
+                        exit_price, exit_reason = tp, 'take_profit_1'
 
                 fav_price = high if side == 'long' else low
                 adv_price = low if side == 'long' else high

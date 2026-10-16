@@ -136,15 +136,17 @@ class BacktestEngine:
                     position['sl'] = new_sl
                     position['trailing_applied'] = True
 
-            for key, label in [('tp4', 'take_profit_4'), ('tp3', 'take_profit_3'),
-                                ('tp2', 'take_profit_2'), ('tp1', 'take_profit_1')]:
-                level = position.get(key)
-                if level is None:
-                    continue
+            # Solo TP1 — coincide con el comportamiento real de Bybit hoy:
+            # tpslMode='Full' con TP1 como takeProfit cierra el 100% en TP1,
+            # los TP2/3/4 nunca se alcanzan. Antes el backtest iteraba TP4→TP1
+            # y cerraba al TP MÁS ALTO alcanzado por el high de la vela,
+            # asumiendo que el trade aguantaba sin retroceder (lookahead intrabar).
+            level = position.get('tp1')
+            if level is not None:
                 if position['side'] == 'long' and high >= level:
-                    return level, label, True
+                    return level, 'take_profit_1', True
                 elif position['side'] == 'short' and low <= level:
-                    return level, label, True
+                    return level, 'take_profit_1', True
 
         return None, None, True
 
@@ -255,19 +257,14 @@ class BacktestEngine:
                     elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
                         position['sl'] = vol_check['new_sl']
 
-                # Take Profit — evaluar niveles de mayor a menor prioridad
+                # Take Profit — solo TP1 (ver comentario en _simulate_exit_minute_bars)
                 if exit_price is None:
-                    for key, label in [('tp4', 'take_profit_4'), ('tp3', 'take_profit_3'),
-                                        ('tp2', 'take_profit_2'), ('tp1', 'take_profit_1')]:
-                        level = position.get(key)
-                        if level is None:
-                            continue
+                    level = position.get('tp1')
+                    if level is not None:
                         if position['side'] == 'long' and high >= level:
-                            exit_price, exit_reason = level, label
-                            break
+                            exit_price, exit_reason = level, 'take_profit_1'
                         elif position['side'] == 'short' and low <= level:
-                            exit_price, exit_reason = level, label
-                            break
+                            exit_price, exit_reason = level, 'take_profit_1'
 
                 # Cierre por tiempo
                 if exit_price is None and bars_open >= self.strategy.max_duration:
