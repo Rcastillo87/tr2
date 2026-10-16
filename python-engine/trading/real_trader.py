@@ -878,7 +878,14 @@ class RealTrader:
         logger.debug(f"[REAL] Risk calculado: {risk_pct}% (override={risk_override}) para {sub.get('symbol')}")
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_signal_price - sl)
-        size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0
+        raw_size    = (risk_amount / sl_distance) if sl_distance > 0 else 0
+        _cfg = sub.get('config_params') or {}
+        if isinstance(_cfg, str):
+            import json as _j
+            _cfg = _j.loads(_cfg)
+        max_leverage = float(_cfg.get('max_leverage', 1.0))
+        max_size     = (balance * max_leverage) / entry_signal_price
+        size         = round(min(raw_size, max_size), 6)
 
         if size <= 0:
             logger.warning(f"[REAL] Tamaño calculado <= 0 para {symbol}")

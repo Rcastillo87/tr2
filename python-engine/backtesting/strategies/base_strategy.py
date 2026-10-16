@@ -83,6 +83,8 @@ class BaseStrategy(ABC):
         # (BYBIT_TAKER_FEE en real_trader.py) - el motor de backtest no
         # descontaba esto en absoluto, inflando artificialmente resultados.
         self.commission_pct = params.get('commission_pct', 0.055)
+        # Tope de apalancamiento implicito — 1.0 = sin apalancamiento (nocional <= balance)
+        self.max_leverage = params.get('max_leverage', 1.0)
         self.trailing_distance_pct = params.get('trailing_distance_pct', 1.0)
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
 

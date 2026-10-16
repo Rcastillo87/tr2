@@ -36,6 +36,7 @@ class BacktestEngine:
         self.initial_balance     = initial_balance
         self.balance             = initial_balance
         self.risk_per_trade_pct  = risk_per_trade_pct
+        self.max_leverage        = getattr(strategy, 'max_leverage', 1.0)
         self.regime_data         = regime_data or {}
         self.trades              = []
 
@@ -74,7 +75,14 @@ class BacktestEngine:
         sl_distance = abs(entry_price - sl_price)
         if sl_distance == 0:
             return 0.0
-        return round(risk_amount / sl_distance, 6)
+        raw_size = risk_amount / sl_distance
+        # Tope de nocional: la posicion no puede exceder balance * max_leverage.
+        # Sin este tope, un SL ajustado (0.8%) con riesgo 2% implica 2.5x de
+        # apalancamiento implicito no declarado, imposible de replicar en real.
+        max_leverage = getattr(self, 'max_leverage', 1.0)
+        max_size_by_notional = (self.balance * max_leverage) / entry_price
+        size = min(raw_size, max_size_by_notional)
+        return round(size, 6)
 
     def _simulate_exit_minute_bars(self, position: dict, row_time, interval_minutes: int) -> tuple[float | None, str | None, bool]:
         """

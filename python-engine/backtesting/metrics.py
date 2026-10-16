@@ -49,12 +49,24 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
 
     returns = equity_with_start.pct_change().dropna()
 
-    # Sharpe Ratio (anualizado asumiendo ~252 periodos de "trading" — aquí por trade)
+    # Sharpe con retornos PERIODICOS (diarios), no por trade.
+    # Anualizar por trade con sqrt(252) es incorrecto: asume un trade por dia
+    # habil, lo cual infla el Sharpe ~2-3x cuando hay pocos trades por anio.
     sharpe_ratio = 0.0
-    returns_std = returns.std()
-    if returns_std > 1e-8:  # evita división por valores casi-cero
-        sharpe_ratio = (returns.mean() / returns_std) * np.sqrt(252)
-        sharpe_ratio = float(np.clip(sharpe_ratio, -100, 100))  # limita outliers absurdos
+    try:
+        if 'exit_time' in df.columns and len(df) >= 2:
+            df_s = df.copy()
+            df_s['exit_dt'] = pd.to_datetime(df_s['exit_time'])
+            daily_pnl = df_s.groupby(df_s['exit_dt'].dt.date)['pnl'].sum()
+            if len(daily_pnl) >= 2:
+                daily_equity = initial_balance + daily_pnl.cumsum()
+                daily_returns = daily_equity.pct_change().dropna()
+                std = daily_returns.std()
+                if std > 1e-8:
+                    sharpe_ratio = (daily_returns.mean() / std) * np.sqrt(365)
+                    sharpe_ratio = float(np.clip(sharpe_ratio, -100, 100))
+    except Exception:
+        sharpe_ratio = 0.0
 
     # Max Drawdown
     running_max = equity_with_start.cummax()

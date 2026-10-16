@@ -191,7 +191,10 @@ class PaperTrader:
                    self.default_params.get('risk_per_trade_pct', 1.0))
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
         sl_distance = abs(entry_price - sl)
-        size        = round(risk_amount / sl_distance, 6) if sl_distance > 0 else 0.0
+        raw_size    = (risk_amount / sl_distance) if sl_distance > 0 else 0.0
+        max_leverage = float(cfg_params.get('max_leverage', 1.0))
+        max_size    = (VIRTUAL_BALANCE * max_leverage) / entry_price
+        size        = round(min(raw_size, max_size), 6)
 
         if size <= 0:
             return

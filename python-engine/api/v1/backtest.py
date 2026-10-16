@@ -66,6 +66,7 @@ class BacktestRequest(BaseModel):
     trailing_distance_pct:  float                = 1.0
     trailing_activation_buffer_pct: float         = 0.0
     commission_pct:         float                = 0.055
+    max_leverage:           float                = 1.0
     trailing_steps:         Optional[list]       = None  # [[gain_pct, new_sl_pct], ...]
 
     # Proteccion por volatilidad
@@ -148,6 +149,7 @@ def load_strategy(request: BacktestRequest):
         "trailing_distance_pct":  request.trailing_distance_pct,
         "trailing_activation_buffer_pct": request.trailing_activation_buffer_pct,
         "commission_pct":         request.commission_pct,
+        "max_leverage":           request.max_leverage,
         "trailing_steps":         request.trailing_steps or [],
 
         "volatility_protection_mode": request.volatility_protection_mode,
