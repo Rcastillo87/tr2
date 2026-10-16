@@ -253,19 +253,25 @@ async def run_backtest(request: BacktestRequest):
         strategy = load_strategy(request)
 
         # Datos de 1 min para simulacion de salida granular (2026-07-09):
-        # solo se cargan cuando aplican (interval >= H1 y trailing activo),
-        # para no pagar el costo de la consulta extra en el resto de casos.
+        # Se cargan SIEMPRE que el interval sea >= H1 y existan datos de 1 min,
+        # no solo cuando hay trailing. Sin minute_df, el engine cae en el
+        # fallback high/low de vela grande con "SL primero" — asume que el low
+        # de la vela 2H precede al high, lo cual es falso en el 50% de los casos
+        # y hace que el backtest cierre por SL cuando paper/real (que si usan
+        # minuto a minuto) cierran por TP. Divergencia sistematica observada en
+        # comparacion paper-vs-backtest: 2026-09-22 tp=+161% en paper vs
+        # sl=-97% en backtest sobre el mismo entry. Cargar siempre alinea los
+        # 3 motores (backtest, paper, real) al mismo nivel de granularidad.
         INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
         minute_df = None
-        if (request.trailing_mode is not None
-                and INTERVAL_MINUTES.get(request.interval, 0) >= 60):
+        if INTERVAL_MINUTES.get(request.interval, 0) >= 60:
             try:
                 minute_df = await load_ohlcv(pool, request.symbol, '1',
                                               request.start_date, request.end_date)
             except ValueError:
                 logger.warning(
-                    f"Sin datos de 1 min para {request.symbol} — la simulacion "
-                    f"de trailing cae de vuelta al comportamiento por vela grande"
+                    f"Sin datos de 1 min para {request.symbol} — cayendo a "
+                    f"high/low de vela grande con SL-first (menos preciso)"
                 )
                 minute_df = None
 

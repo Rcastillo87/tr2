@@ -59,9 +59,15 @@ class BacktestEngine:
             self.minute_df = minute_df.sort_values('time').set_index('time')
 
         interval_minutes = self.INTERVAL_MINUTES.get(getattr(strategy, 'interval', None), 0)
+        # minute_exit se activa SIEMPRE que haya minute_df y interval >= H1,
+        # no solo con trailing. Antes la condicion `trailing_mode is not None`
+        # hacia que estrategias sin trailing (como VWAP Tendencia) cayeran al
+        # fallback high/low de vela grande con SL-first, asumiendo que el low
+        # precede al high — divergencia sistematica contra paper/real que
+        # recorren minuto a minuto. Confirmado en comparacion directa:
+        # 2026-09-22 paper tp=+161% vs backtest sl=-97% mismo entry.
         self.use_minute_exit = (
             self.minute_df is not None
-            and getattr(strategy, 'trailing_mode', None) is not None
             and interval_minutes >= 60
         )
 

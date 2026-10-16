@@ -199,18 +199,27 @@ class PaperTrader:
         if size <= 0:
             return
 
+        # Snapshot de la config usada al abrir. Sin esto no se puede auditar
+        # retroactivamente que parametros (trailing, sl, tp, comision) aplico
+        # cada trade — el caso que nos costo el analisis del 2026-10-16:
+        # paper trades viejos con trailing_mode=algo que ya no esta en DB y
+        # que hizo imposible compararlos con backtest sin ambiguedad.
+        import json as _json
+        config_snapshot = _json.dumps(cfg_params)
+
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO paper_trades
                     (strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be_level,
                      be_activated, size, regime, entry_time, status,
-                     max_profit_pct, max_loss_pct, created_at, updated_at)
+                     max_profit_pct, max_loss_pct, config_snapshot, created_at, updated_at)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, $12, $13, $14, 'open', 0, 0, now(), now())
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, $12, $13, $14, 'open', 0, 0, $15::jsonb, now(), now())
                 """,
                 display_name, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be,
-                size, regime, datetime.now(timezone.utc).replace(tzinfo=None)
+                size, regime, datetime.now(timezone.utc).replace(tzinfo=None),
+                config_snapshot
             )
 
         logger.info(
