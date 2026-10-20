@@ -67,6 +67,11 @@ class BacktestRequest(BaseModel):
     trailing_distance_pct:  float                = 1.0
     trailing_activation_buffer_pct: float         = 0.0
     commission_pct:         float                = 0.055
+    # data_broker: fuente de datos para el backtest. Si None, se resuelve
+    # via collector_configs (mismo comportamiento que paper/real).
+    # Valores válidos: None | "bybit" | "binance_vision" | "ig".
+    # Permite comparar la MISMA estrategia contra distintos exchanges.
+    data_broker:            Optional[str]        = None
     max_leverage:           float                = 1.0
     trailing_steps:         Optional[list]       = None  # [[gain_pct, new_sl_pct], ...]
 
@@ -253,7 +258,8 @@ async def run_backtest(request: BacktestRequest):
     try:
         pool     = await get_pool()
         df       = await load_ohlcv(pool, request.symbol, request.interval,
-                                     request.start_date, request.end_date)
+                                     request.start_date, request.end_date,
+                                     broker=request.data_broker)
         strategy = load_strategy(request)
 
         # Datos de 1 min para simulacion de salida granular (2026-07-09):
@@ -271,7 +277,8 @@ async def run_backtest(request: BacktestRequest):
         if INTERVAL_MINUTES.get(request.interval, 0) >= 60:
             try:
                 minute_df = await load_ohlcv(pool, request.symbol, '1',
-                                              request.start_date, request.end_date)
+                                              request.start_date, request.end_date,
+                                              broker=request.data_broker)
             except ValueError:
                 logger.warning(
                     f"Sin datos de 1 min para {request.symbol} — cayendo a "
