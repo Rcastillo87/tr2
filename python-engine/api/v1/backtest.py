@@ -276,9 +276,15 @@ async def run_backtest(request: BacktestRequest):
         minute_df = None
         if INTERVAL_MINUTES.get(request.interval, 0) >= 60:
             try:
+                # minute_df: SIEMPRE del broker que tenga datos 1m (hoy: bybit).
+                # NO depende de data_broker — de lo contrario, comparar
+                # data_broker='binance_vision' (sin 1m importado) contra
+                # data_broker='bybit' (con 1m) contamina el resultado con el
+                # lookahead del fallback high/low. La simulación intrabar debe
+                # ser idéntica entre ambos casos para una comparación limpia.
                 minute_df = await load_ohlcv(pool, request.symbol, '1',
                                               request.start_date, request.end_date,
-                                              broker=request.data_broker)
+                                              broker='bybit')
             except ValueError:
                 logger.warning(
                     f"Sin datos de 1 min para {request.symbol} — cayendo a "
