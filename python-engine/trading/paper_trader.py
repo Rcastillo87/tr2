@@ -80,17 +80,20 @@ class PaperTrader:
     # Datos
     # ─────────────────────────────────────────────
 
-    async def get_bars(self, symbol: str, interval: str) -> pd.DataFrame:
+    async def get_bars(self, symbol: str, interval: str, broker: str | None = None) -> pd.DataFrame:
+        from collectors.broker_resolver import resolve_broker
+        if broker is None:
+            broker = await resolve_broker(self.pool, symbol)
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT time, open, high, low, close, volume
                 FROM ohlcv_data
-                WHERE symbol = $1 AND interval = $2
+                WHERE broker = $1 AND symbol = $2 AND interval = $3
                 ORDER BY time DESC
-                LIMIT 200
+                LIMIT 500
                 """,
-                symbol, interval
+                broker, symbol, interval
             )
 
         if not rows:

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from backtesting.walk_forward import WalkForwardValidator
 from backtesting.engine import BacktestEngine
+from collectors.broker_resolver import resolve_broker
 
 load_dotenv()
 
@@ -97,14 +98,17 @@ async def get_pool() -> asyncpg.Pool:
 
 
 async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str,
-                      start_date: str | None, end_date: str | None) -> pd.DataFrame:
-    """Carga datos OHLCV desde la DB, opcionalmente acotados a un rango de fechas."""
+                      start_date: str | None, end_date: str | None,
+                      broker: str | None = None) -> pd.DataFrame:
+    """Carga OHLCV. Si broker=None, se resuelve via collector_configs."""
+    if broker is None:
+        broker = await resolve_broker(pool, symbol)
     query = """
         SELECT time, open, high, low, close, volume
         FROM ohlcv_data
-        WHERE symbol = $1 AND interval = $2
+        WHERE broker = $1 AND symbol = $2 AND interval = $3
     """
-    args = [symbol, interval]
+    args = [broker, symbol, interval]
 
     if start_date:
         query += f" AND time >= ${len(args) + 1}"

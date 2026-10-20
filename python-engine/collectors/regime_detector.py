@@ -56,18 +56,21 @@ class RegimeDetector:
             logger.warning(f"[RegimeDetector] Error leyendo collector_configs, usando fallback: {e}")
         return FALLBACK_SYMBOLS
 
-    async def get_bars(self, symbol: str) -> pd.DataFrame:
-        """Obtiene las últimas N velas H1 de la DB."""
+    async def get_bars(self, symbol: str, broker: str | None = None) -> pd.DataFrame:
+        """Obtiene las últimas N velas H1 para el broker activo del símbolo."""
+        from collectors.broker_resolver import resolve_broker
+        if broker is None:
+            broker = await resolve_broker(self.pool, symbol)
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT time, open, high, low, close, volume
                 FROM ohlcv_data
-                WHERE symbol = $1 AND interval = $2
+                WHERE broker = $1 AND symbol = $2 AND interval = $3
                 ORDER BY time DESC
-                LIMIT $3
+                LIMIT $4
                 """,
-                symbol, REGIME_INTERVAL, LOOKBACK_BARS
+                broker, symbol, REGIME_INTERVAL, LOOKBACK_BARS
             )
 
         if not rows:
