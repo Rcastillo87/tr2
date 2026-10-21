@@ -81,3 +81,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+
+Route::prefix('collector')->name('collector.')->group(function () {
+    Route::get('/coverage', [CollectorConfigController::class, 'coverage'])->name('coverage');
+    Route::post('/backfill', [CollectorConfigController::class, 'backfill'])->name('backfill');
+    Route::post('/invalidate', [CollectorConfigController::class, 'invalidate'])->name('invalidate');
+    Route::post('/reload', [CollectorConfigController::class, 'reload'])->name('reload');
+    Route::post('/add-symbol', [CollectorConfigController::class, 'addSymbol'])->name('add-symbol');
+});
