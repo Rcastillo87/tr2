@@ -17,99 +17,144 @@
         </div>
     @endif
 
-    <div class="flex items-center justify-between mb-4">
-        <p class="text-[11px]" style="color:var(--color-text-muted);">
-            Estado de cobertura por broker/símbolo/intervalo. Backfill para llenar rangos, Invalidar para borrar datos corruptos, Recargar para redescargar todo.
-        </p>
+    @php
+        // Agrupar por (broker, symbol)
+        $grouped = collect($coverage)->groupBy(fn($c) => $c['broker'] . '|' . $c['symbol']);
+
+        // Clasificar cada row en un estado
+        $classify = function($c) {
+            $hasta = $c['hasta'] ? \Carbon\Carbon::parse($c['hasta']) : null;
+            if (!$hasta) return 'vacio';
+            if ($c['actualizado']) return 'ok';
+            if ($hasta->gt(now()->subHours(2))) return 'atrasado';
+            return 'congelado';
+        };
+
+        // Stats globales
+        $totalSymbols  = $grouped->count();
+        $totalIntervals = count($coverage);
+        $stats = ['ok'=>0, 'atrasado'=>0, 'congelado'=>0, 'vacio'=>0];
+        foreach ($coverage as $c) $stats[$classify($c)]++;
+
+        $estadoColor = ['ok'=>'#3DD68C', 'atrasado'=>'#F59E0B', 'congelado'=>'#F2545B', 'vacio'=>'#6B7280'];
+        $estadoIcon  = ['ok'=>'✓', 'atrasado'=>'⚠', 'congelado'=>'❄', 'vacio'=>'—'];
+    @endphp
+
+    {{-- Header compacto con stats --}}
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div class="flex items-center gap-2 text-[11px]" style="color:var(--color-text-muted);">
+            <span><b style="color:var(--color-text-primary);">{{ $totalSymbols }}</b> símbolos</span>
+            <span>·</span>
+            <span><b style="color:var(--color-text-primary);">{{ $totalIntervals }}</b> intervals</span>
+            <span>·</span>
+            <span style="color:#3DD68C;"><b>{{ $stats['ok'] }}</b> ok</span>
+            <span style="color:#F59E0B;"><b>{{ $stats['atrasado'] }}</b> atrasados</span>
+            <span style="color:#F2545B;"><b>{{ $stats['congelado'] }}</b> congelados</span>
+            @if($stats['vacio'] > 0)
+                <span style="color:#6B7280;"><b>{{ $stats['vacio'] }}</b> vacíos</span>
+            @endif
+        </div>
         <div class="flex gap-2">
             <a href="{{ route('collector.configs.index') }}"
-               class="text-[11px] px-3 py-1.5 rounded border"
+               class="text-[10px] px-2.5 py-1 rounded border"
                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                ← Símbolos activos
+                ← Símbolos
             </a>
             <button onclick="openAddSymbol()"
-                    class="text-[11px] px-3 py-1.5 rounded border"
+                    class="text-[10px] px-2.5 py-1 rounded border"
                     style="background:#16331F; border-color:#1E4A2E; color:var(--color-profit);">
-                + Agregar símbolo
+                + Símbolo
             </button>
         </div>
     </div>
 
+    {{-- Filtro por estado --}}
+    <div class="flex gap-1 mb-3">
+        <button onclick="filterState('all')" data-filter="all"
+                class="filter-btn active text-[10px] px-2 py-0.5 rounded border"
+                style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+            Todos
+        </button>
+        <button onclick="filterState('ok')" data-filter="ok"
+                class="filter-btn text-[10px] px-2 py-0.5 rounded border"
+                style="background:transparent; border-color:#3DD68C44; color:#3DD68C;">
+            ✓ Ok
+        </button>
+        <button onclick="filterState('atrasado')" data-filter="atrasado"
+                class="filter-btn text-[10px] px-2 py-0.5 rounded border"
+                style="background:transparent; border-color:#F59E0B44; color:#F59E0B;">
+            ⚠ Atrasados
+        </button>
+        <button onclick="filterState('congelado')" data-filter="congelado"
+                class="filter-btn text-[10px] px-2 py-0.5 rounded border"
+                style="background:transparent; border-color:#F2545B44; color:#F2545B;">
+            ❄ Congelados
+        </button>
+    </div>
+
+    {{-- Tabla compacta --}}
     <div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">
         <table class="w-full text-[11px]">
             <thead>
                 <tr style="background:var(--color-surface-raised); color:var(--color-text-muted);">
-                    <th class="text-left px-3 py-2 font-medium">Broker</th>
-                    <th class="text-left px-3 py-2 font-medium">Símbolo</th>
-                    <th class="text-left px-3 py-2 font-medium">Int</th>
-                    <th class="text-right px-3 py-2 font-medium">Desde</th>
-                    <th class="text-right px-3 py-2 font-medium">Hasta</th>
-                    <th class="text-right px-3 py-2 font-medium">Filas</th>
-                    <th class="text-center px-3 py-2 font-medium">Estado</th>
-                    <th class="text-right px-3 py-2 font-medium">Acciones</th>
+                    <th class="text-left px-2.5 py-1.5 font-medium" style="width:70px;">Broker</th>
+                    <th class="text-left px-2.5 py-1.5 font-medium" style="width:100px;">Símbolo</th>
+                    <th class="text-left px-2.5 py-1.5 font-medium">Intervals</th>
                 </tr>
             </thead>
             <tbody>
-                @forelse ($coverage as $c)
+                @forelse ($grouped as $key => $rows)
                     @php
-                        $hasta = $c['hasta'] ? \Carbon\Carbon::parse($c['hasta']) : null;
-                        if (!$hasta) {
-                            $estadoTexto = 'Vacío'; $estadoColor = '#6B7280';
-                        } elseif ($c['actualizado']) {
-                            $estadoTexto = 'Actualizado'; $estadoColor = '#3DD68C';
-                        } elseif ($hasta->gt(now()->subHours(2))) {
-                            $estadoTexto = 'Atrasado'; $estadoColor = '#F59E0B';
-                        } else {
-                            $estadoTexto = 'Congelado'; $estadoColor = '#F2545B';
-                        }
+                        [$broker, $symbol] = explode('|', $key, 2);
+                        // Ordenar intervals numéricamente
+                        $sortedRows = $rows->sortBy(fn($r) => is_numeric($r['interval']) ? (int)$r['interval'] : 9999);
                     @endphp
-                    <tr class="border-t" style="border-color:var(--color-border-soft);">
-                        <td class="px-3 py-2 font-mono" style="color:var(--color-text-muted);">{{ $c['broker'] }}</td>
-                        <td class="px-3 py-2 font-medium" style="color:var(--color-text-primary);">{{ $c['symbol'] }}</td>
-                        <td class="px-3 py-2 font-mono" style="color:var(--color-text-primary);">{{ $c['interval'] }}</td>
-                        <td class="px-3 py-2 text-right font-mono" style="color:var(--color-text-muted);">{{ $c['desde'] ? \Carbon\Carbon::parse($c['desde'])->format('Y-m-d') : '—' }}</td>
-                        <td class="px-3 py-2 text-right font-mono" style="color:var(--color-text-muted);">{{ $hasta ? $hasta->format('Y-m-d H:i') : '—' }}</td>
-                        <td class="px-3 py-2 text-right font-mono" style="color:var(--color-text-primary);">{{ number_format($c['total']) }}</td>
-                        <td class="px-3 py-2 text-center">
-                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px]"
-                                  style="background:{{ $estadoColor }}22; color:{{ $estadoColor }}; border:1px solid {{ $estadoColor }}44;">
-                                {{ $estadoTexto }}
-                            </span>
-                        </td>
-                        <td class="px-3 py-2 text-right">
-                            <button onclick="openBackfill('{{ $c['symbol'] }}','{{ $c['interval'] }}','{{ $c['broker'] }}')"
-                                    class="text-[10px] px-2 py-1 rounded border mr-1"
-                                    style="background:var(--color-surface-raised); border-color:var(--color-border-soft); color:var(--color-text-primary);">
-                                Backfill
-                            </button>
-                            <button onclick="openInvalidate('{{ $c['symbol'] }}','{{ $c['interval'] }}','{{ $c['broker'] }}')"
-                                    class="text-[10px] px-2 py-1 rounded border mr-1"
-                                    style="background:var(--color-surface-raised); border-color:#7F2D2D; color:#FCA5A5;">
-                                Invalidar
-                            </button>
-                            <button onclick="openReload('{{ $c['symbol'] }}','{{ $c['interval'] }}','{{ $c['broker'] }}')"
-                                    class="text-[10px] px-2 py-1 rounded border"
-                                    style="background:#3F1D1D; border-color:#7F2D2D; color:#FCA5A5;">
-                                Recargar
-                            </button>
+                    <tr class="group-row border-t" style="border-color:var(--color-border-soft);" data-symbol="{{ $symbol }}">
+                        <td class="px-2.5 py-1.5 font-mono" style="color:var(--color-text-muted);">{{ $broker }}</td>
+                        <td class="px-2.5 py-1.5 font-medium" style="color:var(--color-text-primary);">{{ $symbol }}</td>
+                        <td class="px-2.5 py-1.5">
+                            <div class="flex flex-wrap gap-1">
+                                @foreach ($sortedRows as $c)
+                                    @php
+                                        $estado = $classify($c);
+                                        $color = $estadoColor[$estado];
+                                        $icon = $estadoIcon[$estado];
+                                        $filasCorto = $c['total'] >= 1000
+                                            ? round($c['total']/1000, 1) . 'k'
+                                            : number_format($c['total']);
+                                        $hastaStr = $c['hasta'] ? \Carbon\Carbon::parse($c['hasta'])->format('Y-m-d H:i') : '—';
+                                        $desdeStr = $c['desde'] ? \Carbon\Carbon::parse($c['desde'])->format('Y-m-d') : '—';
+                                    @endphp
+                                    <button type="button"
+                                            class="chip text-[10px] px-1.5 py-0.5 rounded font-mono transition-all hover:scale-105"
+                                            data-estado="{{ $estado }}"
+                                            style="background:{{ $color }}18; border:1px solid {{ $color }}55; color:{{ $color }}; min-width:72px; text-align:left;"
+                                            onclick="openActions('{{ $symbol }}','{{ $c['interval'] }}','{{ $broker }}',{{ $c['total'] }},'{{ $desdeStr }}','{{ $hastaStr }}','{{ $estado }}')"
+                                            title="{{ $symbol }} / {{ $c['interval'] }} — {{ number_format($c['total']) }} velas · desde {{ $desdeStr }} · hasta {{ $hastaStr }}">
+                                        {{ $c['interval'] }} {{ $icon }} {{ $filasCorto }}
+                                    </button>
+                                @endforeach
+                            </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="px-3 py-6 text-center" style="color:var(--color-text-muted);">No hay datos aún.</td>
+                        <td colspan="3" class="px-3 py-6 text-center" style="color:var(--color-text-muted);">
+                            No hay datos. Ejecuta el collector o usa "+ Símbolo" para agregar uno.
+                        </td>
                     </tr>
                 @endforelse
             </tbody>
         </table>
     </div>
 
-    <div class="mt-4 rounded-lg border p-3 text-[11px]" style="background:var(--color-surface-raised); border-color:var(--color-border-soft); color:var(--color-text-muted);">
-        <strong style="color:var(--color-neutral);">Acciones:</strong>
-        <ul class="mt-1 space-y-1">
-            <li><b>Backfill</b>: descarga un rango específico. Útil para llenar gaps.</li>
-            <li><b>Invalidar</b>: borra un rango. <b style="color:#FCA5A5;">Requiere escribir CONFIRMAR.</b></li>
-            <li><b>Recargar</b>: borra TODO + redescarga completa. <b style="color:#FCA5A5;">Requiere escribir CONFIRMAR.</b></li>
-        </ul>
+    {{-- Leyenda compacta --}}
+    <div class="mt-3 flex flex-wrap gap-3 text-[10px]" style="color:var(--color-text-muted);">
+        <span><b style="color:#3DD68C;">✓</b> Actualizado (&lt;1h)</span>
+        <span><b style="color:#F59E0B;">⚠</b> Atrasado (1-2h)</span>
+        <span><b style="color:#F2545B;">❄</b> Congelado (&gt;2h)</span>
+        <span><b style="color:#6B7280;">—</b> Vacío</span>
+        <span class="ml-auto">Click en un chip para acciones</span>
     </div>
 
 @endsection
@@ -120,22 +165,80 @@
 const CSRF = '{{ csrf_token() }}';
 const BASE = '{{ url("/") }}';
 
-function openBackfill(symbol, interval, broker) {
+const COLORS = { ok:'#3DD68C', atrasado:'#F59E0B', congelado:'#F2545B', vacio:'#6B7280' };
+const ICONS  = { ok:'✓', atrasado:'⚠', congelado:'❄', vacio:'—' };
+
+// Filtro por estado
+let currentFilter = 'all';
+function filterState(state) {
+    currentFilter = state;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+        const active = b.dataset.filter === state;
+        b.style.background = active ? 'var(--color-surface-raised)' : 'transparent';
+    });
+    document.querySelectorAll('.chip').forEach(chip => {
+        const parent = chip.closest('tr');
+        if (state === 'all') { chip.style.display = ''; return; }
+        chip.style.display = chip.dataset.estado === state ? '' : 'none';
+    });
+    // Ocultar filas de símbolos sin chips visibles
+    document.querySelectorAll('.group-row').forEach(row => {
+        const visibleChips = row.querySelectorAll('.chip:not([style*="display: none"])');
+        row.style.display = visibleChips.length > 0 ? '' : 'none';
+    });
+}
+
+// Modal unificado de acciones
+function openActions(symbol, interval, broker, total, desde, hasta, estado) {
+    const color = COLORS[estado] || '#6B7280';
+    const icon = ICONS[estado] || '—';
+    const estadoLabel = { ok:'Actualizado', atrasado:'Atrasado', congelado:'Congelado', vacio:'Vacío' }[estado] || estado;
+    const totalFmt = total.toLocaleString();
+
+    Swal.fire({
+        title: `${symbol} / ${interval}`,
+        html: `
+            <div style="text-align:left; font-size:12px;">
+                <div style="margin-bottom:12px; padding:10px; border-radius:6px; background:${color}10; border:1px solid ${color}44;">
+                    <div style="color:${color}; font-weight:600; margin-bottom:4px;">${icon} ${estadoLabel}</div>
+                    <div style="color:#9CA3AF; font-size:11px; line-height:1.6;">
+                        Broker: <b style="color:#E5E9F0;">${broker}</b><br>
+                        Velas: <b style="color:#E5E9F0;">${totalFmt}</b><br>
+                        Desde: ${desde} · Hasta: ${hasta}
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <button onclick="doBackfill('${symbol}','${interval}','${broker}')" class="swal2-styled" style="background:#16331F; color:#3DD68C; border:1px solid #1E4A2E; margin:0;">
+                        📥 Backfill (rango)
+                    </button>
+                    <button onclick="doInvalidate('${symbol}','${interval}','${broker}')" class="swal2-styled" style="background:#3F1D1D; color:#FCA5A5; border:1px solid #7F2D2D; margin:0;">
+                        🗑 Invalidar rango
+                    </button>
+                    <button onclick="doReload('${symbol}','${interval}','${broker}')" class="swal2-styled" style="background:#3F1D1D; color:#FCA5A5; border:1px solid #7F2D2D; margin:0;">
+                        🔄 Recargar completo
+                    </button>
+                </div>
+            </div>
+        `,
+        showConfirmButton: false,
+        showCloseButton: true,
+        background: '#11161F', color: '#E5E9F0', width: 380,
+    });
+}
+
+function doBackfill(symbol, interval, broker) {
     Swal.fire({
         title: 'Backfill',
-        html: `<div style="text-align:left; font-size:13px;">
+        html: `<div style="text-align:left; font-size:12px;">
             <p style="margin-bottom:8px; color:#9CA3AF;">${symbol} / ${interval} / ${broker}</p>
-            <label style="display:block; margin-bottom:4px;">Desde:</label>
-            <input id="bf-start" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0;" value="2024-06-01">
-            <label style="display:block; margin-bottom:4px;">Hasta (opcional):</label>
-            <input id="bf-end" type="date" class="swal2-input" style="width:100%; margin:0;">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Desde:</label>
+            <input id="bf-start" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0; font-size:12px;" value="2024-06-01">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Hasta (opcional):</label>
+            <input id="bf-end" type="date" class="swal2-input" style="width:100%; margin:0; font-size:12px;">
         </div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Descargar',
-        cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#3DD68C',
-        cancelButtonColor: '#232B38',
+        showCancelButton: true, confirmButtonText: 'Descargar', cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0', width: 380,
+        confirmButtonColor: '#3DD68C', cancelButtonColor: '#232B38',
         preConfirm: () => ({
             symbol, interval, broker,
             start_date: document.getElementById('bf-start').value,
@@ -149,30 +252,27 @@ function openBackfill(symbol, interval, broker) {
             headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json'},
             body: JSON.stringify(r.value)
         }).then(res=>res.json()).then(d=>{
-            if(d.ok) Swal.fire({title:'✅ Backfill completo', html:`<b>${d.velas_insertadas||0}</b> velas insertadas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
-            else Swal.fire({title:'Error', text:d.error||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
-        });
+            if(d.ok) Swal.fire({title:'✅ Backfill completo', html:`<b>${(d.velas_insertadas||0).toLocaleString()}</b> velas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
+            else Swal.fire({title:'Error', text:d.error||d.detail||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
+        }).catch(e => Swal.fire({title:'Error', text:e.message, icon:'error', background:'#11161F', color:'#E5E9F0'}));
     });
 }
 
-function openInvalidate(symbol, interval, broker) {
+function doInvalidate(symbol, interval, broker) {
     Swal.fire({
         title: '⚠️ Invalidar rango',
-        html: `<div style="text-align:left; font-size:13px;">
-            <p style="margin-bottom:8px; color:#FCA5A5;"><b>Vas a BORRAR velas de:</b><br>${symbol} / ${interval} / ${broker}</p>
-            <label style="display:block; margin-bottom:4px;">Desde (opcional):</label>
-            <input id="inv-start" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0;">
-            <label style="display:block; margin-bottom:4px;">Hasta (opcional):</label>
-            <input id="inv-end" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0;">
-            <p style="margin-top:8px; margin-bottom:4px;">Escribe <b style="color:#FCA5A5;">CONFIRMAR</b>:</p>
-            <input id="inv-confirm" type="text" class="swal2-input" style="width:100%; margin:0;">
+        html: `<div style="text-align:left; font-size:12px;">
+            <p style="margin-bottom:8px; color:#FCA5A5;"><b>Vas a borrar:</b> ${symbol} / ${interval} / ${broker}</p>
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Desde (opcional):</label>
+            <input id="inv-start" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0; font-size:12px;">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Hasta (opcional):</label>
+            <input id="inv-end" type="date" class="swal2-input" style="width:100%; margin:0 0 8px 0; font-size:12px;">
+            <p style="margin-top:8px; margin-bottom:4px; font-size:11px;">Escribe <b style="color:#FCA5A5;">CONFIRMAR</b>:</p>
+            <input id="inv-confirm" type="text" class="swal2-input" style="width:100%; margin:0; font-size:12px;">
         </div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Borrar velas',
-        cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#F2545B',
-        cancelButtonColor: '#232B38',
+        showCancelButton: true, confirmButtonText: 'Borrar', cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0', width: 380,
+        confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
         preConfirm: () => {
             const c = document.getElementById('inv-confirm').value;
             if (c !== 'CONFIRMAR') { Swal.showValidationMessage('Escribe CONFIRMAR'); return false; }
@@ -189,27 +289,23 @@ function openInvalidate(symbol, interval, broker) {
             headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json'},
             body: JSON.stringify(r.value)
         }).then(res=>res.json()).then(d=>{
-            if(d.ok) Swal.fire({title:'✅ Borrado', html:`<b>${d.velas_borradas||0}</b> velas eliminadas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
-            else Swal.fire({title:'Error', text:d.error||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
-        });
+            if(d.ok) Swal.fire({title:'✅ Borrado', html:`<b>${(d.velas_borradas||0).toLocaleString()}</b> velas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
+            else Swal.fire({title:'Error', text:d.error||d.detail||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
+        }).catch(e => Swal.fire({title:'Error', text:e.message, icon:'error', background:'#11161F', color:'#E5E9F0'}));
     });
 }
 
-function openReload(symbol, interval, broker) {
+function doReload(symbol, interval, broker) {
     Swal.fire({
         title: '⚠️ Recargar completo',
-        html: `<div style="text-align:left; font-size:13px;">
-            <p style="margin-bottom:8px; color:#FCA5A5;"><b>Vas a BORRAR TODO y recargar:</b><br>${symbol} / ${interval} / ${broker}</p>
-            <p style="margin-bottom:8px;">Puede tardar varios minutos.</p>
-            <label style="display:block; margin-bottom:4px;">Escribe <b style="color:#FCA5A5;">CONFIRMAR</b>:</label>
-            <input id="rl-confirm" type="text" class="swal2-input" style="width:100%; margin:0;">
+        html: `<div style="text-align:left; font-size:12px;">
+            <p style="margin-bottom:8px; color:#FCA5A5;"><b>Borrar TODO + redescargar:</b><br>${symbol} / ${interval} / ${broker}</p>
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Escribe <b style="color:#FCA5A5;">CONFIRMAR</b>:</label>
+            <input id="rl-confirm" type="text" class="swal2-input" style="width:100%; margin:0; font-size:12px;">
         </div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Recargar',
-        cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#F2545B',
-        cancelButtonColor: '#232B38',
+        showCancelButton: true, confirmButtonText: 'Recargar', cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0', width: 380,
+        confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
         preConfirm: () => {
             const c = document.getElementById('rl-confirm').value;
             if (c !== 'CONFIRMAR') { Swal.showValidationMessage('Escribe CONFIRMAR'); return false; }
@@ -223,32 +319,29 @@ function openReload(symbol, interval, broker) {
             headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json'},
             body: JSON.stringify(r.value)
         }).then(res=>res.json()).then(d=>{
-            if(d.ok) Swal.fire({title:'✅ Recarga completa', html:`<b>${d.velas_borradas||0}</b> borradas<br><b>${d.velas_descargadas||0}</b> descargadas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
-            else Swal.fire({title:'Error', text:d.error||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
-        });
+            if(d.ok) Swal.fire({title:'✅ Recarga completa', html:`<b>${(d.velas_borradas||0).toLocaleString()}</b> borradas<br><b>${(d.velas_descargadas||0).toLocaleString()}</b> descargadas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
+            else Swal.fire({title:'Error', text:d.error||d.detail||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
+        }).catch(e => Swal.fire({title:'Error', text:e.message, icon:'error', background:'#11161F', color:'#E5E9F0'}));
     });
 }
 
 function openAddSymbol() {
     Swal.fire({
         title: 'Agregar símbolo',
-        html: `<div style="text-align:left; font-size:13px;">
-            <label style="display:block; margin-bottom:4px;">Símbolo:</label>
-            <input id="as-symbol" type="text" class="swal2-input" placeholder="MATICUSDT" style="width:100%; margin:0 0 8px 0;">
-            <label style="display:block; margin-bottom:4px;">Broker:</label>
-            <select id="as-broker" class="swal2-input" style="width:100%; margin:0 0 8px 0;">
+        html: `<div style="text-align:left; font-size:12px;">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Símbolo:</label>
+            <input id="as-symbol" type="text" class="swal2-input" placeholder="MATICUSDT" style="width:100%; margin:0 0 8px 0; font-size:12px;">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Broker:</label>
+            <select id="as-broker" class="swal2-input" style="width:100%; margin:0 0 8px 0; font-size:12px;">
                 <option value="bybit">Bybit</option>
                 <option value="ig">IG</option>
             </select>
-            <label style="display:block; margin-bottom:4px;">Intervals (coma):</label>
-            <input id="as-intervals" type="text" class="swal2-input" value="1,5,15,60,120,240" style="width:100%; margin:0;">
+            <label style="display:block; margin-bottom:4px; font-size:11px;">Intervals (coma):</label>
+            <input id="as-intervals" type="text" class="swal2-input" value="1,5,15,60,120,240" style="width:100%; margin:0; font-size:12px;">
         </div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Agregar',
-        cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#3DD68C',
-        cancelButtonColor: '#232B38',
+        showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0', width: 380,
+        confirmButtonColor: '#3DD68C', cancelButtonColor: '#232B38',
         preConfirm: () => {
             const sym = document.getElementById('as-symbol').value.trim().toUpperCase();
             const broker = document.getElementById('as-broker').value;
@@ -262,7 +355,13 @@ function openAddSymbol() {
             method:'POST',
             headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json'},
             body: JSON.stringify(r.value)
-        }).then(()=>location.reload()).catch(e=>Swal.fire({title:'Error', text:e.message, icon:'error', background:'#11161F', color:'#E5E9F0'}));
+        }).then(res => res.json()).then(d => {
+            if (d.inserted > 0) {
+                Swal.fire({title:'✅ Agregado', html:`<b>${d.inserted}</b> intervalo(s)`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
+            } else {
+                Swal.fire({title:'Sin cambios', text:'El símbolo ya existía o hubo un problema', icon:'info', background:'#11161F', color:'#E5E9F0'});
+            }
+        }).catch(e=>Swal.fire({title:'Error', text:e.message, icon:'error', background:'#11161F', color:'#E5E9F0'}));
     });
 }
 </script>
