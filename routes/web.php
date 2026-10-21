@@ -35,12 +35,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('/{config}',       [PaperStrategyConfigController::class, 'destroy'])->name('destroy');
     });
 
-    // Data Collector
-    Route::middleware('can:manageUsers')->prefix('collector/configs')->name('collector.configs.')->group(function () {
-        Route::get('/', [CollectorConfigController::class, 'index'])->name('index');
-        Route::patch('/{config}/toggle', [CollectorConfigController::class, 'toggleActive'])->name('toggle');
-    });
-
     // Backtesting
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/',                               [BacktestingController::class, 'index'])->name('index');
@@ -83,18 +77,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 require __DIR__.'/auth.php';
 
 
-Route::prefix('collector')->name('collector.')->group(function () {
-    Route::get('/coverage', [CollectorConfigController::class, 'coverage'])->name('coverage');
-    Route::post('/backfill', [CollectorConfigController::class, 'backfill'])->name('backfill');
-    Route::post('/invalidate', [CollectorConfigController::class, 'invalidate'])->name('invalidate');
-    Route::post('/reload', [CollectorConfigController::class, 'reload'])->name('reload');
-    Route::post('/add-symbol', [CollectorConfigController::class, 'addSymbol'])->name('add-symbol');
-});
-
 
 // Módulo unificado /collector (2026-10-21)
 Route::middleware('can:manageUsers')->prefix('collector')->name('collector.')->group(function () {
     Route::get('/', [CollectorConfigController::class, 'unified'])->name('unified');
     Route::post('/toggle-all/{broker}/{symbol}', [CollectorConfigController::class, 'toggleAll'])->name('toggle-all');
     Route::post('/toggle-one', [CollectorConfigController::class, 'toggleOne'])->name('toggle-one');
+    Route::post('/backfill', [CollectorConfigController::class, 'backfill'])->name('backfill');
+    Route::post('/invalidate', [CollectorConfigController::class, 'invalidate'])->name('invalidate');
+    Route::post('/reload', [CollectorConfigController::class, 'reload'])->name('reload');
+    Route::post('/add-symbol', [CollectorConfigController::class, 'addSymbol'])->name('add-symbol');
 });
