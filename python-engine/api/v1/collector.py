@@ -350,3 +350,115 @@ async def collector_add_symbol(req: AddSymbolRequest):
     except Exception as e:
         logger.error(f"[ADD_SYMBOL] error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Endpoints módulo unificado (2026-10-21)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@router.get("/collector/unified")
+async def collector_unified(
+    broker: Optional[str] = None,
+    symbol: Optional[str] = None,
+    include_ig: bool = False,
+):
+    """Vista unificada: collector_configs (reglas) + ohlcv_data (historial).
+    IG queda excluido por defecto (include_ig=false)."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            where = []
+            args = []
+            i = 1
+            if not include_ig:
+                where.append("cc.broker != 'ig'")
+            if broker:
+                where.append(f"cc.broker = ${i}"); args.append(broker); i += 1
+            if symbol:
+                where.append(f"cc.symbol = ${i}"); args.append(symbol); i += 1
+            where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+            rows = await conn.fetch(
+                f"""
+                SELECT
+                    cc.broker, cc.symbol, cc.interval, cc.active, cc.epic,
+                    COALESCE(o.total, 0) AS total,
+                    o.desde, o.hasta,
+                    COALESCE(o.actualizado, false) AS actualizado
+                FROM collector_configs cc
+                LEFT JOIN (
+                    SELECT broker, symbol, interval,
+                        COUNT(*) AS total,
+                        MIN(time) AS desde,
+                        MAX(time) AS hasta,
+                        (MAX(time) > now() - interval '1 hour') AS actualizado
+                    FROM ohlcv_data
+                    GROUP BY broker, symbol, interval
+                ) o
+                  ON o.broker = cc.broker
+                 AND o.symbol = cc.symbol
+                 AND o.interval = cc.interval
+                {where_sql}
+                ORDER BY cc.broker, cc.symbol, cc.interval::text
+                """,
+                *args,
+            )
+        await pool.close()
+        return {
+            "status": "ok",
+            "data": [
+                {
+                    "broker": r["broker"], "symbol": r["symbol"], "interval": r["interval"],
+                    "active": bool(r["active"]), "epic": r["epic"], "total": r["total"],
+                    "desde": r["desde"].isoformat() if r["desde"] else None,
+                    "hasta": r["hasta"].isoformat() if r["hasta"] else None,
+                    "actualizado": bool(r["actualizado"]),
+                }
+                for r in rows
+            ],
+        }
+    except Exception as e:
+        logger.error(f"[UNIFIED] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/toggle-all/{broker}/{symbol}")
+async def collector_toggle_all(broker: str, symbol: str, active: bool):
+    """Activa o desactiva TODOS los intervals de un símbolo."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE collector_configs SET active = $1, updated_at = now() WHERE broker = $2 AND symbol = $3",
+                active, broker, symbol,
+            )
+            count = int(result.split()[-1]) if result else 0
+        await pool.close()
+        return {"status": "ok", "updated": count, "active": active}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/toggle-one")
+async def collector_toggle_one(body: dict):
+    """Activa o desactiva UN interval específico de un símbolo."""
+    try:
+        broker = body.get("broker")
+        symbol = body.get("symbol")
+        interval = body.get("interval")
+        active = bool(body.get("active"))
+        if not all([broker, symbol, interval]):
+            raise HTTPException(status_code=400, detail="Faltan parámetros: broker, symbol, interval")
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE collector_configs SET active = $1, updated_at = now() WHERE broker = $2 AND symbol = $3 AND interval = $4",
+                active, broker, symbol, interval,
+            )
+            count = int(result.split()[-1]) if result else 0
+        await pool.close()
+        return {"status": "ok", "updated": count, "active": active}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

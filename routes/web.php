@@ -90,3 +90,11 @@ Route::prefix('collector')->name('collector.')->group(function () {
     Route::post('/reload', [CollectorConfigController::class, 'reload'])->name('reload');
     Route::post('/add-symbol', [CollectorConfigController::class, 'addSymbol'])->name('add-symbol');
 });
+
+
+// Módulo unificado /collector (2026-10-21)
+Route::middleware('can:manageUsers')->prefix('collector')->name('collector.')->group(function () {
+    Route::get('/', [CollectorConfigController::class, 'unified'])->name('unified');
+    Route::post('/toggle-all/{broker}/{symbol}', [CollectorConfigController::class, 'toggleAll'])->name('toggle-all');
+    Route::post('/toggle-one', [CollectorConfigController::class, 'toggleOne'])->name('toggle-one');
+});
