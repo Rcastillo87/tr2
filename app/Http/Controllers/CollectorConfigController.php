@@ -10,47 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 class CollectorConfigController extends Controller
 {
-    public function index()
-    {
-        Gate::authorize('manageUsers');
 
-        $configs = CollectorConfig::orderBy('symbol')->orderBy('interval')->get();
-        $grouped = $configs->groupBy('symbol');
-
-        return view('data-collector.configs', compact('grouped'));
-    }
-
-    public function coverage(Request $request)
-    {
-        Gate::authorize('manageUsers');
-
-        $filters = $request->only(['broker', 'symbol', 'interval']);
-
-        $data = [];
-        $debug = null;
-        try {
-            $url = config('trading.python_engine_url') . '/v1/collector/coverage';
-            $response = Http::withHeaders([
-                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(15)->get($url, $filters);
-
-            if ($response->successful()) {
-                $data = $response->json('data') ?? [];
-            } else {
-                $debug = "HTTP {$response->status()}: {$response->body()}";
-                Log::error("Coverage HTTP error: $debug");
-            }
-        } catch (\Throwable $e) {
-            $debug = $e->getMessage();
-            Log::error('Coverage exception: ' . $debug);
-        }
-
-        return view('data-collector.coverage', [
-            'coverage' => $data,
-            'filters'  => $filters,
-            'debug'    => $debug,
-        ]);
-    }
 
     public function backfill(Request $request)
     {

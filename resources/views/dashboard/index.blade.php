@@ -112,7 +112,7 @@
             <div class="flex items-center justify-between mb-3">
                 <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Data collector</h3>
                 @can('manageUsers')
-                    <a href="{{ route('collector.configs.index') }}" class="text-xs" style="color:var(--color-info);">Configurar →</a>
+                    <a href="{{ route('collector.unified') }}" class="text-xs" style="color:var(--color-info);">Configurar →</a>
                 @endcan
             </div>
 
