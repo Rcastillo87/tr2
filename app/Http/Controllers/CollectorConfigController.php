@@ -12,6 +12,92 @@ class CollectorConfigController extends Controller
 {
 
 
+    public function unified(Request $request)
+    {
+        Gate::authorize('manageUsers');
+
+        $filters = $request->only(['broker', 'symbol']);
+        $data = [];
+        $debug = null;
+
+        try {
+            $url = config('trading.python_engine_url') . '/v1/collector/unified';
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(15)->get($url, $filters);
+
+            if ($response->successful()) {
+                $data = $response->json('data') ?? [];
+            } else {
+                $debug = "HTTP {$response->status()}: {$response->body()}";
+                Log::error("Unified HTTP error: $debug");
+            }
+        } catch (\Throwable $e) {
+            $debug = $e->getMessage();
+            Log::error('Unified exception: ' . $debug);
+        }
+
+        return view('data-collector.index', [
+            'rows'    => $data,
+            'filters' => $filters,
+            'debug'   => $debug,
+        ]);
+    }
+
+    public function toggleAll(Request $request, string $broker, string $symbol)
+    {
+        Gate::authorize('manageUsers');
+
+        $active = $request->boolean('active');
+
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(10)->post(
+                config('trading.python_engine_url') . "/v1/collector/toggle-all/{$broker}/{$symbol}?active=" . ($active ? 'true' : 'false')
+            );
+
+            if (!$response->successful()) {
+                return back()->withErrors(['toggle' => $response->json('detail') ?? 'Error del motor']);
+            }
+
+            $count = $response->json('updated', 0);
+            return back()->with('status', "{$symbol}: {$count} intervalo(s) " . ($active ? 'activados' : 'desactivados'));
+        } catch (\Throwable $e) {
+            return back()->withErrors(['toggle' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    public function toggleOne(Request $request)
+    {
+        Gate::authorize('manageUsers');
+
+        $validated = $request->validate([
+            'broker'   => 'required|string',
+            'symbol'   => 'required|string',
+            'interval' => 'required|string',
+            'active'   => 'required|boolean',
+        ]);
+
+        try {
+            $config = \App\Models\CollectorConfig::where('broker', $validated['broker'])
+                ->where('symbol', $validated['symbol'])
+                ->where('interval', $validated['interval'])
+                ->first();
+
+            if (!$config) {
+                return response()->json(['ok' => false, 'error' => 'Config no encontrada'], 404);
+            }
+
+            $config->active = $validated['active'];
+            $config->save();
+
+            return response()->json(['ok' => true, 'active' => $config->active]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function backfill(Request $request)
     {
         Gate::authorize('manageUsers');
