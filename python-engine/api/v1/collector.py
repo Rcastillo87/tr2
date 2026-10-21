@@ -88,3 +88,265 @@ async def collector_status():
         return {"status": "ok", "data": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Endpoints de gestión de históricos (2026-10-21)
+# ═══════════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+
+class BackfillRequest(BaseModel):
+    symbol: str
+    interval: str
+    broker: str
+    start_date: str          # 'YYYY-MM-DD'
+    end_date: Optional[str] = None  # None = hasta ahora
+
+
+class InvalidateRequest(BaseModel):
+    symbol: str
+    interval: str
+    broker: str
+    start_date: Optional[str] = None  # None = desde el principio
+    end_date: Optional[str] = None
+    confirm: bool = False  # requiere confirm=True para ejecutar
+
+
+class AddSymbolRequest(BaseModel):
+    symbol: str
+    broker: str
+    intervals: list[str]
+    epic: Optional[str] = None
+    active: bool = True
+
+
+@router.get("/collector/coverage")
+async def collector_coverage(
+    broker: Optional[str] = None,
+    symbol: Optional[str] = None,
+    interval: Optional[str] = None,
+):
+    """Devuelve tabla completa de cobertura: broker × symbol × interval con rango y filas."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            where_clauses = []
+            args = []
+            i = 1
+            if broker:
+                where_clauses.append(f"broker = ${i}"); args.append(broker); i += 1
+            if symbol:
+                where_clauses.append(f"symbol = ${i}"); args.append(symbol); i += 1
+            if interval:
+                where_clauses.append(f"interval = ${i}"); args.append(interval); i += 1
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            rows = await conn.fetch(
+                f"""
+                SELECT broker, symbol, interval,
+                       COUNT(*) AS total,
+                       MIN(time) AS desde,
+                       MAX(time) AS hasta,
+                       (MAX(time) > now() - interval '1 hour') AS actualizado
+                FROM ohlcv_data
+                {where_sql}
+                GROUP BY broker, symbol, interval
+                ORDER BY broker, symbol, interval::text
+                """,
+                *args,
+            )
+        await pool.close()
+        return {
+            "status": "ok",
+            "data": [
+                {
+                    "broker": r["broker"],
+                    "symbol": r["symbol"],
+                    "interval": r["interval"],
+                    "total": r["total"],
+                    "desde": r["desde"].isoformat() if r["desde"] else None,
+                    "hasta": r["hasta"].isoformat() if r["hasta"] else None,
+                    "actualizado": bool(r["actualizado"]),
+                }
+                for r in rows
+            ],
+        }
+    except Exception as e:
+        logger.error(f"[COVERAGE] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collector/symbols")
+async def collector_symbols():
+    """Símbolos configurados en collector_configs + estado."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT symbol, interval, broker, epic, active
+                FROM collector_configs
+                ORDER BY broker, symbol, interval::text
+                """,
+            )
+        await pool.close()
+        return {
+            "status": "ok",
+            "data": [dict(r) for r in rows],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/backfill")
+async def collector_backfill(req: BackfillRequest):
+    """Descarga un rango específico y lo inserta. Útil para llenar gaps."""
+    try:
+        from collectors.ohlcv_collector import OhlcvCollector
+        pool = await get_pool()
+        collector = OhlcvCollector(pool)
+
+        start_ts = int(datetime.fromisoformat(req.start_date).timestamp())
+        end_ts = int(datetime.fromisoformat(req.end_date).timestamp()) if req.end_date else int(datetime.now().timestamp())
+
+        if req.broker == "bybit":
+            bars = await collector.fetch_from_bybit(req.symbol, req.interval, start_ts, end_ts)
+        elif req.broker == "ig":
+            # IG necesita el epic; lo buscamos en collector_configs
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT epic FROM collector_configs WHERE symbol=$1 AND interval=$2 AND broker='ig'",
+                    req.symbol, req.interval,
+                )
+            if not row or not row["epic"]:
+                raise ValueError(f"No hay epic configurado para {req.symbol}/{req.interval} en IG")
+            bars = await collector.fetch_from_ig(row["epic"], req.interval, start_ts, end_ts)
+            for b in bars:
+                b["symbol"] = req.symbol
+        else:
+            raise ValueError(f"Broker no soportado: {req.broker}")
+
+        saved = await collector.save_bars(bars, broker=req.broker)
+        await pool.close()
+        return {
+            "status": "ok",
+            "velas_insertadas": saved,
+            "rango": {"desde": req.start_date, "hasta": req.end_date or "now"},
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[BACKFILL] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/invalidate")
+async def collector_invalidate(req: InvalidateRequest):
+    """Borra un rango de ohlcv_data. Requiere confirm=True (protección)."""
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes pasar confirm=True para ejecutar esta operación destructiva",
+        )
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            where = "broker=$1 AND symbol=$2 AND interval=$3"
+            args = [req.broker, req.symbol, req.interval]
+            if req.start_date:
+                where += " AND time >= $4"
+                args.append(datetime.fromisoformat(req.start_date))
+            if req.end_date:
+                where += f" AND time <= ${len(args)+1}"
+                args.append(datetime.fromisoformat(req.end_date))
+
+            result = await conn.execute(f"DELETE FROM ohlcv_data WHERE {where}", *args)
+            deleted = int(result.split()[-1]) if result else 0
+        await pool.close()
+        return {
+            "status": "ok",
+            "velas_borradas": deleted,
+        }
+    except Exception as e:
+        logger.error(f"[INVALIDATE] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/reload/{symbol}/{interval}/{broker}")
+async def collector_reload(symbol: str, interval: str, broker: str, confirm: bool = False):
+    """Borra todo + recarga completo. Requiere confirm=True."""
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes pasar ?confirm=true para ejecutar esta operación destructiva",
+        )
+    try:
+        from collectors.ohlcv_collector import OhlcvCollector
+        pool = await get_pool()
+
+        # 1. Borrar
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM ohlcv_data WHERE broker=$1 AND symbol=$2 AND interval=$3",
+                broker, symbol, interval,
+            )
+            deleted = int(result.split()[-1]) if result else 0
+
+        # 2. Recargar todo el histórico disponible
+        collector = OhlcvCollector(pool)
+        if broker == "ig":
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT epic FROM collector_configs WHERE symbol=$1 AND interval=$2 AND broker='ig'",
+                    symbol, interval,
+                )
+            if not row or not row["epic"]:
+                raise ValueError(f"No hay epic para {symbol}/{interval} en IG")
+            saved = await collector.initial_load(symbol, interval, broker=broker, epic=row["epic"])
+        else:
+            saved = await collector.initial_load(symbol, interval, broker=broker)
+
+        await pool.close()
+        return {
+            "status": "ok",
+            "velas_borradas": deleted,
+            "velas_descargadas": saved,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[RELOAD] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collector/add-symbol")
+async def collector_add_symbol(req: AddSymbolRequest):
+    """Añade un símbolo a collector_configs (activo o no)."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            inserted = 0
+            for interval in req.intervals:
+                result = await conn.execute(
+                    """
+                    INSERT INTO collector_configs (symbol, interval, broker, epic, active, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, now(), now())
+                    ON CONFLICT (symbol, interval, broker) DO NOTHING
+                    """,
+                    req.symbol, interval, req.broker, req.epic, req.active,
+                )
+                if result.startswith("INSERT"):
+                    inserted += 1
+        await pool.close()
+        return {
+            "status": "ok",
+            "inserted": inserted,
+            "configs": [{"symbol": req.symbol, "interval": i, "broker": req.broker} for i in req.intervals],
+        }
+    except Exception as e:
+        logger.error(f"[ADD_SYMBOL] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
