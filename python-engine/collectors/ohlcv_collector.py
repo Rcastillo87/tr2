@@ -306,7 +306,17 @@ class OhlcvCollector:
     # Guardar en DB
     # ─────────────────────────────────────────────
 
-    async def save_bars(self, bars: list[dict]) -> int:
+    async def save_bars(self, bars: list[dict], broker: str = 'bybit') -> int:
+        """Guarda velas en ohlcv_data. Requiere broker explícito (default 'bybit'
+        para compatibilidad, pero los callers DEBEN pasar el broker real de
+        collector_configs — de lo contrario EURUSD/GBPUSD/XAUUSD quedarían
+        mal etiquetados como 'bybit').
+
+        ON CONFLICT incluye broker porque el índice UNIQUE es
+        (broker, symbol, interval, time) desde la migración Fase 1.
+        Sin broker en el ON CONFLICT, Postgres lanza:
+        'there is no unique or exclusion constraint matching the ON CONFLICT specification'.
+        """
         if not bars:
             return 0
 
@@ -314,15 +324,15 @@ class OhlcvCollector:
             await conn.executemany(
                 """
                 INSERT INTO ohlcv_data
-                    (time, symbol, interval, open, high, low, close, volume)
+                    (time, broker, symbol, interval, open, high, low, close, volume)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (symbol, interval, time)
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (broker, symbol, interval, time)
                 DO NOTHING
                 """,
                 [
                     (
-                        b['time'], b['symbol'], b['interval'],
+                        b['time'], broker, b['symbol'], b['interval'],
                         b['open'], b['high'], b['low'],
                         b['close'], b['volume'],
                     )
@@ -372,7 +382,7 @@ class OhlcvCollector:
             start_ts = now - (HISTORY_DAYS * 24 * 60 * 60)
             bars = await self.fetch_from_bybit(symbol, interval, start_ts, now)
 
-        saved = await self.save_bars(bars)
+        saved = await self.save_bars(bars, broker=broker)
         logger.info(f"[{symbol}/{interval}] Carga inicial: {saved} velas guardadas")
         return saved
 
@@ -400,7 +410,7 @@ class OhlcvCollector:
         else:
             bars = await self.fetch_from_bybit(symbol, interval, start_ts, end_ts)
 
-        saved = await self.save_bars(bars)
+        saved = await self.save_bars(bars, broker=broker)
 
         if saved > 0:
             logger.info(f"[{symbol}/{interval}] Actualización: {saved} velas nuevas")
