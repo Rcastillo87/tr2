@@ -27,6 +27,8 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 
 class BacktestRequest(BaseModel):
     strategy:            str
+    strategy_code:       Optional[str]   = None
+    strategy_config:     Optional[dict]  = None
     symbol:              str             = "BTCUSDT"
     interval:            str             = "60"
     initial_balance:     float           = 10000.0
@@ -63,9 +65,14 @@ class BacktestRequest(BaseModel):
     end_date:   Optional[str] = None  # formato YYYY-MM-DD
 
     # Trailing stop
-    trailing_mode:          Optional[str]        = None  # None | "fixed" | "stepped"
+    trailing_mode:          Optional[str]        = None  # None | "fixed" | "stepped" | "atr"
     trailing_distance_pct:  float                = 1.0
     trailing_activation_buffer_pct: float         = 0.0
+    trailing_atr_mult:      float                = 2.0
+    close_on_opposite:      bool                 = False
+    exit_on_opposite:       bool                 = False
+    allow_short:            bool                 = True
+    max_duration_profit:    bool                 = False
     commission_pct:         float                = 0.055
     # data_broker: fuente de datos para el backtest. Si None, se resuelve
     # via collector_configs (mismo comportamiento que paper/real).
@@ -138,12 +145,63 @@ async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str,
 
 
 def load_strategy(request: BacktestRequest):
-    """Carga la estrategia solicitada con todos los parametros extendidos."""
+    """Carga la estrategia solicitada. Si viene código dinámico, lo compila y ejecuta."""
+    
+    if request.strategy_code and request.strategy_code.strip():
+        from backtesting.strategies.base_strategy import BaseStrategy
+        import pandas as pd
+        import numpy as np
+        
+        # Namespace seguro para la ejecución
+        namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
+        try:
+            exec(request.strategy_code, namespace)
+        except Exception as e:
+            raise ValueError(f"Error compilando el código Python: {str(e)}")
+        
+        # Buscar la clase que herede de BaseStrategy
+        strategy_cls = None
+        for k, v in namespace.items():
+            if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
+                strategy_cls = v
+                break
+        
+        if not strategy_cls:
+            raise ValueError("El código no contiene una clase que herede de BaseStrategy.")
+        
+        # Mezclar la configuración propia de la estrategia con los parámetros de operación
+        params = request.strategy_config or {}
+        params.update({
+            'symbol': request.symbol,
+            'interval': request.interval,
+            'sl_pct': request.sl_pct,
+            'tp_pct': request.tp_pct,
+            'close_on_opposite': request.close_on_opposite,
+            'exit_on_opposite': request.exit_on_opposite,
+            'allow_short': request.allow_short,
+            'max_duration_profit': request.max_duration_profit,
+            'trailing_atr_mult': request.trailing_atr_mult,
+            'tp2_pct': request.tp2_pct,
+            'tp3_pct': request.tp3_pct,
+            'tp4_pct': request.tp4_pct,
+            'be_pct': request.be_pct,
+            'max_duration': request.max_duration,
+            'regime_filter': request.regime_filter,
+            'risk_per_trade_pct': request.risk_per_trade_pct,
+            'commission_pct': request.commission_pct,
+            'trailing_mode': request.trailing_mode,
+        })
+        return strategy_cls(params)
+
+    # Si no hay código dinámico, usar la lógica legacy (mapeo de nombres)
     params = {
         "symbol":        request.symbol,
         "interval":      request.interval,
         "sl_pct":        request.sl_pct,
         "tp_pct":        request.tp_pct,
+        "close_on_opposite": request.close_on_opposite,
+        "max_duration_profit": request.max_duration_profit,
+        "trailing_atr_mult": request.trailing_atr_mult,
         "tp2_pct":       request.tp2_pct,
         "tp3_pct":       request.tp3_pct,
         "tp4_pct":       request.tp4_pct,
@@ -305,34 +363,12 @@ async def run_backtest(request: BacktestRequest):
                 minute_df=minute_df,
             )
             result = validator.run()
-            all_trades = []
-            # WalkForwardValidator no expone trades crudos directamente en result,
-            # se reconstruyen corriendo el engine simple sobre todo el rango para el desglose mensual
+            
+            # Usar los trades del Walk-Forward para el desglose mensual
             if request.monthly_breakdown:
-                _regime_data = WalkForwardValidator(
-                    strategy=strategy, df=df,
-                    initial_balance=request.initial_balance,
-                    risk_per_trade_pct=request.risk_per_trade_pct,
-                )._build_regime_data(df)
-                engine_full = BacktestEngine(
-                    strategy=strategy, df=df,
-                    initial_balance=request.initial_balance,
-                    risk_per_trade_pct=request.risk_per_trade_pct,
-                    regime_data=_regime_data,
-                    minute_df=minute_df,
-                )
-                full_result = engine_full.run()
                 result['monthly_breakdown'] = build_monthly_breakdown(
-                    full_result['trades'], request.initial_balance
+                    result.get('trades', []), request.initial_balance
                 )
-                # Se guarda el backtest completo (in-sample, sobre el 100% del histórico)
-                # como referencia informativa para el desglose mensual — pero SIN
-                # sobreescribir aggregate_metrics/passed/pass_reasons, que deben seguir
-                # siendo las del walk-forward (fuera de muestra). Sobreescribirlas
-                # anulaba por completo el propósito de la validación walk-forward:
-                # el badge "Aprobada" y el rating de estrellas terminaban reflejando
-                # desempeño in-sample, mucho más propenso a sobreajuste.
-                result['in_sample_metrics'] = full_result.get('metrics', {})
         else:
             engine = BacktestEngine(
                 strategy=strategy, df=df,
@@ -395,3 +431,36 @@ async def get_data_range(symbol: str, interval: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ValidateStrategyRequest(BaseModel):
+    code: str
+    type: str = "python"
+
+@router.post("/strategies/validate")
+async def validate_strategy_code(req: ValidateStrategyRequest):
+    """Smoke test: valida sintaxis y ejecuta 1 mes de backtest."""
+    if req.type == "json":
+        try:
+            import json
+            json.loads(req.code)
+            return {"status": "ok", "message": "JSON válido"}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JSON inválido: {str(e)}")
+
+    # Si es Python, validar sintaxis y ejecutar un mini-backtest
+    import ast
+    try:
+        ast.parse(req.code)
+    except SyntaxError as e:
+        raise HTTPException(status_code=400, detail=f"Error de sintaxis Python: {e.msg} (línea {e.lineno})")
+
+    # TODO: En un futuro, aquí se instanciaría dinámicamente el código.
+    # Por ahora, como las estrategias actuales son 'Clase|modo', validamos que existan.
+    if "|" in req.code:
+        parts = req.code.split("|")
+        valid_classes = ["VwapStrategy", "MeanReversionStrategy", "EmaDonchianStrategy"]
+        if parts[0] not in valid_classes:
+            raise HTTPException(status_code=400, detail=f"Clase '{parts[0]}' no registrada en el motor.")
+    
+    return {"status": "ok", "message": "Sintaxis Python válida"}

@@ -90,7 +90,7 @@ class BacktestEngine:
         size = min(raw_size, max_size_by_notional)
         return round(size, 6)
 
-    def _simulate_exit_minute_bars(self, position: dict, row_time, interval_minutes: int) -> tuple[float | None, str | None, bool]:
+    def _simulate_exit_minute_bars(self, position: dict, row_time, interval_minutes: int, main_atr: float = None) -> tuple[float | None, str | None, bool]:
         """
         Recorre las velas de 1 minuto correspondientes a la vela de la
         estrategia (row_time, row_time + interval_minutes) evaluando BE, SL,
@@ -135,8 +135,10 @@ class BacktestEngine:
 
             if hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
                 ref_price = high if position['side'] == 'long' else low
+                # Usar el ATR de la vela principal (H1/H2) para el trailing
                 new_sl = self.strategy.calculate_trailing_sl(
-                    position['entry_price'], position['side'], ref_price, position['sl']
+                    position['entry_price'], position['side'], ref_price, position['sl'], 
+                    current_atr=main_atr
                 )
                 if new_sl != position['sl']:
                     position['sl'] = new_sl
@@ -174,7 +176,15 @@ class BacktestEngine:
         df = self.strategy.generate_signals(df)
 
         # Precalcular ATR para proteccion por volatilidad, si esta activada
-        needs_atr = getattr(self.strategy, 'volatility_protection_mode', None) is not None
+        needs_atr = (getattr(self.strategy, 'volatility_protection_mode', None) is not None 
+                     or getattr(self.strategy, 'trailing_mode', None) == 'atr')
+
+        # Asegurar que el ATR exista si se usa trailing ATR o protección de volatilidad
+        if needs_atr:
+            if '_atr' not in df.columns:
+                df['_atr'] = calculate_atr(df)
+            if '_atr_avg' not in df.columns:
+                df['_atr_avg'] = df['_atr'].rolling(50).mean()
         if needs_atr:
             df['_atr']     = calculate_atr(df)
             df['_atr_avg'] = df['_atr'].rolling(50).mean()
@@ -207,8 +217,9 @@ class BacktestEngine:
                     row_time = row.get('time', None)
                     if row_time is not None:
                         interval_minutes = self.INTERVAL_MINUTES.get(self.strategy.interval, 60)
+                        curr_atr = float(row['_atr']) if '_atr' in row and pd.notna(row['_atr']) else None
                         exit_price, exit_reason, used_minute_bars = self._simulate_exit_minute_bars(
-                            position, row_time, interval_minutes
+                            position, row_time, interval_minutes, main_atr=curr_atr
                         )
 
                 if not used_minute_bars:
@@ -241,8 +252,9 @@ class BacktestEngine:
                     # su efecto rige recién desde la vela siguiente.
                     if exit_price is None and hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
                         ref_price = high if position['side'] == 'long' else low
+                        curr_atr = float(row['_atr']) if '_atr' in row and pd.notna(row['_atr']) else None
                         new_sl = self.strategy.calculate_trailing_sl(
-                            position['entry_price'], position['side'], ref_price, position['sl']
+                            position['entry_price'], position['side'], ref_price, position['sl'], current_atr=curr_atr
                         )
                         if new_sl != position['sl']:
                             position['sl'] = new_sl
@@ -274,8 +286,15 @@ class BacktestEngine:
 
                 # Cierre por tiempo
                 if exit_price is None and bars_open >= self.strategy.max_duration:
-                    exit_price  = close
-                    exit_reason = 'time_exit'
+                    if getattr(self.strategy, 'max_duration_profit', False):
+                        # Solo cerrar si está en positivo
+                        is_profit = (position['side'] == 'long' and close > position['entry_price']) or (position['side'] == 'short' and close < position['entry_price'])
+                        if is_profit:
+                            exit_price  = close
+                            exit_reason = 'time_exit_profit'
+                    else:
+                        exit_price  = close
+                        exit_reason = 'time_exit'
 
                 # Registrar trade cerrado
                 if exit_price is not None:
@@ -323,10 +342,47 @@ class BacktestEngine:
                     position = None
                     equity_curve.append(self.balance)
 
+            # ── Cierre por Señal Opuesta ─────────────────────────────────
+            should_exit = getattr(self.strategy, 'close_on_opposite', False) or getattr(self.strategy, 'exit_on_opposite', False)
+            if position is not None and should_exit:
+                if prev['signal'] != 0:
+                    current_signal = int(prev['signal'])
+                    opposite_signal = (position['side'] == 'long' and current_signal == -1) or (position['side'] == 'short' and current_signal == 1)
+                    if opposite_signal:
+                        exit_price = float(row['open']) # Cerrar al open de la vela actual (evita lookahead)
+                        exit_reason = 'opposite_signal'
+                        # Registrar trade (lógica duplicada de cierre)
+                        if position['side'] == 'long':
+                            gross_pnl = (exit_price - position['entry_price']) * position['size']
+                        else:
+                            gross_pnl = (position['entry_price'] - exit_price) * position['size']
+                        commission_pct = getattr(self.strategy, 'commission_pct', 0.0) / 100
+                        commission = (position['entry_price'] * position['size'] + exit_price * position['size']) * commission_pct
+                        pnl = gross_pnl - commission
+                        pnl_pct = pnl / self.balance * 100
+                        self.balance += pnl
+                        self.trades.append({
+                            "entry_time":   position['entry_time'], "exit_time": row['time'] if 'time' in df.columns else str(i),
+                            "symbol":       self.strategy.symbol, "side": position['side'],
+                            "entry_price":  position['entry_price'], "exit_price": exit_price,
+                            "sl": position['sl'], "tp1": position.get('tp1'), "tp2": position.get('tp2'),
+                            "tp3": position.get('tp3'), "tp4": position.get('tp4'), "size": position['size'],
+                            "gross_pnl": round(gross_pnl, 4), "commission": round(commission, 4), "pnl": round(pnl, 4),
+                            "pnl_pct": round(pnl_pct, 4), "exit_reason": exit_reason, "bars_open": i - position['entry_bar'],
+                            "be_activated": position['be_activated'], "trailing_applied": position.get('trailing_applied', False),
+                            "regime": position['regime'],
+                        })
+                        position = None
+                        equity_curve.append(self.balance)
+
             # ── Nueva entrada ────────────────────────────────────────────
             if position is None and prev['signal'] != 0:
                 signal = int(prev['signal'])
                 side   = 'long' if signal == 1 else 'short'
+                
+                # Si allow_short es False y la señal es Short, ignorar
+                if side == 'short' and not getattr(self.strategy, 'allow_short', True):
+                    continue
                 entry  = float(row['open'])
 
                 regime = self._get_regime_at(row.get('time', i))

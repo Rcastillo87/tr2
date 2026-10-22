@@ -7,6 +7,7 @@ Los parametros de cada estrategia/simbolo se leen desde config_map
 
 import asyncpg
 import pandas as pd
+from backtesting.strategies.base_strategy import BaseStrategy
 import logging
 import os
 import json
@@ -626,7 +627,34 @@ class PaperTrader:
                 continue
 
             params = self._get_params_for(display_name, symbol)
-            strategy = strategy_cls(params)
+            
+            # Si la config tiene código dinámico (backtest), usarlo
+            cfg = self.config_map.get(display_name, {})
+            strategy_code = cfg.get('strategy_code')
+            strategy_config = cfg.get('strategy_config')
+            
+            if strategy_code:
+                import numpy as np
+                namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
+                try:
+                    exec(strategy_code, namespace)
+                    strategy_cls = None
+                    for k, v in namespace.items():
+                        if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
+                            strategy_cls = v
+                            break
+                    if not strategy_cls:
+                        raise ValueError("No se encontró clase BaseStrategy en el código.")
+                    
+                    # Mezclar config de la estrategia con params de operación
+                    merged_params = strategy_config or {}
+                    merged_params.update(params)
+                    strategy = strategy_cls(merged_params)
+                except Exception as e:
+                    results[display_name] = f"Error compilando código: {str(e)}"
+                    continue
+            else:
+                strategy = strategy_cls(params)
             regime   = await self.get_current_regime(
                 df, trending_threshold=strategy.regime_adx_trending,
                 ranging_threshold=strategy.regime_adx_ranging,

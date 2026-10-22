@@ -162,6 +162,7 @@ class WalkForwardValidator:
             "passed":            passed['passed'],
             "pass_reasons":      passed['reasons'],
             "ready_for_paper":   passed['passed'],
+            "trades":            all_test_trades,
         }
 
     def _evaluate(self, window_results: list, aggregate: dict) -> dict:

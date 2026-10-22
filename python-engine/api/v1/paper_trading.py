@@ -23,6 +23,7 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 
 # Mapa de clase Python por nombre (extensible sin tocar logica del motor)
 STRATEGY_CLASS_MAP = {
+    'DynamicStrategy': ('backtesting.strategies.base_strategy', 'BaseStrategy'),
     'VwapStrategy':          ('backtesting.strategies.vwap_strategy',  'VwapStrategy'),
     'MeanReversionStrategy': ('backtesting.strategies.mean_reversion',  'MeanReversionStrategy'),
     'EmaDonchianStrategy':   ('backtesting.strategies.ema_donchian',    'EmaDonchianStrategy'),

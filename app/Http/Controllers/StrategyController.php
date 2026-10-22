@@ -1,0 +1,134 @@
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\Strategy;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
+
+class StrategyController extends Controller
+{
+    public function index()
+    {
+        Gate::authorize('manageUsers');
+        $strategies = Strategy::orderBy('name')->get();
+        return view('strategies.index', compact('strategies'));
+    }
+
+    public function create()
+    {
+        Gate::authorize('manageUsers');
+        return view('strategies.form', ['strategy' => new Strategy()]);
+    }
+
+    public function store(Request $request)
+    {
+        Gate::authorize('manageUsers');
+        
+        $validated = $request->validate([
+            'name' => 'required|string|max:100|unique:strategies,name',
+            'description' => 'nullable|string|max:255',
+            'code' => 'required|string',
+            'config' => 'nullable|string', // Lo validamos como string, luego lo convertimos a array
+        ]);
+
+        // Verificar que el JSON sea válido
+        if (!empty($validated['config'])) {
+            $decoded = json_decode($validated['config'], true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw ValidationException::withMessages(['config' => 'El JSON de configuración no es válido.']);
+            }
+            $validated['config'] = $decoded;
+        } else {
+            $validated['config'] = [];
+        }
+
+        // Smoke Test en el motor Python
+        $this->runSmokeTest($validated['code']);
+
+        try {
+            Strategy::create($validated);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Error creando estrategia: ' . $e->getMessage());
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'Error al guardar en la base de datos: ' . $e->getMessage()
+            ]);
+        }
+        return redirect()->route('strategies.index')->with('status', 'Estrategia creada y validada correctamente.');
+    }
+
+    public function edit(Strategy $strategy)
+    {
+        Gate::authorize('manageUsers');
+        return view('strategies.form', compact('strategy'));
+    }
+
+    public function update(Request $request, Strategy $strategy)
+    {
+        Gate::authorize('manageUsers');
+        
+        $validated = $request->validate([
+            'name' => 'required|string|max:100|unique:strategies,name,' . $strategy->id,
+            'description' => 'nullable|string|max:255',
+            'code' => 'required|string',
+            'config' => 'nullable|string',
+        ]);
+
+        if (!empty($validated['config'])) {
+            $decoded = json_decode($validated['config'], true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw ValidationException::withMessages(['config' => 'El JSON de configuración no es válido.']);
+            }
+            $validated['config'] = $decoded;
+        } else {
+            $validated['config'] = [];
+        }
+
+        $this->runSmokeTest($validated['code']);
+
+        $strategy->update($validated);
+        return redirect()->route('strategies.index')->with('status', 'Estrategia actualizada y validada correctamente.');
+    }
+
+    public function toggle(Strategy $strategy)
+    {
+        Gate::authorize('manageUsers');
+        $strategy->active = !$strategy->active;
+        $strategy->save();
+        return back()->with('status', "Estrategia {$strategy->name} " . ($strategy->active ? 'activada' : 'desactivada'));
+    }
+
+    public function destroy(Strategy $strategy)
+    {
+        Gate::authorize('manageUsers');
+        $name = $strategy->name;
+        $strategy->delete();
+        return back()->with('status', "Estrategia {$name} eliminada.");
+    }
+
+    private function runSmokeTest($code)
+    {
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(15)->post(
+                config('trading.python_engine_url') . '/v1/strategies/validate',
+                ['code' => $code, 'type' => 'python']
+            );
+
+            if (!$response->successful()) {
+                $errorMsg = $response->json('detail') ?? 'Error desconocido en validación.';
+                throw ValidationException::withMessages([
+                    'code' => "❌ Falló el Smoke Test: " . $errorMsg
+                ]);
+            }
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'code' => "❌ Error conectando al motor de validación: " . $e->getMessage()
+            ]);
+        }
+    }
+}

@@ -72,7 +72,7 @@ class BaseStrategy(ABC):
         self.tp4_pct = params.get('tp4_pct', None)
 
         # Trailing stop
-        self.trailing_mode         = params.get('trailing_mode', None)  # None | "fixed" | "stepped"
+        self.trailing_mode         = params.get('trailing_mode', None)  # None | "fixed" | "stepped" | "atr"
         # Buffer de activacion del trailing 'fixed', en % de ganancia minima
         # antes de que el trailing empiece a moverse. Replica el activePrice
         # del trailing nativo de Bybit en real_trader.py (default ahi: 0.3%).
@@ -87,6 +87,11 @@ class BaseStrategy(ABC):
         self.max_leverage = params.get('max_leverage', 1.0)
         self.trailing_distance_pct = params.get('trailing_distance_pct', 1.0)
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
+        self.trailing_atr_mult     = params.get('trailing_atr_mult', 2.0)  # Multiplicador para trailing ATR
+        self.close_on_opposite     = params.get('close_on_opposite', False) # Cerrar si aparece señal contraria
+        self.exit_on_opposite      = params.get('exit_on_opposite', False)  # Cerrar si aparece señal contraria (pero NO abrir la opuesta)
+        self.allow_short           = params.get('allow_short', True)        # Permite o no abrir posiciones Short
+        self.max_duration_profit   = params.get('max_duration_profit', False) # Cerrar por tiempo solo si está en positivo
 
         # Proteccion por volatilidad
         self.volatility_protection_mode = params.get('volatility_protection_mode', None)  # None | "close" | "widen"
@@ -232,7 +237,7 @@ class BaseStrategy(ABC):
             return entry_price * (1 - self.be_pct / 100)
 
     def calculate_trailing_sl(self, entry_price: float, side: str, current_price: float,
-                               current_sl: float) -> float:
+                               current_sl: float, current_atr: float = None) -> float:
         """
         Calcula el nuevo SL segun el modo de trailing configurado.
         Solo mueve el SL a favor del trade, nunca lo retrocede.
@@ -242,6 +247,7 @@ class BaseStrategy(ABC):
             self.trailing_mode, self.trailing_distance_pct, self.trailing_steps,
             entry_price, side, current_price, current_sl,
             activation_buffer_pct=self.trailing_activation_buffer_pct,
+            current_atr=current_atr, atr_mult=self.trailing_atr_mult
         )
 
     def check_volatility_protection(self, current_sl: float, side: str,
@@ -272,7 +278,7 @@ class BaseStrategy(ABC):
 def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
                                       trailing_steps, entry_price, side,
                                       current_price, current_sl,
-                                      activation_buffer_pct=0.0):
+                                      activation_buffer_pct=0.0, current_atr=None, atr_mult=2.0):
     """
     Version standalone (sin instancia de estrategia) de calculate_trailing_sl,
     para modulos que no necesitan una instancia completa de estrategia solo
@@ -317,5 +323,18 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
             else:
                 candidate = entry_price * (1 - sl_pct_from_entry / 100)
                 new_sl = min(current_sl, candidate)
+                
+    elif trailing_mode == 'atr' and current_atr and current_atr > 0:
+        # Trailing dinámico basado en ATR
+        # Buffer: solo activar si la ganancia es al menos 1.0% (evita cierres prematuros)
+        if gain_pct < 1.0:
+            return current_sl
+        
+        if side == 'long':
+            candidate = current_price - (current_atr * atr_mult)
+            new_sl = max(current_sl, candidate)
+        else:
+            candidate = current_price + (current_atr * atr_mult)
+            new_sl = min(current_sl, candidate)
 
     return round(new_sl, 8)
