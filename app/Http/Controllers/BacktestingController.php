@@ -11,12 +11,10 @@ use Illuminate\Support\Facades\Gate;
 
 class BacktestingController extends Controller
 {
-    const STRATEGY_OPTIONS = [
-        'VWAP Tendencia'         => ['class' => 'VwapStrategy',          'mode' => 'trend_follow', 'label' => 'VWAP Tendencia (trend follow)'],
-        'VWAP Reversión'         => ['class' => 'VwapStrategy',          'mode' => 'reversion',    'label' => 'VWAP Reversión (E-13)'],
-        'Reversión a la Media'   => ['class' => 'MeanReversionStrategy', 'mode' => null,           'label' => 'Reversión a la Media'],
-        'Tendencia EMA/Donchian' => ['class' => 'EmaDonchianStrategy',   'mode' => null,           'label' => 'Tendencia EMA/Donchian'],
-    ];
+    private function getStrategies()
+    {
+        return \App\Models\Strategy::where('active', true)->orderBy('name')->get();
+    }
 
     /**
      * Vista 1: Lista de estrategias activas en Paper Trading.
@@ -49,9 +47,25 @@ class BacktestingController extends Controller
     {
         Gate::authorize('viewAnalysisTools');
 
-        $paperConfigs = PaperStrategyConfig::orderBy('strategy_class')->orderBy('symbol')->get();
+        // Cargar estrategias con sus backtests
+        $strategies = \App\Models\Strategy::with(['backtests' => function($q) {
+            $q->orderBy('created_at', 'desc');
+        }])->where('active', true)->orderBy('name')->get();
 
-        return view('backtesting.index', compact('paperConfigs'));
+        // Calcular en el controlador si está operando para evitar errores en la vista
+        foreach ($strategies as $s) {
+            $backtestIds = $s->backtests->pluck('id')->toArray();
+            $s->is_operating = false;
+            
+            if (count($backtestIds) > 0) {
+                $s->is_operating = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtestIds)
+                    ->where('active', true)
+                    ->exists();
+            }
+            $s->backtests_count = $s->backtests->count();
+        }
+
+        return view('backtesting.index', compact('strategies'));
     }
 
     /**
@@ -59,6 +73,167 @@ class BacktestingController extends Controller
      * GET: muestra el formulario vacío.
      * POST: ejecuta el backtest y muestra resultados.
      */
+
+    public function executeAjax(Request $request)
+    {
+        Gate::authorize('viewAnalysisTools');
+
+        $strategyId = $request->input('strategy_id');
+        $strategy = \App\Models\Strategy::find($strategyId);
+        $selectedSymbols = $request->input('symbols', []);
+
+        if (!$strategy) {
+            return response()->json(['success' => false, 'error' => 'Estrategia no encontrada.']);
+        }
+        if (empty($selectedSymbols)) {
+            return response()->json(['success' => false, 'error' => 'Debes seleccionar al menos un símbolo.']);
+        }
+
+        $months = (int) $request->input('months', 6);
+        $end = now()->subMonthNoOverflow()->endOfMonth();
+        $start = $end->copy()->subMonths($months - 1)->startOfMonth();
+
+        $overrideConfig = $request->input('strategy_config_override');
+        $finalConfig = $strategy->config;
+        if (!empty($overrideConfig)) {
+            $decoded = json_decode($overrideConfig, true);
+            if (json_last_error() === JSON_ERROR_NONE) $finalConfig = $decoded;
+        }
+
+        $resultsData = [];
+        $totalTrades = 0;
+        $totalWins = 0;
+        $totalPnl = 0;
+
+        // ── Http::pool: lanza todas las peticiones en paralelo ──
+        $payloads = [];
+        foreach ($selectedSymbols as $sym) {
+            $payloads[$sym] = [
+                'strategy' => $strategy->name,
+                'strategy_code' => $strategy->code,
+                'strategy_config' => $finalConfig,
+                'symbol' => $sym,
+                'interval' => $request->input('interval', '60'),
+                'initial_balance' => 10000,
+                'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
+                'commission_pct' => (float) $request->input('commission_pct', 0.055),
+                'sl_pct' => (float) $request->input('sl_pct', 1.5),
+                'tp_pct' => (float) $request->input('tp_pct', 3.0),
+                'be_pct' => (float) $request->input('be_pct', 2.0),
+                'max_duration' => (int) $request->input('max_duration', 24),
+                'max_duration_profit' => $request->has('max_duration_profit'),
+                'close_on_opposite' => $request->has('close_on_opposite'),
+                'regime_filter' => $request->has('regime_filter'),
+                'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
+                'regime_adx_ranging' => (float) $request->input('regime_adx_ranging', 20),
+                'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
+                'walk_forward' => true, 'n_windows' => 5, 'monthly_breakdown' => true,
+                'trailing_mode' => $request->input('trailing_mode', 'none') !== 'none' ? $request->input('trailing_mode') : null,
+                'trailing_distance_pct' => (float) $request->input('trailing_distance_pct', 1.0),
+                'trailing_atr_mult' => (float) $request->input('trailing_atr_mult', 2.0),
+                'start_date' => $start->format('Y-m-d'), 'end_date' => $end->format('Y-m-d'),
+            ];
+            if ($request->has('macro_trend_filter')) $payloads[$sym]['macro_trend_filter'] = true;
+            if ($request->has('volume_filter')) {
+                $payloads[$sym]['volume_filter'] = true;
+                $payloads[$sym]['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
+                $payloads[$sym]['volume_filter_mult'] = (float) $request->input('volume_filter_mult', 1.2);
+            }
+        }
+
+        try {
+            $responses = \Illuminate\Support\Facades\Http::pool(function ($pool) use ($payloads) {
+                $requests = [];
+                foreach ($payloads as $sym => $p) {
+                    $requests[$sym] = $pool->withHeaders(['X-Internal-API-Key' => config('trading.python_internal_api_key')])
+                        ->timeout(180)
+                        ->post(config('trading.python_engine_url') . '/v1/backtest/run', $p);
+                }
+                return $requests;
+            });
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'error' => 'Error de conexión: ' . $e->getMessage()]);
+        }
+
+        // Http::pool devuelve un array con índices numéricos (0, 1, 2...),
+        // NO con los nombres de las monedas como claves.
+        // Usamos array_values() para asegurar índices 0, 1, 2 y mapeamos por posición.
+        $responses = array_values($responses);
+        
+        foreach ($selectedSymbols as $index => $sym) {
+            try {
+                $response = $responses[$index] ?? null;
+                if (!$response) {
+                    return response()->json(['success' => false, 'error' => "No se recibió respuesta para $sym."]);
+                }
+                if (!$response->successful()) {
+                    return response()->json(['success' => false, 'error' => "Error en $sym: " . $response->body()]);
+                }
+
+                $res = $response->json('result');
+                $summary = [
+                    'symbol' => $sym,
+                    'aggregate_metrics' => $res['aggregate_metrics'] ?? [],
+                    'monthly_breakdown' => $res['monthly_breakdown'] ?? [],
+                    'passed' => $res['passed'] ?? false,
+                ];
+                $resultsData[] = $summary;
+
+                $agg = $summary['aggregate_metrics'];
+                $totalTrades += $agg['total_trades'] ?? 0;
+                $totalWins += $agg['winning_trades'] ?? 0;
+                $totalPnl += $agg['total_return_pct'] ?? 0;
+            } catch (\Throwable $e) {
+                return response()->json(['success' => false, 'error' => "Error procesando $sym: " . $e->getMessage()]);
+            }
+        }
+
+        if (empty($resultsData)) {
+            return response()->json(['success' => false, 'error' => 'No se obtuvieron resultados.']);
+        }
+
+        $winRate = $totalTrades > 0 ? round($totalWins / $totalTrades * 100, 2) : 0;
+        $result = [
+            'strategy' => $strategy->name,
+            'interval' => $request->input('interval', '60'),
+            'symbols_list' => $selectedSymbols,
+            'aggregate_metrics' => [
+                'total_trades' => $totalTrades,
+                'winning_trades' => $totalWins,
+                'win_rate' => $winRate,
+                'total_return_pct' => round($totalPnl, 2),
+                'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
+                'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+            ],
+            'individual_results' => $resultsData,
+            'save_payload' => [
+                'hash' => md5($strategyId . '_' . implode(',', $selectedSymbols) . '_' . $request->input('interval', '60') . '_' . $months . '_' . $request->input('sl_pct', 1.5) . '_' . $request->input('tp_pct', 3.0)),
+                'strategy_id' => $strategyId,
+                'symbols' => $selectedSymbols,
+                'interval' => $request->input('interval', '60'),
+                'months' => $months,
+                'config_params' => array_values($payloads)[0] ?? [],
+                'strategy_snapshot' => ['code' => $strategy->code, 'config' => $finalConfig],
+                'metrics' => [
+                    'total_trades' => $totalTrades,
+                    'win_rate' => $winRate,
+                    'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
+                    'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+                    'avg_monthly_pnl' => round($totalPnl / max(1, $months), 2),
+                    'consist_pct' => 0,
+                ]
+            ]
+        ];
+
+        // Renderizar la vista parcial y devolverla como HTML
+        $html = view('backtesting.partials.results', [
+            'result' => $result,
+            'implementParams' => array_values($payloads)[0] ?? [],
+        ])->render();
+
+        return response()->json(['success' => true, 'html' => $html]);
+    }
+
     public function run(Request $request)
     {
         Gate::authorize('viewAnalysisTools');
@@ -68,192 +243,199 @@ class BacktestingController extends Controller
         $error           = null;
         $old_session     = null;
 
-        $symbols   = CollectorConfig::activeSymbols();
+        $strategies = $this->getStrategies();
+        $symbols   = array_values((array) CollectorConfig::activeSymbols());
         $intervals = CollectorConfig::activeIntervals();
-        // Mapeo symbol -> broker, para que la vista sepa que comision aplicar
-        // automaticamente (Bybit cobra 0.055% taker fee explicito; IG no
-        // cobra comision separada, su costo va incorporado en el spread).
-        $symbolBrokerMap = CollectorConfig::query()
-            ->select('symbol', 'broker')
-            ->distinct()
-            ->pluck('broker', 'symbol');
+        $symbolBrokerMap = CollectorConfig::query()->select('symbol', 'broker')->distinct()->pluck('broker', 'symbol');
+        $paperConfigsForPreload = PaperStrategyConfig::active()->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])->map(function ($c) {
+            $params = is_array($c->params) ? $c->params : json_decode($c->params, true);
+            return ['display_name' => $c->display_name, 'strategy_class' => $c->strategy_class, 'symbol' => $c->symbol, 'interval' => $c->interval, 'params' => $params];
+        })->values();
 
-        $paperConfigsForPreload = PaperStrategyConfig::active()
-            ->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])
-            ->map(function ($c) {
-                $params = is_array($c->params) ? $c->params : json_decode($c->params, true);
-                return [
-                    'display_name'   => $c->display_name,
-                    'strategy_class' => $c->strategy_class,
-                    'symbol'         => $c->symbol,
-                    'interval'       => $c->interval,
-                    'params'         => $params,
-                ];
-            })->values();
+        $backtestToLoad = null;
+        $strategyToLoad = null;
+        
+        // Si viene backtest_id, cargar el backtest Y su estrategia
+        if ($request->has('backtest_id')) {
+            $backtestToLoad = \App\Models\Backtest::find($request->input('backtest_id'));
+            if ($backtestToLoad) {
+                $strategyToLoad = $backtestToLoad->strategy;
+            }
+        }
+        // Si no, pero viene strategy_id, cargar solo la estrategia
+        elseif ($request->has('strategy_id')) {
+            $strategyToLoad = \App\Models\Strategy::find($request->input('strategy_id'));
+        }
+
+        // Inicializar los símbolos seleccionados por defecto (si venimos de editar, cargar los del backtest)
+        $selectedSymbols = $backtestToLoad->symbols ?? ['BTCUSDT'];
 
         if ($request->isMethod('post')) {
-            $strategyKey = $request->input('strategy');
-            $strategyDef = self::STRATEGY_OPTIONS[$strategyKey] ?? null;
+            \Illuminate\Support\Facades\Log::info('[BACKTEST] POST iniciado');
+            $selectedSymbols = $request->input('symbols', []);
+            $strategyId = $request->input('strategy_id');
+            $strategy = \App\Models\Strategy::find($strategyId);
+            $selectedSymbols = $request->input('symbols', []);
 
-            if (!$strategyDef) {
-                $error = "Estrategia no reconocida: {$strategyKey}";
+            if (!$strategy) {
+                $error = "Estrategia no encontrada.";
+            } elseif (empty($selectedSymbols)) {
+                $error = "Debes seleccionar al menos un símbolo.";
             } else {
-                $strategyName = match($strategyDef['class']) {
-                    'VwapStrategy' => $strategyDef['mode'] === 'trend_follow'
-                        ? 'VWAP Tendencia'
-                        : 'VWAP Reversión',
-                    'MeanReversionStrategy' => 'Reversión a la Media',
-                    'EmaDonchianStrategy'   => 'Tendencia EMA/Donchian',
-                    default => $strategyKey,
-                };
+                $months = (int) $request->input('months', 6);
+                $end = now()->subMonthNoOverflow()->endOfMonth();
+                $start = $end->copy()->subMonths($months - 1)->startOfMonth();
 
-                $payload = [
-                    'strategy'           => $strategyName,
-                    'symbol'             => $request->input('symbol'),
-                    'interval'           => $request->input('interval', '60'),
-                    'initial_balance'    => 10000,
-                    'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
-'commission_pct'     => (float) $request->input('commission_pct', 0.055),
-                    'max_leverage'       => (float) $request->input('max_leverage', 1.0),
-                    'sl_pct'             => (float) $request->input('sl_pct', 1.5),
-                    'tp_pct'             => (float) $request->input('tp_pct', 3.0),
-                    'be_pct'             => (float) $request->input('be_pct', 2.0),
-                    'max_duration'       => (int) $request->input('max_duration', 24),
-                    'regime_filter'      => $request->has('regime_filter'), // fix: checkbox desmarcado = false
-                    'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
-                    'regime_adx_ranging'  => (float) $request->input('regime_adx_ranging', 20),
-                    'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
-                    'walk_forward'       => true,
-                    'n_windows'          => 5,
-                    'monthly_breakdown'  => true,
-                ];
-
-                if ($strategyDef['mode']) {
-                    $payload['mode'] = $strategyDef['mode'];
+                // Configuración Base
+                $overrideConfig = $request->input('strategy_config_override');
+                $finalConfig = $strategy->config;
+                if (!empty($overrideConfig)) {
+                    $decoded = json_decode($overrideConfig, true);
+                    if (json_last_error() === JSON_ERROR_NONE) $finalConfig = $decoded;
                 }
 
-                if ($request->has('macro_trend_filter')) {
-                    $payload['macro_trend_filter'] = true;
-                }
+                $resultsData = [];
+                $totalTrades = 0;
+                $totalWins = 0;
+                $totalPnl = 0;
 
-                foreach (['tp2_pct', 'tp3_pct', 'tp4_pct'] as $tpField) {
-                    $value = $request->input($tpField);
-                    if ($value !== null && $value !== '') {
-                        $payload[$tpField] = (float) $value;
+                \Illuminate\Support\Facades\Log::info('[BACKTEST] Símbolos seleccionados: ' . implode(', ', $selectedSymbols));
+                
+                // Bucle por cada símbolo seleccionado
+                foreach ($selectedSymbols as $sym) {
+                    \Illuminate\Support\Facades\Log::info("[BACKTEST] Procesando símbolo: $sym");
+                    $payload = [
+                        'strategy' => $strategy->name,
+                        'strategy_code' => $strategy->code,
+                        'strategy_config' => $finalConfig,
+                        'symbol' => $sym,
+                        'interval' => $request->input('interval', '60'),
+                        'initial_balance' => 10000,
+                        'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
+                        'commission_pct' => (float) $request->input('commission_pct', 0.055),
+                        'sl_pct' => (float) $request->input('sl_pct', 1.5),
+                        'tp_pct' => (float) $request->input('tp_pct', 3.0),
+                        'be_pct' => (float) $request->input('be_pct', 2.0),
+                        'max_duration' => (int) $request->input('max_duration', 24),
+                        'max_duration_profit' => $request->has('max_duration_profit'),
+                        'close_on_opposite' => $request->has('close_on_opposite'),
+                        'regime_filter' => $request->has('regime_filter'),
+                        'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
+                        'regime_adx_ranging' => (float) $request->input('regime_adx_ranging', 20),
+                        'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
+                        'walk_forward' => true, 'n_windows' => 5, 'monthly_breakdown' => true,
+                        'trailing_mode' => $request->input('trailing_mode', 'none') !== 'none' ? $request->input('trailing_mode') : null,
+                        'trailing_distance_pct' => (float) $request->input('trailing_distance_pct', 1.0),
+                        'trailing_atr_mult' => (float) $request->input('trailing_atr_mult', 2.0),
+                        'start_date' => $start->format('Y-m-d'), 'end_date' => $end->format('Y-m-d'),
+                    ];
+                    
+                    if ($request->has('macro_trend_filter')) $payload['macro_trend_filter'] = true;
+                    if ($request->has('volume_filter')) {
+                        $payload['volume_filter'] = true;
+                        $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
+                        $payload['volume_filter_mult'] = (float) $request->input('volume_filter_mult', 1.2);
                     }
-                }
-
-                if ($request->filled('start_date')) $payload['start_date'] = $request->input('start_date');
-                if ($request->filled('end_date'))   $payload['end_date']   = $request->input('end_date');
-
-                $trailingMode = $request->input('trailing_mode');
-                if ($trailingMode && $trailingMode !== 'none') {
-                    $payload['trailing_mode'] = $trailingMode;
-                    if ($trailingMode === 'fixed') {
-                        $payload['trailing_distance_pct'] = (float) $request->input('trailing_distance_pct', 1.0);
-                        $payload['trailing_activation_buffer_pct'] = (float) $request->input('trailing_activation_buffer_pct', 0.3);
+                    if ($request->has('volatility_protection_mode') && $request->input('volatility_protection_mode') !== 'none') {
+                        $payload['volatility_protection_mode'] = $request->input('volatility_protection_mode');
+                        $payload['volatility_atr_multiplier'] = (float) $request->input('volatility_atr_multiplier', 2.5);
                     }
-                    if ($trailingMode === 'stepped') {
-                        $steps = [];
-                        $gains = $request->input('trailing_step_gain', []);
-                        $sls   = $request->input('trailing_step_sl', []);
-                        foreach ($gains as $idx => $gain) {
-                            if ($gain !== '' && isset($sls[$idx]) && $sls[$idx] !== '') {
-                                $steps[] = [(float) $gain, (float) $sls[$idx]];
-                            }
+
+                    try {
+                        $response = Http::withHeaders(['X-Internal-API-Key' => config('trading.python_internal_api_key')])
+                            ->timeout(90)->post(config('trading.python_engine_url') . '/v1/backtest/run', $payload);
+                            
+                        \Illuminate\Support\Facades\Log::info("[BACKTEST] Response status para $sym: " . $response->status());
+                        if ($response->successful()) {
+                            \Illuminate\Support\Facades\Log::info("[BACKTEST] Procesando respuesta JSON para $sym...");
+                            
+                            $res = $response->json('result');
+                            
+                            // CRITICAL: eliminar los trades individuales (pueden ser miles de registros)
+                            // Solo guardamos los agregados que la vista necesita
+                            $summary = [
+                                'symbol' => $sym,
+                                'aggregate_metrics' => $res['aggregate_metrics'] ?? [],
+                                'monthly_breakdown' => $res['monthly_breakdown'] ?? [],
+                                'passed' => $res['passed'] ?? false,
+                                'stars' => $res['stars'] ?? [],
+                                'consist_pct' => $res['consist_pct'] ?? 0,
+                                'range_from' => $res['range_from'] ?? null,
+                                'range_to' => $res['range_to'] ?? null,
+                            ];
+                            
+                            $resultsData[] = $summary;
+                            unset($res); // liberar memoria
+                            
+                            \Illuminate\Support\Facades\Log::info("[BACKTEST] Resumen de $sym añadido correctamente");
+                            
+                            $agg = $summary['aggregate_metrics'];
+                            $totalTrades += $agg['total_trades'] ?? 0;
+                            $totalWins += $agg['winning_trades'] ?? 0;
+                            $totalPnl += $agg['total_return_pct'] ?? 0;
+                        } else {
+                            $error .= "Error en $sym: " . $response->body() . "\n";
+                            \Illuminate\Support\Facades\Log::error("[BACKTEST] Error de Python para $sym: " . $response->body());
                         }
-                        $payload['trailing_steps'] = $steps;
+                    } catch (\Throwable $e) {
+                        $error .= "Error de conexión en $sym: " . $e->getMessage() . "\n";
                     }
                 }
 
-                $volMode = $request->input('volatility_protection_mode');
-                if ($volMode && $volMode !== 'none') {
-                    $payload['volatility_protection_mode'] = $volMode;
-                    $payload['volatility_atr_multiplier']  = (float) $request->input('volatility_atr_multiplier', 2.5);
-                    if ($volMode === 'widen') {
-                        $payload['volatility_widen_pct'] = (float) $request->input('volatility_widen_pct', 1.0);
-                    }
-		}
-                // Filtro de volumen
-                if ($request->has('volume_filter')) {
-                    $payload['volume_filter']        = true;
-                    $payload['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
-                    $payload['volume_filter_mult']   = (float) $request->input('volume_filter_mult', 1.2);
-                }
-                // Filtro horario
-                if ($request->has('hour_filter')) {
-                    $payload['hour_filter']       = true;
-                    $payload['hour_filter_start'] = (int) $request->input('hour_filter_start', 7);
-                    $payload['hour_filter_end']   = (int) $request->input('hour_filter_end', 21);
-                }
-                // Horas bloqueadas
-                if ($request->has('blocked_hours_active')) {
-                    $payload['blocked_hours'] = array_map('intval', $request->input('blocked_hours', [10, 11]));
-                }
-                // Dias bloqueados
-                if ($request->has('blocked_days_active')) {
-                    $payload['blocked_days'] = array_map('intval', $request->input('blocked_days', [0]));
-                }
-
-                try {
-                    $response = Http::withHeaders([
-                        'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-                    ])->timeout(180)->post(
-                        config('trading.python_engine_url') . '/v1/backtest/run',
-                        $payload
-                    );
-
-                    if ($response->successful()) {
-                        $result = $response->json('result');
-                        $implementParams = collect($payload)->except([
-                            'strategy', 'symbol', 'interval', 'walk_forward', 'n_windows',
-                            'train_pct', 'monthly_breakdown', 'initial_balance',
-                        ])->filter(fn ($v) => $v !== null)->toArray();
-
-                        // Calcular estrellas
-                        if ($result) {
-                            $agg      = $result['aggregate_metrics'] ?? [];
-                            $monthly  = $result['monthly_breakdown'] ?? [];
-                            $pnls     = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
-                            $avgRet   = $pnls->count() > 0 ? $pnls->average() : 0;
-                            $mesesPos = $pnls->filter(fn($p) => $p > 0)->count();
-                            $consist  = $pnls->count() > 0 ? round($mesesPos / $pnls->count() * 100, 1) : 0;
-                            $rangeFrom = $monthly ? $monthly[0]['month'] : null;
-                            $rangeTo   = $monthly ? $monthly[count($monthly)-1]['month'] : null;
-
-                            $stars = $this->calcularEstrellas(
-                                (float) ($agg['win_rate'] ?? 0),
-                                (float) ($agg['sharpe_ratio'] ?? 0),
-                                (float) $avgRet,
-                                (float) $consist,
-                                (float) ($agg['profit_factor'] ?? 0)
-                            );
-                            $result['stars']      = $stars;
-                            $result['consist_pct'] = $consist;
-                            $result['range_from']  = $rangeFrom;
-                            $result['range_to']    = $rangeTo;
-                        }
-                    } else {
-                        $error = 'Error del motor: ' . $response->body();
-                    }
-                } catch (\Throwable $e) {
-                    Log::error('Backtesting: error — ' . $e->getMessage());
-                    $error = 'No se pudo conectar al motor de backtesting.';
+                if (!empty($resultsData)) {
+                    // Consolidar resultados
+                    $winRate = $totalTrades > 0 ? round($totalWins / $totalTrades * 100, 2) : 0;
+                    $result = [
+                        'strategy' => $strategy->name,
+                        'interval' => $request->input('interval', '60'),
+                        'symbols_list' => $selectedSymbols,
+                        'aggregate_metrics' => [
+                            'total_trades' => $totalTrades,
+                            'winning_trades' => $totalWins,
+                            'win_rate' => $winRate,
+                            'total_return_pct' => round($totalPnl, 2),
+                            'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
+                            'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+                        ],
+                        'individual_results' => $resultsData,
+                        'config_used' => $finalConfig,
+                        'save_payload' => [
+                            'hash' => md5(json_encode(['strat' => $strategyId, 'syms' => $selectedSymbols, 'cfg' => $payload])),
+                            'strategy_id' => $strategyId,
+                            'symbols' => $selectedSymbols,
+                            'interval' => $request->input('interval', '60'),
+                            'months' => $months,
+                            'config_params' => array_values($payloads)[0] ?? [],
+                            'strategy_snapshot' => ['code' => $strategy->code, 'config' => $finalConfig],
+                            'metrics' => [
+                                'total_trades' => $totalTrades,
+                                'win_rate' => $winRate,
+                                'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
+                                'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+                                'avg_monthly_pnl' => round($totalPnl / max(1, $months), 2),
+                                'consist_pct' => 0, // Placeholder
+                            ]
+                        ]
+                    ];
+                    $implementParams = $payload;
                 }
             }
         }
 
-
+        \Illuminate\Support\Facades\Log::info('[BACKTEST] Preparando vista. Filas de resultados: ' . count($resultsData ?? []));
+        
         return view('backtesting.run', [
-            'strategies'             => self::STRATEGY_OPTIONS,
-            'symbols'                => $symbols,
-            'intervals'              => $intervals,
-            'symbolBrokerMap'        => $symbolBrokerMap,
+            'strategies' => $strategies,
+            'symbols' => $symbols,
+            'intervals' => $intervals,
+            'symbolBrokerMap' => $symbolBrokerMap,
             'paperConfigsForPreload' => $paperConfigsForPreload,
-            'result'                 => $result,
-            'implementParams'        => $implementParams,
-            'error'                  => $error,
-            'old'                    => $old_session ?? $request->all(),
+            'result' => $result,
+            'implementParams' => $implementParams,
+            'error' => $error,
+            'backtestToLoad' => $backtestToLoad,
+            'selectedSymbols' => $selectedSymbols ?? [],
+            'strategyToLoad' => $strategyToLoad,
         ]);
     }
 
@@ -265,14 +447,14 @@ class BacktestingController extends Controller
     {
         Gate::authorize('viewAnalysisTools');
         // Misma logica que run() pero devuelve JSON
-        $symbols   = CollectorConfig::activeSymbols();
+        $symbols   = array_values((array) CollectorConfig::activeSymbols());
         $intervals = CollectorConfig::activeIntervals();
         $payload   = $this->buildPayload($request);
 
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(180)->post(
+            ])->timeout(90)->post(
                 config('trading.python_engine_url') . '/v1/backtest/run',
                 $payload
             );
@@ -287,7 +469,7 @@ class BacktestingController extends Controller
                 $agg      = $result['aggregate_metrics'] ?? [];
                 $monthly  = $result['monthly_breakdown'] ?? [];
                 $pnls     = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
-                $avgRet   = $pnls->count() > 0 ? $pnls->average() : 0;
+                $avgRet   = $pnls->count() > 0 ? round($pnls->average(), 2) : 0;
                 $mesesPos = $pnls->filter(fn($p) => $p > 0)->count();
                 $consist  = $pnls->count() > 0 ? round($mesesPos / $pnls->count() * 100, 1) : 0;
                 $rangeFrom = $monthly ? $monthly[0]['month'] : null;
@@ -396,6 +578,166 @@ class BacktestingController extends Controller
         }
 
         return $payload;
+    }
+
+
+    public function approve(\App\Models\Backtest $backtest)
+    {
+        Gate::authorize('viewAnalysisTools');
+        
+        // Desmarcar cualquier otro backtest aprobado para esta estrategia
+        \App\Models\Backtest::where('strategy_id', $backtest->strategy_id)
+            ->where('id', '!=', $backtest->id)
+            ->update(['approved' => false]);
+            
+        $backtest->approved = true;
+        $backtest->save();
+        
+        return redirect()->route('backtesting.history', $backtest->strategy_id)->with('status', 'Backtest aprobado para Paper Trading.');
+    }
+
+
+    public function implementPaper(\App\Models\Backtest $backtest)
+    {
+        Gate::authorize('viewAnalysisTools');
+        
+
+
+        $strategy = $backtest->strategy;
+        $configParams = $backtest->config_params;
+        $metrics = $backtest->metrics;
+        
+        // 1. Desactivar cualquier OTRA config de Paper para esta misma estrategia
+        $strategyBacktestIds = $strategy->backtests->pluck('id')->toArray();
+        if (count($strategyBacktestIds) > 0) {
+            \App\Models\PaperStrategyConfig::whereIn('backtest_id', $strategyBacktestIds)
+                ->where('backtest_id', '!=', $backtest->id)
+                ->update(['active' => false]);
+        }
+
+        // 2. Crear o activar el nuevo (para CADA moneda)
+        foreach ($backtest->symbols as $sym) {
+            \App\Models\PaperStrategyConfig::updateOrCreate(
+                [
+                    'strategy_class' => 'DynamicStrategy',
+                    'symbol' => $sym,
+                    'interval' => $backtest->interval,
+                ],
+                [
+                    'display_name' => $strategy->name . ' — ' . $sym . ' ' . $backtest->interval,
+                    'params' => $configParams,
+                    'backtest_id' => $backtest->id,
+                    'active' => true,
+                    'avg_win_rate' => $metrics['win_rate'] ?? null,
+                    'sharpe_ratio' => $metrics['sharpe_ratio'] ?? null,
+                    'profit_factor' => $metrics['profit_factor'] ?? null,
+                    'total_return_pct' => $metrics['total_return_pct'] ?? null,
+                ]
+            );
+        }
+
+        return redirect()->route('backtesting.index')->with('status', 'Backtest implementado en Paper Trading correctamente.');
+    }
+
+
+    public function history(\App\Models\Strategy $strategy)
+    {
+        Gate::authorize('viewAnalysisTools');
+        $backtests = $strategy->backtests()->orderBy('created_at', 'desc')->get();
+        
+        // Buscar si hay un backtest de esta estrategia operando en paper
+        $activeConfig = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtests->pluck('id'))
+            ->where('active', true)
+            ->first();
+            
+        $activeBacktestId = $activeConfig ? $activeConfig->backtest_id : null;
+        
+        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestId'));
+    }
+
+
+    public function destroyBacktest(\App\Models\Backtest $backtest)
+    {
+        Gate::authorize('viewAnalysisTools');
+
+        // Verificar si está en uso ACTIVO en Paper Trading
+        $inUse = \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)
+            ->where('active', true)
+            ->exists();
+        
+        if ($inUse) {
+            return back()->withErrors(['error' => 'No puedes eliminar este backtest porque está OPERANDO en Paper Trading. Detenlo primero.']);
+        }
+        
+        // Si está inactivo, borramos también su configuración de Paper huérfana
+        \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)->delete();
+
+        $backtest->delete();
+        return back()->with('status', 'Backtest eliminado del historial.');
+    }
+
+
+    public function saveBacktest(Request $request)
+    {
+        Gate::authorize('viewAnalysisTools');
+        
+        $jsonStr = $request->input('save_data');
+        if (!$jsonStr) {
+            return back()->withErrors(['error' => 'No hay datos para guardar.']);
+        }
+
+        // Decodificar el JSON (viene en Base64 para evitar problemas de HTML)
+        $decoded = base64_decode($jsonStr, true);
+        if ($decoded === false) {
+            $decoded = $jsonStr; // Fallback si no viene en base64
+        }
+
+        $data = json_decode($decoded, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            \Illuminate\Support\Facades\Log::error('Error JSON saveBacktest: ' . json_last_error_msg());
+            return back()->withErrors(['error' => 'Los datos del backtest están corruptos.']);
+        }
+
+        try {
+            // Buscar si existe por el hash, o crear uno nuevo
+            $backtest = \App\Models\Backtest::firstOrNew(['hash' => $data['hash']]);
+            
+            // Asignar los datos
+            $backtest->strategy_id = $data['strategy_id'];
+            $backtest->symbols = $data['symbols'];
+            $backtest->interval = $data['interval'];
+            $backtest->months = $data['months'];
+            $backtest->config_params = $data['config_params'];
+            $backtest->strategy_snapshot = $data['strategy_snapshot'];
+            $backtest->metrics = $data['metrics'];
+            $backtest->approved = false;
+            
+            // Si es un registro existente, forzamos que la fecha de actualización sea AHORA
+            if ($backtest->exists) {
+                $backtest->updated_at = now('America/Bogota');
+            }
+            
+            $backtest->save();
+
+            return redirect()->route('backtesting.history', $data['strategy_id'])
+                ->with('status', 'Backtest guardado en el historial correctamente.');
+                
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Error guardando backtest: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Error de Base de Datos: ' . $e->getMessage()]);
+        }
+    }
+
+
+    public function stopPaper(\App\Models\Backtest $backtest)
+    {
+        Gate::authorize('viewAnalysisTools');
+        
+        // Desactivar la configuración de Paper vinculada a este backtest
+        \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)
+            ->update(['active' => false]);
+
+        return back()->with('status', 'Estrategia detenida en Paper Trading correctamente.');
     }
 
     public function retest(PaperStrategyConfig $config)

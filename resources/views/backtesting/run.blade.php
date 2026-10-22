@@ -1,1112 +1,407 @@
 @extends('layouts.app')
-@section('title', 'Nuevo Backtest')
+@section('title', 'Configurar Backtest')
 @section('header', 'Configurar Backtest')
 
 @section('content')
-<style>button, a[href] { cursor: pointer; } @media(min-width:640px){ .kpi-grid{ grid-template-columns:repeat(7,1fr) !important; } }</style>
+<style>
+    .multi-select-container { position: relative; }
+    .multi-select-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+        max-height: 200px; overflow-y: auto; border-radius: 0.5rem;
+        border: 1px solid var(--color-border-strong); background: var(--color-surface-raised); margin-top: 4px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none;
+    }
+    .multi-select-option { padding: 8px 12px; cursor: pointer; font-size: 11px; color: var(--color-text-muted); }
+    .multi-select-option:hover { background: var(--color-surface); color: var(--color-text-primary); }
+    .tag { background: var(--color-info); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 10px; display: flex; align-items: center; gap: 4px; }
+    .tag-close { cursor: pointer; font-weight: bold; }
+    .tab-btn { transition: all 0.15s ease-in-out; }
+    .tab-btn.active { background: var(--color-surface); border-bottom: 2px solid var(--color-info); color: var(--color-text-primary); }
+    select option { background-color: var(--color-surface-raised) !important; color: var(--color-text-primary) !important; }
+    select option:checked { background-color: var(--color-info) !important; color: #fff !important; }
+</style>
 
-<div class="mb-3">
-    <a href="{{ route('backtesting.index') }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">
-        ← Volver a estrategias
-    </a>
-</div>
-
-{{-- ── Guía de parámetros (colapsable) ────────────────────────────────── --}}
-<div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-    <button type="button" onclick="toggleGuide()"
-            class="w-full flex items-center justify-between px-4 py-3 text-left"
-            style="color:var(--color-text-secondary);">
-        <span class="text-xs font-medium">📖 Guía de parámetros</span>
-        <span id="guideChevron" class="text-[11px] transition-transform" style="color:var(--color-text-muted);">▼ Mostrar</span>
-    </button>
-    <div id="guideContent" class="hidden px-4 pb-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-[11px]" style="color:var(--color-text-muted);">
-
-            {{-- Formulario --}}
-            <div class="space-y-3">
-                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Configuración del formulario</p>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Estrategia</span> —
-                    Define la lógica de señales. VWAP Tendencia sigue la dirección del mercado. VWAP Reversión busca rebotes contra la tendencia (replica el E-13). Reversión a la Media y EMA/Donchian son enfoques alternativos.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Símbolo e Intervalo</span> —
-                    Par de trading (BTCUSDT, ETHUSDT, SOLUSDT) y temporalidad de las velas (H1=1 hora, H2=2 horas). Cada combinación puede tener parámetros distintos.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Stop Loss %</span> —
-                    Pérdida máxima permitida por operación. Ej: 1.5% en BTCUSDT a $60,000 = cierra si baja $900 en tu contra. Menor valor = más operaciones cerradas por SL, más seguro pero menos margen de maniobra al precio.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Take Profit 1-4 %</span> —
-                    Niveles de ganancia para cerrar la posición. El motor cierra en el nivel más favorable alcanzado (prioridad TP4 > TP3 > TP2 > TP1). Deja en blanco los que no quieras usar. Usar múltiples TPs permite capturar más ganancia en movimientos fuertes.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Break-even %</span> —
-                    Cuando la ganancia flotante llega a este %, el Stop Loss se mueve al precio de entrada (ya no puedes perder en esa operación). Ej: BE=1.5% → al llegar a +1.5%, SL sube a entrada. Recomendado: BE entre TP1/2 y TP2/3 del SL.
-                </div>
-            </div>
-
-            {{-- Parámetros avanzados --}}
-            <div class="space-y-3">
-                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Filtros y parámetros avanzados</p>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Máx. duración (velas)</span> —
-                    Si la operación no toca SL ni TP después de N velas, se cierra al precio actual. En H1: 24 velas = 24 horas. En H2: 12 velas = 24 horas. Evita dejar operaciones abiertas indefinidamente en mercados laterales.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Riesgo/trade %</span> —
-                    Porcentaje del capital total a arriesgar en cada operación. Ej: 1% de $10,000 = $100 de riesgo por trade. Determina el tamaño de la posición: mayor riesgo = posición más grande = mayor ganancia/pérdida potencial.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Régimen de mercado</span> —
-                    Solo opera cuando el mercado está en el régimen correcto (TRENDING para estrategias de tendencia, RANGING para reversión). Desactívalo para ver el comportamiento sin este filtro.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Tendencia macro H4</span> —
-                    Bloquea señales contra la tendencia de largo plazo (EMA50 en H4). Reduce el número de trades pero elimina operaciones en contra de la marea — suaviza los meses de pérdida y mejora el Sharpe ratio.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Volumen mínimo</span> —
-                    Solo opera si el volumen de la vela actual supera el promedio de las últimas N velas × multiplicador. Evita señales en mercados sin liquidez. Período=20, Mult=1.2 es el punto de partida recomendado.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Bloquear horas (UTC)</span> —
-                    Bloquea señales en horas específicas del día. Basado en análisis histórico: 10:00-11:00 UTC tienen menor WR en BTC/ETH. Al activar carga por defecto horas 10 y 11.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Bloquear días</span> —
-                    Bloquea señales en días específicos de la semana. Basado en análisis histórico: Lunes tiene menor WR. Al activar carga Lunes por defecto.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Break-even %</span> —
-                    (Opcionales avanzados) Cuando la ganancia flotante llega a este %, el SL se mueve al precio de entrada — ya no puedes perder. Recomendado entre TP1 y TP2.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Trailing Stop — Fijo</span> —
-                    El Stop Loss se mueve automáticamente manteniendo siempre la misma distancia % del precio actual. Captura más ganancia en tendencias fuertes.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Trailing Stop — Por pasos</span> —
-                    El SL salta a niveles predefinidos cuando la ganancia alcanza ciertos umbrales. Combina protección gradual con captura de movimientos grandes.
-                </div>
-            </div>
-
-            {{-- Resultados --}}
-            <div class="space-y-3">
-                <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Interpretación de resultados</p>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Protección por volatilidad</span> —
-                    Se activa cuando el ATR actual supera X veces su promedio (mercado errático/volátil). "Cerrar": sale de la posición inmediatamente. "Ampliar SL": da más espacio para evitar cierres prematuros por ruido.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Total trades</span> —
-                    Número total de operaciones en el período. Muy pocas trades (&lt;50) hace que los resultados sean estadísticamente poco confiables. Más de 100 es ideal.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Win rate</span> —
-                    Porcentaje de operaciones ganadoras. No es el único indicador — considera siempre junto al retorno promedio mensual.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Sharpe ratio</span> —
-                    Rendimiento ajustado por riesgo. &gt;2 = excelente, 1-2 = bueno, &lt;1 = bajo.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Mejor / Peor mes</span> —
-                    El mes con mayor y menor P&L del período. Compara con el promedio mensual para detectar si los resultados son consistentes o dependen de pocos meses excepcionales.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Retorno prom./mes</span> —
-                    Promedio aritmético del P&L % de todos los meses del backtest. Facilita comparar estrategias con períodos distintos.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Total acumulado %</span> —
-                    Suma de todos los retornos mensuales del período. Representa el retorno total obtenido si hubieras operado todo el período.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Calificación ⭐</span> —
-                    Promedio de 5 métricas: Win Rate, Sharpe, Ret. prom/mes, Consistencia mensual y Profit Factor. Cada una se califica de 1 a 5 con igual peso (20%). Se guarda al implementar en Paper Trading.
-                </div>
-                <div>
-                    <span class="font-medium" style="color:var(--color-text-primary);">Criterios de aprobación</span> —
-                    La estrategia se aprueba si cumple: win rate &gt;45%, Sharpe &gt;1, drawdown &lt;15%.
-                </div>
-            </div>
-        </div>
+<div class="mb-3 flex justify-between items-center">
+    <a href="{{ route('backtesting.index') }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">← Volver a Estrategias</a>
+    
+    @php
+        $activeStrategy = $backtestToLoad->strategy ?? $strategyToLoad ?? null;
+    @endphp
+    @if($activeStrategy)
+    <div class="flex items-center gap-2 px-2.5 py-1 rounded border" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+        <span class="text-[11px] font-medium" style="color:var(--color-text-primary);">{{ $activeStrategy->name }}</span>
     </div>
+    @endif
 </div>
 
-{{-- ── Layout: formulario izquierda, resultados derecha ── --}}
-<div class="{{ $result ? 'grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 items-start' : '' }}">
-{{-- ── Formulario ──────────────────────────────────────────────────── --}}
-<div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-    <h3 class="text-xs font-medium mb-3" style="color:var(--color-text-secondary);">Configurar backtest</h3>
+@if ($error)
+    <div class="rounded-lg border p-3 mb-3 text-sm" style="background:#3A1A1C; border-color:#5A2226; color:var(--color-loss);">{{ $error }}</div>
+@endif
 
-    @if ($old && isset($old['preload_from']))
-        <div class="rounded-md p-2.5 mb-3 text-[11px]" style="background:#13233D; color:var(--color-info); border:1px solid #1E3A5F;">
-            ✓ Parámetros precargados desde: <span class="font-medium">{{ $old['preload_from'] }}</span>
-        </div>
-    @endif
+<div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+    
+    <!-- Pestañas -->
+    <div class="flex border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
+        <button type="button" onclick="switchTab('config')" id="tab-btn-config" class="tab-btn active px-4 py-2.5 text-[11px] font-medium w-1/3 text-center" style="color:var(--color-text-muted);">1. Configuración Base</button>
+        <button type="button" onclick="switchTab('apertura')" id="tab-btn-apertura" class="tab-btn px-4 py-2.5 text-[11px] font-medium w-1/3 text-center border-l border-r" style="color:var(--color-text-muted); border-color:var(--color-border-soft);">2. Filtros de Apertura</button>
+        <button type="button" onclick="switchTab('cierre')" id="tab-btn-cierre" class="tab-btn px-4 py-2.5 text-[11px] font-medium w-1/3 text-center" style="color:var(--color-text-muted);">3. Filtros de Cierre</button>
+    </div>
 
-    @if ($error)
-        <div class="rounded-lg border p-3 mb-3 text-sm" style="background:#3A1A1C; border-color:#5A2226; color:var(--color-loss);">
-            {{ $error }}
-        </div>
-    @endif
-
-    <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="space-y-4">
+    <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="p-4 space-y-4">
         @csrf
-        <input type="hidden" name="preload_from" value="{{ request('preload_from') ?: ($old['preload_from'] ?? '') }}">
-        <input type="hidden" name="config_id" value="{{ request('config_id') ?: ($old['config_id'] ?? '') }}">
-        @php $isEditing = (bool) (request('preload_from') ?: ($old['preload_from'] ?? '')); @endphp
-
-        {{-- SECCIÓN 1: Estrategia / Símbolo / Intervalo / Desde / Hasta --}}
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div>
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">
-                    Estrategia @if($isEditing) <span style="color:var(--color-text-muted);">(bloqueado)</span> @endif
-                </label>
-                <select name="strategy" id="strategy" onchange="loadParams()"
-                        @if($isEditing) disabled @endif
-                        class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary); @if($isEditing) opacity:0.6;cursor:not-allowed; @endif">
-                    @foreach ($strategies as $key => $def)
-                        <option value="{{ $key }}" {{ ($old['strategy'] ?? request('strategy', '')) === $key ? 'selected' : '' }}>{{ $def['label'] }}</option>
-                    @endforeach
-                </select>
-                @if($isEditing) <input type="hidden" name="strategy" value="{{ request('strategy') }}"> @endif
-            </div>
-            <div>
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolo</label>
-                <select name="symbol" id="symbol" onchange="loadParams(); loadDataRange(); updateCommission();"
-                        @if($isEditing) disabled @endif
-                        class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary); @if($isEditing) opacity:0.6;cursor:not-allowed; @endif">
-                    @foreach ($symbols as $sym)
-                        <option value="{{ $sym }}" {{ ($old['symbol'] ?? request('symbol', '')) === $sym ? 'selected' : '' }}>{{ $sym }}</option>
-                    @endforeach
-                </select>
-                @if($isEditing) <input type="hidden" name="symbol" value="{{ request('symbol') }}"> @endif
-            </div>
-            <div>
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Intervalo</label>
-                <select name="interval" id="interval" onchange="loadDataRange()"
-                        @if($isEditing) disabled @endif
-                        class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                        style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary); @if($isEditing) opacity:0.6;cursor:not-allowed; @endif">
-                    @foreach ($intervals as $iv)
-                        @php $lbs = ['1'=>'1m','5'=>'5m','15'=>'15m','60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1']; @endphp
-                        <option value="{{ $iv }}" {{ ($old['interval'] ?? request('interval', '60')) === $iv ? 'selected' : '' }}>{{ $lbs[$iv] ?? $iv }}</option>
-                    @endforeach
-                </select>
-                @if($isEditing) <input type="hidden" name="interval" value="{{ request('interval') }}"> @endif
-            </div>
-        </div>
-        <p id="dataRangeInfo" class="text-[11px]" style="color:var(--color-text-muted);"></p>
-
-        {{-- SECCIÓN 2: Parámetros (SL, TP1-4, BE, Duración, Riesgo en una fila) --}}
-        <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-            <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Parámetros</h4>
-            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-                @foreach ([
-                    ['sl_pct',             'Stop Loss %',     '1.5',   '0.1'],
-                    ['tp_pct',             'Take Profit 1 %', '3.0',   '0.1'],
-                    ['tp2_pct',            'Take Profit 2 %', '',      '0.1'],
-                    ['tp3_pct',            'Take Profit 3 %', '',      '0.1'],
-                    ['tp4_pct',            'Take Profit 4 %', '',      '0.1'],
-                    ['max_duration',       'Duración (velas)','24',    '1'],
-                    ['risk_per_trade_pct', 'Riesgo/trade %',  '1.0',   '0.1'],
-                ] as [$name, $label, $default, $step])
+        <input type="hidden" name="strategy_id" value="{{ request('strategy_id', $backtestToLoad->strategy_id ?? '') }}">
+        
+        <!-- PESTAÑA 1 -->
+        <div id="tab-config" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolos (Selección Múltiple)</label>
+                    <div class="multi-select-container">
+                        <div onclick="event.stopPropagation(); toggleSymbolsDropdown()" id="symbols-input" class="w-full rounded-lg px-3 py-2 text-sm border min-h-[38px] flex flex-wrap gap-1 items-center cursor-pointer" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                            <span id="symbols-placeholder" class="text-sm" style="color:var(--color-text-muted);">Seleccionar monedas...</span>
+                        </div>
+                        <div id="symbols-dropdown" class="multi-select-dropdown" onclick="event.stopPropagation()">
+                            <div class="p-2 border-b" style="border-color:var(--color-border-soft);">
+                                <input type="text" id="symbols-search" onkeyup="filterSymbols()" placeholder="Buscar moneda..." class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-primary);">
+                            </div>
+                            <div id="symbols-list"></div>
+                        </div>
+                    </div>
+                    <div id="hidden-symbols-inputs"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">{{ $label }}</label>
-                        <input type="number" step="{{ $step }}" name="{{ $name }}" id="{{ $name }}"
-                               value="{{ $old[$name] ?? request($name, $default) }}"
-                               placeholder="{{ in_array($name, ['tp2_pct','tp3_pct','tp4_pct']) ? '—' : '' }}"
-                               class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Intervalo</label>
+                        <select name="interval" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            @foreach ($intervals as $iv)
+                                @php
+                                    $intervalLabels = ['1' => '1m', '5' => '5m', '15' => '15m', '30' => '30m', '60' => 'H1', '120' => 'H2', '240' => 'H4', 'D' => 'D1'];
+                                    $label = $intervalLabels[$iv] ?? $iv;
+                                @endphp
+                                <option value="{{ $iv }}" {{ old('interval', $backtestToLoad->interval ?? '60') == $iv ? 'selected' : '' }}>{{ $label }}</option>
+                            @endforeach
+                        </select>
                     </div>
-                @endforeach
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión %</label>
-                    <div id="commissionDisplay" class="w-full rounded-lg px-3 py-2 text-sm border font-mono"
-                         style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-secondary);">
-                        0.055%
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Meses a probar</label>
+                        <select name="months" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            @foreach ([1, 3, 6, 12, 18, 24] as $m)
+                                <option value="{{ $m }}" {{ old('months', $backtestToLoad->months ?? 6) == $m ? 'selected' : '' }}>{{ $m }} meses</option>
+                            @endforeach
+                        </select>
                     </div>
-                    <input type="hidden" name="commission_pct" id="commission_pct" value="0.055">
-                    <p class="text-[9px] mt-1" style="color:var(--color-text-muted);">Automática según broker del símbolo</p>
                 </div>
             </div>
-            <p class="text-[10px] mt-2" style="color:var(--color-text-muted);">TP2-4 opcionales — deja en blanco los que no uses. El motor cierra en el nivel más favorable (TP4 > TP3 > TP2 > TP1).</p>
+
+            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Configuración de Riesgo y Operación</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Stop Loss %</label>
+                        <input type="number" step="0.1" name="sl_pct" value="{{ old('sl_pct', $backtestToLoad->config_params['sl_pct'] ?? '1.5') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 1 %</label>
+                        <input type="number" step="0.1" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Riesgo / Trade %</label>
+                        <input type="number" step="0.1" name="risk_per_trade_pct" value="{{ old('risk_per_trade_pct', $backtestToLoad->config_params['risk_per_trade_pct'] ?? '1.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión % (Auto)</label>
+                        <input type="number" step="0.001" name="commission_pct" value="0.055" readonly class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-muted);">
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
+                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Parámetros de la Estrategia (JSON)</label>
+                <textarea name="strategy_config_override" rows="1" class="w-full rounded-lg px-3 py-1.5 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-profit); resize: vertical;" placeholder='{"fast_period": 9, "slow_period": 21}'>{{ old('strategy_config_override', $backtestToLoad ? json_encode($backtestToLoad->strategy_snapshot['config'] ?? [], JSON_PRETTY_PRINT) : '') }}</textarea>
+            </div>
         </div>
 
-        {{-- SECCIÓN 3: Filtros --}}
-        <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-            <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Filtros</h4>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-                <div>
-                    <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                        <input type="checkbox" name="regime_filter" id="regime_filter" value="1"
-                               {{ ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')) ? 'checked' : '' }}
-                               onchange="toggleRegimeFields()"
-                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                        Régimen de mercado
-                    </label>
-                    @php $regimeChecked = ($old ? isset($old['regime_filter']) : (bool)request('regime_filter', '1')); @endphp
-                    <div id="regimeFields" class="{{ $regimeChecked ? 'grid' : 'hidden' }} grid-cols-3 gap-2 mt-2">
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX tendencia (mayor a)</label>
-                            <input type="number" step="1" name="regime_adx_trending" value="{{ $old['regime_adx_trending'] ?? request('regime_adx_trending', '25') }}"
-                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX lateral (menor a)</label>
-                            <input type="number" step="1" name="regime_adx_ranging" value="{{ $old['regime_adx_ranging'] ?? request('regime_adx_ranging', '20') }}"
-                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Caso ambiguo (ni claro ni claro)</label>
-                            @php $ambigVal = $old['regime_ambiguous_as'] ?? request('regime_ambiguous_as', 'RANGING'); @endphp
-                            <select name="regime_ambiguous_as"
-                                    class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
-                                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                                <option value="RANGING" {{ $ambigVal === 'RANGING' ? 'selected' : '' }}>Tratar como lateral</option>
-                                <option value="TRENDING" {{ $ambigVal === 'TRENDING' ? 'selected' : '' }}>Tratar como tendencia</option>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">El caso ambiguo es cuando el ADX no cae claramente en ninguno de los dos rangos de arriba (ej. entre "lateral" y "tendencia", o ADX bajo con bandas de Bollinger anchas).</p>
-                </div>
-                <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                    <input type="checkbox" name="macro_trend_filter" id="macro_trend_filter" value="1"
-                           {{ ($old['macro_trend_filter'] ?? request('macro_trend_filter')) ? 'checked' : '' }}
-                           class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                    Tendencia macro H4
+        <!-- PESTAÑA 2 -->
+        <div id="tab-apertura" class="space-y-4" style="display: none;">
+            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
+                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
+                    <input type="checkbox" name="regime_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('regime_filter', !empty($backtestToLoad->config_params['regime_filter'])) ? 'checked' : '' }}>
+                    Régimen de Mercado (ADX)
                 </label>
-                <div class="flex items-center gap-4 flex-wrap">
-                    <label class="flex items-center gap-2 text-sm" style="color:var(--color-text-secondary);">
-                        <input type="checkbox" name="volume_filter" id="volume_filter" value="1"
-                               {{ (!empty($old['volume_filter'])) ? 'checked' : '' }}
-                               onchange="toggleVolumeFields()"
-                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                        Volumen mínimo
-                    </label>
-                    <div id="volumeFields" class="{{ (!empty($old['volume_filter'])) ? 'grid' : 'hidden' }} grid-cols-2 gap-2 mt-2">
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Período</label>
-                            <input type="number" step="1" name="volume_filter_period" value="{{ $old['volume_filter_period'] ?? '20' }}"
-                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Multiplicador</label>
-                            <input type="number" step="0.1" name="volume_filter_mult" value="{{ $old['volume_filter_mult'] ?? '1.2' }}"
-                                   class="w-full rounded-lg px-2 py-1.5 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
+                <div class="grid grid-cols-3 gap-2 mt-3 pl-6">
+                    <div>
+                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX Tendencia (Mayor a)</label>
+                        <input type="number" name="regime_adx_trending" value="{{ old('regime_adx_trending', $backtestToLoad->config_params['regime_adx_trending'] ?? '25') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
-                </div>
-                {{-- Bloquear horas especificas --}}
-                <div>
-                    <label class="flex items-center gap-2 text-sm mb-2" style="color:var(--color-text-secondary);">
-                        <input type="checkbox" name="blocked_hours_active" id="blocked_hours_active" value="1"
-                               {{ (!empty($old['blocked_hours_active'])) ? 'checked' : '' }}
-                               onchange="toggleBlockedHours()"
-                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                        Bloquear horas (UTC)
-                    </label>
-                    <div id="blockedHoursFields" class="{{ (!empty($old['blocked_hours_active'])) ? 'flex' : 'hidden' }} flex-wrap gap-1">
-                        @php $defaultBlockedHours = [10, 11]; @endphp
-                        @for ($h = 0; $h < 24; $h++)
-                        @php
-                            $oldHours = !empty($old['blocked_hours']) ? (array)$old['blocked_hours'] : $defaultBlockedHours;
-                            $checked = in_array($h, $oldHours) ? 'checked' : '';
-                        @endphp
-                        <label class="flex flex-col items-center gap-0.5 cursor-pointer">
-                            <input type="checkbox" name="blocked_hours[]" value="{{ $h }}" {{ $checked }}
-                                   class="w-3.5 h-3.5 rounded" style="accent-color:var(--color-loss);">
-                            <span class="text-[9px] font-mono" style="color:var(--color-text-muted);">{{ str_pad($h,2,'0',STR_PAD_LEFT) }}</span>
-                        </label>
-                        @endfor
+                    <div>
+                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX Lateral (Menor a)</label>
+                        <input type="number" name="regime_adx_ranging" value="{{ old('regime_adx_ranging', $backtestToLoad->config_params['regime_adx_ranging'] ?? '20') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
-                </div>
-                {{-- Bloquear dias --}}
-                <div>
-                    <label class="flex items-center gap-2 text-sm mb-2" style="color:var(--color-text-secondary);">
-                        <input type="checkbox" name="blocked_days_active" id="blocked_days_active" value="1"
-                               {{ (!empty($old['blocked_days_active'])) ? 'checked' : '' }}
-                               onchange="toggleBlockedDays()"
-                               class="w-4 h-4 rounded" style="accent-color:var(--color-info);">
-                        Bloquear días
-                    </label>
-                    <div id="blockedDaysFields" class="{{ (!empty($old['blocked_days_active'])) ? 'flex' : 'hidden' }} gap-2">
-                        @php
-                            $dayNames = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-                            $defaultBlockedDays = [0];
-                        @endphp
-                        @foreach ($dayNames as $di => $dn)
-                        @php
-                            $oldDays = !empty($old['blocked_days']) ? (array)$old['blocked_days'] : $defaultBlockedDays;
-                            $checked = in_array($di, $oldDays) ? 'checked' : '';
-                        @endphp
-                        <label class="flex flex-col items-center gap-0.5 cursor-pointer">
-                            <input type="checkbox" name="blocked_days[]" value="{{ $di }}" {{ $checked }}
-                                   class="w-3.5 h-3.5 rounded" style="accent-color:var(--color-loss);">
-                            <span class="text-[9px]" style="color:var(--color-text-muted);">{{ $dn }}</span>
-                        </label>
-                        @endforeach
+                    <div>
+                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Caso Ambiguo</label>
+                        <select name="regime_ambiguous_as" class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                            <option value="RANGING">Lateral</option>
+                            <option value="TRENDING">Tendencia</option>
+                        </select>
                     </div>
                 </div>
             </div>
+
+            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
+                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
+                    <input type="checkbox" name="volume_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('volume_filter', !empty($backtestToLoad->config_params['volume_filter'])) ? 'checked' : '' }}>
+                    Filtro de Volumen Mínimo
+                </label>
+                <div class="grid grid-cols-2 gap-2 mt-3 pl-6">
+                    <div>
+                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Período Promedio</label>
+                        <input type="number" name="volume_filter_period" value="{{ old('volume_filter_period', $backtestToLoad->config_params['volume_filter_period'] ?? '20') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Multiplicador (Ej: 1.2x)</label>
+                        <input type="number" step="0.1" name="volume_filter_mult" value="{{ old('volume_filter_mult', $backtestToLoad->config_params['volume_filter_mult'] ?? '1.2') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
+                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
+                    <input type="checkbox" name="macro_trend_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('macro_trend_filter', !empty($backtestToLoad->config_params['macro_trend_filter'])) ? 'checked' : '' }}>
+                    Tendencia Macro H4 (EMA 50)
+                </label>
+            </div>
         </div>
 
-        {{-- SECCIÓN 4: Opcionales avanzados (Trailing + Volatilidad en 2 columnas) --}}
-        <div class="border-t pt-3" style="border-color:var(--color-border-soft);">
-            <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-secondary);">Opcionales avanzados</h4>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {{-- Break-even --}}
+        <!-- PESTAÑA 3 -->
+        <div id="tab-cierre" class="space-y-4" style="display: none;">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Duración máxima (velas)</label>
+                    <input type="number" name="max_duration" value="{{ old('max_duration', $backtestToLoad->config_params['max_duration'] ?? '24') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                </div>
                 <div>
                     <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Break-even %</label>
-                    <input type="number" step="0.1" name="be_pct" id="be_pct"
-                           value="{{ $old['be_pct'] ?? request('be_pct', '2.0') }}"
-                           class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none font-mono mb-1"
-                           style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    <p class="text-[10px]" style="color:var(--color-text-muted);">Cuando la ganancia llega a este %, el SL sube al precio de entrada — ya no puedes perder.</p>
+                    <input type="number" step="0.1" name="be_pct" value="{{ old('be_pct', $backtestToLoad->config_params['be_pct'] ?? '2.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                 </div>
-                {{-- Trailing Stop --}}
                 <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Trailing Stop</label>
-                    <select name="trailing_mode" id="trailing_mode" onchange="toggleTrailingFields()"
-                            class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none mb-2"
-                            style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <option value="none" {{ ($old['trailing_mode'] ?? request('trailing_mode', 'none')) === 'none' ? 'selected' : '' }}>Ninguno</option>
-                        <option value="fixed" {{ ($old['trailing_mode'] ?? request('trailing_mode')) === 'fixed' ? 'selected' : '' }}>Fijo (distancia constante)</option>
-                        <option value="stepped" {{ ($old['trailing_mode'] ?? request('trailing_mode')) === 'stepped' ? 'selected' : '' }}>Por pasos (escalonado)</option>
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Modo Trailing Stop</label>
+                    <select name="trailing_mode" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <option value="none" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'none' ? 'selected' : '' }}>Ninguno</option>
+                        <option value="fixed" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'fixed' ? 'selected' : '' }}>Fijo (%)</option>
+                        <option value="atr" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'atr' ? 'selected' : '' }}>Dinámico (ATR)</option>
                     </select>
-                    <div id="trailingFixedFields" class="hidden">
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia trailing %</label>
-                        <input type="number" step="0.01" name="trailing_distance_pct"
-                               value="{{ $old['trailing_distance_pct'] ?? request('trailing_distance_pct', '1.0') }}"
-                               class="w-36 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono mb-2"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Buffer de activación %</label>
-                        <input type="number" step="0.01" name="trailing_activation_buffer_pct"
-                               value="{{ $old['trailing_activation_buffer_pct'] ?? request('trailing_activation_buffer_pct', '0.3') }}"
-                               class="w-36 rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                               style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">Ganancia mínima antes de que el trailing empiece a moverse — replica el comportamiento real del trailing nativo de Bybit (default 0.3%, igual que en real trading).</p>
-                    </div>
-                    <div id="trailingSteppedFields" class="hidden">
-                        <p class="text-[10px] mb-2" style="color:var(--color-text-muted);">Al alcanzar la ganancia indicada, el SL salta al % desde la entrada.</p>
-                        <div id="trailingStepsContainer" class="space-y-2">
-                            <div class="flex items-center gap-2">
-                                <input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %"
-                                       class="w-28 rounded-lg px-3 py-2 text-sm border font-mono"
-                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                                <span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span>
-                                <input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %"
-                                       class="w-28 rounded-lg px-3 py-2 text-sm border font-mono"
-                                       style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            </div>
-                        </div>
-                        <button type="button" onclick="addTrailingStep()" class="text-[11px] mt-2" style="color:var(--color-info);">+ Agregar escalón</button>
-                    </div>
                 </div>
-                {{-- Protección por volatilidad --}}
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Protección por volatilidad</label>
-                    <select name="volatility_protection_mode" id="volatility_protection_mode" onchange="toggleVolatilityFields()"
-                            class="w-full rounded-lg px-2 py-1.5 text-sm border focus:outline-none mb-2"
-                            style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <option value="none" {{ ($old['volatility_protection_mode'] ?? 'none') === 'none' ? 'selected' : '' }}>Ninguna</option>
-                        <option value="close" {{ ($old['volatility_protection_mode'] ?? '') === 'close' ? 'selected' : '' }}>Cerrar si se dispara</option>
-                        <option value="widen" {{ ($old['volatility_protection_mode'] ?? '') === 'widen' ? 'selected' : '' }}>Ampliar SL si se dispara</option>
-                    </select>
-                    <div id="volatilityFields" class="hidden space-y-3">
-                        <div>
-                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador ATR (umbral)</label>
-                            <input type="number" step="0.1" name="volatility_atr_multiplier" value="{{ $old['volatility_atr_multiplier'] ?? '2.5' }}"
-                                   class="w-36 rounded-lg px-3 py-2 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            <p class="text-[10px] mt-1" style="color:var(--color-text-muted);">Se activa si ATR actual > ATR promedio × este valor</p>
-                        </div>
-                        <div id="volatilityWidenField" class="hidden">
-                            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Ampliación de SL %</label>
-                            <input type="number" step="0.1" name="volatility_widen_pct" value="{{ $old['volatility_widen_pct'] ?? '1.0' }}"
-                                   class="w-36 rounded-lg px-3 py-2 text-sm border font-mono"
-                                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        </div>
+            </div>
+
+            <div class="rounded-lg p-3 border space-y-3" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
+                <label class="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" name="max_duration_profit" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('max_duration_profit', !empty($backtestToLoad->config_params['max_duration_profit'])) ? 'checked' : '' }}>
+                    <div>
+                        <span class="text-[12px] font-medium block" style="color:var(--color-text-primary);">Cierre por tiempo inteligente</span>
+                        <span class="text-[10px] block" style="color:var(--color-text-muted);">Cierra al llegar al tiempo máximo solo si está en ganancia.</span>
                     </div>
-                </div>
+                </label>
+
+                <label class="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" name="close_on_opposite" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('close_on_opposite', !empty($backtestToLoad->config_params['close_on_opposite'])) ? 'checked' : '' }}>
+                    <div>
+                        <span class="text-[12px] font-medium block" style="color:var(--color-text-primary);">Cierre por Señal Opuesta</span>
+                        <span class="text-[10px] block" style="color:var(--color-text-muted);">Si la estrategia emite una señal contraria, cierra la posición al instante.</span>
+                    </div>
+                </label>
             </div>
         </div>
 
-            <button type="submit" class="text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
-                    style="background:var(--color-info); color:#fff;">
-                Ejecutar backtest
+        <!-- Footer con Botones -->
+        <div class="border-t pt-3 flex justify-between items-center" style="border-color:var(--color-border-soft);">
+            <button type="button" onclick="nextTab()" id="btn-next" class="text-[11px] px-3 py-1.5 rounded border transition-colors" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-info);">
+                Siguiente paso →
+            </button>
+            <button type="submit" onclick="showLoading()" class="text-sm font-medium px-6 py-2 rounded-lg transition-colors" style="background:var(--color-info); color:#fff;">
+                🚀 Ejecutar Backtest
             </button>
         </div>
     </form>
 </div>
 
-{{-- ── Resultados ───────────────────────────────────────────────────── --}}
-@if ($result)
-<div>
-    @php
-        $agg = $result['aggregate_metrics'];
-        $monthly = $result['monthly_breakdown'] ?? [];
-        $monthlyPnls   = collect($monthly)->pluck('total_pnl_pct')->map(fn($v) => (float)$v);
-        $avgMonthlyPnl = $monthlyPnls->count() > 0 ? round($monthlyPnls->average(), 2) : null;
-        $bestMonth     = $monthlyPnls->count() > 0 ? round($monthlyPnls->max(), 2) : null;
-        $worstMonth    = $monthlyPnls->count() > 0 ? round($monthlyPnls->min(), 2) : null;
-        $auditedMonths = $monthlyPnls->count();
-        $avgWinRate       = isset($agg['win_rate']) ? (float)$agg['win_rate'] : null;
-        $avgMonthlyTrades = $auditedMonths > 0 ? round(collect($monthly)->pluck('total_trades')->average(), 2) : null;
-        $totalAccum       = $auditedMonths > 0 ? round($monthlyPnls->sum(), 2) : null;
-        $strategyDisplayName = $result['strategy'];
-        if ($result['strategy'] === 'VWAP') {
-            $strategyDisplayName = ($implementParams['mode'] ?? '') === 'reversion' ? 'VWAP Reversión' : 'VWAP Tendencia';
-        }
-        $configId = request('config_id') ?: ($old['config_id'] ?? null);
-        $existingConfig = $configId ? \App\Models\PaperStrategyConfig::find($configId) : null;
-    @endphp
-
-    <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-            <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">
-                {{ $result['strategy'] }} — {{ $result['symbol'] }} / {{ $result['interval'] }}
-            </h3>
-            <div class="flex items-center gap-2 flex-wrap">
-                @if ($result['passed'])
-                    <span class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium" style="background:#16331F; color:var(--color-profit); border:1px solid #1E4A2E;">✓ Aprobada para paper trading</span>
-                @else
-                    <span class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium" style="background:#3A1A1C; color:var(--color-loss); border:1px solid #5A2226;">✗ No aprobada</span>
-                @endif
-                @if (!empty($monthly))
-                    <form method="POST" action="{{ route('backtesting.export-excel') }}" id="exportExcelForm">
-                        @csrf
-                        <input type="hidden" name="result" value='{{ json_encode(array_merge($result, ["_implement_params" => $implementParams ?? []])) }}'>
-                        <button type="submit" class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium transition-colors" style="background:var(--color-surface-raised); color:var(--color-info); border:1px solid var(--color-border-strong);">
-                            ⬇ Exportar a Excel
-                        </button>
-                    </form>
-                @endif
-                @can('manageUsers')
-                    <button type="button" onclick="confirmImplement()" class="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-medium transition-colors" style="background:#13233D; color:var(--color-info); border:1px solid #1E3A5F;">
-                        ⚡ Implementar en Paper Trading
-                    </button>
-                    <form method="POST" action="{{ route('paper-trading.configs.implement') }}" id="implementForm" class="hidden">
-                        @csrf
-                        <input type="hidden" name="strategy_name"      value="{{ $strategyDisplayName }}">
-                        <input type="hidden" name="symbol"             value="{{ $result['symbol'] }}">
-                        <input type="hidden" name="interval"           value="{{ $result['interval'] }}">
-                        <input type="hidden" name="params"             value="{{ json_encode($implementParams ?? []) }}">
-                        <input type="hidden" name="audited_months"     value="{{ $auditedMonths }}">
-                        <input type="hidden" name="avg_win_rate"       value="{{ $avgWinRate }}">
-                        <input type="hidden" name="avg_monthly_pnl"    value="{{ $avgMonthlyPnl }}">
-                        <input type="hidden" name="avg_monthly_trades" value="{{ $avgMonthlyTrades }}">
-                        <input type="hidden" name="total_return_pct"   value="{{ $totalAccum }}">
-                        <input type="hidden" name="star_wr"            value="{{ $result['stars']['starWr'] ?? '' }}">
-                        <input type="hidden" name="star_sharpe"        value="{{ $result['stars']['starSharpe'] ?? '' }}">
-                        <input type="hidden" name="star_ret"           value="{{ $result['stars']['starRet'] ?? '' }}">
-                        <input type="hidden" name="star_consistency"   value="{{ $result['stars']['starConsistency'] ?? '' }}">
-                        <input type="hidden" name="star_pf"            value="{{ $result['stars']['starPf'] ?? '' }}">
-                        <input type="hidden" name="star_rating"        value="{{ $result['stars']['starRating'] ?? '' }}">
-                        <input type="hidden" name="config_id" value="{{ $existingConfig->id ?? '' }}">
-                        <input type="hidden" name="backtest_range_from" value="{{ $result['range_from'] ?? '' }}">
-                        <input type="hidden" name="backtest_range_to"   value="{{ $result['range_to'] ?? '' }}">
-                        <input type="hidden" name="sharpe_ratio"        value="{{ $agg['sharpe_ratio'] ?? '' }}">
-                        <input type="hidden" name="consistency_pct"     value="{{ $result['consist_pct'] ?? '' }}">
-                        <input type="hidden" name="profit_factor"       value="{{ $agg['profit_factor'] ?? '' }}">
-                    </form>
-                @endcan
-            </div>
-        </div>
-
-        {{-- Resumen de config --}}
-        @if (!empty($implementParams))
-            <div class="rounded-md p-2.5 mb-4 font-mono text-[11px]" style="background:var(--color-surface-raised); border:1px solid var(--color-border-soft); color:var(--color-text-muted);">
-                <span style="color:var(--color-text-secondary);">Configuración:</span>
-                sl={{ $implementParams['sl_pct'] ?? '—' }}%
-                tp1={{ $implementParams['tp_pct'] ?? '—' }}%
-                @if (!empty($implementParams['tp2_pct'])) tp2={{ $implementParams['tp2_pct'] }}% @endif
-                @if (!empty($implementParams['tp3_pct'])) tp3={{ $implementParams['tp3_pct'] }}% @endif
-                @if (!empty($implementParams['tp4_pct'])) tp4={{ $implementParams['tp4_pct'] }}% @endif
-                be={{ $implementParams['be_pct'] ?? '—' }}%
-                dur={{ $implementParams['max_duration'] ?? '—' }}
-                riesgo={{ $implementParams['risk_per_trade_pct'] ?? '—' }}%
-                régimen={{ $implementParams['regime_filter'] ? 'sí' : 'no' }}
-                @if (!empty($implementParams['macro_trend_filter'])) <span style="color:var(--color-info);">+macro H4</span> @endif
-                @if (!empty($implementParams['volume_filter'])) <span style="color:var(--color-info);">+vol {{ $implementParams['volume_filter_mult'] ?? '1.2' }}x</span> @endif
-                @if (!empty($implementParams['trailing_mode'])) <span style="color:var(--color-info);">+trailing:{{ $implementParams['trailing_mode'] }}</span> @endif
-                @if (!empty($implementParams['volatility_protection_mode'])) <span style="color:var(--color-info);">+vol:{{ $implementParams['volatility_protection_mode'] }}</span> @endif
-            </div>
-        @endif
-
-        {{-- Comparativo con config existente --}}
-        @if ($existingConfig && ($existingConfig->audited_months || $existingConfig->avg_win_rate || $existingConfig->avg_monthly_pnl))
-            @php
-                $sameParams  = $existingConfig->params == ($implementParams ?? []);
-                $fewerMonths = $auditedMonths < ($existingConfig->audited_months ?? 0);
-            @endphp
-            <div class="rounded-md border p-3 mb-4" style="background:#0D1B2A; border-color:var(--color-border-strong);">
-                <p class="text-[11px] font-medium mb-2" style="color:var(--color-info);">Comparativo con config actual</p>
-                @if ($sameParams)
-                    <p class="text-[11px]" style="color:var(--color-text-muted);">Sin cambios en parámetros — mismo backtest.</p>
-                @else
-                    <table class="w-full text-[11px] font-mono">
-                        <thead>
-                            <tr style="color:var(--color-text-muted);">
-                                <th class="py-1 text-left font-normal">Métrica</th>
-                                <th class="py-1 text-right font-normal">Config actual</th>
-                                <th class="py-1 text-right font-normal">Este backtest</th>
-                                <th class="py-1 text-right font-normal">Cambio</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Meses auditados</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->audited_months ?? '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $auditedMonths }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($fewerMonths) <span style="color:var(--color-neutral);">⚠ menos meses</span>
-                                    @else <span style="color:var(--color-text-muted);">—</span> @endif
-                                </td>
-                            </tr>
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Win rate</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->avg_win_rate ? $existingConfig->avg_win_rate . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $avgWinRate ? $avgWinRate . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->avg_win_rate && $avgWinRate)
-                                        @php $diff = round($avgWinRate - $existingConfig->avg_win_rate, 2); @endphp
-                                        <span style="color: {{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ $diff >= 0 ? '▲ +' : '▼ ' }}{{ $diff }}%</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Retorno prom./mes</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->avg_monthly_pnl ? $existingConfig->avg_monthly_pnl . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $avgMonthlyPnl ? $avgMonthlyPnl . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->avg_monthly_pnl && $avgMonthlyPnl)
-                                        @php $diff2 = round($avgMonthlyPnl - $existingConfig->avg_monthly_pnl, 2); @endphp
-                                        <span style="color: {{ $diff2 >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ $diff2 >= 0 ? '▲ +' : '▼ ' }}{{ $diff2 }}%</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Trades prom./mes</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->avg_monthly_trades ?? '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $avgMonthlyTrades ?? '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->avg_monthly_trades && $avgMonthlyTrades)
-                                        @php $diffT = round($avgMonthlyTrades - $existingConfig->avg_monthly_trades, 1); @endphp
-                                        <span style="color: {{ $diffT >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffT >= 0 ? '▲ +' : '▼ ' }}{{ $diffT }}</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Total acumulado</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->total_return_pct !== null ? ($existingConfig->total_return_pct >= 0 ? '+' : '') . $existingConfig->total_return_pct . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $totalAccum !== null ? ($totalAccum >= 0 ? '+' : '') . $totalAccum . '%' : '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->total_return_pct !== null && $totalAccum !== null)
-                                        @php $diffAcc = round($totalAccum - $existingConfig->total_return_pct, 2); @endphp
-                                        <span style="color: {{ $diffAcc >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffAcc >= 0 ? '▲ +' : '▼ ' }}{{ $diffAcc }}%</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            {{-- Sharpe --}}
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Sharpe Ratio</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->sharpe_ratio ?? '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $agg['sharpe_ratio'] ?? '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->sharpe_ratio && !empty($agg['sharpe_ratio']))
-                                        @php $dSh = round($agg['sharpe_ratio'] - $existingConfig->sharpe_ratio, 2); @endphp
-                                        <span style="color:{{ $dSh >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dSh >= 0 ? '▲ +' : '▼ ' }}{{ $dSh }}</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            {{-- Consistencia --}}
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Consistencia</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->consistency_pct !== null ? $existingConfig->consistency_pct.'%' : '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $result['consist_pct'] ?? '—' }}{{ isset($result['consist_pct']) ? '%' : '' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->consistency_pct !== null && !empty($result['consist_pct']))
-                                        @php $dCo = round($result['consist_pct'] - $existingConfig->consistency_pct, 1); @endphp
-                                        <span style="color:{{ $dCo >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dCo >= 0 ? '▲ +' : '▼ ' }}{{ $dCo }}%</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            {{-- Profit Factor --}}
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Profit Factor</td>
-                                <td class="py-1.5 text-right">{{ $existingConfig->profit_factor ?? '—' }}</td>
-                                <td class="py-1.5 text-right">{{ $agg['profit_factor'] ?? '—' }}</td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->profit_factor && !empty($agg['profit_factor']))
-                                        @php $dPf = round($agg['profit_factor'] - $existingConfig->profit_factor, 2); @endphp
-                                        <span style="color:{{ $dPf >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $dPf >= 0 ? '▲ +' : '▼ ' }}{{ $dPf }}</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                            {{-- Calificacion --}}
-                            <tr class="border-t" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5" style="color:var(--color-text-secondary);">Calificación ⭐</td>
-                                <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ $existingConfig->star_rating ? number_format($existingConfig->star_rating, 1).'★' : '—' }}
-                                    @if($existingConfig->backtest_range_from)
-                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $existingConfig->backtest_range_from }} → {{ $existingConfig->backtest_range_to }}</span>
-                                    @endif
-                                </td>
-                                <td class="py-1.5 text-right font-mono" style="color:#EF9F27;">
-                                    {{ !empty($result['stars']['starRating']) ? number_format($result['stars']['starRating'], 1).'★' : '—' }}
-                                    @if(!empty($result['range_from']))
-                                        <span class="text-[9px] block" style="color:var(--color-text-muted);">{{ $result['range_from'] }} → {{ $result['range_to'] }}</span>
-                                    @endif
-                                </td>
-                                <td class="py-1.5 text-right">
-                                    @if ($existingConfig->star_rating && !empty($result['stars']['starRating']))
-                                        @php $diffStar = round($result['stars']['starRating'] - $existingConfig->star_rating, 1); @endphp
-                                        <span style="color: {{ $diffStar >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">{{ $diffStar >= 0 ? '▲ +' : '▼ ' }}{{ $diffStar }}</span>
-                                    @else — @endif
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    @if ($fewerMonths)
-                        <p class="text-[10px] mt-2" style="color:var(--color-neutral);">⚠ Este backtest cubre menos meses que la config actual — la comparación puede no ser representativa.</p>
-                    @endif
-                @endif
-            </div>
-        @endif
-
-        {{-- Calificacion estrellas --}}
-        @if (!empty($result['stars']))
-        @php
-            $stars      = $result['stars'];
-            $rating     = (float)($stars['starRating'] ?? 0);
-            $rangeFrom  = $result['range_from'] ?? null;
-            $rangeTo    = $result['range_to'] ?? null;
-            $consistPct = $result['consist_pct'] ?? null;
-            $avgRetVal  = $avgMonthlyPnl;
-            $starColor  = match(true) {
-                $rating >= 4.0 => '#F5C518',
-                $rating >= 3.0 => '#EF9F27',
-                $rating >= 2.0 => '#E8832A',
-                default        => '#E24B4A',
-            };
-            // Renderizar estrellas con media estrella como ✦
-            $fullRating = (int)round($rating);
-            $starsHtml = str_repeat('★', $fullRating) . str_repeat('☆', 5 - $fullRating);
-        @endphp
-        <div class="rounded-md border p-2 mb-4" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-            {{-- Fila principal: estrellas promedio + rango --}}
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:2.2rem; line-height:1; color:{{ $starColor }};">{{ $starsHtml }}</span>
-                    <span style="font-family:monospace; font-weight:700; font-size:1.6rem; color:{{ $starColor }};">{{ $rating }}<span style="font-size:0.9rem; font-weight:400; color:var(--color-text-muted);"> / 5</span></span>
-                </div>
-                @if ($rangeFrom && $rangeTo)
-                <span style="font-size:9px; color:var(--color-text-muted);">📅 {{ $rangeFrom }} → {{ $rangeTo }}</span>
-                @endif
-            </div>
-            {{-- 5 métricas en una sola fila --}}
-            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:4px;">
-                @php
-                    $metricItems = [
-                        ['Win Rate',      $stars['starWr'] ?? 0,          isset($agg['win_rate']) ? $agg['win_rate'].'%' : '—'],
-                        ['Sharpe Ratio',  $stars['starSharpe'] ?? 0,       $agg['sharpe_ratio'] ?? '—'],
-                        ['Ret. prom/mes', $stars['starRet'] ?? 0,          $avgRetVal !== null ? $avgRetVal.'%' : '—'],
-                        ['Consistencia',  $stars['starConsistency'] ?? 0,  $consistPct !== null ? $consistPct.'%' : '—'],
-                        ['Profit Factor', $stars['starPf'] ?? 0,           $agg['profit_factor'] ?? '—'],
-                    ];
-                @endphp
-                @foreach ($metricItems as [$label, $val, $display])
-                @php
-                    $mFull  = (int)$val;
-                    $mStars = str_repeat('★',$mFull).str_repeat('☆',5-$mFull);
-                @endphp
-                <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface); border:1px solid var(--color-border-soft);">
-                    <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 2px;">{{ $label }}</p>
-                    <p class="hidden sm:block" style="font-size:16px; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mStars }}</p>
-                    <p class="sm:hidden" style="font-size:13px; font-weight:700; color:{{ $starColor }}; margin:0 0 2px; line-height:1;">{{ $mFull }}★</p>
-                    <p style="font-size:11px; font-family:monospace; color:var(--color-text-secondary); margin:0;">{{ $display }}</p>
-                </div>
-                @endforeach
-            </div>
-        </div>
-        @endif
-
-        {{-- KPIs --}}
-        <div class="kpi-grid grid gap-2 mb-4" style="grid-template-columns:repeat(4,1fr);">
-            <div style="border-radius:6px; border:1px solid var(--color-border-strong); padding:8px; background:var(--color-surface-raised);">
-                <p style="font-size:9px; color:var(--color-text-muted); margin:0 0 3px;">Total trades</p>
-                <p style="font-family:monospace; font-size:13px; font-weight:600; color:var(--color-text-primary); margin:0;">{{ $agg['total_trades'] ?? '—' }}</p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Win rate</p>
-                <p class="font-mono text-base font-medium" style="color:var(--color-text-primary);">{{ isset($agg['win_rate']) ? $agg['win_rate'] . '%' : '—' }}</p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Sharpe ratio</p>
-                <p class="font-mono text-base font-medium" style="color:var(--color-text-primary);">{{ $agg['sharpe_ratio'] ?? '—' }}</p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Mejor mes</p>
-                <p class="font-mono text-base font-medium" style="color: {{ ($bestMonth ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                    {{ $bestMonth !== null ? ($bestMonth >= 0 ? '+' : '') . $bestMonth . '%' : '—' }}
-                </p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Peor mes</p>
-                <p class="font-mono text-base font-medium" style="color: {{ ($worstMonth ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                    {{ $worstMonth !== null ? ($worstMonth >= 0 ? '+' : '') . $worstMonth . '%' : '—' }}
-                </p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Retorno prom./mes</p>
-                <p class="font-mono text-base font-medium" style="color: {{ ($avgMonthlyPnl ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                    {{ $avgMonthlyPnl !== null ? ($avgMonthlyPnl >= 0 ? '+' : '') . $avgMonthlyPnl . '%' : '—' }}
-                </p>
-            </div>
-            <div class="rounded-md border p-2.5" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                <p class="text-[10px] mb-1" style="color:var(--color-text-muted);">Total acumulado</p>
-                <p class="font-mono text-base font-medium" style="color: {{ ($totalAccum ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}">
-                    {{ $totalAccum !== null ? ($totalAccum >= 0 ? '+' : '') . $totalAccum . '%' : '—' }}
-                </p>
-            </div>
-        </div>
-
-        @if (!empty($result['pass_reasons']))
-            <div class="mb-4">
-                <h4 class="text-[11px] font-medium mb-2" style="color:var(--color-text-muted);">Criterios de evaluación</h4>
-                <ul class="space-y-1">
-                    @foreach ($result['pass_reasons'] as $reason)
-                        <li class="text-sm" style="color: {{ str_contains($reason, 'aprobada') ? 'var(--color-profit)' : 'var(--color-loss)' }};">• {{ $reason }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
-    </div>
-
-    @if (!empty($monthly))
-        <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <h3 class="text-sm font-medium mb-3" style="color:var(--color-text-secondary);">
-                Desglose mes a mes
-                <span class="text-[11px] font-normal ml-2" style="color:var(--color-text-muted);">
-                    {{ $auditedMonths }} meses | prom. {{ $avgMonthlyPnl !== null ? ($avgMonthlyPnl >= 0 ? '+' : '') . $avgMonthlyPnl . '%' : '—' }}/mes
-                </span>
-            </h3>
-            <div class="overflow-x-auto">
-                <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
-                    <thead>
-                        <tr class="border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
-                            <th class="py-2 px-2 font-normal">Mes</th>
-                            <th class="py-2 px-2 font-normal text-right">Trades</th>
-                            <th class="py-2 px-2 font-normal text-right">G/P</th>
-                            <th class="py-2 px-2 font-normal text-right">Win rate</th>
-                            <th class="py-2 px-2 font-normal text-right">P&L %</th>
-                            <th class="py-2 px-2 font-normal text-right">Acumulado</th>
-                            <th class="py-2 px-2 font-normal">Barra</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @php $acum = 0; $maxPnl = collect($monthly)->max('total_pnl_pct'); $minPnl = collect($monthly)->min('total_pnl_pct'); $absMax = max(abs($maxPnl), abs($minPnl), 1); @endphp
-                        @foreach ($monthly as $m)
-                        @php
-                            $acum += $m['total_pnl_pct'];
-                            $pct   = $m['total_pnl_pct'];
-                            $barW  = round(abs($pct) / $absMax * 100);
-                            $barColor = $pct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)';
-                        @endphp
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <td class="py-1.5 px-2" style="color:var(--color-text-primary);">{{ $m['month'] }}</td>
-                                <td class="py-1.5 px-2 text-right">{{ $m['total_trades'] }}</td>
-                                <td class="py-1.5 px-2 text-right">{{ $m['wins'] }}/{{ $m['losses'] }}</td>
-                                <td class="py-1.5 px-2 text-right">{{ $m['win_rate'] }}%</td>
-                                <td class="py-1.5 px-2 text-right" style="color:{{ $barColor }};">
-                                    {{ $pct >= 0 ? '+' : '' }}{{ $pct }}%
-                                </td>
-                                <td class="py-1.5 px-2 text-right" style="color: {{ $acum >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                    {{ $acum >= 0 ? '+' : '' }}{{ round($acum, 2) }}%
-                                </td>
-                                <td class="py-1.5 px-2" style="width:80px;">
-                                    <div style="background:var(--color-border-soft); border-radius:2px; height:6px; width:100%;">
-                                        <div style="height:6px; border-radius:2px; width:{{ $barW }}%; background:{{ $barColor }};"></div>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    @endif
-</div>
-@endif
-</div>
-
+{{-- RESULTADOS (Bloque único, sin duplicados) --}}
+<div id="results-container"></div>
 @endsection
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-const paperConfigs = {!! $paperConfigsForPreload->toJson() !!};
-const strategyClassMap = {
-    'VwapStrategy_trend_follow': 'VWAP Tendencia',
-    'VwapStrategy_reversion':    'VWAP Reversión',
-    'MeanReversionStrategy_':    'Reversión a la Media',
-    'EmaDonchianStrategy_':      'Tendencia EMA/Donchian',
-};
+// ═══════════════════════════════════════════════════════════
+// LÓGICA DE TABS
+// ═══════════════════════════════════════════════════════════
+let currentTab = 'config';
+const tabs = ['config', 'apertura', 'cierre'];
 
-function toggleGuide() {
-    const content  = document.getElementById('guideContent');
-    const chevron  = document.getElementById('guideChevron');
-    const isHidden = content.classList.contains('hidden');
-    content.classList.toggle('hidden', !isHidden);
-    chevron.textContent = isHidden ? '▲ Ocultar' : '▼ Mostrar';
-    localStorage.setItem('backtestGuideOpen', isHidden ? '1' : '0');
+function switchTab(tabName) {
+    currentTab = tabName;
+    tabs.forEach(t => {
+        document.getElementById('tab-' + t).style.display = 'none';
+        document.getElementById('tab-btn-' + t).classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).style.display = 'block';
+    document.getElementById('tab-btn-' + tabName).classList.add('active');
+    
+    const btnNext = document.getElementById('btn-next');
+    if (tabName === 'cierre') { btnNext.style.display = 'none'; } 
+    else { btnNext.style.display = 'inline-block'; }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    if (localStorage.getItem('backtestGuideOpen') === '1') {
-        document.getElementById('guideContent').classList.remove('hidden');
-        document.getElementById('guideChevron').textContent = '▲ Ocultar';
+function nextTab() {
+    const idx = tabs.indexOf(currentTab);
+    if (idx < tabs.length - 1) { switchTab(tabs[idx + 1]); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// LÓGICA DE MULTISELECT
+// ═══════════════════════════════════════════════════════════
+let rawSymbols = @json($symbols);
+let allSymbols = Array.isArray(rawSymbols) ? rawSymbols : Object.values(rawSymbols || {});
+
+let rawSelected = @json(old('symbols', $selectedSymbols));
+let selectedSymbols = Array.isArray(rawSelected) ? rawSelected : Object.values(rawSelected || {});
+
+function renderSymbols() {
+    const input = document.getElementById('symbols-input');
+    const list = document.getElementById('symbols-list');
+    const hiddenInputs = document.getElementById('hidden-symbols-inputs');
+    
+    if (!input || !list || !hiddenInputs) return;
+
+    input.innerHTML = '';
+    list.innerHTML = '';
+    hiddenInputs.innerHTML = '';
+
+    if (selectedSymbols.length === 0) {
+        input.innerHTML = '<span class="text-sm" style="color:var(--color-text-muted);">Seleccionar monedas...</span>';
+    } else {
+        selectedSymbols.forEach(sym => {
+            const tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.innerHTML = `<span>${sym}</span><span class="tag-close" onclick="removeSymbol('${sym}', event)">×</span>`;
+            input.appendChild(tag);
+
+            const inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = 'symbols[]';
+            inp.value = sym;
+            hiddenInputs.appendChild(inp);
+        });
     }
-    toggleTrailingFields();
-    toggleVolatilityFields();
-    toggleBlockedHours();
-    toggleBlockedDays();
-    toggleVolumeFields();
-    loadDataRange();
-    @if (empty($old) && !request('preload_from'))
-        loadParams();
-    @endif
-});
 
-function loadParams() {
-    // En modo edicion el select esta disabled — leer del hidden input si existe
-    const strategyEl = document.getElementById('strategy');
-    const strategy = strategyEl.disabled 
-        ? (document.querySelector('input[type="hidden"][name="strategy"]')?.value || strategyEl.value)
-        : strategyEl.value;
-    const symbolEl = document.getElementById('symbol');
-    const symbol = symbolEl.disabled
-        ? (document.querySelector('input[type="hidden"][name="symbol"]')?.value || symbolEl.value)
-        : symbolEl.value;
-    const config = paperConfigs.find(c => {
-        const mode = c.params?.mode || '';
-        const key  = c.strategy_class + '_' + mode;
-        return strategyClassMap[key] === strategy && c.symbol === symbol;
-    });
-    if (config) {
-        const p = config.params;
-        if (p.sl_pct !== undefined)       document.getElementById('sl_pct').value = p.sl_pct;
-        if (p.tp_pct !== undefined)       document.getElementById('tp_pct').value = p.tp_pct;
-        if (p.be_pct !== undefined)       document.getElementById('be_pct').value = p.be_pct;
-        if (p.max_duration !== undefined) document.getElementById('max_duration').value = p.max_duration;
-        if (p.tp2_pct !== undefined)      document.getElementById('tp2_pct').value = p.tp2_pct ?? '';
-        if (p.tp3_pct !== undefined)      document.getElementById('tp3_pct').value = p.tp3_pct ?? '';
-        if (p.tp4_pct !== undefined)      document.getElementById('tp4_pct').value = p.tp4_pct ?? '';
-        const iv = document.getElementById('interval');
-        if (config.interval) for (let o of iv.options) if (o.value === config.interval) { o.selected = true; break; }
+    const searchInput = document.getElementById('symbols-search');
+    const search = searchInput ? searchInput.value.toLowerCase() : '';
+    const available = allSymbols.filter(s => !selectedSymbols.includes(s) && s.toLowerCase().includes(search));
 
-        // Filtros
-        const regimeEl = document.getElementById('regime_filter');
-        if (regimeEl) {
-            regimeEl.checked = !!p.regime_filter;
-            if (p.regime_adx_trending !== undefined) document.querySelector('[name="regime_adx_trending"]').value = p.regime_adx_trending;
-            if (p.regime_adx_ranging !== undefined) document.querySelector('[name="regime_adx_ranging"]').value = p.regime_adx_ranging;
-            if (p.regime_ambiguous_as !== undefined) document.querySelector('[name="regime_ambiguous_as"]').value = p.regime_ambiguous_as;
-            toggleRegimeFields();
-        }
-        const macroEl = document.getElementById('macro_trend_filter');
-        if (macroEl) macroEl.checked = !!p.macro_trend_filter;
-
-        // Volumen
-        const volEl = document.getElementById('volume_filter');
-        if (volEl) {
-            volEl.checked = !!p.volume_filter;
-            toggleVolumeFields();
-            if (p.volume_filter_period) document.querySelector('[name="volume_filter_period"]').value = p.volume_filter_period;
-            if (p.volume_filter_mult)   document.querySelector('[name="volume_filter_mult"]').value   = p.volume_filter_mult;
-        }
-
-        // Horas bloqueadas
-        const bhEl = document.getElementById('blocked_hours_active');
-        if (bhEl) {
-            const hasBlockedHours = p.blocked_hours && p.blocked_hours.length > 0;
-            bhEl.checked = hasBlockedHours;
-            toggleBlockedHours(false);
-            if (hasBlockedHours) {
-                document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
-                    cb.checked = p.blocked_hours.includes(parseInt(cb.value));
-                });
-            }
-        }
-
-        // Dias bloqueados
-        const bdEl = document.getElementById('blocked_days_active');
-        if (bdEl) {
-            const hasBlockedDays = p.blocked_days && p.blocked_days.length > 0;
-            bdEl.checked = hasBlockedDays;
-            toggleBlockedDays(false);
-            if (hasBlockedDays) {
-                document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
-                    cb.checked = p.blocked_days.includes(parseInt(cb.value));
-                });
-            }
-        }
-
-        // Trailing
-        if (p.trailing_mode) {
-            document.getElementById('trailing_mode').value = p.trailing_mode;
-            toggleTrailingFields();
-            if (p.trailing_distance_pct) document.querySelector('[name="trailing_distance_pct"]').value = p.trailing_distance_pct;
-            if (p.trailing_activation_buffer_pct !== undefined) {
-                document.querySelector('[name="trailing_activation_buffer_pct"]').value = p.trailing_activation_buffer_pct;
-            }
-            if (p.trailing_mode === 'stepped' && Array.isArray(p.trailing_steps) && p.trailing_steps.length > 0) {
-                document.getElementById('trailingStepsContainer').innerHTML = '';
-                p.trailing_steps.forEach(step => addTrailingStep(step[0], step[1]));
-            }
-        }
+    if (available.length === 0) {
+        list.innerHTML = '<div class="p-3 text-center text-[11px]" style="color:var(--color-text-muted);">No hay resultados</div>';
+    } else {
+        available.forEach(sym => {
+            const div = document.createElement('div');
+            div.className = 'multi-select-option';
+            div.textContent = sym;
+            div.onclick = () => { addSymbol(sym); };
+            list.appendChild(div);
+        });
     }
 }
 
-async function loadDataRange() {
-    const symbol   = document.getElementById('symbol').value;
-    const interval = document.getElementById('interval').value;
-    const info     = document.getElementById('dataRangeInfo');
-    try {
-        const res  = await fetch(`/backtesting/data-range/${symbol}/${interval}`);
-        const data = await res.json();
-        if (data) {
-            const first = new Date(data.first_date).toLocaleDateString('es-ES');
-            const last  = new Date(data.last_date).toLocaleDateString('es-ES');
-            info.textContent = `Datos disponibles: ${first} — ${last} (${data.total_bars} velas)`;
-            document.getElementById('start_date').min = data.first_date.split('T')[0];
-            document.getElementById('end_date').max   = data.last_date.split('T')[0];
-        }
-    } catch (e) {}
+function addSymbol(sym) {
+    if (!selectedSymbols.includes(sym)) {
+        selectedSymbols.push(sym);
+        renderSymbols();
+    }
 }
 
-function toggleTrailingFields() {
-    const mode = document.getElementById('trailing_mode').value;
-    const fixedFields   = document.getElementById('trailingFixedFields');
-    const steppedFields = document.getElementById('trailingSteppedFields');
-    fixedFields.classList.toggle('hidden', mode !== 'fixed');
-    steppedFields.classList.toggle('hidden', mode !== 'stepped');
-    fixedFields.querySelectorAll('input').forEach(el => el.disabled = mode !== 'fixed');
-    steppedFields.querySelectorAll('input').forEach(el => el.disabled = mode !== 'stepped');
+function removeSymbol(sym, event) {
+    if (event) event.stopPropagation();
+    selectedSymbols = selectedSymbols.filter(s => s !== sym);
+    renderSymbols();
 }
 
-function addTrailingStep(gainVal, slVal) {
-    const c = document.getElementById('trailingStepsContainer');
-    const d = document.createElement('div'); d.className = 'flex items-center gap-2';
-    const gAttr = (gainVal !== undefined && gainVal !== null) ? ` value="${gainVal}"` : '';
-    const sAttr = (slVal   !== undefined && slVal   !== null) ? ` value="${slVal}"`   : '';
-    d.innerHTML = `<input type="number" step="0.1" name="trailing_step_gain[]" placeholder="Ganancia %"${gAttr} class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><span class="text-[11px]" style="color:var(--color-text-muted);">→ SL a</span><input type="number" step="0.1" name="trailing_step_sl[]" placeholder="SL %"${sAttr} class="w-28 rounded-lg px-3 py-2 text-sm border font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);"><button type="button" onclick="this.parentElement.remove()" style="color:var(--color-loss);">✕</button>`;
-    c.appendChild(d);
+function toggleSymbolsDropdown() {
+    const dd = document.getElementById('symbols-dropdown');
+    if (!dd) return;
+    const isHidden = dd.style.display === 'none' || dd.style.display === '';
+    dd.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) {
+        setTimeout(() => {
+            const search = document.getElementById('symbols-search');
+            if (search) search.focus();
+        }, 50);
+    }
 }
 
-function toggleVolatilityFields() {
-    const mode = document.getElementById('volatility_protection_mode').value;
-    const volFields = document.getElementById('volatilityFields');
-    volFields.classList.toggle('hidden', mode === 'none');
-    volFields.querySelectorAll('input').forEach(el => el.disabled = mode === 'none');
-    document.getElementById('volatilityWidenField').classList.toggle('hidden', mode !== 'widen');
-}
+function filterSymbols() { renderSymbols(); }
 
-function toggleRegimeFields() {
-    const checked = document.getElementById('regime_filter').checked;
-    const fields  = document.getElementById('regimeFields');
-    fields.classList.toggle('hidden', !checked);
-    fields.classList.toggle('grid', checked);
-    fields.querySelectorAll('input').forEach(el => el.disabled = !checked);
-}
-
-function toggleVolumeFields() {
-    const checked = document.getElementById('volume_filter').checked;
-    const fields  = document.getElementById('volumeFields');
-    fields.classList.toggle('hidden', !checked);
-    fields.classList.toggle('grid', checked);
-    fields.querySelectorAll('input').forEach(el => el.disabled = !checked);
-}
-
-function toggleBlockedHours(loadDefaults = true) {
-    const checked = document.getElementById('blocked_hours_active').checked;
-    const fields  = document.getElementById('blockedHoursFields');
-    fields.classList.toggle('hidden', !checked);
-    fields.classList.toggle('flex', checked);
-    document.querySelectorAll('[name="blocked_hours[]"]').forEach(cb => {
-        cb.disabled = !checked;
-        if (!checked) cb.checked = false;
-        // Solo cargar defaults si se activa manualmente (no desde loadParams)
-        if (checked && loadDefaults) cb.checked = [10,11].includes(parseInt(cb.value));
-    });
-}
-
-function toggleBlockedDays(loadDefaults = true) {
-    const checked = document.getElementById('blocked_days_active').checked;
-    const fields  = document.getElementById('blockedDaysFields');
-    fields.classList.toggle('hidden', !checked);
-    fields.classList.toggle('flex', checked);
-    document.querySelectorAll('[name="blocked_days[]"]').forEach(cb => {
-        cb.disabled = !checked;
-        if (!checked) cb.checked = false;
-        // Solo cargar defaults si se activa manualmente (no desde loadParams)
-        if (checked && loadDefaults) cb.checked = parseInt(cb.value) === 0;
-    });
-}
-
-document.getElementById('backtestForm').addEventListener('submit', function () {
-    Swal.fire({ title: 'Ejecutando backtest...', html: 'Procesando datos históricos, esto puede tardar unos segundos.', allowOutsideClick: false, allowEscapeKey: false, background: '#11161F', color: '#E5E9F0', didOpen: () => Swal.showLoading() });
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('symbols-dropdown');
+    const input = document.getElementById('symbols-input');
+    if (!dropdown || !input) return;
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
 });
 
-const exportForm = document.getElementById('exportExcelForm');
-if (exportForm) {
-    exportForm.addEventListener('submit', function () {
-        Swal.fire({ title: 'Generando Excel...', allowOutsideClick: false, allowEscapeKey: false, background: '#11161F', color: '#E5E9F0', didOpen: () => Swal.showLoading(), timer: 3000, timerProgressBar: true });
-    });
-}
+document.addEventListener('DOMContentLoaded', () => { renderSymbols(); });
 
-function confirmImplement() {
-    const form         = document.getElementById('implementForm');
-    const strategyName = form.elements['strategy_name'].value;
-    const symbol       = form.elements['symbol'].value;
-    const interval     = form.elements['interval'].value;
+// ═══════════════════════════════════════════════════════════
+// LOADING OVERLAY
+// ═══════════════════════════════════════════════════════════
+function showLoading() {
     Swal.fire({
-        title: 'Implementar en Paper Trading',
-        html: `¿Implementar <b>${strategyName}</b> para <b>${symbol}</b> (${interval})?<br><br>Esto creará o actualizará la configuración activa en producción.`,
-        icon: 'question', showCancelButton: true,
-        confirmButtonText: 'Implementar', cancelButtonText: 'Cancelar',
+        title: 'Ejecutando Backtest...',
+        html: 'Procesando símbolos. Esto puede tardar unos segundos por moneda.',
+        allowOutsideClick: false, allowEscapeKey: false,
         background: '#11161F', color: '#E5E9F0',
-        confirmButtonColor: '#4D8FE8', cancelButtonColor: '#232B38',
-    }).then((r) => {
-        if (r.isConfirmed) {
-            Swal.fire({ title: 'Implementando...', allowOutsideClick: false, allowEscapeKey: false, background: '#11161F', color: '#E5E9F0', didOpen: () => Swal.showLoading() });
-            form.submit();
-        }
+        didOpen: () => Swal.showLoading()
     });
 }
-// Mapeo symbol -> broker para decidir la comision automatica.
-// Bybit: 0.055% (taker fee explicito). IG y cualquier otro broker no-bybit:
-// 0% (su costo va incorporado en el spread, no como comision separada).
-const SYMBOL_BROKER_MAP = @json($symbolBrokerMap);
-
-function updateCommission() {
-    const symbol = document.getElementById('symbol').value;
-    const broker = SYMBOL_BROKER_MAP[symbol] || 'bybit';
-    const commissionPct = (broker === 'bybit') ? 0.055 : 0.0;
-    document.getElementById('commissionDisplay').textContent = commissionPct.toFixed(3) + '%';
-    document.getElementById('commission_pct').value = commissionPct;
-}
-document.addEventListener('DOMContentLoaded', updateCommission);
+document.getElementById('backtestForm').addEventListener('submit', function(e) {
+    e.preventDefault(); // Evita que la página se recargue
+    
+    showLoading();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    
+    fetch('{{ route("backtesting.execute-ajax") }}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        Swal.close();
+        
+        if (data.success) {
+            document.getElementById('results-container').innerHTML = data.html;
+            document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
+        } else {
+            Swal.fire({
+                title: 'Error',
+                text: data.error || 'Hubo un problema al ejecutar el backtest.',
+                icon: 'error',
+                background: '#11161F', color: '#E5E9F0'
+            });
+        }
+    })
+    .catch(error => {
+        Swal.close();
+        Swal.fire({
+            title: 'Error de conexión',
+            text: 'No se pudo conectar con el servidor.',
+            icon: 'error',
+            background: '#11161F', color: '#E5E9F0'
+        });
+    });
+});
 </script>
 @endpush
