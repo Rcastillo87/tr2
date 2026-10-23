@@ -5,7 +5,7 @@
         ['route' => 'dashboard',            'match' => 'dashboard',          'icon' => 'home',     'label' => 'Vista general', 'visible' => true],
         ['route' => 'paper-trading.index',  'match' => 'paper-trading.*',    'icon' => 'chart',    'label' => 'Paper trading', 'visible' => $user?->canViewPaperTrading() ?? false],
         ['route' => 'trading.index', 'match' => 'trading.*', 'icon' => 'wallet', 'label' => 'Trading', 'visible' => $user?->canViewRealTrading() ?? false],
-        ['route' => 'backtesting.index',    'match' => 'backtesting.*',      'icon' => 'flask',    'label' => 'Backtesting',   'visible' => $user?->canViewAnalysisTools() ?? false],
+        ['route' => 'strategies.index',     'match' => 'strategies.*',       'icon' => 'flask',    'label' => 'Estrategias',   'visible' => $user?->canViewAnalysisTools() ?? false],
         ['route' => 'users.index',          'match' => 'users.*',            'icon' => 'users',    'label' => 'Usuarios',      'visible' => $user?->canManageUsers() ?? false],
     ];
 @endphp

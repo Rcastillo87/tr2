@@ -6,7 +6,7 @@
 <style>button, a[href] { cursor: pointer; }</style>
 
 <div class="mb-4 flex justify-between items-center">
-    <a href="{{ route('backtesting.index') }}" class="text-[11px]" style="color:var(--color-text-muted);">← Volver a Estrategias</a>
+    <a href="{{ route('strategies.index') }}" class="text-[11px]" style="color:var(--color-text-muted);">← Volver a Estrategias</a>
     <a href="{{ route('backtesting.run') }}?strategy_id={{ $strategy->id }}" class="text-[11px] px-3 py-1.5 rounded bg-[#13233D] text-[var(--color-info)] border border-[#1E3A5F] font-medium">
         + Nuevo Backtest para esta Estrategia
     </a>
@@ -18,23 +18,28 @@
             $params = $bt->config_params ?? [];
             $metrics = $bt->metrics ?? [];
             
-            $sharpe = (float)($metrics['sharpe_ratio'] ?? 0);
+                        $sharpe = (float)($metrics['sharpe_ratio'] ?? 0);
             $wr = (float)($metrics['win_rate'] ?? 0);
             $pf = (float)($metrics['profit_factor'] ?? 0);
-            $ret = (float)($metrics['avg_monthly_pnl'] ?? 0);
             $trades = (int)($metrics['total_trades'] ?? 0);
+
+            // Leemos el retorno total y la consistencia
+            $ret = (float)($metrics['total_return_pct'] ?? $metrics['avg_monthly_pnl'] ?? 0);
             $consist = (float)($metrics['consist_pct'] ?? 0);
             
-            // CALCULAR ESTRELLAS DIRECTAMENTE AQUÍ (5 criterios)
-            $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
-            $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
-            $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
-            $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
-            $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-            
-            $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-            if ($rating <= 0) $rating = 1.0;
-            
+            // El Rating ya viene calculado desde el backend (1.8)
+            $rating = (float)($metrics['rating'] ?? 0);
+            if ($rating == 0) {
+                // Fallback por si es un backtest viejo sin rating
+                $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
+                $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
+                $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
+                $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
+                $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
+                $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
+                if ($rating <= 0) $rating = 1.0;
+            }
+
             $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : '#E24B4A'));
             $isOperating = (isset($activeBacktestId) && $activeBacktestId == $bt->id);
         @endphp

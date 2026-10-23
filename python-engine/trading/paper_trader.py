@@ -630,8 +630,8 @@ class PaperTrader:
             
             # Si la config tiene código dinámico (backtest), usarlo
             cfg = self.config_map.get(display_name, {})
-            strategy_code = cfg.get('strategy_code')
-            strategy_config = cfg.get('strategy_config')
+            strategy_code = cfg_params.get('strategy_code')
+            strategy_config = cfg_params.get('strategy_config')
             
             if strategy_code:
                 import numpy as np

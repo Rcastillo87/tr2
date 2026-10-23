@@ -22,7 +22,18 @@
 </style>
 
 <div class="mb-3 flex justify-between items-center">
-    <a href="{{ route('backtesting.index') }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">← Volver a Estrategias</a>
+    @php
+        // El controlador envía $strategyToLoad y $backtestToLoad
+        $stratId = request('strategy_id') ?? ($strategyToLoad->id ?? ($backtestToLoad->strategy_id ?? null));
+        if ($stratId) {
+            $returnUrl = route('backtesting.history', $stratId);
+            $returnLabel = '← Volver al Historial';
+        } else {
+            $returnUrl = route('strategies.index');
+            $returnLabel = '← Volver a Estrategias';
+        }
+    @endphp
+    <a href="{{ $returnUrl }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">{{ $returnLabel }}</a>
     
     @php
         $activeStrategy = $backtestToLoad->strategy ?? $strategyToLoad ?? null;
@@ -50,6 +61,7 @@
     <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="p-4 space-y-4">
         @csrf
         <input type="hidden" name="strategy_id" value="{{ request('strategy_id', $backtestToLoad->strategy_id ?? '') }}">
+        <input type="hidden" name="backtest_id" value="{{ request('backtest_id', $backtestToLoad->id ?? '') }}">
         
         <!-- PESTAÑA 1 -->
         <div id="tab-config" class="space-y-4">

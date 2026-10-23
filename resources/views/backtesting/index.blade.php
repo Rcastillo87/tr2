@@ -15,6 +15,9 @@
         <p class="text-[11px]" style="color:var(--color-text-muted);">
             Selecciona una estrategia para ver su historial de backtests o crear uno nuevo.
         </p>
+        <a href="{{ route('strategies.index') }}" class="px-4 py-2 rounded-lg text-xs font-medium text-white transition-colors" style="background:#3b82f6;">
+            ⚙️ Gestionar Estrategias
+        </a>
     </div>
 
     <div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">

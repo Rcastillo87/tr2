@@ -434,7 +434,14 @@ async def reconcile(
                 if sub.symbol in symbols_checked:
                     continue
                 symbols_checked.add(sub.symbol)
-                position = await client.get_open_position(sub.symbol)
+                try:
+                    position = await client.get_open_position(sub.symbol)
+                except BybitAPIError as e:
+                    logger.error(f"[RECONCILE] {sub.symbol} error consultando Bybit: {e}")
+                    results.setdefault('errors', []).append({
+                        'account_id': account.id, 'symbol': sub.symbol, 'error': str(e)
+                    })
+                    continue
                 if not position:
                     continue
                 # Verificar por simbolo completo — evita duplicados entre suscripciones del mismo simbolo

@@ -193,6 +193,21 @@ class BacktestingController extends Controller
         }
 
         $winRate = $totalTrades > 0 ? round($totalWins / $totalTrades * 100, 2) : 0;
+
+        // Calcular promedio mensual y consistencia global (igual que en results.blade.php)
+        $monthlyTotals = [];
+        foreach ($resultsData as $ind) {
+            $monthly = $ind['monthly_breakdown'] ?? [];
+            foreach ($monthly as $m) {
+                $monthKey = $m['month'];
+                if (!isset($monthlyTotals[$monthKey])) $monthlyTotals[$monthKey] = 0;
+                $monthlyTotals[$monthKey] += (float)($m['total_pnl_pct'] ?? 0);
+            }
+        }
+        $avgGlobal = count($monthlyTotals) > 0 ? array_sum($monthlyTotals) / count($monthlyTotals) : 0;
+        $positiveGlobal = count(array_filter($monthlyTotals, fn($v) => $v > 0));
+        $consistGlobal = count($monthlyTotals) > 0 ? round($positiveGlobal / count($monthlyTotals) * 100, 1) : 0;
+
         $result = [
             'strategy' => $strategy->name,
             'interval' => $request->input('interval', '60'),
@@ -207,6 +222,7 @@ class BacktestingController extends Controller
             ],
             'individual_results' => $resultsData,
             'save_payload' => [
+                'backtest_id' => request('backtest_id'),
                 'hash' => md5($strategyId . '_' . implode(',', $selectedSymbols) . '_' . $request->input('interval', '60') . '_' . $months . '_' . $request->input('sl_pct', 1.5) . '_' . $request->input('tp_pct', 3.0)),
                 'strategy_id' => $strategyId,
                 'symbols' => $selectedSymbols,
@@ -219,8 +235,8 @@ class BacktestingController extends Controller
                     'win_rate' => $winRate,
                     'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
                     'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
-                    'avg_monthly_pnl' => round($totalPnl / max(1, $months), 2),
-                    'consist_pct' => 0,
+                    'avg_monthly_pnl' => round($avgGlobal, 2),
+                    'consist_pct' => $consistGlobal,
                 ]
             ]
         ];
@@ -412,8 +428,8 @@ class BacktestingController extends Controller
                                 'win_rate' => $winRate,
                                 'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
                                 'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
-                                'avg_monthly_pnl' => round($totalPnl / max(1, $months), 2),
-                                'consist_pct' => 0, // Placeholder
+                                'avg_monthly_pnl' => round($totalPnl / max(1, count($selectedSymbols) * $months), 2),
+                                'consist_pct' => $consistGlobal, // Placeholder
                             ]
                         ]
                     ];
@@ -693,14 +709,37 @@ class BacktestingController extends Controller
         }
 
         $data = json_decode($decoded, true);
+        
+        // DEBUG: Vamos a detener la ejecución y ver qué está llegando exactamente
+         
+        
         if (json_last_error() !== JSON_ERROR_NONE) {
             \Illuminate\Support\Facades\Log::error('Error JSON saveBacktest: ' . json_last_error_msg());
             return back()->withErrors(['error' => 'Los datos del backtest están corruptos.']);
         }
 
         try {
-            // Buscar si existe por el hash, o crear uno nuevo
-            $backtest = \App\Models\Backtest::firstOrNew(['hash' => $data['hash']]);
+            $backtest = null;
+
+            // Si viene un backtest_id (al darle a 'Probar de nuevo'), actualizamos ese registro
+            if (!empty($data['backtest_id'])) {
+                $backtest = \App\Models\Backtest::find($data['backtest_id']);
+            }
+
+            // Si no existe el ID, buscamos por configuración para evitar duplicados
+            if (!$backtest) {
+                $symbolsJson = json_encode($data['symbols']);
+                $backtest = \App\Models\Backtest::where('strategy_id', $data['strategy_id'])
+                    ->where('interval', $data['interval'])
+                    ->where('months', $data['months'])
+                    ->whereRaw("symbols::text = ?", [$symbolsJson])
+                    ->first();
+            }
+
+            if (!$backtest) {
+                $backtest = new \App\Models\Backtest();
+                $backtest->hash = $data['hash']; // Se guarda el hash que venga del frontend
+            }
             
             // Asignar los datos
             $backtest->strategy_id = $data['strategy_id'];

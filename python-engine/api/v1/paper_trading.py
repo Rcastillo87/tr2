@@ -54,22 +54,43 @@ async def load_active_configs(pool: asyncpg.Pool) -> list[dict]:
 def instantiate_strategy(config: dict) -> object:
     """
     Instancia la clase de estrategia correspondiente con los params de la config.
-    Lanza ValueError si la clase no esta registrada.
+    Soporta clases fijas (STRATEGY_CLASS_MAP) y codigo dinamico (DynamicStrategy).
     """
+    import json
     class_name = config['strategy_class']
 
     if class_name not in STRATEGY_CLASS_MAP:
         raise ValueError(f"Clase de estrategia no registrada: {class_name}")
 
-    module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
-    module   = importlib.import_module(module_path)
-    cls      = getattr(module, cls_name)
-
-    import json
     params = config['params'] if isinstance(config['params'], dict) else json.loads(config['params'])
     params['symbol']   = config['symbol']
     params['interval'] = config['interval']
 
+    # Rama dinamica: codigo Python embebido en params.strategy_code
+    if class_name == 'DynamicStrategy':
+        strategy_code = params.get('strategy_code')
+        if not strategy_code:
+            raise ValueError(f"Config '{config['display_name']}' es DynamicStrategy sin params.strategy_code")
+        from backtesting.strategies.base_strategy import BaseStrategy
+        import pandas as pd
+        import numpy as np
+        namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
+        exec(strategy_code, namespace)
+        strategy_cls = None
+        for k, v in namespace.items():
+            if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
+                strategy_cls = v
+                break
+        if not strategy_cls:
+            raise ValueError(f"No se encontro clase BaseStrategy en strategy_code de '{config['display_name']}'")
+        merged = dict(params.get('strategy_config') or {})
+        merged.update(params)
+        return strategy_cls(merged)
+
+    # Rama legacy: importar clase fija
+    module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
+    module = importlib.import_module(module_path)
+    cls    = getattr(module, cls_name)
     return cls(params)
 
 

@@ -12,8 +12,27 @@ class StrategyController extends Controller
     public function index()
     {
         Gate::authorize('manageUsers');
-        $strategies = Strategy::orderBy('name')->get();
-        return view('strategies.index', compact('strategies'));
+        
+        $strategies = Strategy::withCount('backtests')->orderBy('name')->get();
+        
+        $paperConfigs = \App\Models\PaperStrategyConfig::where('active', true)->get();
+        
+        $approvedPapers = [];
+        $activePapers = []; // NUEVO: Para bloquear el botón de eliminar
+        
+        foreach ($strategies as $s) {
+            $match = $paperConfigs->first(function($config) use ($s) {
+                return str_contains($config->display_name, $s->name);
+            });
+            if ($match) {
+                $approvedPapers[$s->id] = $match->symbol . ' (' . $match->interval . ')';
+                $activePapers[$s->id] = true; // Si está activo en Paper, bloqueamos borrado
+            } else {
+                $activePapers[$s->id] = false;
+            }
+        }
+
+        return view('strategies.index', compact('strategies', 'approvedPapers', 'activePapers'));
     }
 
     public function create()
@@ -102,6 +121,15 @@ class StrategyController extends Controller
     public function destroy(Strategy $strategy)
     {
         Gate::authorize('manageUsers');
+        
+        // Verificar si tiene configuraciones activas en Paper Trading
+        $hasActivePaper = \App\Models\PaperStrategyConfig::where('active', true)
+            ->where('display_name', 'like', $strategy->name . '%')
+            ->exists();
+            
+        if ($hasActivePaper) {
+            return back()->with('error', 'No puedes eliminar esta estrategia porque tiene una variante activa en Paper Trading. Pausa el Paper primero.');
+        }
         $name = $strategy->name;
         $strategy->delete();
         return back()->with('status', "Estrategia {$name} eliminada.");

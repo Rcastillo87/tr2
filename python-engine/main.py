@@ -37,13 +37,15 @@ app = FastAPI(
 # Middleware de autenticación interna
 INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY')
 
+from fastapi.responses import JSONResponse
+
 @app.middleware("http")
 async def verify_api_key(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
     key = request.headers.get("X-Internal-API-Key")
     if key != INTERNAL_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
 # Rutas
