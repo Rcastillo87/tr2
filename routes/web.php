@@ -40,10 +40,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/',                               [BacktestingController::class, 'index'])->name('index');
         Route::get('/run',                            [BacktestingController::class, 'run'])->name('run');
         Route::post('/run',                           [BacktestingController::class, 'run'])->name('execute');
+        Route::post('/execute-ajax',                   [\App\Http\Controllers\BacktestingController::class, 'executeAjax'])->name('execute-ajax');
+        Route::post('/save',                          [\App\Http\Controllers\BacktestingController::class, 'saveBacktest'])->name('save');
         Route::post('/run-ajax',                      [BacktestingController::class, 'runAjax'])->name('run-ajax');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
-        Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
+                Route::get('/history/{strategy}',             [BacktestingController::class, 'history'])->name('history');
+Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
+        Route::patch('/backtest/{backtest}/approve', [\App\Http\Controllers\BacktestingController::class, 'approve'])->name('approve');
+        Route::post('/backtest/{backtest}/implement-paper', [\App\Http\Controllers\BacktestingController::class, 'implementPaper'])->name('implement-paper');
+        Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
+        Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');
+        Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
+        Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
+        Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');
+    });
+
+    // Módulo de Estrategias
+    Route::middleware('can:manageUsers')->prefix('strategies')->name('strategies.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\StrategyController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\StrategyController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\StrategyController::class, 'store'])->name('store');
+        Route::get('/{strategy}/edit', [\App\Http\Controllers\StrategyController::class, 'edit'])->name('edit');
+        Route::put('/{strategy}', [\App\Http\Controllers\StrategyController::class, 'update'])->name('update');
+        Route::patch('/{strategy}/toggle', [\App\Http\Controllers\StrategyController::class, 'toggle'])->name('toggle');
+        Route::delete('/{strategy}', [\App\Http\Controllers\StrategyController::class, 'destroy'])->name('destroy');
     });
 
     // Usuarios

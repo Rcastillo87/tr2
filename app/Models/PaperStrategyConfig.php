@@ -5,8 +5,7 @@ use Illuminate\Database\Eloquent\Model;
 class PaperStrategyConfig extends Model
 {
     protected $table = 'paper_strategy_configs';
-    protected $fillable = [
-        'display_name',
+    protected $fillable = ['display_name',
         'strategy_class',
         'symbol',
         'interval',
@@ -19,8 +18,7 @@ class PaperStrategyConfig extends Model
         'total_return_pct',
         'star_wr', 'star_sharpe', 'star_ret', 'star_consistency', 'star_pf', 'star_rating',
         'backtest_range_from', 'backtest_range_to',
-        'sharpe_ratio', 'consistency_pct', 'profit_factor',
-    ];
+        'sharpe_ratio', 'consistency_pct', 'profit_factor', 'backtest_id'];
     protected $casts = [
         'params' => 'array',
         'active' => 'boolean',
