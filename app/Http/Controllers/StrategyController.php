@@ -13,23 +13,19 @@ class StrategyController extends Controller
     {
         Gate::authorize('manageUsers');
 
-        // Consulta real a la base de datos
         $strategies = Strategy::withCount('backtests')->orderBy('name')->get();
         
-        // Obtener todas las configuraciones activas y agruparlas por strategy_id
+        // Obtener los Backtests reales que están en Paper
         $paperConfigs = \App\Models\PaperStrategyConfig::where('active', true)
             ->whereNotNull('backtest_id')
             ->get();
             
         $backtestIds = $paperConfigs->pluck('backtest_id')->unique();
-        $backtests = \App\Models\Backtest::whereIn('id', $backtestIds)->get()->keyBy('id');
+        $backtests = \App\Models\Backtest::whereIn('id', $backtestIds)->get();
         
         $groupedPapers = [];
-        foreach ($paperConfigs as $pc) {
-            $bt = $backtests->get($pc->backtest_id);
-            if ($bt) {
-                $groupedPapers[$bt->strategy_id][$pc->backtest_id][] = $pc;
-            }
+        foreach ($backtests as $bt) {
+            $groupedPapers[$bt->strategy_id][] = $bt;
         }
 
         return view('strategies.index', compact('strategies', 'groupedPapers'));
@@ -44,15 +40,14 @@ class StrategyController extends Controller
     public function store(Request $request)
     {
         Gate::authorize('manageUsers');
-        
+
         $validated = $request->validate([
             'name' => 'required|string|max:100|unique:strategies,name',
             'description' => 'nullable|string|max:255',
             'code' => 'required|string',
-            'config' => 'nullable|string', // Lo validamos como string, luego lo convertimos a array
+            'config' => 'nullable|string',
         ]);
 
-        // Verificar que el JSON sea válido
         if (!empty($validated['config'])) {
             $decoded = json_decode($validated['config'], true);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -63,7 +58,6 @@ class StrategyController extends Controller
             $validated['config'] = [];
         }
 
-        // Smoke Test en el motor Python
         $this->runSmokeTest($validated['code']);
 
         try {
@@ -74,6 +68,7 @@ class StrategyController extends Controller
                 'name' => 'Error al guardar en la base de datos: ' . $e->getMessage()
             ]);
         }
+        
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true, 'message' => 'Estrategia creada y validada correctamente.', 'redirect' => route('strategies.index')]);
         }
@@ -89,7 +84,7 @@ class StrategyController extends Controller
     public function update(Request $request, Strategy $strategy)
     {
         Gate::authorize('manageUsers');
-        
+
         $validated = $request->validate([
             'name' => 'required|string|max:100|unique:strategies,name,' . $strategy->id,
             'description' => 'nullable|string|max:255',
@@ -124,12 +119,12 @@ class StrategyController extends Controller
     public function destroy(Strategy $strategy)
     {
         Gate::authorize('manageUsers');
-        
+
         // Verificar si tiene configuraciones activas en Paper Trading
         $hasActivePaper = \App\Models\PaperStrategyConfig::where('active', true)
             ->where('display_name', 'like', $strategy->name . '%')
             ->exists();
-            
+
         if ($hasActivePaper) {
             return back()->with('error', 'No puedes eliminar esta estrategia porque tiene una variante activa en Paper Trading. Pausa el Paper primero.');
         }

@@ -135,43 +135,43 @@
                     </td>
                 </tr>
                 
-                {{-- ACORDEÓN CON EL CÓDIGO EXACTO QUE ME ENVIASTE --}}
+                {{-- ACORDEÓN CON EL DISEÑO EXACTO Y DATOS DEL BACKTEST --}}
                 @if(count($papers) > 0)
                 <tr id="paper-details-{{ $s->id }}" style="display: none; background-color: #0D1117;">
                     <td colspan="5" class="p-0 border-b" style="border-color:var(--color-border-soft);">
                         <div class="flex flex-col gap-2">
-                            @foreach($papers as $backtestId => $paperGroup)
+                            @foreach($papers as $bt_obj)
                                 @php
-                                    $paper = $paperGroup[0]; // Tomamos el primer registro para las métricas
-                                    $symbols = collect($paperGroup)->pluck('symbol')->implode(', ');
-                                    $rating = $paper->star_rating ?? 0;
-                                    if (!$rating) {
-                                        $rating = \App\Helpers\RatingHelper::calculate(
-                                            (float)($paper->avg_win_rate ?? 0), (float)($paper->sharpe_ratio ?? 0),
-                                            (float)($paper->profit_factor ?? 0), (float)($paper->avg_monthly_pnl ?? 0),
-                                            (float)($paper->consistency_pct ?? 0)
-                                        );
-                                    }
+                                    $metrics = $bt_obj->metrics ?? [];
+                                    $wr = (float)($metrics['win_rate'] ?? 0);
+                                    $sharpe = (float)($metrics['sharpe_ratio'] ?? 0);
+                                    $ret = (float)($metrics['avg_monthly_pnl'] ?? 0);
+                                    $consist = (float)($metrics['consist_pct'] ?? 0);
+                                    $pf = (float)($metrics['profit_factor'] ?? 0);
+                                    
+                                    $rating = isset($metrics['rating']) ? (float)$metrics['rating'] : \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $ret, $consist);
                                     $color = \App\Helpers\RatingHelper::getColor($rating);
+                                    
+                                    $symbols = implode(', ', $bt_obj->symbols ?? []);
                                 @endphp
                                 <div class="flex flex-wrap items-center space-x-2 gap-x-3 text-[11px] p-2.5 rounded-md border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
-                                    <span class="font-bold whitespace-nowrap mr-2" style="color:var(--color-text-primary);">📈 {{ $symbols }} ({{ $paper->interval }}m)</span>
+                                    <span class="font-bold whitespace-nowrap mr-2" style="color:var(--color-text-primary);">📈 {{ $symbols }} ({{ $bt_obj->interval }}m)</span>
                                     <span class="whitespace-nowrap" style="color:{{ $color }};">{{ str_repeat('★', (int)round($rating)) . str_repeat('☆', 5 - (int)round($rating)) }} {{ number_format($rating, 1) }}</span>
                                     
                                     <span class="text-gray-500 mx-1">|</span>
-                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">WR: <b style="color:var(--color-text-primary);">{{ number_format($paper->avg_win_rate ?? 0, 2) }}%</b></span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">WR: <b style="color:var(--color-text-primary);">{{ number_format($wr, 2) }}%</b></span>
                                     
                                     <span class="text-gray-500 mx-1">|</span>
-                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Sharpe: <b style="color:var(--color-text-primary);">{{ number_format($paper->sharpe_ratio ?? 0, 2) }}</b></span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Sharpe: <b style="color:var(--color-text-primary);">{{ number_format($sharpe, 2) }}</b></span>
                                     
                                     <span class="text-gray-500 mx-1">|</span>
-                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Ret. Mes: <b style="color:var(--color-profit);">{{ number_format($paper->avg_monthly_pnl ?? 0, 2) }}%</b></span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Ret: <b style="color:var(--color-profit);">{{ number_format($ret, 2) }}%</b></span>
                                     
                                     <span class="text-gray-500 mx-1">|</span>
-                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Cons: <b style="color:var(--color-text-primary);">{{ number_format($paper->consistency_pct ?? 0, 1) }}%</b></span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Cons: <b style="color:var(--color-text-primary);">{{ number_format($consist, 1) }}%</b></span>
                                     
                                     <span class="text-gray-500 mx-1">|</span>
-                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">PF: <b style="color:var(--color-text-primary);">{{ number_format($paper->profit_factor ?? 0, 2) }}</b></span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">PF: <b style="color:var(--color-text-primary);">{{ number_format($pf, 2) }}</b></span>
                                 </div>
                             @endforeach
                         </div>
