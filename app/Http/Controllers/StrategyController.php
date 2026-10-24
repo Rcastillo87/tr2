@@ -12,21 +12,21 @@ class StrategyController extends Controller
     public function index()
     {
         Gate::authorize('manageUsers');
-        
+
+        // Consulta real a la base de datos
         $strategies = Strategy::withCount('backtests')->orderBy('name')->get();
-        
         $paperConfigs = \App\Models\PaperStrategyConfig::where('active', true)->get();
-        
+
         $approvedPapers = [];
-        $activePapers = []; // NUEVO: Para bloquear el botón de eliminar
-        
+        $activePapers = [];
+
         foreach ($strategies as $s) {
             $match = $paperConfigs->first(function($config) use ($s) {
                 return str_contains($config->display_name, $s->name);
             });
             if ($match) {
                 $approvedPapers[$s->id] = $match->symbol . ' (' . $match->interval . ')';
-                $activePapers[$s->id] = true; // Si está activo en Paper, bloqueamos borrado
+                $activePapers[$s->id] = true;
             } else {
                 $activePapers[$s->id] = false;
             }

@@ -6,13 +6,34 @@
 @section('content')
 
     {{-- 1. Precios en vivo --}}
-    <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-        <div class="flex items-center justify-between mb-3">
+    <div class="rounded-lg border p-3 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <div class="flex items-center justify-between mb-2">
             <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Precios en vivo</h3>
-            <span class="text-[10px]" style="color:var(--color-text-muted);">Se actualiza cada 10s</span>
+            <span class="text-[10px]" style="color:var(--color-text-muted);">Actualización cada 15s</span>
         </div>
-        <div id="livePricesGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <p class="text-sm" style="color:var(--color-text-muted);">Cargando precios...</p>
+        <div id="livePricesContainer" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            @foreach($activeSymbols as $sym)
+                @php
+                    $data = $initialPrices[$sym] ?? null;
+                    $price = $data['price'] ?? null;
+                    $change = $data['change_pct'] ?? 0;
+                @endphp
+                <div class="rounded border px-3 py-2 flex flex-col" id="price-card-{{ $sym }}" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+                    <span class="font-bold text-xs" style="color:var(--color-text-primary);">{{ $sym }}</span>
+                    <div class="flex items-center justify-between mt-1">
+                        <span class="font-mono text-xs price-val" style="color:var(--color-text-secondary);">
+                            {{ $price ? '$' . number_format($price, 2) : 'Cargando...' }}
+                        </span>
+                        <span class="text-[10px] font-medium price-trend" style="color: {{ $price ? ($change >= 0 ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-muted)' }};">
+                            @if($price)
+                                {{ $change >= 0 ? '↑' : '↓' }} {{ number_format(abs($change), 2) }}%
+                            @else
+                                —
+                            @endif
+                        </span>
+                    </div>
+                </div>
+            @endforeach
         </div>
     </div>
 
@@ -149,7 +170,44 @@
         </div>
     @endcan
 
+
+<script>
+    const livePricesData = @json($initialPrices);
+    
+    function updateLivePrices() {
+        fetch('{{ route("dashboard.live-prices") }}')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.prices) return;
+                for (const [sym, newPrice] of Object.entries(data.prices)) {
+                    const card = document.getElementById('price-card-' + sym);
+                    if (!card) continue;
+                    
+                    const priceEl = card.querySelector('.price-val');
+                    const trendEl = card.querySelector('.price-trend');
+                    
+                    const oldPrice = livePricesData[sym] ? livePricesData[sym].price : newPrice;
+                    const changePct = oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice) * 100 : 0;
+                    
+                    if (priceEl) priceEl.textContent = '$' + newPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    if (trendEl) {
+                        trendEl.textContent = (changePct >= 0 ? '↑ ' : '↓ ') + Math.abs(changePct).toFixed(2) + '%';
+                        trendEl.style.color = changePct >= 0 ? 'var(--color-profit)' : 'var(--color-loss)';
+                    }
+                    livePricesData[sym] = { price: newPrice, change_pct: changePct };
+                }
+            })
+            .catch(err => console.error('Error updating prices:', err));
+    }
+
+    // Carga inmediata
+    document.addEventListener('DOMContentLoaded', function() {
+        updateLivePrices();
+        setInterval(updateLivePrices, 15000);
+    });
+</script>
 @endsection
+
 
 @push('scripts')
 <script>

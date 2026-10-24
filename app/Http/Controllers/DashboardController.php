@@ -13,47 +13,25 @@ class DashboardController extends Controller
         $regimes = $this->getRegimes();
 
         // Resumen consolidado por grupo de estrategia (igual que paper-trading/index)
-        $groups = [
-            'VWAP Tendencia'         => ['VWAP Tendencia'],
-            'VWAP Reversión'         => ['VWAP Reversión'],
-            'Reversión a la Media'   => ['Reversión a la Media'],
-            'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
-        ];
-
         $startOfMonth = now()->startOfMonth();
         $endOfMonth   = now()->endOfMonth();
-        $legacyMap = [
-            'VWAP Tendencia'         => ['VWAP Intradía'],
-            'VWAP Reversión'         => [],
-            'Reversión a la Media'   => ['Reversión a la Media'],
-            'Tendencia EMA/Donchian' => ['Tendencia EMA/Donchian'],
-        ];
 
         $summary = [];
+        $activeConfigs = PaperStrategyConfig::where('active', true)->get();
+        $groupedConfigs = $activeConfigs->groupBy(function($config) {
+            return trim(explode(' — ', $config->display_name)[0]);
+        });
 
-        foreach ($groups as $groupName => $prefixes) {
-            $displayNames = PaperStrategyConfig::active()
-                ->get('display_name')
-                ->pluck('display_name')
-                ->filter(function ($name) use ($prefixes) {
-                    foreach ($prefixes as $prefix) {
-                        if (str_starts_with($name, $prefix)) return true;
-                    }
-                    return false;
-                })->values()->toArray();
-
-            $legacyNames = $legacyMap[$groupName] ?? [];
-            $allNames    = array_unique(array_merge($displayNames, $legacyNames));
-
-            if (empty($allNames)) continue;
-
-            $closedMonth = PaperTrade::whereIn('strategy', $allNames)
+        foreach ($groupedConfigs as $groupName => $configs) {
+            $displayNames = $configs->pluck('display_name')->toArray();
+            
+            $closedMonth = PaperTrade::whereIn('strategy', $displayNames)
                 ->closed()
                 ->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
 
             $total      = $closedMonth->count();
             $wins       = (clone $closedMonth)->where('pnl', '>', 0)->count();
-            $openCount  = PaperTrade::whereIn('strategy', $allNames)->open()->count();
+            $openCount  = PaperTrade::whereIn('strategy', $displayNames)->open()->count();
 
             $summary[] = [
                 'group'         => $groupName,
@@ -78,6 +56,7 @@ class DashboardController extends Controller
         $winningTrades = (clone $closedThisMonth)->where('pnl', '>', 0)->count();
         $winRate       = $totalTrades > 0 ? round($winningTrades / $totalTrades * 100, 2) : 0;
         $recentTrades  = PaperTrade::orderBy('updated_at', 'desc')->limit(10)->get();
+        $initialPrices = [];
 
         // Resumen del mes — real trading (todas las cuentas del usuario)
         $realAccountIds = \App\Models\BrokerAccount::where('user_id', auth()->id())->pluck('id');
@@ -90,6 +69,38 @@ class DashboardController extends Controller
         $totalRealTrades   = (clone $closedRealMonth)->count();
         $winningRealTrades = (clone $closedRealMonth)->where('pnl', '>', 0)->count();
         $realWinRate       = $totalRealTrades > 0 ? round($winningRealTrades / $totalRealTrades * 100, 2) : 0;
+        // Carga inicial de precios (Desde la base de datos, ultra rápido)
+        $activeConfigs = PaperStrategyConfig::where('active', true)->get();
+        $activeSymbols = $activeConfigs->pluck('symbol')->unique()->values()->toArray();
+
+        $initialPrices = [];
+        if (!empty($activeSymbols)) {
+            $initialCacheKey = 'initial_prices_' . md5(implode(',', $activeSymbols));
+            
+            // Caché de 30 segundos para la tendencia inicial
+            $initialPrices = \Illuminate\Support\Facades\Cache::remember($initialCacheKey, 30, function () use ($activeSymbols) {
+                $prices = [];
+                foreach ($activeSymbols as $sym) {
+                    // Consulta ultra ligera usando DISTINCT ON de PostgreSQL
+                    $candles = \DB::select("
+                        SELECT close FROM (
+                            SELECT close, time, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) as rn
+                            FROM ohlcv_data
+                            WHERE symbol = ? AND interval = '1'
+                        ) sub WHERE rn <= 2 ORDER BY time DESC
+                    ", [$sym]);
+
+                    if (count($candles) >= 2) {
+                        $curr = (float) $candles[0]->close;
+                        $prev = (float) $candles[1]->close;
+                        $prices[$sym] = ['price' => $curr, 'change_pct' => $prev > 0 ? (($curr - $prev) / $prev) * 100 : 0];
+                    } elseif (count($candles) == 1) {
+                        $prices[$sym] = ['price' => (float) $candles[0]->close, 'change_pct' => 0];
+                    }
+                }
+                return $prices;
+            });
+        }
 
         return view('dashboard.index', [
             'regimes'         => $regimes,
@@ -104,31 +115,37 @@ class DashboardController extends Controller
             'totalRealPnl'    => $totalRealPnl,
             'totalRealTrades' => $totalRealTrades,
             'realWinRate'     => $realWinRate,
+            'initialPrices'   => $initialPrices,
+            'activeSymbols'   => $activeSymbols,
+            
         ]);
     }
 
     public function livePrices()
     {
-        $symbols = \App\Models\CollectorConfig::activeSymbols();
-        if (empty($symbols)) {
-            return response()->json(['prices' => []]);
-        }
+        $symbols = \App\Models\PaperStrategyConfig::where('active', true)
+            ->pluck('symbol')->unique()->values()->toArray();
 
-        try {
-            $response = Http::withHeaders([
-                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(5)->get(config('trading.python_engine_url') . '/v1/prices', [
-                'symbols' => implode(',', $symbols),
-            ]);
+        if (empty($symbols)) return response()->json(['prices' => []]);
 
-            if ($response->successful()) {
-                return response()->json(['prices' => $response->json('prices', [])]);
+        $cacheKey = 'live_prices_' . md5(implode(',', $symbols));
+
+        // Caché de 60 segundos (antes 10s)
+        $prices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($symbols) {
+            try {
+                $response = \Illuminate\Support\Facades\Http::withHeaders([
+                    'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+                ])->timeout(3)->get(config('trading.python_engine_url') . '/v1/prices', [
+                    'symbols' => implode(',', $symbols),
+                ]);
+                if ($response->successful()) return $response->json('prices', []);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Dashboard livePrices: ' . $e->getMessage());
             }
-        } catch (\Throwable $e) {
-            Log::warning('Dashboard: error obteniendo precios en vivo — ' . $e->getMessage());
-        }
+            return [];
+        });
 
-        return response()->json(['prices' => []]);
+        return response()->json(['prices' => $prices]);
     }
 
     private function getRegimes(): array

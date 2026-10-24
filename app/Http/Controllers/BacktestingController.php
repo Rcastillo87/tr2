@@ -45,34 +45,9 @@ class BacktestingController extends Controller
 
     public function index()
     {
-        Gate::authorize('viewAnalysisTools');
-
-        // Cargar estrategias con sus backtests
-        $strategies = \App\Models\Strategy::with(['backtests' => function($q) {
-            $q->orderBy('created_at', 'desc');
-        }])->where('active', true)->orderBy('name')->get();
-
-        // Calcular en el controlador si está operando para evitar errores en la vista
-        foreach ($strategies as $s) {
-            $backtestIds = $s->backtests->pluck('id')->toArray();
-            $s->is_operating = false;
-            
-            if (count($backtestIds) > 0) {
-                $s->is_operating = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtestIds)
-                    ->where('active', true)
-                    ->exists();
-            }
-            $s->backtests_count = $s->backtests->count();
-        }
-
-        return view('backtesting.index', compact('strategies'));
+        // Redirigir al Hub unificado de Estrategias
+        return redirect()->route('strategies.index');
     }
-
-    /**
-     * Vista 2: Formulario de configuración + resultados del backtest.
-     * GET: muestra el formulario vacío.
-     * POST: ejecuta el backtest y muestra resultados.
-     */
 
     public function executeAjax(Request $request)
     {
@@ -664,7 +639,7 @@ class BacktestingController extends Controller
             );
         }
 
-        return redirect()->route('backtesting.index')->with('status', 'Backtest implementado en Paper Trading correctamente.');
+        return redirect()->route('strategies.index')->with('status', 'Backtest implementado en Paper Trading correctamente.');
     }
 
 
