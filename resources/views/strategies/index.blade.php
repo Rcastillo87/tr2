@@ -10,10 +10,16 @@
     .table-compact th, .table-compact td { padding: 0.6rem 0.5rem; }
 </style>
 
-<!-- SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+    function togglePaperDetails(id) {
+        const el = document.getElementById('paper-details-' + id);
+        if (el) {
+            el.style.display = (el.style.display === 'none') ? 'table-row' : 'none';
+        }
+    }
+
     function confirmDelete(id, name) {
         Swal.fire({
             title: '¿Eliminar estrategia?',
@@ -67,7 +73,6 @@
     </a>
 </div>
 
-<!-- Tabla Única (Responsive con Scroll Horizontal) -->
 <div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">
     <div class="overflow-x-auto">
         <table class="w-full text-left text-[12px] table-compact" style="min-width: 900px;">
@@ -76,12 +81,13 @@
                     <th class="font-medium">Estrategia</th>
                     <th class="font-medium text-center">Estado</th>
                     <th class="font-medium text-center">Variantes</th>
-                    <th class="font-medium text-center">Configurada en Paper</th>
+                    <th class="font-medium text-center">Paper Trading</th>
                     <th class="font-medium text-right pr-4">Acciones</th>
                 </tr>
             </thead>
             <tbody class="divide-y" style="border-color:var(--color-border-soft);">
                 @forelse($strategies as $s)
+                @php $papers = $groupedPapers[$s->id] ?? []; @endphp
                 <tr class="hover:bg-[#1A2230] transition-colors">
                     <td>
                         <span class="font-medium text-sm block" style="color:var(--color-text-primary);">{{ $s->name }}</span>
@@ -98,31 +104,21 @@
                         </span>
                     </td>
                     <td class="text-center">
-                        @if(isset($approvedPapers[$s->id]))
-                            <span class="px-2 py-1 rounded-md text-[10px] font-medium border inline-block" style="background:#172554; border-color:#1e3a8a; color:#60a5fa;">
-                                🟢 {{ $approvedPapers[$s->id] }}
-                            </span>
+                        @if(count($papers) > 0)
+                            <button type="button" onclick="togglePaperDetails({{ $s->id }})" class="px-2 py-1 rounded-md text-[10px] font-medium border inline-block transition-colors hover:brightness-110" style="background:#16331F; border-color:#1E4A2E; color:var(--color-profit);">
+                                🟢 {{ count($papers) }} Activo(s) ▼
+                            </button>
                         @else
                             <span class="text-[10px] italic" style="color:var(--color-text-muted);">Sin configurar</span>
                         @endif
                     </td>
                     <td class="text-right pr-4">
                         <div class="flex items-center justify-end gap-2">
-                            <!-- Botón Nuevo: Azul -->
                             <a href="{{ route('backtesting.run', ['strategy_id' => $s->id]) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#3b82f6;">+ Nuevo Backtest</a>
+                            <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap" style="background:#374151; color:#e5e7eb;">Historial</a>
+                            <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#10b981;">Editar</a>
                             
-                            <!-- Botón Historial: Gris Oscuro -->
-                            <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap" style="background:#374151; color:#e5e7eb;">
-                                Historial
-                            </a>
-                            
-                            <!-- Botón Editar: Verde -->
-                            <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#10b981;">
-                                Editar
-                            </a>
-                            
-                            <!-- Botón Eliminar o Bloqueado -->
-                            @if($activePapers[$s->id] ?? false)
+                            @if(count($papers) > 0)
                                 <button type="button" onclick="blockDelete('{{ $s->name }}')" class="btn-action px-2 py-1.5 rounded-md text-[11px] font-medium text-gray-400 border border-gray-700 bg-gray-800/50" title="Tiene Paper Activo">
                                     🔒
                                 </button>
@@ -138,6 +134,51 @@
                         </div>
                     </td>
                 </tr>
+                
+                {{-- ACORDEÓN CON EL CÓDIGO EXACTO QUE ME ENVIASTE --}}
+                @if(count($papers) > 0)
+                <tr id="paper-details-{{ $s->id }}" style="display: none; background-color: #0D1117;">
+                    <td colspan="5" class="p-0 border-b" style="border-color:var(--color-border-soft);">
+                        <div class="flex flex-col gap-2">
+                            @foreach($papers as $backtestId => $paperGroup)
+                                @php
+                                    $paper = $paperGroup[0]; // Tomamos el primer registro para las métricas
+                                    $symbols = collect($paperGroup)->pluck('symbol')->implode(', ');
+                                    $rating = $paper->star_rating ?? 0;
+                                    if (!$rating) {
+                                        $rating = \App\Helpers\RatingHelper::calculate(
+                                            (float)($paper->avg_win_rate ?? 0), (float)($paper->sharpe_ratio ?? 0),
+                                            (float)($paper->profit_factor ?? 0), (float)($paper->avg_monthly_pnl ?? 0),
+                                            (float)($paper->consistency_pct ?? 0)
+                                        );
+                                    }
+                                    $color = \App\Helpers\RatingHelper::getColor($rating);
+                                @endphp
+                                <div class="flex flex-wrap items-center space-x-2 gap-x-3 text-[11px] p-2.5 rounded-md border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
+                                    <span class="font-bold whitespace-nowrap mr-2" style="color:var(--color-text-primary);">📈 {{ $symbols }} ({{ $paper->interval }}m)</span>
+                                    <span class="whitespace-nowrap" style="color:{{ $color }};">{{ str_repeat('★', (int)round($rating)) . str_repeat('☆', 5 - (int)round($rating)) }} {{ number_format($rating, 1) }}</span>
+                                    
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">WR: <b style="color:var(--color-text-primary);">{{ number_format($paper->avg_win_rate ?? 0, 2) }}%</b></span>
+                                    
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Sharpe: <b style="color:var(--color-text-primary);">{{ number_format($paper->sharpe_ratio ?? 0, 2) }}</b></span>
+                                    
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Ret. Mes: <b style="color:var(--color-profit);">{{ number_format($paper->avg_monthly_pnl ?? 0, 2) }}%</b></span>
+                                    
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Cons: <b style="color:var(--color-text-primary);">{{ number_format($paper->consistency_pct ?? 0, 1) }}%</b></span>
+                                    
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">PF: <b style="color:var(--color-text-primary);">{{ number_format($paper->profit_factor ?? 0, 2) }}</b></span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </td>
+                </tr>
+                @endif
+
                 @empty
                 <tr>
                     <td colspan="5" class="px-4 py-8 text-center text-sm" style="color:var(--color-text-muted);">

@@ -15,24 +15,24 @@ class StrategyController extends Controller
 
         // Consulta real a la base de datos
         $strategies = Strategy::withCount('backtests')->orderBy('name')->get();
-        $paperConfigs = \App\Models\PaperStrategyConfig::where('active', true)->get();
-
-        $approvedPapers = [];
-        $activePapers = [];
-
-        foreach ($strategies as $s) {
-            $match = $paperConfigs->first(function($config) use ($s) {
-                return str_contains($config->display_name, $s->name);
-            });
-            if ($match) {
-                $approvedPapers[$s->id] = $match->symbol . ' (' . $match->interval . ')';
-                $activePapers[$s->id] = true;
-            } else {
-                $activePapers[$s->id] = false;
+        
+        // Obtener todas las configuraciones activas y agruparlas por strategy_id
+        $paperConfigs = \App\Models\PaperStrategyConfig::where('active', true)
+            ->whereNotNull('backtest_id')
+            ->get();
+            
+        $backtestIds = $paperConfigs->pluck('backtest_id')->unique();
+        $backtests = \App\Models\Backtest::whereIn('id', $backtestIds)->get()->keyBy('id');
+        
+        $groupedPapers = [];
+        foreach ($paperConfigs as $pc) {
+            $bt = $backtests->get($pc->backtest_id);
+            if ($bt) {
+                $groupedPapers[$bt->strategy_id][$pc->backtest_id][] = $pc;
             }
         }
 
-        return view('strategies.index', compact('strategies', 'approvedPapers', 'activePapers'));
+        return view('strategies.index', compact('strategies', 'groupedPapers'));
     }
 
     public function create()

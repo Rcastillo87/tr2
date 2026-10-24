@@ -17,8 +17,8 @@
         @php
             $params = $bt->config_params ?? [];
             $metrics = $bt->metrics ?? [];
-            
-                        $sharpe = (float)($metrics['sharpe_ratio'] ?? 0);
+
+            $sharpe = (float)($metrics['sharpe_ratio'] ?? 0);
             $wr = (float)($metrics['win_rate'] ?? 0);
             $pf = (float)($metrics['profit_factor'] ?? 0);
             $trades = (int)($metrics['total_trades'] ?? 0);
@@ -26,25 +26,23 @@
             $ret = (float)($metrics['avg_monthly_pnl'] ?? 0);
             $consist = (float)($metrics['consist_pct'] ?? 0);
 
-            // Normalizar porcentajes si vienen como decimales (ej. 0.5 en vez de 50)
             if ($wr > 0 && $wr <= 1) $wr *= 100;
             if (abs($ret) > 0 && abs($ret) <= 1 && $ret != 0) $ret *= 100;
             if ($consist > 0 && $consist <= 1) $consist *= 100;
 
-            // CALCULAMOS LAS ESTRELLAS CON EL HELPER
             $rating = isset($metrics['rating']) ? (float)$metrics['rating'] : \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $ret, $consist);
             if ($rating <= 0) $rating = 1.0;
             $starColor = \App\Helpers\RatingHelper::getColor($rating);
             
-            // Para los mini-gráficos de abajo, calculamos las estrellas por separado
             $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
             $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
             $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
             $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
             $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-            $isOperating = (isset($activeBacktestId) && $activeBacktestId == $bt->id);
+
+            $isOperating = in_array($bt->id, $activeBacktestIds ?? []);
         @endphp
-        
+
         <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
             <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                 <div class="flex items-center gap-3">
@@ -63,25 +61,23 @@
                             @csrf
                             <button type="button" onclick="confirmImplement({{ $bt->id }})" class="text-[11px] px-3 py-1.5 rounded border font-medium transition-colors" style="background:#13233D; color:var(--color-info); border-color:#1E3A5F;">⚡ Implementar en Paper</button>
                         </form>
-                        
                         <form method="POST" action="{{ route('backtesting.destroy-backtest', $bt) }}" id="del-form-{{ $bt->id }}" style="display:inline;">
                             @csrf @method('DELETE')
                             <button type="button" onclick="confirmDelete({{ $bt->id }})" class="text-[11px] px-2 py-1.5 rounded border transition-colors" style="background:#3A1A1C; color:var(--color-loss); border-color:#5A2226;">🗑 Eliminar</button>
                         </form>
                     @endif
-
                     <a href="{{ route('backtesting.run') }}?backtest_id={{ $bt->id }}" class="text-[11px] px-2 py-1.5 rounded border transition-colors" style="background:var(--color-surface-raised); color:var(--color-text-primary); border-color:var(--color-border-strong);">🔄 Probar de nuevo</a>
                 </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
+            <!-- CONFIGURACIÓN ORIGINAL (Cuadrícula de 5 columnas) -->
+            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
                 @foreach([
                     ['Stop Loss', ($params['sl_pct'] ?? '—').'%'],
                     ['Take Profit 1', ($params['tp_pct'] ?? '—').'%'],
                     ['Break-even', ($params['be_pct'] ?? '—').'%'],
                     ['Duración', ($params['max_duration'] ?? '—').' velas'],
                     ['Riesgo/trade', ($params['risk_per_trade_pct'] ?? '—').'%'],
-                    ['Retorno Total', number_format($metrics['total_return_pct'] ?? 0, 2).'%'],
                 ] as [$label, $value])
                 <div class="px-2 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
                     <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>
@@ -96,9 +92,13 @@
                         <span style="font-size:18px; line-height:1; color:{{ $starColor }};">{{ str_repeat('★', (int)round($rating)) . str_repeat('☆', 5 - (int)round($rating)) }}</span>
                         <span style="font-size:14px; font-weight:700; color:{{ $starColor }};">{{ $rating > 0 ? $rating : '—' }}</span>
                     </div>
-                    <div class="flex gap-4"><span class="text-[11px]" style="color:var(--color-text-muted);"><b style="color:var(--color-text-primary);">{{ $trades }}</b> trades</span></div>
+                    <div class="flex gap-4">
+                        <span class="text-[11px]" style="color:var(--color-text-muted);"><b style="color:var(--color-text-primary);">{{ $trades }}</b> trades</span>
+                        <span class="text-[11px]" style="color:var(--color-text-muted);">Ret. Total: <b style="color:{{ ($metrics['total_return_pct'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ number_format($metrics['total_return_pct'] ?? 0, 2) }}%</b></span>
+                    </div>
                 </div>
-                
+
+                <!-- MÉTRICAS ORIGINALES (Cuadrícula de 5 columnas) -->
                 <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px;">
                     @foreach([
                         ['Win Rate', $sWr, number_format($wr, 2) . '%'],
@@ -123,7 +123,6 @@
     @endforelse
 </div>
 @endsection
-
 
 @if ($errors->any())
 <script>

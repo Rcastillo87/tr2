@@ -301,13 +301,7 @@ class BacktestingController extends Controller
         $configParams = $backtest->config_params;
         $metrics = $backtest->metrics;
         
-        // 1. Desactivar cualquier OTRA config de Paper para esta misma estrategia
-        $strategyBacktestIds = $strategy->backtests->pluck('id')->toArray();
-        if (count($strategyBacktestIds) > 0) {
-            \App\Models\PaperStrategyConfig::whereIn('backtest_id', $strategyBacktestIds)
-                ->where('backtest_id', '!=', $backtest->id)
-                ->update(['active' => false]);
-        }
+        // Ahora se permiten múltiples configuraciones en Paper por estrategia.
 
         // 2. Crear o activar el nuevo (para CADA moneda)
         foreach ($backtest->symbols as $sym) {
@@ -326,6 +320,15 @@ class BacktestingController extends Controller
                     'sharpe_ratio' => $metrics['sharpe_ratio'] ?? null,
                     'profit_factor' => $metrics['profit_factor'] ?? null,
                     'total_return_pct' => $metrics['total_return_pct'] ?? null,
+                    'avg_monthly_pnl' => $metrics['avg_monthly_pnl'] ?? null,
+                    'consistency_pct' => $metrics['consist_pct'] ?? null,
+                    'star_rating' => \App\Helpers\RatingHelper::calculate(
+                        (float)($metrics['win_rate'] ?? 0),
+                        (float)($metrics['sharpe_ratio'] ?? 0),
+                        (float)($metrics['profit_factor'] ?? 0),
+                        (float)($metrics['avg_monthly_pnl'] ?? 0),
+                        (float)($metrics['consist_pct'] ?? 0)
+                    ),
                 ]
             );
         }
@@ -338,15 +341,15 @@ class BacktestingController extends Controller
     {
         Gate::authorize('viewAnalysisTools');
         $backtests = $strategy->backtests()->orderBy('created_at', 'desc')->get();
-        
-        // Buscar si hay un backtest de esta estrategia operando en paper
-        $activeConfig = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtests->pluck('id'))
+
+        // Buscar TODOS los backtests de esta estrategia operando en paper
+        $activeBacktestIds = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtests->pluck('id'))
             ->where('active', true)
-            ->first();
-            
-        $activeBacktestId = $activeConfig ? $activeConfig->backtest_id : null;
-        
-        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestId'));
+            ->pluck('backtest_id')
+            ->unique()
+            ->toArray();
+
+        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestIds'));
     }
 
 
