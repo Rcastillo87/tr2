@@ -67,7 +67,7 @@
             </div>
 
             <input type="hidden" name="code" id="codeInput" value="{{ old('code', $strategy->code) }}">
-            <input type="hidden" name="config" id="configInput" value="{{ old('config', $strategy->config ? json_encode($strategy->config) : '{}') }}">
+            <input type="hidden" name="config" id="configInput" value="{{ old('config', $strategy->config ? json_encode($strategy->config, JSON_PRETTY_PRINT) : '{}') }}">
 
             <button type="button" onclick="submitWithSmokeTest()" class="w-full text-sm font-medium px-4 py-3 rounded-lg"
                     style="background:var(--color-info); color:#fff;">

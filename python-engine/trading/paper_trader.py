@@ -655,6 +655,7 @@ class PaperTrader:
                     continue
             else:
                 strategy = strategy_cls(params)
+
             regime   = await self.get_current_regime(
                 df, trending_threshold=strategy.regime_adx_trending,
                 ranging_threshold=strategy.regime_adx_ranging,

@@ -76,6 +76,7 @@ class BacktestingController extends Controller
 
     public function executeAjax(Request $request)
     {
+        \Illuminate\Support\Facades\Log::info('EXECUTE AJAX backtest_id: ' . $request->input('backtest_id'));
         Gate::authorize('viewAnalysisTools');
 
         $strategyId = $request->input('strategy_id');
@@ -105,7 +106,7 @@ class BacktestingController extends Controller
         $totalWins = 0;
         $totalPnl = 0;
 
-        // ── Http::pool: lanza todas las peticiones en paralelo ──
+        // 1. RESTAURAMOS LA CREACIÓN DEL PAYLOAD POR CADA MONEDA
         $payloads = [];
         foreach ($selectedSymbols as $sym) {
             $payloads[$sym] = [
@@ -126,43 +127,41 @@ class BacktestingController extends Controller
                 'regime_filter' => $request->has('regime_filter'),
                 'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
                 'regime_adx_ranging' => (float) $request->input('regime_adx_ranging', 20),
-                'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
+                'regime_ambiguous_as' => match(strtolower($request->input('regime_ambiguous_as', 'lateral'))) {
+                    'tendencia', 'trending' => 'TRENDING',
+                    'ignorar' => 'NO_OPERAR',
+                    default => 'RANGING',
+                },
                 'walk_forward' => true, 'n_windows' => 5, 'monthly_breakdown' => true,
                 'trailing_mode' => $request->input('trailing_mode', 'none') !== 'none' ? $request->input('trailing_mode') : null,
                 'trailing_distance_pct' => (float) $request->input('trailing_distance_pct', 1.0),
                 'trailing_atr_mult' => (float) $request->input('trailing_atr_mult', 2.0),
                 'start_date' => $start->format('Y-m-d'), 'end_date' => $end->format('Y-m-d'),
             ];
-            if ($request->has('macro_trend_filter')) $payloads[$sym]['macro_trend_filter'] = true;
+            // Los valores de la UI SIEMPRE sobrescriben el JSON
+            $payloads[$sym]['macro_trend_filter'] = $request->has('macro_trend_filter');
+            $payloads[$sym]['volume_filter'] = $request->has('volume_filter');
             if ($request->has('volume_filter')) {
-                $payloads[$sym]['volume_filter'] = true;
                 $payloads[$sym]['volume_filter_period'] = (int) $request->input('volume_filter_period', 20);
                 $payloads[$sym]['volume_filter_mult'] = (float) $request->input('volume_filter_mult', 1.2);
             }
+            $payloads[$sym]['regime_filter'] = $request->has('regime_filter');
+            $payloads[$sym]['use_max_duration'] = $request->has('use_max_duration');
+            $payloads[$sym]['use_trailing'] = $request->has('use_trailing');
         }
 
-        try {
-            $responses = \Illuminate\Support\Facades\Http::pool(function ($pool) use ($payloads) {
-                $requests = [];
-                foreach ($payloads as $sym => $p) {
-                    $requests[$sym] = $pool->withHeaders(['X-Internal-API-Key' => config('trading.python_internal_api_key')])
-                        ->timeout(180)
-                        ->post(config('trading.python_engine_url') . '/v1/backtest/run', $p);
-                }
-                return $requests;
-            });
-        } catch (\Throwable $e) {
-            return response()->json(['success' => false, 'error' => 'Error de conexión: ' . $e->getMessage()]);
+        // 2. EJECUCIÓN SECUENCIAL (UNA A UNA) PARA EVITAR RACE CONDITIONS
+        $responses = [];
+        foreach ($payloads as $sym => $payload) {
+            $responses[$sym] = \Illuminate\Support\Facades\Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(120)->post(config('trading.python_engine_url') . '/v1/backtest/run', $payload);
         }
 
-        // Http::pool devuelve un array con índices numéricos (0, 1, 2...),
-        // NO con los nombres de las monedas como claves.
-        // Usamos array_values() para asegurar índices 0, 1, 2 y mapeamos por posición.
-        $responses = array_values($responses);
-        
-        foreach ($selectedSymbols as $index => $sym) {
+        // 3. PROCESAMIENTO DE RESULTADOS
+        foreach ($selectedSymbols as $sym) {
             try {
-                $response = $responses[$index] ?? null;
+                $response = $responses[$sym] ?? null;
                 if (!$response) {
                     return response()->json(['success' => false, 'error' => "No se recibió respuesta para $sym."]);
                 }
@@ -208,6 +207,8 @@ class BacktestingController extends Controller
         $positiveGlobal = count(array_filter($monthlyTotals, fn($v) => $v > 0));
         $consistGlobal = count($monthlyTotals) > 0 ? round($positiveGlobal / count($monthlyTotals) * 100, 1) : 0;
 
+        $totalPnl = array_sum($monthlyTotals); // Fix: El retorno consolidado es la suma de los meses
+
         $result = [
             'strategy' => $strategy->name,
             'interval' => $request->input('interval', '60'),
@@ -242,9 +243,16 @@ class BacktestingController extends Controller
         ];
 
         // Renderizar la vista parcial y devolverla como HTML
+        $prevBacktest = $request->input('backtest_id') ? \App\Models\Backtest::find($request->input('backtest_id')) : null;
+        
+                
+        $prevBacktest = $request->input('backtest_id') ? \App\Models\Backtest::find($request->input('backtest_id')) : null;
+        
         $html = view('backtesting.partials.results', [
             'result' => $result,
             'implementParams' => array_values($payloads)[0] ?? [],
+             // <-- FORZAMOS EL PASE DEL ID
+            'prevBacktest' => $prevBacktest
         ])->render();
 
         return response()->json(['success' => true, 'html' => $html]);
@@ -338,7 +346,11 @@ class BacktestingController extends Controller
                         'regime_filter' => $request->has('regime_filter'),
                         'regime_adx_trending' => (float) $request->input('regime_adx_trending', 25),
                         'regime_adx_ranging' => (float) $request->input('regime_adx_ranging', 20),
-                        'regime_ambiguous_as' => $request->input('regime_ambiguous_as', 'RANGING'),
+                        'regime_ambiguous_as' => match(strtolower($request->input('regime_ambiguous_as', 'lateral'))) {
+                    'tendencia', 'trending' => 'TRENDING',
+                    'ignorar' => 'NO_OPERAR',
+                    default => 'RANGING',
+                },
                         'walk_forward' => true, 'n_windows' => 5, 'monthly_breakdown' => true,
                         'trailing_mode' => $request->input('trailing_mode', 'none') !== 'none' ? $request->input('trailing_mode') : null,
                         'trailing_distance_pct' => (float) $request->input('trailing_distance_pct', 1.0),
@@ -758,7 +770,17 @@ class BacktestingController extends Controller
             
             $backtest->save();
 
-            return redirect()->route('backtesting.history', $data['strategy_id'])
+            // Si es una petición AJAX, devolvemos JSON para que el SweetAlert no recargue la página
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'backtest_id' => $backtest->id,
+                    'message' => 'Backtest guardado correctamente.'
+                ]);
+            }
+
+            // Fallback por si se envía el formulario de forma tradicional
+            return redirect()->route('backtesting.run', ['strategy_id' => $data['strategy_id'], 'backtest_id' => $backtest->id])
                 ->with('status', 'Backtest guardado en el historial correctamente.');
                 
         } catch (\Throwable $e) {

@@ -46,6 +46,10 @@ class BacktestRequest(BaseModel):
     regime_ambiguous_as: str             = "RANGING"
     walk_forward:        bool            = True
     n_windows:           int             = 5
+    macro_trend_filter:  bool            = False
+    volume_filter:       bool            = False
+    volume_filter_period: int            = 20
+    volume_filter_mult:  float           = 1.2
     train_pct:           float           = 0.7
     mode:                Optional[str]   = None
     macro_trend_filter:  Optional[bool]  = None  # None = usar default de la estrategia segun mode
@@ -190,6 +194,18 @@ def load_strategy(request: BacktestRequest):
             'risk_per_trade_pct': request.risk_per_trade_pct,
             'commission_pct': request.commission_pct,
             'trailing_mode': request.trailing_mode,
+            'trailing_distance_pct': request.trailing_distance_pct,
+            'trailing_activation_buffer_pct': request.trailing_activation_buffer_pct,
+            'trailing_distance_pct': request.trailing_distance_pct,
+            'trailing_activation_buffer_pct': request.trailing_activation_buffer_pct,
+            'trailing_steps': request.trailing_steps,
+            'regime_adx_trending': request.regime_adx_trending,
+            'regime_adx_ranging': request.regime_adx_ranging,
+            'regime_ambiguous_as': request.regime_ambiguous_as,
+            'macro_trend_filter': request.macro_trend_filter,
+            'volume_filter': request.volume_filter,
+            'volume_filter_period': request.volume_filter_period,
+            'volume_filter_mult': request.volume_filter_mult,
         })
         return strategy_cls(params)
 

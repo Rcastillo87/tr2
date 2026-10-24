@@ -15,6 +15,9 @@ from indicators.regime_indicators import calculate_atr
 logger = logging.getLogger(__name__)
 
 
+
+from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
+
 class BacktestEngine:
 
     # Duracion en minutos de cada intervalo soportado - usado para decidir
@@ -70,6 +73,33 @@ class BacktestEngine:
             self.minute_df is not None
             and interval_minutes >= 60
         )
+
+
+
+
+    def _calculate_regimes(self):
+        if self.regime_data is not None:
+            return
+            
+        atr = calculate_atr(self.df)
+        adx = calculate_adx(self.df)
+        bb_width = calculate_bb_width(self.df)
+        atr_avg = atr.rolling(50).mean()
+        bb_width_avg = bb_width.rolling(50).mean()
+
+        self.regime_data = {}
+        for i, row in self.df.iterrows():
+            timestamp = str(row['time'])
+            self.regime_data[timestamp] = classify_regime(
+                adx=float(adx.iloc[i]),
+                atr=float(atr.iloc[i]),
+                atr_avg=float(atr_avg.iloc[i]),
+                bb_width=float(bb_width.iloc[i]),
+                bb_width_avg=float(bb_width_avg.iloc[i]),
+                trending_threshold=getattr(self.strategy, 'regime_adx_trending', 25),
+                ranging_threshold=getattr(self.strategy, 'regime_adx_ranging', 20),
+                ambiguous_as=getattr(self.strategy, 'regime_ambiguous_as', 'RANGING')
+            )
 
     def _get_regime_at(self, timestamp) -> str:
         if not self.regime_data:
@@ -171,7 +201,8 @@ class BacktestEngine:
 
     def run(self) -> dict:
         logger.info(f"Iniciando backtest: {self.strategy.name} | {self.strategy.symbol} | {len(self.df)} velas")
-
+        self._calculate_regimes()
+        
         df = self.strategy.prepare(self.df)
         df = self.strategy.generate_signals(df)
 

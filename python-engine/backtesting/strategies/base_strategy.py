@@ -49,6 +49,7 @@ class BaseStrategy(ABC):
         self.volume_filter          = params.get('volume_filter', False)
         self.volume_filter_period   = params.get('volume_filter_period', 20)
         self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
+        self.macro_trend_filter = params.get('macro_trend_filter', False)
         # Filtro horario — solo opera en horas de alta liquidez
         self.hour_filter            = params.get('hour_filter', False)
         self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
@@ -293,7 +294,8 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
     else:
         gain_pct = (entry_price - current_price) / entry_price * 100
 
-    if gain_pct <= 0:
+    # Solo empezar a mover el SL si la ganancia supera el buffer de activación
+    if gain_pct <= activation_buffer_pct:
         return current_sl
 
     new_sl = current_sl

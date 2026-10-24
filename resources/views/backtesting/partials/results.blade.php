@@ -67,7 +67,7 @@
             // Sobrescribimos el payload para que guarde EXACTAMENTE los datos del CONSOLIDADO
             $finalPayload = $result['save_payload'];
             // Aseguramos que el backtest_id viaje desde el request al JSON
-            $finalPayload['backtest_id'] = request('backtest_id');
+            $finalPayload['backtest_id'] = $backtest_id ?? null;
             $finalPayload['metrics']['win_rate'] = round($aggGlobal['win_rate'] ?? 0, 2);
             $finalPayload['metrics']['sharpe_ratio'] = round($aggGlobal['sharpe_ratio'] ?? 0, 2);
             $finalPayload['metrics']['profit_factor'] = round($aggGlobal['profit_factor'] ?? 0, 2);
@@ -75,13 +75,31 @@
             $finalPayload['metrics']['avg_monthly_pnl'] = round($avgGlobal, 2);
             $finalPayload['metrics']['consist_pct'] = $consistGlobal;
         @endphp
-        <form method="POST" action="{{ route('backtesting.save') }}">
+        <form id="saveBacktestForm" method="POST" action="{{ route('backtesting.save') }}">
             @csrf
-            <input type="hidden" name="save_data" value="{{ base64_encode(json_encode($finalPayload)) }}">
-            <button type="submit" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors" style="background:var(--color-profit); color:#fff;">
+            @php
+                $payload = $result['save_payload'];
+                $payload['backtest_id'] = request('backtest_id');
+                
+                // INYECTAMOS MANUALMENTE LOS DATOS EXACTOS QUE VEMOS EN PANTALLA
+                $payload['metrics'] = [
+                    'total_trades' => $aggGlobal['total_trades'] ?? 0,
+                    'win_rate' => $aggGlobal['win_rate'] ?? 0,
+                    'sharpe_ratio' => $aggGlobal['sharpe_ratio'] ?? 0,
+                    'profit_factor' => $aggGlobal['profit_factor'] ?? 0,
+                    'total_return_pct' => $aggGlobal['total_return_pct'] ?? 0,
+                    'avg_monthly_pnl' => $avgGlobal ?? 0,
+                    'consist_pct' => $consistGlobal ?? 0,
+                    'rating' => $ratingGlobal ?? 0,
+                    'individual_results' => $result['individual_results'] ?? []
+                ];
+            @endphp
+            <input type="hidden" name="save_data" value="{{ base64_encode(json_encode($payload)) }}">
+            <button type="button" onclick="confirmSaveBacktest()" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors" style="background:var(--color-profit); color:#fff;">
                 💾 Guardar en Historial
             </button>
         </form>
+        
         @endif
     </div>
 
@@ -122,11 +140,11 @@
                 @foreach($symbolsList as $sym)
                 @php
                     $d = $bySymbol[$sym]; $r = $d['rating']; $c = $starColor($r);
-                    $bestMonth = '—'; $worstMonth = '—'; $bestVal = -999; $worstVal = 999; $winsM = 0;
+                    $bestMonth = '—'; $worstMonth = '—'; $bestVal = null; $worstVal = null; $winsM = 0;
                     foreach($d['monthly'] as $m) {
                         $val = (float)$m['total_pnl_pct'];
-                        if($val > $bestVal) { $bestVal = $val; $bestMonth = $m['month']; }
-                        if($val < $worstVal) { $worstVal = $val; $worstMonth = $m['month']; }
+                        if($bestVal === null || $val > $bestVal) { $bestVal = $val; $bestMonth = $m['month']; }
+                        if($worstVal === null || $val < $worstVal) { $worstVal = $val; $worstMonth = $m['month']; }
                         if($val > 0) $winsM++;
                     }
                     $totalM = count($d['monthly']);
@@ -143,12 +161,20 @@
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($d['agg']['sharpe_ratio'] ?? 0, 2) }}</td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($d['agg']['profit_factor'] ?? 0, 2) }}</td>
                     <td class="px-3 py-2 text-center font-mono text-[10px] whitespace-nowrap">
-                        <span style="color:var(--color-profit);">{{ $bestMonth }}</span><br>
-                        <span style="color:var(--color-profit); font-weight:600;">+{{ number_format($bestVal, 2) }}%</span>
+                        @if($bestVal !== null)
+                            <span style="color:var(--color-profit);">{{ $bestMonth }}</span><br>
+                            <span style="color:var(--color-profit); font-weight:600;">{{ $bestVal > 0 ? '+' : '' }}{{ number_format($bestVal, 2) }}%</span>
+                        @else
+                            <span style="color:var(--color-text-muted);">—</span>
+                        @endif
                     </td>
                     <td class="px-3 py-2 text-center font-mono text-[10px] whitespace-nowrap">
-                        <span style="color:var(--color-loss);">{{ $worstMonth }}</span><br>
-                        <span style="color:var(--color-loss); font-weight:600;">{{ number_format($worstVal, 2) }}%</span>
+                        @if($worstVal !== null)
+                            <span style="color:var(--color-loss);">{{ $worstMonth }}</span><br>
+                            <span style="color:var(--color-loss); font-weight:600;">{{ number_format($worstVal, 2) }}%</span>
+                        @else
+                            <span style="color:var(--color-text-muted);">—</span>
+                        @endif
                     </td>
                     <td class="px-3 py-2 text-center font-mono text-[10px] whitespace-nowrap">
                         <span style="color:var(--color-text-muted);">{{ $winsM }}/{{ $totalM }} meses</span><br>
@@ -161,17 +187,16 @@
 
                 @php
                     // Calcular Mejor/Peor mes actual
-                    $currBestVal = -999; $currWorstVal = 999;
+                    $currBestVal = null; $currWorstVal = null;
                     foreach($bySymbol as $data) {
                         foreach($data['monthly'] as $m) {
                             $val = (float)$m['total_pnl_pct'];
-                            if ($val > $currBestVal) $currBestVal = $val;
-                            if ($val < $currWorstVal) $currWorstVal = $val;
+                            if ($currBestVal === null || $val > $currBestVal) $currBestVal = $val;
+                            if ($currWorstVal === null || $val < $currWorstVal) $currWorstVal = $val;
                         }
                     }
 
                     // Preparar los datos del backtest guardado (si existe)
-                    $prevBacktest = request('backtest_id') ? \App\Models\Backtest::find(request('backtest_id')) : null;
                     if ($prevBacktest) {
                         $prevM = $prevBacktest->metrics ?? [];
                         if (isset($prevM['rating']) && $prevM['rating'] > 0) {
@@ -217,9 +242,9 @@
                         } 
                         
                         if ($prevBestVal == -999) {
-                            // Si no hay datos, lo igualamos al consolidado para que no salga "-"
-                            $prevBestVal = $currBestVal != -999 ? $currBestVal : null;
-                            $prevWorstVal = $currWorstVal != 999 ? $currWorstVal : null;
+                            // Fallback para backtests viejos: usamos los valores actuales para no mostrar "—"
+                            $prevBestVal = $currBestVal != -999 ? $currBestVal : 0;
+                            $prevWorstVal = $currWorstVal != 999 ? $currWorstVal : 0;
                         }
                     }
                 @endphp
@@ -234,10 +259,10 @@
                     <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($prevSharpe, 2) }}</td>
                     <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($prevPf, 2) }}</td>
                     <td class="px-3 py-2 text-center font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">
-                        @if($prevBestVal !== null) +{{ number_format($prevBestVal, 2) }}% @else — @endif
+                        @if(isset($prevBestVal) && $prevBestVal !== null) {{ $prevBestVal > 0 ? '+' : '' }}{{ number_format($prevBestVal, 2) }}% @else — @endif
                     </td>
                     <td class="px-3 py-2 text-center font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">
-                        @if($prevWorstVal !== null) {{ number_format($prevWorstVal, 2) }}% @else — @endif
+                        @if(isset($prevWorstVal) && $prevWorstVal !== null) {{ number_format($prevWorstVal, 2) }}% @else — @endif
                     </td>
                     <td class="px-3 py-2 text-center font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($prevConsist, 1) }}%</td>
                     <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">
@@ -253,47 +278,47 @@
                     <td class="px-3 py-2 text-center whitespace-nowrap">
                         <div>
                             <span style="color:{{ $starColor($ratingGlobal) }}; font-size:12px;">{{ str_repeat('★', (int)round($ratingGlobal)) . str_repeat('☆', 5 - (int)round($ratingGlobal)) }}</span>
-                            <span class="ml-1 font-bold" style="color:{{ $starColor($ratingGlobal) }};">{{ $ratingGlobal }}</span>
+                            <span class="ml-1 font-bold" style="color:{{ $starColor($ratingGlobal) }};">{{ number_format($ratingGlobal, 1) }}</span>
                         </div>
                         @if($prevBacktest)
                             @php $diff = $ratingGlobal - $prevRating; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 1) }})</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 1) }})</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">
                         <div>{{ $aggGlobal['total_trades'] ?? 0 }}</div>
                         @if($prevBacktest)
                             @php $diff = ($aggGlobal['total_trades'] ?? 0) - $prevTrades; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ $diff }})</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ $diff }})</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">
                         <div>{{ number_format($aggGlobal['win_rate'] ?? 0, 2) }}%</div>
                         @if($prevBacktest)
                             @php $diff = ($aggGlobal['win_rate'] ?? 0) - $prevWr; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">
                         <div>{{ number_format($aggGlobal['sharpe_ratio'] ?? 0, 2) }}</div>
                         @if($prevBacktest)
                             @php $diff = ($aggGlobal['sharpe_ratio'] ?? 0) - $prevSharpe; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }})</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }})</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">
                         <div>{{ number_format($aggGlobal['profit_factor'] ?? 0, 2) }}</div>
                         @if($prevBacktest)
                             @php $diff = ($aggGlobal['profit_factor'] ?? 0) - $prevPf; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }})</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }})</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-center font-mono text-[11px] whitespace-nowrap">
                         @if($currBestVal != -999)
                             <div style="color:var(--color-profit); font-weight:600;">+{{ number_format($currBestVal, 2) }}%</div>
-                            @if($prevBacktest && $prevBestVal !== null)
+                            @if($prevBacktest && isset($prevBestVal) && $prevBestVal !== null)
                                 @php $diff = $currBestVal - $prevBestVal; @endphp
-                                <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
+                                <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
                             @endif
                         @else
                             <span style="color:var(--color-text-muted);">—</span>
@@ -302,9 +327,9 @@
                     <td class="px-3 py-2 text-center font-mono text-[11px] whitespace-nowrap">
                         @if($currWorstVal != 999)
                             <div style="color:var(--color-loss); font-weight:600;">{{ number_format($currWorstVal, 2) }}%</div>
-                            @if($prevBacktest && $prevWorstVal !== null)
+                            @if($prevBacktest && isset($prevWorstVal) && $prevWorstVal !== null)
                                 @php $diff = $currWorstVal - $prevWorstVal; @endphp
-                                <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
+                                <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
                             @endif
                         @else
                             <span style="color:var(--color-text-muted);">—</span>
@@ -315,28 +340,25 @@
                         <div style="color:var(--color-text-primary); font-weight:600;">{{ $consistGlobal }}%</div>
                         @if($prevBacktest)
                             @php $diff = $consistGlobal - $prevConsist; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 1) }}%)</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 1) }}%)</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($aggGlobal['total_return_pct'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         <div>{{ number_format($aggGlobal['total_return_pct'] ?? 0, 2) }}%</div>
                         @if($prevBacktest && $prevRet !== null)
                             @php $diff = ($aggGlobal['total_return_pct'] ?? 0) - $prevRet; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
                         @endif
                     </td>
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($avgGlobal ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         <div>{{ number_format($avgGlobal ?? 0, 2) }}%</div>
                         @if($prevBacktest)
                             @php $diff = ($avgGlobal ?? 0) - $prevAvgMonthly; @endphp
-                            <div class="text-[10px]" style="color:{{ $diff >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">({{ $diff >= 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
+                            <div class="text-[10px]" style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</div>
                         @endif
                     </td>
                 </tr>
 
-                @php
-                    $prevBacktest = request('backtest_id') ? \App\Models\Backtest::find(request('backtest_id')) : null;
-                @endphp
 
                 </tbody>
         </table>

@@ -76,7 +76,7 @@
                     <th class="font-medium">Estrategia</th>
                     <th class="font-medium text-center">Estado</th>
                     <th class="font-medium text-center">Variantes</th>
-                    <th class="font-medium text-center">Aprobada para Paper</th>
+                    <th class="font-medium text-center">Configurada en Paper</th>
                     <th class="font-medium text-right pr-4">Acciones</th>
                 </tr>
             </thead>
@@ -103,15 +103,25 @@
                                 🟢 {{ $approvedPapers[$s->id] }}
                             </span>
                         @else
-                            <span class="text-[10px] italic" style="color:var(--color-text-muted);">Ninguna</span>
+                            <span class="text-[10px] italic" style="color:var(--color-text-muted);">Sin configurar</span>
                         @endif
                     </td>
                     <td class="text-right pr-4">
-                        <div class="flex items-center justify-end gap-1.5">
-                            <a href="{{ route('backtesting.index', ['strategy_id' => $s->id]) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#3b82f6;">+ Nuevo</a>
-                            <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium border whitespace-nowrap" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">Historial</a>
-                            <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium border whitespace-nowrap" style="background:transparent; border-color:var(--color-border-strong); color:var(--color-text-primary);">Editar</a>
+                        <div class="flex items-center justify-end gap-2">
+                            <!-- Botón Nuevo: Azul -->
+                            <a href="{{ route('backtesting.run', ['strategy_id' => $s->id]) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#3b82f6;">+ Nuevo Backtest</a>
                             
+                            <!-- Botón Historial: Gris Oscuro -->
+                            <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap" style="background:#374151; color:#e5e7eb;">
+                                Historial
+                            </a>
+                            
+                            <!-- Botón Editar: Verde -->
+                            <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#10b981;">
+                                Editar
+                            </a>
+                            
+                            <!-- Botón Eliminar o Bloqueado -->
                             @if($activePapers[$s->id] ?? false)
                                 <button type="button" onclick="blockDelete('{{ $s->name }}')" class="btn-action px-2 py-1.5 rounded-md text-[11px] font-medium text-gray-400 border border-gray-700 bg-gray-800/50" title="Tiene Paper Activo">
                                     🔒
@@ -120,7 +130,7 @@
                                 <form id="delete-form-{{ $s->id }}" action="{{ route('strategies.destroy', $s->id) }}" method="POST" class="inline">
                                     @csrf
                                     @method('DELETE')
-                                    <button type="button" onclick="confirmDelete({{ $s->id }}, '{{ $s->name }}')" class="btn-action px-2 py-1.5 rounded-md text-[11px] font-medium text-red-400 border border-red-900/50 hover:bg-red-900/20">
+                                    <button type="button" onclick="confirmDelete({{ $s->id }}, '{{ $s->name }}')" class="btn-action px-2 py-1.5 rounded-md text-[11px] font-medium text-red-400 border border-red-900/50 hover:bg-red-900/20" style="background:rgba(239, 68, 68, 0.1);">
                                         🗑️
                                     </button>
                                 </form>

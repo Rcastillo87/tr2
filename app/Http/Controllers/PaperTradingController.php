@@ -63,11 +63,34 @@ class PaperTradingController extends Controller
             $equityCurvePct[] = round(end($equityCurvePct) + (float) $trade->pnl_pct, 4);
         }
 
-        // Opciones para los filtros
+        // Opciones para los filtros (Híbrido: Activas actualmente + Historial del mes)
+        $monthTrades = PaperTrade::where('status', 'open')
+            ->orWhere(function($q) use ($start, $end) {
+                $q->where('status', 'closed')->whereBetween('entry_time', [$start, $end]);
+            });
+
+        $extractBaseName = function($name) {
+            $parts = explode(' — ', $name);
+            return trim($parts[0]);
+        };
+
+        $histStrategiesRaw = (clone $monthTrades)->distinct()->pluck('strategy')->toArray();
+        $histStrategies = array_map($extractBaseName, $histStrategiesRaw);
+        
+        $histSymbols    = (clone $monthTrades)->distinct()->pluck('symbol')->toArray();
+        $histIntervals  = (clone $monthTrades)->distinct()->pluck('interval')->toArray();
+
+        $activeConfigs = \App\Models\PaperStrategyConfig::where('active', true)->get();
+        $actStrategiesRaw = $activeConfigs->pluck('display_name')->toArray();
+        $actStrategies = array_map($extractBaseName, $actStrategiesRaw);
+        
+        $actSymbols    = $activeConfigs->pluck('symbol')->toArray();
+        $actIntervals  = $activeConfigs->pluck('interval')->toArray();
+
         $filterOptions = [
-            'strategies' => ['VWAP Tendencia', 'VWAP Reversión', 'Reversión a la Media', 'Tendencia EMA/Donchian'],
-            'symbols'    => PaperTrade::distinct()->pluck('symbol')->sort()->values()->toArray(),
-            'intervals'  => PaperTrade::distinct()->pluck('interval')->sort()->values()->toArray(),
+            'strategies' => collect(array_merge($actStrategies, $histStrategies))->unique()->sort()->values()->toArray(),
+            'symbols'    => collect(array_merge($actSymbols, $histSymbols))->unique()->sort()->values()->toArray(),
+            'intervals'  => collect(array_merge($actIntervals, $histIntervals))->unique()->sort()->values()->toArray(),
         ];
 
         return view('paper-trading.index', [

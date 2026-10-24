@@ -60,9 +60,11 @@
 
     <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="p-4 space-y-4">
         @csrf
-        <input type="hidden" name="strategy_id" value="{{ request('strategy_id', $backtestToLoad->strategy_id ?? '') }}">
-        <input type="hidden" name="backtest_id" value="{{ request('backtest_id', $backtestToLoad->id ?? '') }}">
         
+        <!-- Inputs ocultos limpios -->
+        <input type="hidden" id="current_backtest_id" name="backtest_id" value="{{ request('backtest_id', $backtestToLoad->id ?? '') }}">
+        <input type="hidden" name="strategy_id" value="{{ request('strategy_id', $backtestToLoad->strategy_id ?? '') }}">
+
         <!-- PESTAÑA 1 -->
         <div id="tab-config" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -122,14 +124,26 @@
                     </div>
                     <div>
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión % (Auto)</label>
-                        <input type="number" step="0.001" name="commission_pct" value="0.055" readonly class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-muted);">
+                        <input type="number" step="0.001" name="commission_pct" value="{{ old('commission_pct', $backtestToLoad->config_params['commission_pct'] ?? '0.055') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
                 </div>
             </div>
 
             <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
                 <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Parámetros de la Estrategia (JSON)</label>
-                <textarea name="strategy_config_override" rows="1" class="w-full rounded-lg px-3 py-1.5 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-profit); resize: vertical;" placeholder='{"fast_period": 9, "slow_period": 21}'>{{ old('strategy_config_override', $backtestToLoad ? json_encode($backtestToLoad->strategy_snapshot['config'] ?? [], JSON_PRETTY_PRINT) : '') }}</textarea>
+                                    @php
+                        // Limpiamos los filtros del JSON para que no se mezclen con la UI
+                        $cleanConfig = $backtestToLoad ? ($backtestToLoad->strategy_snapshot['config'] ?? []) : ($strategyToLoad->config ?? []);
+                        $keysToRemove = ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
+                              'commission_pct', 'risk_per_trade_pct', 'regime_filter', 'regime_adx_trending',
+                              'regime_adx_ranging', 'regime_ambiguous_as', 'volume_filter', 'volume_filter_period',
+                              'volume_filter_mult', 'macro_trend_filter', 'trailing_mode', 'trailing_distance_pct', 'trailing_atr_mult'];
+                        foreach ($keysToRemove as $k) {
+                            unset($cleanConfig[$k]);
+                        }
+                        $jsonString = json_encode($cleanConfig, JSON_PRETTY_PRINT);
+                    @endphp
+                    <textarea name="strategy_config_override" rows="8" class="w-full rounded-lg px-3 py-1.5 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-profit); resize: vertical;" placeholder='{"fast_period": 9}'>{{ old('strategy_config_override', $jsonString) }}</textarea>
             </div>
         </div>
 
@@ -152,8 +166,9 @@
                     <div>
                         <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Caso Ambiguo</label>
                         <select name="regime_ambiguous_as" class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            <option value="RANGING">Lateral</option>
-                            <option value="TRENDING">Tendencia</option>
+                            <option value="RANGING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'RANGING' ? 'selected' : '' }}>Lateral (Asumir Rango)</option>
+                            <option value="TRENDING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'TRENDING' ? 'selected' : '' }}>Tendencia (Asumir Tendencia)</option>
+                            <option value="ignorar" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'ignorar' ? 'selected' : '' }}>No Operar (Filtrar)</option>
                         </select>
                     </div>
                 </div>
@@ -197,11 +212,28 @@
                 </div>
                 <div>
                     <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Modo Trailing Stop</label>
-                    <select name="trailing_mode" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <select name="trailing_mode" id="trailing_mode_select" onchange="toggleTrailingInputs()" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                         <option value="none" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'none' ? 'selected' : '' }}>Ninguno</option>
                         <option value="fixed" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'fixed' ? 'selected' : '' }}>Fijo (%)</option>
                         <option value="atr" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'atr' ? 'selected' : '' }}>Dinámico (ATR)</option>
                     </select>
+                </div>
+
+                <!-- Inputs ocultos para Trailing -->
+                <div id="div_trailing_fixed" style="display: none;">
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia Trailing Fijo (%)</label>
+                    <input type="number" step="0.1" name="trailing_distance_pct" value="{{ old('trailing_distance_pct', $backtestToLoad->config_params['trailing_distance_pct'] ?? '1.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                </div>
+
+                <div id="div_trailing_atr" style="display: none;">
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador ATR</label>
+                    <input type="number" step="0.1" name="trailing_atr_mult" value="{{ old('trailing_atr_mult', $backtestToLoad->config_params['trailing_atr_mult'] ?? '2.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                </div>
+
+                <div id="div_trailing_buffer" style="display: none;">
+                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Activación Trailing (%)</label>
+                    <input type="number" step="0.1" name="trailing_activation_buffer_pct" value="{{ old('trailing_activation_buffer_pct', $backtestToLoad->config_params['trailing_activation_buffer_pct'] ?? '0.5') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <span class="text-[9px]" style="color:var(--color-text-muted);">Ganancia mínima antes de mover el SL.</span>
                 </div>
             </div>
 
@@ -213,7 +245,7 @@
                         <span class="text-[10px] block" style="color:var(--color-text-muted);">Cierra al llegar al tiempo máximo solo si está en ganancia.</span>
                     </div>
                 </label>
-
+                
                 <label class="flex items-start gap-2 cursor-pointer">
                     <input type="checkbox" name="close_on_opposite" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('close_on_opposite', !empty($backtestToLoad->config_params['close_on_opposite'])) ? 'checked' : '' }}>
                     <div>
@@ -238,7 +270,117 @@
 
 {{-- RESULTADOS (Bloque único, sin duplicados) --}}
 <div id="results-container"></div>
+
+<script>
+    // Esta función se define aquí para que esté disponible cuando los resultados carguen por AJAX
+    function confirmSaveBacktest() {
+        Swal.fire({
+            title: '¿Guardar Backtest?',
+            text: "Se guardará esta configuración en el historial.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#374151',
+            confirmButtonText: 'Sí, guardar',
+            cancelButtonText: 'Cancelar',
+            background: '#1f2937',
+            color: '#f3f4f6'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Guardando...',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+                
+                // Envío por AJAX
+                const form = document.getElementById('saveBacktestForm');
+                const formData = new FormData(form);
+                
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Guardamos el ID en un input oculto para el próximo backtest
+                        let hiddenId = document.getElementById('current_backtest_id');
+                        if (!hiddenId) {
+                            hiddenId = document.createElement('input');
+                            hiddenId.type = 'hidden';
+                            hiddenId.id = 'current_backtest_id';
+                            hiddenId.name = 'backtest_id';
+                            document.getElementById('backtestForm').appendChild(hiddenId);
+                        }
+                        hiddenId.value = data.backtest_id;
+                        console.log('--- BACKTEST GUARDADO --- ID asignado al input oculto:', data.backtest_id);
+
+                        Swal.fire({
+                            title: '¡Guardado!',
+                            text: 'El backtest se guardó en el historial.',
+                            icon: 'success',
+                            timer: 2000,
+                            showConfirmButton: false,
+                            background: '#1f2937',
+                            color: '#f3f4f6'
+                        });
+                    } else {
+                        throw new Error(data.message || 'Error al guardar');
+                    }
+                })
+                .catch(error => {
+                    Swal.fire({
+                        title: 'Error',
+                        text: error.message,
+                        icon: 'error',
+                        background: '#1f2937',
+                        color: '#f3f4f6'
+                    });
+                });
+            }
+        });
+    }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+
+<script>
+    function toggleTrailingInputs() {
+        const mode = document.getElementById('trailing_mode_select').value;
+        const divFixed = document.getElementById('div_trailing_fixed');
+        const divAtr = document.getElementById('div_trailing_atr');
+        
+        const divBuffer = document.getElementById('div_trailing_buffer');
+        if (mode === 'fixed') {
+            divFixed.style.display = 'block';
+            divAtr.style.display = 'none';
+            divBuffer.style.display = 'block';
+        } else if (mode === 'atr') {
+            divFixed.style.display = 'none';
+            divAtr.style.display = 'block';
+            divBuffer.style.display = 'block';
+        } else {
+            divFixed.style.display = 'none';
+            divAtr.style.display = 'none';
+            divBuffer.style.display = 'none';
+        }
+    }
+    
+    // Ejecutar al cargar la página para mostrar el campo correcto si ya estaba seleccionado
+    document.addEventListener('DOMContentLoaded', function() {
+        toggleTrailingInputs();
+    });
+</script>
 @endsection
+
+
+
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

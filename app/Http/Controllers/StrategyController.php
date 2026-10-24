@@ -74,6 +74,9 @@ class StrategyController extends Controller
                 'name' => 'Error al guardar en la base de datos: ' . $e->getMessage()
             ]);
         }
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Estrategia creada y validada correctamente.', 'redirect' => route('strategies.index')]);
+        }
         return redirect()->route('strategies.index')->with('status', 'Estrategia creada y validada correctamente.');
     }
 

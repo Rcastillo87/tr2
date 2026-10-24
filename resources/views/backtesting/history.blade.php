@@ -23,19 +23,25 @@
             $pf = (float)($metrics['profit_factor'] ?? 0);
             $trades = (int)($metrics['total_trades'] ?? 0);
 
-            // Leemos el retorno total y la consistencia
-            $ret = (float)($metrics['total_return_pct'] ?? $metrics['avg_monthly_pnl'] ?? 0);
+            $ret = (float)($metrics['avg_monthly_pnl'] ?? 0);
             $consist = (float)($metrics['consist_pct'] ?? 0);
-            
-            // El Rating ya viene calculado desde el backend (1.8)
-            $rating = (float)($metrics['rating'] ?? 0);
-            if ($rating == 0) {
-                // Fallback por si es un backtest viejo sin rating
-                $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
-                $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
-                $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
-                $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
-                $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
+
+            // Normalizar porcentajes si vienen como decimales (ej. 0.5 en vez de 50)
+            if ($wr > 0 && $wr <= 1) $wr *= 100;
+            if (abs($ret) > 0 && abs($ret) <= 1 && $ret != 0) $ret *= 100;
+            if ($consist > 0 && $consist <= 1) $consist *= 100;
+
+            // CALCULAMOS LAS ESTRELLAS SIEMPRE (para que la tabla de abajo no falle)
+            $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
+            $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
+            $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
+            $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
+            $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
+
+            // SI EXISTE EL RATING GUARDADO, LO USAMOS. SI NO, LO CALCULAMOS.
+            if (isset($metrics['rating'])) {
+                $rating = (float)$metrics['rating'];
+            } else {
                 $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
                 if ($rating <= 0) $rating = 1.0;
             }
