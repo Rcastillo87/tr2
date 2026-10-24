@@ -31,22 +31,17 @@
             if (abs($ret) > 0 && abs($ret) <= 1 && $ret != 0) $ret *= 100;
             if ($consist > 0 && $consist <= 1) $consist *= 100;
 
-            // CALCULAMOS LAS ESTRELLAS SIEMPRE (para que la tabla de abajo no falle)
+            // CALCULAMOS LAS ESTRELLAS CON EL HELPER
+            $rating = isset($metrics['rating']) ? (float)$metrics['rating'] : \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $ret, $consist);
+            if ($rating <= 0) $rating = 1.0;
+            $starColor = \App\Helpers\RatingHelper::getColor($rating);
+            
+            // Para los mini-gráficos de abajo, calculamos las estrellas por separado
             $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
             $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
             $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
             $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
             $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-
-            // SI EXISTE EL RATING GUARDADO, LO USAMOS. SI NO, LO CALCULAMOS.
-            if (isset($metrics['rating'])) {
-                $rating = (float)$metrics['rating'];
-            } else {
-                $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-                if ($rating <= 0) $rating = 1.0;
-            }
-
-            $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : '#E24B4A'));
             $isOperating = (isset($activeBacktestId) && $activeBacktestId == $bt->id);
         @endphp
         
@@ -79,13 +74,14 @@
                 </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
+            <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
                 @foreach([
                     ['Stop Loss', ($params['sl_pct'] ?? '—').'%'],
                     ['Take Profit 1', ($params['tp_pct'] ?? '—').'%'],
                     ['Break-even', ($params['be_pct'] ?? '—').'%'],
                     ['Duración', ($params['max_duration'] ?? '—').' velas'],
                     ['Riesgo/trade', ($params['risk_per_trade_pct'] ?? '—').'%'],
+                    ['Retorno Total', number_format($metrics['total_return_pct'] ?? 0, 2).'%'],
                 ] as [$label, $value])
                 <div class="px-2 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
                     <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>

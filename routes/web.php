@@ -42,16 +42,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/run',                           [BacktestingController::class, 'run'])->name('execute');
         Route::post('/execute-ajax',                   [\App\Http\Controllers\BacktestingController::class, 'executeAjax'])->name('execute-ajax');
         Route::post('/save',                          [\App\Http\Controllers\BacktestingController::class, 'saveBacktest'])->name('save');
-        Route::post('/run-ajax',                      [BacktestingController::class, 'runAjax'])->name('run-ajax');
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
                 Route::get('/history/{strategy}',             [BacktestingController::class, 'history'])->name('history');
 Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
         Route::patch('/backtest/{backtest}/approve', [\App\Http\Controllers\BacktestingController::class, 'approve'])->name('approve');
         Route::post('/backtest/{backtest}/implement-paper', [\App\Http\Controllers\BacktestingController::class, 'implementPaper'])->name('implement-paper');
-        Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
-        Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');
-        Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
         Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
         Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');
     });

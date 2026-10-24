@@ -1,17 +1,9 @@
 @if ($result)
 @php
     // ── CÁLCULOS BASE ──
-    $calcRating5 = function($wr, $sharpe, $pf, $retMes, $consist) {
-        $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
-        $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
-        $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
-        $sRet = $retMes >= 20 ? 5 : ($retMes >= 10 ? 4 : ($retMes >= 5 ? 3 : ($retMes >= 2 ? 2 : 1)));
-        $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-        return round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-    };
-    $starColor = function($r) {
-        return $r >= 4 ? '#F5C518' : ($r >= 3 ? '#EF9F27' : ($r >= 2 ? '#E8832A' : '#E24B4A'));
-    };
+    // Usamos el Helper centralizado
+    $calcRating5 = fn($wr, $sharpe, $pf, $retMes, $consist) => \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $retMes, $consist);
+    $starColor = fn($r) => \App\Helpers\RatingHelper::getColor($r);
 
     $bySymbol = [];
     foreach(($result['individual_results'] ?? []) as $ind) {
@@ -63,18 +55,7 @@
             </p>
         </div>
         @if(isset($result['save_payload']))
-        @php
-            // Sobrescribimos el payload para que guarde EXACTAMENTE los datos del CONSOLIDADO
-            $finalPayload = $result['save_payload'];
-            // Aseguramos que el backtest_id viaje desde el request al JSON
-            $finalPayload['backtest_id'] = $backtest_id ?? null;
-            $finalPayload['metrics']['win_rate'] = round($aggGlobal['win_rate'] ?? 0, 2);
-            $finalPayload['metrics']['sharpe_ratio'] = round($aggGlobal['sharpe_ratio'] ?? 0, 2);
-            $finalPayload['metrics']['profit_factor'] = round($aggGlobal['profit_factor'] ?? 0, 2);
-            $finalPayload['metrics']['total_trades'] = $aggGlobal['total_trades'] ?? 0;
-            $finalPayload['metrics']['avg_monthly_pnl'] = round($avgGlobal, 2);
-            $finalPayload['metrics']['consist_pct'] = $consistGlobal;
-        @endphp
+        
         <form id="saveBacktestForm" method="POST" action="{{ route('backtesting.save') }}">
             @csrf
             @php
@@ -148,7 +129,6 @@
                         if($val > 0) $winsM++;
                     }
                     $totalM = count($d['monthly']);
-                    $consist = $totalM > 0 ? round($winsM / $totalM * 100, 1) : 0;
                 @endphp
                 <tr class="hover:bg-[#1A2230] transition-colors">
                     <td class="px-4 py-2 font-medium whitespace-nowrap" style="color:var(--color-text-primary);">{{ $sym }}</td>
@@ -358,7 +338,6 @@
                         @endif
                     </td>
                 </tr>
-
 
                 </tbody>
         </table>

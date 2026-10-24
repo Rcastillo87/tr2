@@ -58,7 +58,7 @@
         <button type="button" onclick="switchTab('cierre')" id="tab-btn-cierre" class="tab-btn px-4 py-2.5 text-[11px] font-medium w-1/3 text-center" style="color:var(--color-text-muted);">3. Filtros de Cierre</button>
     </div>
 
-    <form method="POST" action="{{ route('backtesting.execute') }}" id="backtestForm" class="p-4 space-y-4">
+    <form method="POST" action="#" onsubmit="return false" id="backtestForm" class="p-4 space-y-4">
         @csrf
         
         <!-- Inputs ocultos limpios -->
