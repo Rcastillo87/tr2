@@ -37,43 +37,49 @@ class RealStrategySubscriptionController extends Controller
     public function store(Request $request, BrokerAccount $account)
     {
         Gate::authorize('viewRealTrading');
-
-        if ($account->user_id !== auth()->id()) {
-            abort(403);
-        }
+        if ($account->user_id !== auth()->id()) abort(403);
 
         $validated = $request->validate([
-            'paper_strategy_config_id' => ['required', 'exists:paper_strategy_configs,id'],
+            'paper_strategy_config_ids' => ['required', 'array'],
+            'paper_strategy_config_ids.*' => ['exists:paper_strategy_configs,id'],
         ]);
 
-        $config = PaperStrategyConfig::findOrFail($validated['paper_strategy_config_id']);
+        $added = 0;
+        foreach ($validated['paper_strategy_config_ids'] as $configId) {
+            $config = PaperStrategyConfig::findOrFail($configId);
+            if (!$config->active) continue;
 
-        if (!$config->active) {
-            return back()->withErrors(['config' => 'Esta estrategia no está activa en Paper Trading.']);
+            $exists = RealStrategySubscription::where('broker_account_id', $account->id)
+                ->where('paper_strategy_config_id', $config->id)->exists();
+
+            if (!$exists) {
+                RealStrategySubscription::create([
+                    'user_id' => auth()->id(),
+                    'broker_account_id' => $account->id,
+                    'paper_strategy_config_id' => $config->id,
+                    'strategy' => $config->display_name,
+                    'symbol' => $config->symbol,
+                    'interval' => $config->interval,
+                    'status' => 'active',
+                ]);
+                $added++;
+            }
         }
 
-        // Verificar que no existe ya esta suscripcion en esta cuenta
-        $exists = RealStrategySubscription::where('broker_account_id', $account->id)
-            ->where('paper_strategy_config_id', $config->id)
-            ->exists();
-
-        if ($exists) {
-            return back()->withErrors(['config' => 'Esta estrategia ya está suscrita a esta cuenta.']);
+        if ($request->wantsJson() || $request->ajax()) {
+            $account->refresh();
+            $account->load('subscriptions.paperStrategyConfig');
+            $html = view('trading.partials.subscriptions_list', compact('account'))->render();
+            return response()->json([
+                'success' => true,
+                'added' => $added,
+                'message' => $added > 0 ? "Configuración agregada correctamente." : "La configuración ya estaba agregada.",
+                'html' => $html,
+                'count' => $account->subscriptions->count()
+            ]);
         }
 
-        $subscription = RealStrategySubscription::create([
-            'user_id'                  => auth()->id(),
-            'broker_account_id'        => $account->id,
-            'paper_strategy_config_id' => $config->id,
-            'strategy'                 => $config->display_name,
-            'symbol'                   => $config->symbol,
-            'interval'                 => $config->interval,
-            'status'                   => 'active',
-        ]);
-
-        $this->enforceSingleActivePerSymbol($account, $config->symbol, $subscription->id);
-
-        return back()->with('status', "Estrategia \"{$config->display_name}\" suscrita a {$account->label}.");
+        return back()->with('status', "Configuración agregada correctamente.");
     }
 
     /**
@@ -82,53 +88,43 @@ class RealStrategySubscriptionController extends Controller
     public function storeAll(Request $request, BrokerAccount $account)
     {
         Gate::authorize('viewRealTrading');
-
-        if ($account->user_id !== auth()->id()) {
-            abort(403);
-        }
+        if ($account->user_id !== auth()->id()) abort(403);
 
         $configs = PaperStrategyConfig::active()->get();
-        $added   = 0;
+        $added = 0;
 
         foreach ($configs as $config) {
             $exists = RealStrategySubscription::where('broker_account_id', $account->id)
-                ->where('paper_strategy_config_id', $config->id)
-                ->exists();
+                ->where('paper_strategy_config_id', $config->id)->exists();
 
             if (!$exists) {
                 RealStrategySubscription::create([
-                    'user_id'                  => auth()->id(),
-                    'broker_account_id'        => $account->id,
+                    'user_id' => auth()->id(),
+                    'broker_account_id' => $account->id,
                     'paper_strategy_config_id' => $config->id,
-                    'strategy'                 => $config->display_name,
-                    'symbol'                   => $config->symbol,
-                    'interval'                 => $config->interval,
-                    'status'                   => 'active',
+                    'strategy' => $config->display_name,
+                    'symbol' => $config->symbol,
+                    'interval' => $config->interval,
+                    'status' => 'active',
                 ]);
                 $added++;
             }
         }
 
-        if ($account->single_position_per_symbol && $added > 0) {
-            // Tras agregar todas, dejar activa solo la de mejor rating por
-            // simbolo (evita quedar con varias activas a la vez cuando el
-            // broker/modo no lo permite).
-            $account->load(['subscriptions.paperStrategyConfig']);
-            $account->subscriptions
-                ->groupBy('symbol')
-                ->each(function ($subsForSymbol, $symbol) use ($account) {
-                    $best = $subsForSymbol
-                        ->sortByDesc(fn ($s) => $s->paperStrategyConfig->star_rating ?? 0)
-                        ->first();
-                    if ($best) {
-                        $this->enforceSingleActivePerSymbol($account, $symbol, $best->id);
-                    }
-                });
+        if ($request->wantsJson() || $request->ajax()) {
+            $account->refresh();
+            $account->load('subscriptions.paperStrategyConfig');
+            $html = view('trading.partials.subscriptions_list', compact('account'))->render();
+            return response()->json([
+                'success' => true,
+                'added' => $added,
+                'message' => $added > 0 ? "Todas las configuraciones agregadas." : "Todas ya estaban agregadas.",
+                'html' => $html,
+                'count' => $account->subscriptions->count()
+            ]);
         }
 
-        return back()->with('status', $added > 0
-            ? "{$added} estrategia(s) añadidas a {$account->label}."
-            : "Todas las estrategias ya estaban suscritas a {$account->label}.");
+        return back()->with('status', "Todas las configuraciones agregadas.");
     }
     public function toggle(BrokerAccount $account, RealStrategySubscription $subscription)
     {

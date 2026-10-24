@@ -31,6 +31,10 @@ class TradingController extends Controller
         $filterInterval = $request->query('interval', 'all');
         $filterResult   = $request->query('result', 'all');
         $filterAccount  = $request->query('account', 'all');
+        
+        
+        
+        
 
         // IDs de cuentas del usuario
         $accountIds = BrokerAccount::where('user_id', $user->id)->pluck('id');
@@ -94,12 +98,74 @@ class TradingController extends Controller
             ->orderBy('created_at')
             ->get(['id', 'label', 'account_type', 'broker']);
 
+        // 1. Estrategias con suscripciones REALES activas en las cuentas del usuario
+        $subscriptionStrategies = \App\Models\RealStrategySubscription::whereIn('broker_account_id', $accountIds)
+            ->where('status', 'active')
+            ->pluck('strategy')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+
+        // 2. Estrategias con trades históricos (para no perder las que ya operaron)
+        $tradeStrategies = (clone $allTrades)->pluck('strategy')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+
+        // 3. Combinar ambas fuentes, limpiar duplicados y ordenar
+        $allStrategyNames = collect(array_merge($subscriptionStrategies, $tradeStrategies))
+            ->unique()
+            ->sort()
+            ->values()
+            ->toArray();
+
+        // Estrategias de suscripciones activas
+        $subStrategies = \App\Models\RealStrategySubscription::whereIn('broker_account_id', $accountIds)
+            ->where('status', 'active')
+            ->pluck('strategy')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+        
+        // Símbolos de suscripciones activas
+        $subSymbols = \App\Models\RealStrategySubscription::whereIn('broker_account_id', $accountIds)
+            ->where('status', 'active')
+            ->pluck('symbol')
+            ->filter()
+            ->toArray();
+
+        // Combinar con los trades históricos
+        $tradeStrategies = (clone $allTrades)->pluck('strategy')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+        $tradeSymbols = (clone $allTrades)->pluck('symbol')->filter()->toArray();
+
+        // Estrategias activas en Paper (las que están listas para operar)
+        $paperStrategies = \App\Models\PaperStrategyConfig::where('active', true)
+            ->get(['display_name', 'symbol', 'interval']);
+        
+        $paperStrategyNames = $paperStrategies->pluck('display_name')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+        
+        $paperSymbols = $paperStrategies->pluck('symbol')->filter()->toArray();
+        $paperIntervals = $paperStrategies->pluck('interval')->filter()->toArray();
+
+        // Estrategias con trades históricos en Real (para no perder las que ya operaron)
+        $tradeStrategies = (clone $allTrades)->pluck('strategy')
+            ->map(fn($s) => trim(explode('—', $s)[0]))
+            ->filter()
+            ->toArray();
+        
+        $tradeSymbols = (clone $allTrades)->pluck('symbol')->filter()->toArray();
+        $tradeIntervals = (clone $allTrades)->distinct()->pluck('interval')->filter()->toArray();
+
         $filterOptions = [
-            'strategies' => (clone $allTrades)->pluck('strategy')
-                ->map(fn ($s) => trim(explode('—', $s)[0]))
-                ->unique()->sort()->values()->toArray(),
-            'symbols'    => (clone $allTrades)->distinct()->pluck('symbol')->sort()->values()->toArray(),
-            'intervals'  => (clone $allTrades)->distinct()->pluck('interval')->filter()->sort()->values()->toArray(),
+            'strategies' => collect(array_merge($paperStrategyNames, $tradeStrategies))->unique()->sort()->values()->toArray(),
+            'symbols'    => collect(array_merge($paperSymbols, $tradeSymbols))->unique()->sort()->values()->toArray(),
+            'intervals'  => collect(array_merge($paperIntervals, $tradeIntervals))->unique()->sort()->values()->toArray(),
             'accounts'   => $userAccounts,
         ];
 
@@ -123,6 +189,10 @@ class TradingController extends Controller
             'filterInterval'  => $filterInterval,
             'filterResult'    => $filterResult,
             'filterAccount'   => $filterAccount,
+            
+            
+            
+            
         ]);
     }
 
@@ -221,22 +291,71 @@ class TradingController extends Controller
 
         $accounts = BrokerAccount::where('user_id', $user->id)
             ->withCount('subscriptions')
-            ->with(['subscriptions' => fn ($q) => $q->with('paperStrategyConfig')->orderBy('created_at')])
+            ->with(['subscriptions' => fn ($q) => $q->with('paperStrategyConfig.backtest')->orderBy('created_at')])
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $availableConfigs    = PaperStrategyConfig::active()->orderBy('display_name')->get();
+        // Agrupar configuraciones activas por backtest_id
+        $allActiveConfigs = PaperStrategyConfig::active()->with('backtest')->get();
+        
+        $groupedConfigs = $allActiveConfigs->groupBy(function($config) {
+            return $config->backtest_id ?? 'config_' . $config->id;
+        })->map(function($group) {
+            $first = $group->first();
+            $backtest = $first->backtest;
+            
+            // Símbolos del backtest
+            $symbols = $backtest 
+                ? (is_array($backtest->symbols) ? $backtest->symbols : json_decode($backtest->symbols, true))
+                : [$first->symbol];
+            
+            $interval = $backtest ? $backtest->interval : $first->interval;
+            $baseName = trim(explode(' — ', $first->display_name)[0]);
+            $displayName = $baseName . ' — ' . implode(', ', $symbols) . ' (' . $interval . ')';
+            
+            // Extraer métricas del backtest de forma segura
+            $m = $backtest->metrics ?? [];
+            
+            return [
+                'id' => $first->id,
+                'config_ids' => $group->pluck('id')->toArray(),
+                'display_name' => $displayName,
+                'backtest' => $backtest,
+                'symbols' => $symbols,
+                'interval' => $interval,
+                'months' => $backtest->months ?? 0,
+                'params' => $backtest->config_params ?? [],
+                'metrics' => [
+                    'win_rate' => (float)($m['win_rate'] ?? 0),
+                    'sharpe_ratio' => (float)($m['sharpe_ratio'] ?? 0),
+                    'profit_factor' => (float)($m['profit_factor'] ?? 0),
+                    'avg_monthly_pnl' => (float)($m['avg_monthly_pnl'] ?? 0),
+                    'consist_pct' => (float)($m['consist_pct'] ?? 0),
+                    'total_trades' => (int)($m['total_trades'] ?? 0),
+                ],
+            ];
+        })->values();
+
+        $availableConfigsByAccount = [];
         $subscribedByAccount = $accounts->mapWithKeys(fn ($a) => [
-            $a->id => $a->subscriptions->pluck('paper_strategy_config_id')->filter()->values()->toArray(),
+            $a->id => $a->subscriptions->pluck('paper_strategy_config_id')->filter()->toArray(),
         ]);
+
+        foreach ($accounts as $account) {
+            $subscribedIds = $subscribedByAccount[$account->id];
+            $availableConfigsByAccount[$account->id] = $groupedConfigs->filter(function($group) use ($subscribedIds) {
+                $intersect = array_intersect($group['config_ids'], $subscribedIds);
+                return empty($intersect);
+            })->values();
+        }
+
         $accountInfos = $accounts->mapWithKeys(fn ($a) => [$a->id => $this->getAccountInfo($a)]);
 
         return view('trading.accounts', [
-            'accounts'            => $accounts,
-            'availableConfigs'    => $availableConfigs,
-            'subscribedByAccount' => $subscribedByAccount,
-            'accountInfos'        => $accountInfos,
-            'canCreateDemo'       => $user->canCreateDemoAccounts(),
+            'accounts' => $accounts,
+            'availableConfigsByAccount' => $availableConfigsByAccount,
+            'accountInfos' => $accountInfos,
+            'canCreateDemo' => $user->canCreateDemoAccounts(),
         ]);
     }
 

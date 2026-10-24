@@ -79,14 +79,6 @@
                 </option>
             @endforeach
         </select>
-
-        @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
-            <a href="{{ route('trading.index', ['month' => $month->format('Y-m')]) }}"
-               class="text-xs px-2 py-1 rounded transition-colors"
-               style="color:var(--color-text-muted); border:1px solid var(--color-border-soft);">
-               Limpiar filtros
-            </a>
-        @endif
     </div>
 </form>
 
@@ -235,7 +227,7 @@
                         </td>
                         <td class="py-2 px-3">
                             @php
-                                $acct = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
+                                $acct = []->firstWhere('id', $trade->broker_account_id);
                             @endphp
                             <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style="background: {{ ($acct?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};
@@ -256,8 +248,8 @@
 <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
     <div class="px-4 py-3 border-b" style="border-color:var(--color-border-soft);">
         <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">
-            Historial de operaciones — {{ ucfirst($month->translatedFormat('F Y')) }}
-            @if ($filterStrategy !== 'all' || $filterSymbol !== 'all' || $filterInterval !== 'all' || $filterResult !== 'all' || $filterAccount !== 'all')
+            Historial de operaciones — {{ ucfirst(now()->translatedFormat('F Y')) }}
+            @if ($filterStrategy !== 'all' || 'all' !== 'all' || 'all' !== 'all' || 'all' !== 'all' || 'all' !== 'all')
                 <span class="text-[10px] ml-2" style="color:var(--color-info);">(filtrado)</span>
             @endif
         </h3>
@@ -351,7 +343,7 @@
                             </td>
                             <td class="py-2 px-3">
                                 @php
-                                    $acct2 = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
+                                    $acct2 = []->firstWhere('id', $trade->broker_account_id);
                                 @endphp
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                       style="background: {{ ($acct2?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};

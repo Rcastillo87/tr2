@@ -1,6 +1,7 @@
 <?php
 namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PaperStrategyConfig extends Model
 {
@@ -119,4 +120,13 @@ class PaperStrategyConfig extends Model
             'active'         => false,
         ]);
     }
+
+    /**
+     * Relación con el backtest que originó esta configuración.
+     */
+    public function backtest(): BelongsTo
+    {
+        return $this->belongsTo(Backtest::class);
+    }
+
 }
