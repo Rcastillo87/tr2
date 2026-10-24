@@ -100,8 +100,6 @@ class BacktestingController extends Controller
                 $payloads[$sym]['volume_filter_mult'] = (float) $request->input('volume_filter_mult', 1.2);
             }
             $payloads[$sym]['regime_filter'] = $request->has('regime_filter');
-            $payloads[$sym]['use_max_duration'] = $request->has('use_max_duration');
-            $payloads[$sym]['use_trailing'] = $request->has('use_trailing');
         }
 
         // 2. EJECUCIÓN SECUENCIAL (UNA A UNA) PARA EVITAR RACE CONDITIONS
