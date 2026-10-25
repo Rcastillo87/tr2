@@ -393,6 +393,7 @@ async def collector_unified(
                         MAX(time) AS hasta,
                         (MAX(time) > now() - interval '1 hour') AS actualizado
                     FROM ohlcv_data
+                    WHERE time > now() - interval '30 days'
                     GROUP BY broker, symbol, interval
                 ) o
                   ON o.broker = cc.broker

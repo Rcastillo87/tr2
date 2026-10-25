@@ -24,7 +24,7 @@ class CollectorConfigController extends Controller
             $url = config('trading.python_engine_url') . '/v1/collector/unified';
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(15)->get($url, $filters);
+            ])->timeout(45)->get($url, $filters);
 
             if ($response->successful()) {
                 $data = $response->json('data') ?? [];
