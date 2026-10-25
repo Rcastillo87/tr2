@@ -37,10 +37,7 @@ class PaperStrategyConfig extends Model
     public function pythonModulePath(): string
     {
         return match ($this->strategy_class) {
-            'VwapStrategy'         => 'backtesting.strategies.vwap_strategy',
-            'MeanReversionStrategy'=> 'backtesting.strategies.mean_reversion',
-            'EmaDonchianStrategy'  => 'backtesting.strategies.ema_donchian',
-            default                => throw new \InvalidArgumentException("Clase desconocida: {$this->strategy_class}"),
+                                                default                => throw new \InvalidArgumentException("Clase desconocida: {$this->strategy_class}"),
         };
     }
 
@@ -51,11 +48,7 @@ class PaperStrategyConfig extends Model
     public static function strategyNameToClassAndMode(string $strategyName): array
     {
         return match ($strategyName) {
-            'VWAP Tendencia'         => ['class' => 'VwapStrategy', 'mode' => 'trend_follow'],
-            'VWAP Reversión'         => ['class' => 'VwapStrategy', 'mode' => 'reversion'],
-            'Reversión a la Media'   => ['class' => 'MeanReversionStrategy', 'mode' => null],
-            'Tendencia EMA/Donchian' => ['class' => 'EmaDonchianStrategy', 'mode' => null],
-            default => throw new \InvalidArgumentException("Estrategia no reconocida: {$strategyName}"),
+                                                            default => throw new \InvalidArgumentException("Estrategia no reconocida: {$strategyName}"),
         };
     }
 
@@ -65,13 +58,11 @@ class PaperStrategyConfig extends Model
      */
     public static function classAndModeToStrategyName(string $class, ?string $mode): string
     {
-        if ($class === 'VwapStrategy') {
+        if ($class === 'DynamicStrategy') {
             return $mode === 'reversion' ? 'VWAP Reversión' : 'VWAP Tendencia';
         }
         return match ($class) {
-            'MeanReversionStrategy' => 'Reversión a la Media',
-            'EmaDonchianStrategy'   => 'Tendencia EMA/Donchian',
-            default => $class,
+                                    default => $class,
         };
     }
 

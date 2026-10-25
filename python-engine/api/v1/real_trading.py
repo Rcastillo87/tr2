@@ -28,9 +28,6 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
 
 STRATEGY_CLASS_MAP = {
-    'VwapStrategy':          ('backtesting.strategies.vwap_strategy', 'VwapStrategy'),
-    'MeanReversionStrategy': ('backtesting.strategies.mean_reversion', 'MeanReversionStrategy'),
-    'EmaDonchianStrategy':   ('backtesting.strategies.ema_donchian',   'EmaDonchianStrategy'),
 }
 
 

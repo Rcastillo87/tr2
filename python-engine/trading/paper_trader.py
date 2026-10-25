@@ -33,9 +33,6 @@ VIRTUAL_BALANCE = 10000.0
 # PaperTrader). Usado solo como fallback cuando un trade abierto pertenece
 # a una estrategia que ya no esta activa (ver _get_strategy_instance_for_trade).
 STRATEGY_CLASS_MAP = {
-    'VwapStrategy':          ('backtesting.strategies.vwap_strategy',  'VwapStrategy'),
-    'MeanReversionStrategy': ('backtesting.strategies.mean_reversion',  'MeanReversionStrategy'),
-    'EmaDonchianStrategy':   ('backtesting.strategies.ema_donchian',    'EmaDonchianStrategy'),
 }
 
 
