@@ -163,7 +163,7 @@ def load_strategy(request: BacktestRequest):
         except Exception as e:
             raise ValueError(f"Error compilando el código Python: {str(e)}")
         
-        # Buscar la clase que herede de BaseStrategy
+            # Buscar la clase que herede de BaseStrategy
         strategy_cls = None
         for k, v in namespace.items():
             if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
@@ -207,6 +207,19 @@ def load_strategy(request: BacktestRequest):
             'volume_filter_period': request.volume_filter_period,
             'volume_filter_mult': request.volume_filter_mult,
         })
+        # FIX FORENSE: Sobrescribir explícitamente con los valores de la request (UI)
+        params['sl_pct'] = request.sl_pct
+        params['tp_pct'] = request.tp_pct
+        params['be_pct'] = request.be_pct
+        params['trailing_mode'] = request.trailing_mode
+        params['trailing_distance_pct'] = request.trailing_distance_pct
+        params['trailing_activation_buffer_pct'] = request.trailing_activation_buffer_pct
+        
+        # FIX: Agregamos los 3 parámetros de volatilidad que faltaban
+        params['volatility_protection_mode'] = request.volatility_protection_mode
+        params['volatility_atr_multiplier'] = request.volatility_atr_multiplier
+        params['volatility_widen_pct'] = request.volatility_widen_pct
+
         return strategy_cls(params)
 
     # Si no hay código dinámico, usar la lógica legacy (mapeo de nombres)

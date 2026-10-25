@@ -86,7 +86,14 @@ class BaseStrategy(ABC):
         self.commission_pct = params.get('commission_pct', 0.055)
         # Tope de apalancamiento implicito — 1.0 = sin apalancamiento (nocional <= balance)
         self.max_leverage = params.get('max_leverage', 1.0)
-        self.trailing_distance_pct = params.get('trailing_distance_pct', 1.0)
+        raw_trailing = params.get('trailing_distance_pct', 1.0)
+        # FIX: PROTECCIÓN CONTRA COMISIONES Y SPREAD
+        # Si la distancia del trailing es menor al costo de comisión (0.11%), 
+        # forzamos un mínimo de 1.0% para evitar pérdidas garantizadas.
+        if params.get('trailing_mode', None) == 'fixed' and raw_trailing < 1.0:
+            self.trailing_distance_pct = 1.0
+        else:
+            self.trailing_distance_pct = raw_trailing
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
         self.trailing_atr_mult     = params.get('trailing_atr_mult', 2.0)  # Multiplicador para trailing ATR
         self.close_on_opposite     = params.get('close_on_opposite', False) # Cerrar si aparece señal contraria
