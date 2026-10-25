@@ -56,6 +56,7 @@ class BacktestingController extends Controller
         }
 
         $resultsData = [];
+        $warnings = [];
         $totalTrades = 0;
         $totalWins = 0;
         $totalPnl = 0;
@@ -122,6 +123,7 @@ class BacktestingController extends Controller
                 }
 
                 $res = $response->json('result');
+                $warnings = array_merge($warnings ?? [], $response->json('warnings') ?? []);
                 $summary = [
                     'symbol' => $sym,
                     'aggregate_metrics' => $res['aggregate_metrics'] ?? [],
@@ -137,6 +139,10 @@ class BacktestingController extends Controller
             } catch (\Throwable $e) {
                 return response()->json(['success' => false, 'error' => "Error procesando $sym: " . $e->getMessage()]);
             }
+        }
+
+        if ($totalTrades === 0) {
+            $warnings[] = 'Resultado: 0 operaciones generadas. Posible causa: Filtros muy estrictos o falta de señales en el período.';
         }
 
         if (empty($resultsData)) {
@@ -202,8 +208,8 @@ class BacktestingController extends Controller
         $html = view('backtesting.partials.results', [
             'result' => $result,
             'implementParams' => array_values($payloads)[0] ?? [],
-             // <-- FORZAMOS EL PASE DEL ID
-            'prevBacktest' => $prevBacktest
+            'prevBacktest' => $prevBacktest,
+            'warnings' => $warnings
         ])->render();
 
         return response()->json(['success' => true, 'html' => $html]);

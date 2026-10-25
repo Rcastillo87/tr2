@@ -329,11 +329,21 @@ def build_monthly_breakdown(trades: list[dict], initial_balance: float) -> list[
 @router.post("/backtest/run")
 async def run_backtest(request: BacktestRequest):
     """Ejecuta un backtest completo con walk-forward validation."""
+    warnings = []
     try:
         pool     = await get_pool()
         df       = await load_ohlcv(pool, request.symbol, request.interval,
                                      request.start_date, request.end_date,
                                      broker=request.data_broker)
+                                     
+        # FIX GLOBAL: Convertir todas las columnas numéricas a float para evitar
+        # el error de 'decimal.Decimal' en CUALQUIER estrategia (VWAP, EMA, etc.)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        if len(df) == 0:
+            warnings.append(f"Error Crítico: No se encontraron velas para {request.symbol} en el rango solicitado.")
+
         strategy = load_strategy(request)
 
         # Datos de 1 min para simulacion de salida granular (2026-07-09):
@@ -359,6 +369,15 @@ async def run_backtest(request: BacktestRequest):
                 minute_df = await load_ohlcv(pool, request.symbol, '1',
                                               request.start_date, request.end_date,
                                               broker='bybit')
+                
+                # FIX: Si el minute_df no cubre el mismo rango que el df principal, 
+                # lo descartamos para evitar que el motor de backtest falle 
+                # al buscar minutos inexistentes.
+                if minute_df is not None and not minute_df.empty:
+                    if minute_df['time'].max() < df['time'].max():
+                        logger.warning(f"minute_df de {request.symbol} termina antes que el df principal. Descartando para usar high/low.")
+                        warnings.append(f"Aviso: Datos de 1 minuto para {request.symbol} no cubren el rango completo ({df['time'].max()}). Se usó simulación de vela grande.")
+                        minute_df = None
             except ValueError:
                 logger.warning(
                     f"Sin datos de 1 min para {request.symbol} — cayendo a "
@@ -398,7 +417,7 @@ async def run_backtest(request: BacktestRequest):
                     result['trades'], request.initial_balance
                 )
 
-        return {"status": "ok", "result": result}
+        return {"status": "ok", "result": result, "warnings": warnings}
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

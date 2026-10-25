@@ -52,6 +52,8 @@
 
     {{-- Header --}}
     <div class="px-4 py-3 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-3" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
+        
+        {{-- Izquierda: Título --}}
         <div>
             <h3 class="text-sm font-medium" style="color:var(--color-text-secondary);">
                 Resultados: {{ $result['strategy'] }}
@@ -60,34 +62,37 @@
                 {{ count($symbolsList) }} moneda(s) • {{ $result['interval'] }} • {{ $result['save_payload']['months'] ?? 6 }} meses
             </p>
         </div>
-        @if(isset($result['save_payload']))
-        
-        <form id="saveBacktestForm" method="POST" action="{{ route('backtesting.save') }}">
-            @csrf
-            @php
-                $payload = $result['save_payload'];
-                $payload['backtest_id'] = request('backtest_id');
-                
-                // INYECTAMOS MANUALMENTE LOS DATOS EXACTOS QUE VEMOS EN PANTALLA
-                $payload['metrics'] = [
-                    'total_trades' => $aggGlobal['total_trades'] ?? 0,
-                    'win_rate' => $aggGlobal['win_rate'] ?? 0,
-                    'sharpe_ratio' => $aggGlobal['sharpe_ratio'] ?? 0,
-                    'profit_factor' => $aggGlobal['profit_factor'] ?? 0,
-                    'total_return_pct' => $aggGlobal['total_return_pct'] ?? 0,
-                    'avg_monthly_pnl' => $avgGlobal ?? 0,
-                    'consist_pct' => $consistGlobal ?? 0,
-                    'rating' => $ratingGlobal ?? 0,
-                    'individual_results' => $result['individual_results'] ?? []
-                ];
-            @endphp
-            <input type="hidden" name="save_data" value="{{ base64_encode(json_encode($payload)) }}">
-            <button type="button" onclick="confirmSaveBacktest()" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors" style="background:var(--color-profit); color:#fff;">
-                💾 Guardar en Historial
-            </button>
-        </form>
-        
-        @endif
+
+        {{-- Derecha: Botones (Guardar + Log) --}}
+        <div class="flex items-center gap-3">
+            @if(isset($result['save_payload']))
+            <form id="saveBacktestForm" method="POST" action="{{ route('backtesting.save') }}" class="m-0">
+                @csrf
+                @php
+                    $payload = $result['save_payload'];
+                    $payload['backtest_id'] = request('backtest_id');
+                    $payload['metrics'] = [
+                        'total_trades' => $aggGlobal['total_trades'] ?? 0,
+                        'win_rate' => $aggGlobal['win_rate'] ?? 0,
+                        'sharpe_ratio' => $aggGlobal['sharpe_ratio'] ?? 0,
+                        'profit_factor' => $aggGlobal['profit_factor'] ?? 0,
+                        'total_return_pct' => $aggGlobal['total_return_pct'] ?? 0,
+                        'avg_monthly_pnl' => $avgGlobal ?? 0,
+                        'consist_pct' => $consistGlobal ?? 0,
+                        'rating' => $ratingGlobal ?? 0,
+                        'individual_results' => $result['individual_results'] ?? []
+                    ];
+                @endphp
+                <input type="hidden" name="save_data" value="{{ base64_encode(json_encode($payload)) }}">
+                <button type="button" onclick="confirmSaveBacktest()" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors" style="background:var(--color-profit); color:#fff;">
+                    💾 Guardar en Historial
+                </button>
+            </form>
+            @endif
+
+            {{-- Botón de Logs (Solo aparece si hay errores) --}}
+            
+        </div>
     </div>
 
     {{-- Configuración --}}
@@ -491,4 +496,7 @@
         @endif
     </div>
 </div>
+
+
+
 @endif
