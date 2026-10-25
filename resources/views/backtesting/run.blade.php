@@ -119,6 +119,10 @@
                         <input type="number" step="0.1" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
                     <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Balance Inicial ($)</label>
+                        <input type="number" step="100" name="initial_balance" value="{{ old('initial_balance', $backtestToLoad->config_params['initial_balance'] ?? '10000') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
+                    <div>
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Riesgo / Trade %</label>
                         <input type="number" step="0.1" name="risk_per_trade_pct" value="{{ old('risk_per_trade_pct', $backtestToLoad->config_params['risk_per_trade_pct'] ?? '1.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
@@ -233,10 +237,10 @@
                 <div id="div_trailing_buffer" style="display: none;">
                     <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Activación Trailing (%)</label>
                     <input type="number" step="0.1" name="trailing_activation_buffer_pct" value="{{ old('trailing_activation_buffer_pct', $backtestToLoad->config_params['trailing_activation_buffer_pct'] ?? '0.5') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    <span class="text-[9px]" style="color:var(--color-text-muted);">Ganancia mínima antes de mover el SL.</span>
                 </div>
             </div>
 
+            {{-- Checkboxes de cierre --}}
             <div class="rounded-lg p-3 border space-y-3" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
                 <label class="flex items-start gap-2 cursor-pointer">
                     <input type="checkbox" name="max_duration_profit" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('max_duration_profit', !empty($backtestToLoad->config_params['max_duration_profit'])) ? 'checked' : '' }}>
@@ -245,7 +249,7 @@
                         <span class="text-[10px] block" style="color:var(--color-text-muted);">Cierra al llegar al tiempo máximo solo si está en ganancia.</span>
                     </div>
                 </label>
-                
+
                 <label class="flex items-start gap-2 cursor-pointer">
                     <input type="checkbox" name="close_on_opposite" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('close_on_opposite', !empty($backtestToLoad->config_params['close_on_opposite'])) ? 'checked' : '' }}>
                     <div>
@@ -254,10 +258,10 @@
                     </div>
                 </label>
             </div>
-        </div>
+        </div> <!-- Cierre de la Tarjeta Oscura -->
 
-        <!-- Footer con Botones -->
-        <div class="border-t pt-3 flex justify-between items-center" style="border-color:var(--color-border-soft);">
+        <!-- Footer con Botones (DENTRO de la tarjeta) -->
+        <div class="border-t pt-4 mt-6 flex justify-between items-center" style="border-color:var(--color-border-soft);">
             <button type="button" onclick="nextTab()" id="btn-next" class="text-[11px] px-3 py-1.5 rounded border transition-colors" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-info);">
                 Siguiente paso →
             </button>
@@ -266,7 +270,7 @@
             </button>
         </div>
     </form>
-</div>
+
 
 {{-- RESULTADOS (Bloque único, sin duplicados) --}}
 <div id="results-container"></div>

@@ -70,7 +70,7 @@ class BacktestingController extends Controller
                 'strategy_config' => $finalConfig,
                 'symbol' => $sym,
                 'interval' => $request->input('interval', '60'),
-                'initial_balance' => 10000,
+                'initial_balance' => (float) $request->input('initial_balance', 10000), // FIX: Ya no está quemado
                 'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
                 'commission_pct' => (float) $request->input('commission_pct', 0.055),
                 'sl_pct' => (float) $request->input('sl_pct', 1.5),
@@ -88,9 +88,24 @@ class BacktestingController extends Controller
                     default => 'RANGING',
                 },
                 'walk_forward' => true, 'n_windows' => 5, 'monthly_breakdown' => true,
+                
+                // FIX: Parámetros de Trailing completos
                 'trailing_mode' => $request->input('trailing_mode', 'none') !== 'none' ? $request->input('trailing_mode') : null,
                 'trailing_distance_pct' => (float) $request->input('trailing_distance_pct', 1.0),
+                'trailing_activation_buffer_pct' => (float) $request->input('trailing_activation_buffer_pct', 0.0),
                 'trailing_atr_mult' => (float) $request->input('trailing_atr_mult', 2.0),
+                
+                // FIX: Filtros
+                'macro_trend_filter' => $request->has('macro_trend_filter'),
+                'volume_filter' => $request->has('volume_filter'),
+                'volume_filter_period' => (int) $request->input('volume_filter_period', 20),
+                'volume_filter_mult' => (float) $request->input('volume_filter_mult', 1.2),
+                
+                // FIX: Protección por volatilidad (Faltaban)
+                'volatility_protection_mode' => $request->input('volatility_protection_mode', 'none') !== 'none' ? $request->input('volatility_protection_mode') : null,
+                'volatility_atr_multiplier' => (float) $request->input('volatility_atr_multiplier', 2.5),
+                'volatility_widen_pct' => (float) $request->input('volatility_widen_pct', 1.0),
+                
                 'start_date' => $start->format('Y-m-d'), 'end_date' => $end->format('Y-m-d'),
             ];
             // Los valores de la UI SIEMPRE sobrescriben el JSON
@@ -104,6 +119,8 @@ class BacktestingController extends Controller
         }
 
         // 2. EJECUCIÓN SECUENCIAL (UNA A UNA) PARA EVITAR RACE CONDITIONS
+        \Illuminate\Support\Facades\Log::info('PAYLOAD FINAL ENVIADO A PYTHON:', $payloads[array_key_first($payloads)] ?? []);
+
         $responses = [];
         foreach ($payloads as $sym => $payload) {
             $responses[$sym] = \Illuminate\Support\Facades\Http::withHeaders([
