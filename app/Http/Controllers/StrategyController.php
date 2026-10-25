@@ -138,9 +138,9 @@ class StrategyController extends Controller
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(15)->post(
+            ])->timeout(30)->post(
                 config('trading.python_engine_url') . '/v1/strategies/validate',
-                ['code' => $code, 'type' => 'python']
+                ['code' => $code, 'type' => 'python', 'run_backtest' => true]
             );
 
             if (!$response->successful()) {
@@ -149,6 +149,14 @@ class StrategyController extends Controller
                     'code' => "❌ Falló el Smoke Test: " . $errorMsg
                 ]);
             }
+
+            $trades = $response->json('trades');
+            if ($trades !== null && $trades == 0) {
+                throw ValidationException::withMessages([
+                    'code' => "❌ Falló el Smoke Test: La estrategia no abrió ninguna operación en el último mes. Revisa la lógica o los filtros."
+                ]);
+            }
+
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
