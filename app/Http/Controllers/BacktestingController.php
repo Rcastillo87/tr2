@@ -143,6 +143,8 @@ class BacktestingController extends Controller
 
         if ($totalTrades === 0) {
             $warnings[] = 'Resultado: 0 operaciones generadas. Posible causa: Filtros muy estrictos o falta de señales en el período.';
+        } elseif ($totalPnl < -50) {
+            $warnings[] = 'ALERTA: Retorno catastrófico (' . round($totalPnl, 2) . '%). La estrategia está sobre-operando (Overtrading) y las comisiones se están comiendo la cuenta. Prueba en una temporalidad mayor (H1 o H4).';
         }
 
         if (empty($resultsData)) {
@@ -212,7 +214,7 @@ class BacktestingController extends Controller
             'warnings' => $warnings
         ])->render();
 
-        return response()->json(['success' => true, 'html' => $html]);
+        return response()->json(['success' => true, 'html' => $html, 'warnings' => $warnings ?? []]);
     }
 
     public function run(Request $request)

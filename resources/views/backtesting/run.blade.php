@@ -537,6 +537,7 @@ document.getElementById('backtestForm').addEventListener('submit', function(e) {
         
         if (data.success) {
             document.getElementById('results-container').innerHTML = data.html;
+            window.currentWarnings = data.warnings || [];
             document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
         } else {
             Swal.fire({
@@ -557,5 +558,52 @@ document.getElementById('backtestForm').addEventListener('submit', function(e) {
         });
     });
 });
+
+    // Función para el Modal de Errores
+    window.showBacktestLog = function() {
+        if (!window.currentWarnings || window.currentWarnings.length === 0) {
+            Swal.fire({ title: 'Sin errores', text: 'No hay advertencias para este backtest.', icon: 'info', background: '#11161F', color: '#E5E9F0' });
+            return;
+        }
+        
+        let logHtml = '<div style="text-align:left; font-family:monospace; font-size:12px; background:#0D1117; padding:15px; border-radius:5px; border:1px solid #30363D; max-height:400px; overflow-y:auto;">';
+        window.currentWarnings.forEach(w => {
+            logHtml += `<div style="margin-bottom:10px; color:#F2545B;">- ${w}</div>`;
+        });
+        logHtml += '</div>';
+
+        Swal.fire({
+            title: 'Log de Errores del Backtest',
+            html: logHtml,
+            icon: 'warning',
+            background: '#11161F', 
+            color: '#E5E9F0',
+            confirmButtonColor: '#374151',
+            confirmButtonText: 'Cerrar',
+            showDenyButton: true,
+            denyButtonText: '📥 Descargar .txt',
+            denyButtonColor: '#3b82f6',
+            width: '85%',          /* 🔥 AQUÍ ESTÁ LA MAGIA: 85% DEL ANCHO DE LA PANTALLA */
+            maxWidth: '1200px'     /* Límite máximo para pantallas muy grandes */
+        }).then((result) => {
+            if (result.isDenied) {
+                let textContent = `LOG DE ERRORES - Backtest\nFecha: ${new Date().toLocaleString()}\n\n`;
+                window.currentWarnings.forEach((w, i) => {
+                    textContent += `${i + 1}. ${w}\n`;
+                });
+                
+                const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Log_Backtest.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+    };
+
 </script>
 @endpush

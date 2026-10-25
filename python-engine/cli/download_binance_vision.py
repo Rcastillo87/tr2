@@ -41,7 +41,7 @@ SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
 # Timeframes (formato Binance: '1m', '5m', '15m', '1h', '2h', '4h', '1d')
 # Nota: tus otros componentes usan intervalos '1','5','15','60','120','240','D'
 # Este script los mapea automáticamente.
-INTERVALS = ["5m", "15m", "1h", "2h", "4h"]
+INTERVALS = ["1m", "5m", "15m", "1h", "2h", "4h", "1d"]
 
 # Rango mensual (inclusive)
 START_YEAR_MONTH = (2024, 6)   # 2024-06

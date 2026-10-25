@@ -63,7 +63,7 @@
             </p>
         </div>
 
-        {{-- Derecha: Botones (Guardar + Log) --}}
+        {{-- Derecha: Botones --}}
         <div class="flex items-center gap-3">
             @if(isset($result['save_payload']))
             <form id="saveBacktestForm" method="POST" action="{{ route('backtesting.save') }}" class="m-0">
@@ -90,8 +90,11 @@
             </form>
             @endif
 
-            {{-- Botón de Logs (Solo aparece si hay errores) --}}
-            
+            @if(isset($warnings) && count($warnings) > 0)
+                <button type="button" onclick="window.showBacktestLog()" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors flex items-center gap-2" style="background:#3A1A1C; color:#F2545B; border: 1px solid #5A2226;">
+                    ⚠️ Ver Log de Errores
+                </button>
+            @endif
         </div>
     </div>
 
