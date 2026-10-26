@@ -161,6 +161,16 @@ class BybitClient:
         headers['Content-Type'] = 'application/json'
         return headers
 
+    async def _signed_get(self, path: str, params: dict, timeout: float = 10) -> httpx.Response:
+        """
+        GET firmado. El query string se arma UNA vez (ordenado) y se usa tanto para firmar como en la URL:
+        con params= httpx respeta el orden del dict y la firma no coincidía (Bybit la rechazaba).
+        """
+        query = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
+        headers = self._sign(params)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.get(f'{self.base_url}{path}?{query}', headers=headers)
+
     def _sign_body(self, body: dict) -> dict:
         """Firma para requests con body JSON (POST). Delega la firma HMAC a bybit_sign."""
         body_str = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
@@ -171,14 +181,8 @@ class BybitClient:
     async def get_balance(self) -> float | None:
         """Obtiene el balance disponible (USDT) de la cuenta UNIFIED."""
         params = {'accountType': 'UNIFIED', 'coin': 'USDT'}
-        headers = self._sign(params)
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f'{self.base_url}/v5/account/wallet-balance',
-                    params=params,
-                    headers=headers,
-                )
+            r = await self._signed_get('/v5/account/wallet-balance', params)
             if not r.text or r.status_code in (401, 403):
                 logger.error(f"[BYBIT] get_balance auth error: HTTP {r.status_code}")
                 return None
@@ -384,18 +388,16 @@ class BybitClient:
     async def get_order(self, symbol: str, order_id: str) -> dict | None:
         """Verifica el estado de una orden por su ID."""
         params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id}
-        headers = self._sign(params)
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f'{self.base_url}/v5/order/realtime',
-                    params=params,
-                    headers=headers,
-                )
-            data = r.json()
-            if data.get('retCode') == 0:
+            # realtime: órdenes vivas/recientes; history: las ya llenadas/canceladas que salieron de realtime
+            for path in ('/v5/order/realtime', '/v5/order/history'):
+                data = (await self._signed_get(path, params)).json()
+                if data.get('retCode') != 0:
+                    logger.error(f"[BYBIT] get_order {path} error: {data.get('retMsg')} code={data.get('retCode')}")
+                    continue
                 items = data['result']['list']
-                return items[0] if items else None
+                if items:
+                    return items[0]
         except Exception as e:
             logger.error(f"[BYBIT] get_order exception: {e}")
         return None
@@ -409,14 +411,8 @@ class BybitClient:
         abiertos se marcaran como cerrados con pnl falso.
         """
         params = {'category': 'linear', 'symbol': symbol}
-        headers = self._sign(params)
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f'{self.base_url}/v5/position/list',
-                    params=params,
-                    headers=headers,
-                )
+            r = await self._signed_get('/v5/position/list', params)
         except Exception as e:
             logger.error(f"[BYBIT] get_position network exception: {e}")
             raise BybitAPIError(f"network error: {e}") from e
