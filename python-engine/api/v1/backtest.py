@@ -9,13 +9,15 @@ import pandas as pd
 import logging
 import os
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from backtesting.walk_forward import WalkForwardValidator
 from backtesting.engine import BacktestEngine
-from collectors.broker_resolver import resolve_broker
+from collectors.broker_resolver import (
+    coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
+)
 
 load_dotenv()
 
@@ -113,33 +115,43 @@ async def get_pool() -> asyncpg.Pool:
     return await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
 
 
-async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str,
-                      start_date: str | None, end_date: str | None,
-                      broker: str | None = None) -> pd.DataFrame:
-    """Carga OHLCV. Si broker=None, se resuelve via collector_configs."""
-    if broker is None:
-        broker = await resolve_broker(pool, symbol)
+def parse_range(start_date: str | None, end_date: str | None) -> tuple[datetime | None, datetime | None]:
+    """Rango semiabierto [start, end) en UTC. Un end_date 'YYYY-MM-DD' incluye ese día completo."""
+    def to_utc(value: str) -> datetime:
+        dt = datetime.fromisoformat(value)
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+    start = to_utc(start_date) if start_date else None
+    end = None
+    if end_date:
+        end = to_utc(end_date)
+        if len(end_date) == 10:  # solo fecha: día completo
+            end += timedelta(days=1)
+    return start, end
+
+
+async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str, broker: str,
+                     start: datetime | None, end: datetime | None) -> pd.DataFrame:
+    """Velas de UNA fuente en [start, end). Sin datos -> ValueError."""
     query = """
         SELECT time, open, high, low, close, volume
         FROM ohlcv_data
         WHERE broker = $1 AND symbol = $2 AND interval = $3
     """
-    args = [broker, symbol, interval]
-
-    if start_date:
-        query += f" AND time >= ${len(args) + 1}"
-        args.append(datetime.fromisoformat(start_date))
-    if end_date:
-        query += f" AND time <= ${len(args) + 1}"
-        args.append(datetime.fromisoformat(end_date))
-
+    args: list = [broker, symbol, interval]
+    if start is not None:
+        args.append(start)
+        query += f" AND time >= ${len(args)}"
+    if end is not None:
+        args.append(end)
+        query += f" AND time < ${len(args)}"
     query += " ORDER BY time ASC"
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *args)
 
     if not rows:
-        raise ValueError(f"No hay datos para {symbol}/{interval} en el rango especificado")
+        raise ValueError(f"No hay datos para {symbol}/{interval} ({broker}) en el rango especificado")
 
     df = pd.DataFrame(rows, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
     for col in ['open', 'high', 'low', 'close', 'volume']:
@@ -343,62 +355,50 @@ def build_monthly_breakdown(trades: list[dict], initial_balance: float) -> list[
 async def run_backtest(request: BacktestRequest):
     """Ejecuta un backtest completo con walk-forward validation."""
     warnings = []
+    coverage = {}
     try:
-        pool     = await get_pool()
-        df       = await load_ohlcv(pool, request.symbol, request.interval,
-                                     request.start_date, request.end_date,
-                                     broker=request.data_broker)
-                                     
-        # FIX GLOBAL: Convertir todas las columnas numéricas a float para evitar
-        # el error de 'decimal.Decimal' en CUALQUIER estrategia (VWAP, EMA, etc.)
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            if col in df.columns:
-                df[col] = df[col].astype(float)
-        if len(df) == 0:
-            warnings.append(f"Error Crítico: No se encontraron velas para {request.symbol} en el rango solicitado.")
+        start, end = parse_range(request.start_date, request.end_date)
+        pool = await get_pool()
+        try:
+            # 1. Velas principales: fuente con la mayor cobertura REAL del rango pedido.
+            if request.data_broker:
+                forced = [c for c in await coverage_by_broker(pool, request.symbol, request.interval, start, end)
+                          if c.broker == request.data_broker]
+                main_src = forced[0] if forced else None
+            else:
+                main_src = await resolve_backtest_source(pool, request.symbol, request.interval, start, end)
+            if main_src is None:
+                raise ValueError(f"No hay velas de {request.symbol} {request.interval} en el rango solicitado.")
+            warnings.extend(main_src.problems())
+            coverage['main'] = main_src.as_dict()
+            df = await load_ohlcv(pool, request.symbol, request.interval, main_src.broker, start, end)
 
-        strategy = load_strategy(request)
+            strategy = load_strategy(request)
 
-        # Datos de 1 min para simulacion de salida granular (2026-07-09):
-        # Se cargan SIEMPRE que el interval sea >= H1 y existan datos de 1 min,
-        # no solo cuando hay trailing. Sin minute_df, el engine cae en el
-        # fallback high/low de vela grande con "SL primero" — asume que el low
-        # de la vela 2H precede al high, lo cual es falso en el 50% de los casos
-        # y hace que el backtest cierre por SL cuando paper/real (que si usan
-        # minuto a minuto) cierran por TP. Divergencia sistematica observada en
-        # comparacion paper-vs-backtest: 2026-09-22 tp=+161% en paper vs
-        # sl=-97% en backtest sobre el mismo entry. Cargar siempre alinea los
-        # 3 motores (backtest, paper, real) al mismo nivel de granularidad.
-        INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
-        minute_df = None
-        if INTERVAL_MINUTES.get(request.interval, 0) >= 60:
-            try:
-                # minute_df: SIEMPRE del broker que tenga datos 1m (hoy: bybit).
-                # NO depende de data_broker — de lo contrario, comparar
-                # data_broker='binance_vision' (sin 1m importado) contra
-                # data_broker='bybit' (con 1m) contamina el resultado con el
-                # lookahead del fallback high/low. La simulación intrabar debe
-                # ser idéntica entre ambos casos para una comparación limpia.
-                minute_df = await load_ohlcv(pool, request.symbol, '1',
-                                              request.start_date, request.end_date,
-                                              broker='bybit')
-                
-                # FIX: Si el minute_df no cubre el mismo rango que el df principal, 
-                # lo descartamos para evitar que el motor de backtest falle 
-                # al buscar minutos inexistentes.
-                if minute_df is not None and not minute_df.empty:
-                    if minute_df['time'].max() < df['time'].max():
-                        logger.warning(f"minute_df de {request.symbol} termina antes que el df principal. Descartando para usar high/low.")
-                        warnings.append(f"Aviso: Datos de 1 minuto para {request.symbol} no cubren el rango completo ({df['time'].max()}). Se usó simulación de vela grande.")
-                        minute_df = None
-            except ValueError:
-                logger.warning(
-                    f"Sin datos de 1 min para {request.symbol} — cayendo a "
-                    f"high/low de vela grande con SL-first (menos preciso)"
-                )
-                minute_df = None
-
-        await pool.close()
+            # 2. Velas de 1m para simular la salida dentro de cada vela (interval >= H1).
+            #    Regla de oro 4: solo si cubren TODO el rango del dataset principal.
+            #    Si no, vela grande con SL primero (pesimista) en TODO el rango: mezclar
+            #    ambos métodos daría un backtest con dos criterios distintos según el mes.
+            minute_df = None
+            if interval_delta(request.interval) >= timedelta(hours=1):
+                data_start = df['time'].iloc[0].to_pydatetime()
+                data_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(request.interval)
+                minute_src = await resolve_backtest_source(pool, request.symbol, '1', data_start, data_end)
+                coverage['minute'] = minute_src.as_dict() if minute_src else None
+                if minute_src is not None and minute_src.covers(data_start, data_end):
+                    minute_df = await load_ohlcv(pool, request.symbol, '1', minute_src.broker, data_start, data_end)
+                else:
+                    available = (
+                        f"{minute_src.first_bar:%Y-%m-%d} → {minute_src.last_bar:%Y-%m-%d}, "
+                        f"{minute_src.completeness * 100:.0f}% completo" if minute_src else "ninguna"
+                    )
+                    warnings.append(
+                        f"Aviso: velas de 1 minuto de {request.symbol} insuficientes para "
+                        f"{data_start:%Y-%m-%d} → {data_end:%Y-%m-%d} (disponibles: {available}). "
+                        f"Salidas simuladas con vela grande y SL primero (pesimista) en todo el rango."
+                    )
+        finally:
+            await pool.close()
 
         if request.walk_forward:
             validator = WalkForwardValidator(
@@ -430,7 +430,7 @@ async def run_backtest(request: BacktestRequest):
                     result['trades'], request.initial_balance
                 )
 
-        return {"status": "ok", "result": result, "warnings": warnings}
+        return {"status": "ok", "result": result, "warnings": warnings, "data_coverage": coverage}
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -452,29 +452,24 @@ async def list_strategies():
 
 @router.get("/backtest/data-range/{symbol}/{interval}")
 async def get_data_range(symbol: str, interval: str):
-    """Devuelve el rango de fechas disponible en ohlcv_data para un simbolo/intervalo."""
+    """Rango disponible de la MEJOR fuente única (la unión de fuentes sobrestima la historia real)."""
     try:
         pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT MIN(time) as first, MAX(time) as last, COUNT(*) as total
-                FROM ohlcv_data
-                WHERE symbol = $1 AND interval = $2
-                """,
-                symbol, interval
-            )
-        await pool.close()
+        try:
+            src = pick_best_source(await coverage_by_broker(pool, symbol, interval))
+        finally:
+            await pool.close()
 
-        if not row or row['total'] == 0:
+        if src is None:
             return {"status": "ok", "data": None}
 
         return {
             "status": "ok",
             "data": {
-                "first_date": row['first'].isoformat() if row['first'] else None,
-                "last_date":  row['last'].isoformat() if row['last'] else None,
-                "total_bars": row['total'],
+                "first_date": src.first_bar.isoformat(),
+                "last_date":  src.last_bar.isoformat(),
+                "total_bars": src.bars,
+                "broker":     src.broker,
             }
         }
     except Exception as e:
