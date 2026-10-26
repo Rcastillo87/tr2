@@ -162,7 +162,7 @@ class BacktestEngine:
         s = self.strategy
         logger.info(f"Iniciando backtest: {s.name} | {s.symbol} | {len(self.df)} velas")
 
-        df = s.generate_signals(s.prepare(self.df))
+        df = s.compute_signals(self.df)
         n = len(df)
         times  = pd.to_datetime(df['time'])
         opens  = df['open'].to_numpy(dtype=float)

@@ -2,8 +2,13 @@
 Base Strategy V2
 Clase base que todas las estrategias deben heredar.
 """
+import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
+
+MACRO_INTERVAL = '240'      # tendencia macro: velas H4
+MACRO_EMA_SPAN = 50         # EMA 50 de los cierres H4
+MACRO_WARMUP_BARS = 300     # velas H4 de calentamiento (EMA50 converge: peso residual < 1e-5)
 class BaseStrategy(ABC):
     """
     Clase base para todas las estrategias de trading.
@@ -50,16 +55,11 @@ class BaseStrategy(ABC):
         self.volume_filter_period   = params.get('volume_filter_period', 20)
         self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
         self.macro_trend_filter = params.get('macro_trend_filter', False)
+        self.macro_df = None  # velas H4 cerradas; las asigna quien ejecuta (backtest/paper/real)
         # Filtro horario — solo opera en horas de alta liquidez
         self.hour_filter            = params.get('hour_filter', False)
         self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
         self.hour_filter_end        = params.get('hour_filter_end', 21)    # UTC
-        # Filtro fin de semana — bloquea sabado y domingo
-        self.weekend_filter         = params.get('weekend_filter', False)
-        # Bloquear horas especificas (lista de horas UTC 0-23)
-        self.blocked_hours          = params.get('blocked_hours', [])
-        # Bloquear dias especificos (lista: 0=Lun,1=Mar,...,6=Dom)
-        self.blocked_days           = params.get('blocked_days', [])
         # Filtro fin de semana — bloquea sabado y domingo
         self.weekend_filter         = params.get('weekend_filter', False)
         # Bloquear horas especificas (lista de horas UTC 0-23)
@@ -125,6 +125,35 @@ class BaseStrategy(ABC):
         Calcula los indicadores necesarios para la estrategia.
         Sobreescribir en la estrategia hija si se necesitan indicadores adicionales.
         """
+        return df
+
+    def compute_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Única entrada para obtener señales (backtest, paper y real): indicadores, señales de la estrategia y los
+        filtros comunes de la UI. Los filtros son idempotentes: aplicarlos aunque la estrategia ya los aplique
+        no cambia nada, y garantiza que los checkboxes de la UI funcionen con cualquier estrategia.
+        """
+        out = self.generate_signals(self.prepare(df))
+        for f in (self.apply_volume_filter, self.apply_hour_filter, self.apply_weekend_filter,
+                  self.apply_blocked_hours, self.apply_blocked_days, self.apply_macro_trend_filter):
+            out = f(out)
+        return out
+
+    def apply_macro_trend_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Tendencia macro H4 (EMA 50): sin largos con H4 bajista ni cortos con H4 alcista.
+        Sin mirar al futuro: para la vela de la señal (decide al cerrar, time + intervalo) se usa la última vela H4
+        que YA cerró en ese momento (time_H4 + 4h <= cierre de la vela). Sin datos H4 o con menos de 50 velas H4
+        de historia antes de la señal, no se opera (pesimista).
+        """
+        if not self.macro_trend_filter or 'signal' not in df.columns or df.empty:
+            return df
+        df = df.copy()
+        trend = macro_trend_series(df['time'], str(self.interval), self.macro_df)
+        sig = df['signal'].to_numpy()
+        blocked = ((sig == 1) & (trend != 1)) | ((sig == -1) & (trend != -1))
+        df.loc[blocked, 'signal'] = 0
+        df['macro_trend'] = np.select([trend == 1, trend == -1], ['BULLISH', 'BEARISH'], default='NEUTRAL')
         return df
 
     def apply_volume_filter(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -285,6 +314,30 @@ class BaseStrategy(ABC):
         return {'action': None, 'new_sl': None}
 
 
+def macro_trend_series(times: pd.Series, interval: str, macro_df) -> np.ndarray:
+    """+1 alcista, -1 bajista, 0 sin dato (velas H4 insuficientes) para cada vela de `times`."""
+    from collectors.broker_resolver import interval_delta
+    n = len(times)
+    if macro_df is None or len(macro_df) < MACRO_EMA_SPAN:
+        return np.zeros(n, dtype=int)
+    m = macro_df[['time', 'close']].copy()
+    m['time'] = pd.to_datetime(m['time'], utc=True)
+    m = m.sort_values('time').reset_index(drop=True)
+    close = m['close'].astype(float)
+    ema = close.ewm(span=MACRO_EMA_SPAN, adjust=False).mean()
+    t = np.sign(close - ema).astype(int)
+    t[: MACRO_EMA_SPAN - 1] = 0                       # calentamiento de la EMA
+    m['ready_at'] = m['time'] + interval_delta(MACRO_INTERVAL)
+    m['trend'] = t.to_numpy()
+    decide_at = pd.to_datetime(pd.Series(times), utc=True).reset_index(drop=True) + interval_delta(interval)
+    left = pd.DataFrame({'decide_at': decide_at, 'pos': np.arange(n)})
+    merged = pd.merge_asof(left.sort_values('decide_at'), m[['ready_at', 'trend']].sort_values('ready_at'),
+                           left_on='decide_at', right_on='ready_at', direction='backward')
+    out = np.zeros(n, dtype=int)
+    out[merged['pos'].to_numpy()] = merged['trend'].fillna(0).astype(int).to_numpy()
+    return out
+
+
 NATIVE_TRAILING_MIN_BUFFER_PCT = 0.3  # % de activación mínima del trailing nativo en real
 
 
@@ -343,11 +396,8 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
                 new_sl = min(current_sl, candidate)
                 
     elif trailing_mode == 'atr' and current_atr and current_atr > 0:
-        # Trailing dinámico basado en ATR
-        # Buffer: solo activar si la ganancia es al menos 1.0% (evita cierres prematuros)
-        if gain_pct < 1.0:
-            return current_sl
-        
+        # Trailing dinámico basado en ATR. La activación es la de la UI (activation_buffer_pct, arriba);
+        # antes había un mínimo quemado de 1.0% que la ignoraba.
         if side == 'long':
             candidate = current_price - (current_atr * atr_mult)
             new_sl = max(current_sl, candidate)

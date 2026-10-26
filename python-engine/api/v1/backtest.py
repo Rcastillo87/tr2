@@ -272,6 +272,18 @@ async def run_backtest(request: BacktestRequest):
 
             strategy = load_strategy(request)
 
+            # Tendencia macro H4: velas H4 reales con calentamiento para la EMA (igual que paper/real)
+            if request.macro_trend_filter:
+                from backtesting.strategies.base_strategy import MACRO_INTERVAL, MACRO_WARMUP_BARS
+                m_from = (start or df['time'].iloc[0].to_pydatetime()) - interval_delta(MACRO_INTERVAL) * MACRO_WARMUP_BARS
+                m_src = await resolve_backtest_source(pool, request.symbol, MACRO_INTERVAL, m_from, end)
+                if m_src is None:
+                    warnings.append(f"Aviso: sin velas H4 de {request.symbol}: con 'Tendencia macro H4' activa no se opera.")
+                else:
+                    warnings.extend(m_src.problems())
+                    strategy.macro_df = await load_ohlcv(pool, request.symbol, MACRO_INTERVAL, m_src.broker, m_from, end)
+                    coverage['macro'] = m_src.as_dict()
+
             # 2. Velas de 1m para simular la salida dentro de cada vela (interval >= H1).
             #    Regla de oro 4: solo si cubren TODO el rango del dataset principal.
             #    Si no, vela grande con SL primero (pesimista) en TODO el rango: mezclar

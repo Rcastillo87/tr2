@@ -547,8 +547,9 @@ class PaperTrader:
                 results[label] = f"{symbol}: regimen no permitido ({regime})"
                 continue
 
-            df = strategy.prepare(df)
-            df = strategy.generate_signals(df)
+            if strategy.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
+                strategy.macro_df = self._closed_bars(await self.get_bars(symbol, '240'), '240', now)
+            df = strategy.compute_signals(df)
 
             last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas
             signal = int(last_closed['signal'])

@@ -1484,8 +1484,9 @@ class RealTrader:
         if not strategy_instance.should_operate(regime):
             return f"{symbol}: regimen no permitido ({regime})"
 
-        df = strategy_instance.prepare(df)
-        df = strategy_instance.generate_signals(df)
+        if strategy_instance.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
+            strategy_instance.macro_df = closed_bars(await self.get_bars(symbol, '240'), '240', now)
+        df = strategy_instance.compute_signals(df)
 
         last_closed = df.iloc[-1]  # df solo contiene velas cerradas
         signal = int(last_closed['signal'])
