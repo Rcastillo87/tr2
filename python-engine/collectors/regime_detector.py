@@ -58,9 +58,11 @@ class RegimeDetector:
 
     async def get_bars(self, symbol: str, broker: str | None = None) -> pd.DataFrame:
         """Obtiene las últimas N velas H1 para el broker activo del símbolo."""
-        from collectors.broker_resolver import resolve_broker
+        from collectors.broker_resolver import resolve_live_broker
         if broker is None:
-            broker = await resolve_broker(self.pool, symbol)
+            broker = await resolve_live_broker(self.pool, symbol, REGIME_INTERVAL)
+            if broker is None:  # sin datos o desactualizados: no operar
+                return pd.DataFrame()
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """

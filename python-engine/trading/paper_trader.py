@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
+from collectors.broker_resolver import resolve_live_broker
 
 load_dotenv()
 
@@ -79,9 +80,10 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def get_bars(self, symbol: str, interval: str, broker: str | None = None) -> pd.DataFrame:
-        from collectors.broker_resolver import resolve_broker
         if broker is None:
-            broker = await resolve_broker(self.pool, symbol)
+            broker = await resolve_live_broker(self.pool, symbol, interval)
+            if broker is None:  # sin datos o desactualizados: no operar
+                return pd.DataFrame()
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -432,16 +434,19 @@ class PaperTrader:
             if last_checkpoint.tzinfo is None:
                 last_checkpoint = last_checkpoint.replace(tzinfo=timezone.utc)
 
+            # Velas 1m de UNA sola fuente: si dos fuentes se solapan, sin este
+            # filtro cada minuto se evaluaría dos veces (y con precios distintos).
+            minute_broker = await resolve_live_broker(self.pool, symbol, '1', require_fresh=False)
             async with self.pool.acquire() as conn:
                 bars = await conn.fetch(
                     """
                     SELECT time, open, high, low, close
                     FROM ohlcv_data
-                    WHERE symbol = $1 AND interval = '1' AND time > $2 AND time <= $3
+                    WHERE broker = $4 AND symbol = $1 AND interval = '1' AND time > $2 AND time <= $3
                     ORDER BY time ASC
                     """,
-                    symbol, last_checkpoint, now
-                )
+                    symbol, last_checkpoint, now, minute_broker
+                ) if minute_broker else []
 
             exit_price    = None
             exit_reason   = None

@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from trading.bybit_client import get_current_price, bybit_sign
+from collectors.broker_resolver import resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.base_strategy import calculate_trailing_sl_standalone
 
@@ -788,9 +789,10 @@ class RealTrader:
 
     async def get_bars(self, symbol: str, interval: str, broker: str | None = None) -> list:
         import pandas as pd
-        from collectors.broker_resolver import resolve_broker
         if broker is None:
-            broker = await resolve_broker(self.pool, symbol)
+            broker = await resolve_live_broker(self.pool, symbol, interval)
+            if broker is None:  # sin datos o desactualizados: no operar
+                return []
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
