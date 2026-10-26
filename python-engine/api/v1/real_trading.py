@@ -362,12 +362,14 @@ async def reconcile(
                         )
                         logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} pnl recuperado en reintento: exit={exit_price} pnl_total={round(total_pnl,4)}")
                         results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_pnl_recovered'})
-                else:
-                    # Sigue sin aparecer — se deja 'orphaned' para el proximo
-                    # ciclo de reconciliacion, en vez de descartarlo como failed.
-                    logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: closed-pnl aun vacio, se reintentara en el proximo ciclo")
-                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
-                continue
+                    else:
+                        # Sigue sin aparecer — se deja 'orphaned' para el proximo
+                        # ciclo de reconciliacion, en vez de descartarlo como failed.
+                        logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: closed-pnl aun vacio, se reintentara en el proximo ciclo")
+                        results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
+                    continue
+
+                # Orphaned de APERTURA (confirmación perdida): ¿hay posición real en Bybit?
 
                 try:
                     position = await client.get_open_position(symbol)

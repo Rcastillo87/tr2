@@ -256,10 +256,6 @@ class BacktestingController extends Controller
         $symbols   = array_values((array) CollectorConfig::activeSymbols());
         $intervals = CollectorConfig::activeIntervals();
         $symbolBrokerMap = CollectorConfig::query()->select('symbol', 'broker')->distinct()->pluck('broker', 'symbol');
-        $paperConfigsForPreload = PaperStrategyConfig::active()->get(['display_name', 'strategy_class', 'symbol', 'interval', 'params'])->map(function ($c) {
-            $params = is_array($c->params) ? $c->params : json_decode($c->params, true);
-            return ['display_name' => $c->display_name, 'strategy_class' => $c->strategy_class, 'symbol' => $c->symbol, 'interval' => $c->interval, 'params' => $params];
-        })->values();
 
         $backtestToLoad = null;
         $strategyToLoad = null;
@@ -288,7 +284,6 @@ class BacktestingController extends Controller
             'symbols' => $symbols,
             'intervals' => $intervals,
             'symbolBrokerMap' => $symbolBrokerMap,
-            'paperConfigsForPreload' => $paperConfigsForPreload,
             'result' => $result,
             'implementParams' => $implementParams,
             'error' => $error,
@@ -297,31 +292,6 @@ class BacktestingController extends Controller
             'strategyToLoad' => $strategyToLoad,
         ]);
     }
-
-    /**
-     * Endpoint AJAX: devuelve los parametros exactos de una config activa de
-     * Paper Trading, para precargar el formulario de Backtesting al re-testear.
-     */
-
-
-
-
-
-    public function approve(\App\Models\Backtest $backtest)
-    {
-        Gate::authorize('viewAnalysisTools');
-        
-        // Desmarcar cualquier otro backtest aprobado para esta estrategia
-        \App\Models\Backtest::where('strategy_id', $backtest->strategy_id)
-            ->where('id', '!=', $backtest->id)
-            ->update(['approved' => false]);
-            
-        $backtest->approved = true;
-        $backtest->save();
-        
-        return redirect()->route('backtesting.history', $backtest->strategy_id)->with('status', 'Backtest aprobado para Paper Trading.');
-    }
-
 
     public function implementPaper(Backtest $backtest, StrategyConfigSync $sync)
     {
@@ -538,26 +508,6 @@ class BacktestingController extends Controller
         return $ok
             ? redirect()->route('backtesting.run', ['backtest_id' => $extra['backtest_id'] ?? null])->with('status', $message)
             : back()->withErrors(['error' => $message]);
-    }
-
-    public function retest(PaperStrategyConfig $config)
-    {
-        Gate::authorize('viewAnalysisTools');
-
-        $strategyName = PaperStrategyConfig::classAndModeToStrategyName(
-            $config->strategy_class,
-            $config->params['mode'] ?? null
-        );
-
-        return response()->json([
-            'strategy_name' => $strategyName,
-            'symbol'        => $config->symbol,
-            'interval'      => $config->interval,
-            'audited_months'  => $config->audited_months,
-            'avg_win_rate'    => $config->avg_win_rate,
-            'avg_monthly_pnl' => $config->avg_monthly_pnl,
-            'params'        => $config->params,
-        ]);
     }
 
     /**

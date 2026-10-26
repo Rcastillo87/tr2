@@ -5,7 +5,6 @@ use App\Http\Controllers\BrokerAccountController;
 use App\Http\Controllers\CollectorConfigController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaperTradingController;
-use App\Http\Controllers\PaperStrategyConfigController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RealStrategySubscriptionController;
 use App\Http\Controllers\TradingController;
@@ -27,14 +26,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/live', [PaperTradingController::class, 'live'])->name('live');
     });
 
-    // Configs de paper trading — usado desde backtesting
-    Route::middleware('can:manageUsers')->prefix('paper-trading/configs')->name('paper-trading.configs.')->group(function () {
-        Route::patch('/{config}/toggle', [PaperStrategyConfigController::class, 'toggleActive'])->name('toggle');
-        Route::post('/implement',        [PaperStrategyConfigController::class, 'implement'])->name('implement');
-        Route::post('/',                 [PaperStrategyConfigController::class, 'store'])->name('store');
-        Route::delete('/{config}',       [PaperStrategyConfigController::class, 'destroy'])->name('destroy');
-    });
-
     // Backtesting
     Route::middleware('can:viewAnalysisTools')->prefix('backtesting')->name('backtesting.')->group(function () {
         Route::get('/',                               [BacktestingController::class, 'index'])->name('index');
@@ -45,8 +36,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
                 Route::get('/history/{strategy}',             [BacktestingController::class, 'history'])->name('history');
-Route::get('/retest/{config}',                [BacktestingController::class, 'retest'])->name('retest');
-        Route::patch('/backtest/{backtest}/approve', [\App\Http\Controllers\BacktestingController::class, 'approve'])->name('approve');
         Route::post('/backtest/{backtest}/implement-paper', [\App\Http\Controllers\BacktestingController::class, 'implementPaper'])->name('implement-paper');
         Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
         Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');
