@@ -10,13 +10,13 @@ import pandas as pd
 import logging
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
-from collectors.broker_resolver import resolve_live_broker
+from collectors.broker_resolver import interval_delta, resolve_live_broker
 from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
@@ -77,9 +77,30 @@ class PaperTrader:
         logger.error(f"[PAPER] Trade #{trade['id']} sin snapshot ni config activa (#{config_id}): no se gestiona")
         return None
 
+    @staticmethod
+    def _fill(price: float, side: str, is_entry: bool, params: dict | None) -> float:
+        """Precio ejecutado con el slippage de la config, siempre en contra (igual que el backtest)."""
+        rate = float((params or {}).get('slippage_pct') or 0.0) / 100
+        buying = (side == 'long') == is_entry
+        return price * (1 + rate) if buying else price * (1 - rate)
+
+    @staticmethod
+    def _closed_bars(df: pd.DataFrame, interval: str, now: datetime) -> pd.DataFrame:
+        """Solo velas cerradas (time + intervalo <= ahora), guarde o no el collector la vela en formación."""
+        if df.empty:
+            return df
+        times = pd.to_datetime(df['time'], utc=True)
+        return df[(times + interval_delta(interval)) <= now].reset_index(drop=True)
+
     def _strategy_for_open_trade(self, trade: dict):
         params = self._trade_params(trade)
-        return build_strategy(params) if params is not None else None
+        if params is None:
+            return None
+        try:
+            return build_strategy(params)
+        except Exception as e:
+            logger.error(f"[PAPER] Trade #{trade['id']}: la estrategia del snapshot no se puede construir: {e}")
+            return None
 
     # ─────────────────────────────────────────────
     # Datos
@@ -178,14 +199,20 @@ class PaperTrader:
     # Abrir nueva posicion
     # ─────────────────────────────────────────────
 
-    async def open_trade(self, config_id: int, strategy_instance, side: str, entry_price: float, regime: str):
+    async def open_trade(self, config_id: int, strategy_instance, side: str, entry_price: float, regime: str,
+                         signal_sl_pct: float | None = None):
         cfg          = self.config_map[config_id]
         cfg_params   = self._get_params_for(config_id)  # los mismos con los que se construyó strategy_instance
         display_name = cfg['display_name']
         symbol       = cfg['symbol']
         interval     = cfg['interval']
+        entry_price  = self._fill(entry_price, side, True, cfg_params)
 
-        sl, _  = strategy_instance.calculate_sl_tp(entry_price, side)
+        if signal_sl_pct is not None:  # SL propuesto por la señal (mismo criterio que el backtest)
+            sl = round(entry_price * (1 - signal_sl_pct / 100) if side == 'long'
+                       else entry_price * (1 + signal_sl_pct / 100), 8)
+        else:
+            sl, _ = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
         tp_levels = strategy_instance.calculate_tp_levels(entry_price, side)
         tp, tp2, tp3, tp4 = tp_levels['tp1'], tp_levels['tp2'], tp_levels['tp3'], tp_levels['tp4']
@@ -232,9 +259,11 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def close_trade(self, trade: dict, exit_price: float, exit_reason: str):
-        entry_price = float(trade['entry_price'])
-        size        = float(trade['size'])
-        side        = trade['side']
+        entry_price  = float(trade['entry_price'])
+        size         = float(trade['size'])
+        side         = trade['side']
+        trade_params = self._trade_params(trade) or {}
+        exit_price   = self._fill(exit_price, side, False, trade_params)
 
         if side == 'long':
             gross_pnl = (exit_price - entry_price) * size
@@ -247,7 +276,7 @@ class PaperTrader:
         # Paper si la necesita para reflejar el costo real de operar, igual
         # que backtest - sin esto, Paper subestimaba resultados igual que
         # el backtest lo hacia antes del fix de 2026-07-09.
-        cfg_params = self._trade_params(trade) or {}  # comisión con la que se abrió el trade
+        cfg_params = trade_params  # comisión con la que se abrió el trade
         if 'commission_pct' in cfg_params:
             commission_pct = cfg_params['commission_pct'] / 100
         else:
@@ -291,45 +320,6 @@ class PaperTrader:
             f"{side.upper()} @ {exit_price} reason={exit_reason} pnl={round(pnl, 2)}"
         )
 
-    async def update_breakeven(self, trade_id: int, new_sl: float):
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE paper_trades SET sl = $1, be_activated = true, updated_at = now() WHERE id = $2",
-                new_sl, trade_id
-            )
-
-    async def update_trailing_sl(self, trade_id: int, new_sl: float):
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE paper_trades SET sl = $1, trailing_applied = true, updated_at = now() WHERE id = $2",
-                new_sl, trade_id
-            )
-
-    async def update_volatility_widen(self, trade_id: int, new_sl: float):
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE paper_trades SET sl = $1, updated_at = now() WHERE id = $2",
-                new_sl, trade_id
-            )
-
-    async def update_max_excursion(self, trade_id: int, floating_pnl_pct: float,
-                                    current_max_profit: float, current_max_loss: float):
-        new_max_profit = max(current_max_profit, floating_pnl_pct)
-        new_max_loss   = min(current_max_loss, floating_pnl_pct)
-
-        if new_max_profit == current_max_profit and new_max_loss == current_max_loss:
-            return
-
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE paper_trades
-                SET max_profit_pct = $1, max_loss_pct = $2, updated_at = now()
-                WHERE id = $3
-                """,
-                round(new_max_profit, 4), round(new_max_loss, 4), trade_id
-            )
-
     # ─────────────────────────────────────────────
     # Monitor: revisar posiciones abiertas
     # ─────────────────────────────────────────────
@@ -361,9 +351,6 @@ class PaperTrader:
                 continue
             sl       = float(trade['sl'])
             tp       = float(trade['tp'])
-            tp2      = float(trade['tp2']) if trade.get('tp2') is not None else None
-            tp3      = float(trade['tp3']) if trade.get('tp3') is not None else None
-            tp4      = float(trade['tp4']) if trade.get('tp4') is not None else None
             be_level = float(trade['be_level'])
             be_activated = bool(trade['be_activated'])
             trailing_applied = bool(trade.get('trailing_applied', False))
@@ -387,63 +374,48 @@ class PaperTrader:
                     WHERE broker = $4 AND symbol = $1 AND interval = '1' AND time > $2 AND time <= $3
                     ORDER BY time ASC
                     """,
-                    symbol, last_checkpoint, now, minute_broker
+                    symbol, last_checkpoint, now - timedelta(minutes=1), minute_broker  # solo 1m cerradas
                 ) if minute_broker else []
+            if minute_broker is None:
+                logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: sin velas de 1m; SL/TP no evaluados este ciclo")
 
             exit_price    = None
             exit_reason   = None
             last_bar_time = last_checkpoint
+
+            # ATR de la última vela CERRADA del intervalo (trailing ATR y protección por volatilidad)
+            needs_atr = (getattr(strategy_instance, 'volatility_protection_mode', None) is not None
+                         or getattr(strategy_instance, 'trailing_mode', None) == 'atr')
+            closed_atr = closed_atr_avg = None
+            if needs_atr:
+                vbars = self._closed_bars(await self.get_bars(symbol, trade['interval']), trade['interval'], now)
+                if len(vbars) >= 51:
+                    atr_series = calculate_atr(vbars)
+                    closed_atr = float(atr_series.iloc[-1])
+                    closed_atr_avg = float(atr_series.rolling(50).mean().iloc[-1])
 
             for bar in bars:
                 high  = float(bar['high'])
                 low   = float(bar['low'])
                 last_bar_time = bar['time']
 
-                if not be_activated:
-                    if side == 'long' and high >= be_level:
-                        sl = entry
-                        be_activated = True
-                        results["be_activated"] += 1
-                    elif side == 'short' and low <= be_level:
-                        sl = entry
-                        be_activated = True
-                        results["be_activated"] += 1
-
-                # NOTA (2026-07-09): distinguir si el SL que disparo el cierre
-                # es el original o uno ya movido por el trailing (mismo fix
-                # aplicado en real_trader.py) - trailing_applied refleja si
-                # el trailing ya actuo en una vela anterior de este mismo loop.
+                # Mismo orden que el motor V3: SL vigente -> TP1 -> break-even -> trailing
                 sl_label = 'trailing_stop' if trailing_applied else 'stop_loss'
-                if side == 'long' and low <= sl:
+                if (side == 'long' and low <= sl) or (side == 'short' and high >= sl):
                     exit_price, exit_reason = sl, sl_label
-                elif side == 'short' and high >= sl:
-                    exit_price, exit_reason = sl, sl_label
-
-                if exit_price is None and getattr(strategy_instance, 'trailing_mode', None) is not None:
-                    ref_price = high if side == 'long' else low
-                    new_sl = strategy_instance.calculate_trailing_sl(entry, side, ref_price, sl)
-                    if new_sl != sl:
-                        sl = new_sl
-                        trailing_applied = True
-
-                if exit_price is None and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
-                    vbars = await self.get_bars(symbol, trade['interval'])
-                    if not vbars.empty and len(vbars) >= 51:
-                        atr_series = calculate_atr(vbars)
-                        current_atr = float(atr_series.iloc[-1])
-                        avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
-                        vol_check = strategy_instance.check_volatility_protection(sl, side, current_atr, avg_atr)
-                        if vol_check['action'] == 'close':
-                            exit_price, exit_reason = float(bar['close']), 'volatility_protection'
-                        elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
-                            sl = vol_check['new_sl']
-
-                # Solo TP1 — mismo criterio que engine.py y real_trader.py
-                if exit_price is None:
-                    if side == 'long' and high >= tp:
-                        exit_price, exit_reason = tp, 'take_profit_1'
-                    elif side == 'short' and low <= tp:
-                        exit_price, exit_reason = tp, 'take_profit_1'
+                elif (side == 'long' and high >= tp) or (side == 'short' and low <= tp):
+                    exit_price, exit_reason = tp, 'take_profit_1'
+                else:
+                    if not be_activated and ((side == 'long' and high >= be_level) or (side == 'short' and low <= be_level)):
+                        sl = max(sl, entry) if side == 'long' else min(sl, entry)
+                        be_activated = True
+                        results["be_activated"] += 1
+                    if getattr(strategy_instance, 'trailing_mode', None) is not None:
+                        new_sl = strategy_instance.calculate_trailing_sl(
+                            entry, side, high if side == 'long' else low, sl, current_atr=closed_atr)
+                        if new_sl != sl:
+                            sl = new_sl
+                            trailing_applied = True
 
                 fav_price = high if side == 'long' else low
                 adv_price = low if side == 'long' else high
@@ -456,6 +428,15 @@ class PaperTrader:
 
                 if exit_price is not None:
                     break
+
+            # Protección por volatilidad: una vez por ciclo, con la última vela cerrada del intervalo
+            if exit_price is None and bars and closed_atr is not None and closed_atr_avg is not None \
+                    and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
+                vol_check = strategy_instance.check_volatility_protection(sl, side, closed_atr, closed_atr_avg)
+                if vol_check['action'] == 'close':
+                    exit_price, exit_reason = float(bars[-1]['close']), 'volatility_protection'
+                elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
+                    sl = vol_check['new_sl']
 
             if exit_price is not None:
                 await self.close_trade(trade, exit_price, exit_reason)
@@ -480,16 +461,19 @@ class PaperTrader:
             entry_time = trade['entry_time']
             if entry_time.tzinfo is None:
                 entry_time = entry_time.replace(tzinfo=timezone.utc)
-            hours_open = (now - entry_time).total_seconds() / 3600
-            if hours_open >= strategy_instance.max_duration:
-                if bars:
-                    last_price = float(bars[-1]['close'])
-                else:
-                    last_price = await get_current_price(symbol)
-                    if last_price is None:
-                        last_price = sl
-                await self.close_trade(trade, last_price, 'time_exit')
-                results["closed"] += 1
+            max_bars = int(getattr(strategy_instance, 'max_duration', 0) or 0)
+            if max_bars > 0 and now - entry_time >= interval_delta(trade['interval']) * max_bars:
+                last_price = float(bars[-1]['close']) if bars else await get_current_price(symbol)
+                if last_price is None:
+                    logger.warning(f"[PAPER] Trade #{trade['id']}: duración máxima cumplida pero sin precio; reintento próximo ciclo")
+                    continue
+                in_profit = last_price > entry if side == 'long' else last_price < entry
+                if not getattr(strategy_instance, 'max_duration_profit', False):
+                    await self.close_trade(trade, last_price, 'time_exit')
+                    results["closed"] += 1
+                elif in_profit:
+                    await self.close_trade(trade, last_price, 'time_exit_profit')
+                    results["closed"] += 1
 
         return results
 
@@ -554,9 +538,13 @@ class PaperTrader:
                 results[label] = f"{symbol}: ya tiene posicion abierta"
                 continue
 
-            df = await self.get_bars(symbol, interval)
+            now = datetime.now(timezone.utc)
+            df = self._closed_bars(await self.get_bars(symbol, interval), interval, now)
             if len(df) < 64:
                 results[label] = f"{symbol}: datos insuficientes o desactualizados"
+                continue
+            if pd.to_datetime(df['time'].iloc[-1], utc=True) + 2 * interval_delta(interval) <= now:
+                results[label] = f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera"
                 continue
 
             try:
@@ -577,7 +565,7 @@ class PaperTrader:
             df = strategy.prepare(df)
             df = strategy.generate_signals(df)
 
-            last_closed = df.iloc[-2]
+            last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas
             signal = int(last_closed['signal'])
             if signal == 0:
                 results[label] = f"{symbol}: sin senal"
@@ -603,7 +591,9 @@ class PaperTrader:
                 results[label] = f"{symbol}: error obteniendo precio"
                 continue
 
-            await self.open_trade(config_id, strategy, side, entry_price, regime)
+            raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
+            signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
+            await self.open_trade(config_id, strategy, side, entry_price, regime, signal_sl_pct)
             results[label] = f"{symbol}: ABIERTA {side} @ {entry_price} (regime={regime})"
 
         return results

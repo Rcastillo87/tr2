@@ -234,16 +234,18 @@ class BacktestEngine:
                 continue
 
             # 3. Gestión DURANTE la vela i (incluida la vela de entrada)
-            bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None
+            # Trailing durante la vela i: ATR de la vela i-1 (cerrada). El de i incluye su high/low.
+            trail_atr = float(atr[i - 1]) if needs_atr and not np.isnan(atr[i - 1]) else None
+            bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None  # al cierre de i
             sub = self._sub_bars(bar_time, bar_time + step)
             level = reason = None
             if sub is not None:
                 for h, l in zip(*sub):
-                    level, reason = self._step(pos, float(h), float(l), bar_atr)
+                    level, reason = self._step(pos, float(h), float(l), trail_atr)
                     if level is not None:
                         break
             else:
-                level, reason = self._step(pos, highs[i], lows[i], bar_atr)
+                level, reason = self._step(pos, highs[i], lows[i], trail_atr)
 
             bars_held = i - pos['entry_bar'] + 1
             if level is None and needs_atr and getattr(s, 'volatility_protection_mode', None):

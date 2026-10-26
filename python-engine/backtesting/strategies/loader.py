@@ -3,7 +3,7 @@ Construcción de la instancia de estrategia a partir de un dict de parámetros.
 
 Fuente única para paper (señales y gestión de posiciones abiertas): mismo
 criterio que el backtest. Si params trae 'strategy_code', se compila la clase
-dinámica (una sola vez por código, cacheada); si no, BaseStrategy.
+dinámica (una sola vez por código, cacheada); sin código es un error explícito.
 'strategy_config' (parámetros propios de la estrategia) queda por debajo de los
 parámetros de operación (sl_pct, trailing, filtros...), igual que en el backtest.
 """
@@ -30,6 +30,6 @@ def build_strategy(params: dict) -> BaseStrategy:
     merged.update(params)
     code = (params.get('strategy_code') or '').strip()
     if not code:
-        return BaseStrategy(merged)
+        raise ValueError("La configuración no trae strategy_code: no hay estrategia que ejecutar.")
     cls = _compile_strategy_class(code)
     return cls(merged)
