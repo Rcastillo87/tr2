@@ -16,6 +16,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from trading.real_trader import RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError
+from trading.risk_manager import RiskManager
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -112,6 +113,11 @@ async def _process_account(trader, account):
 
         monitor_result = await trader.monitor_open_trades(account.id, client)
         account_results["monitor"] = monitor_result
+
+        # Kill switch manual: sin entradas nuevas (las abiertas ya se gestionaron arriba)
+        if await RiskManager(trader.pool).is_kill_switch_active():
+            account_results["signals"] = "KILL SWITCH activo — sin nuevas entradas"
+            return account_key, account_results
 
         signal_results = {}
         for sub in account.subscriptions:

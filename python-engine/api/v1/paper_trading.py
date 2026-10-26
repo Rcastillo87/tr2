@@ -12,7 +12,6 @@ from fastapi import APIRouter, HTTPException
 from dotenv import load_dotenv
 
 from trading.paper_trader import PaperTrader
-from trading.risk_manager import RiskManager
 from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
@@ -85,12 +84,6 @@ async def paper_tick():
 
         config_map = build_config_map(configs)
 
-        risk_manager = RiskManager(pool)
-        risk_results = await risk_manager.evaluate(
-            strategies=[cfg['display_name'] for cfg in config_map.values()],
-            symbols=list({cfg['symbol'] for cfg in config_map.values()}),
-        )
-
         trader = PaperTrader(pool, DEFAULT_PARAMS, config_map)
 
         monitor_results = await trader.monitor_open_trades()
@@ -101,7 +94,6 @@ async def paper_tick():
         return {
             "status":  "ok",
             "configs": len(configs),
-            "risk":    risk_results,
             "monitor": monitor_results,
             "signals": signal_results,
         }

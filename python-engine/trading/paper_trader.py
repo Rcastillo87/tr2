@@ -512,9 +512,7 @@ class PaperTrader:
                 results[self._label(cfg)] = "KILL SWITCH activo — sin nuevas entradas"
             return results
 
-        # NOTA (2026-07-09): se quito el chequeo de is_paused() (pausas automáticas
-        # por volatilidad, tabla risk_controls). Real no tiene un filtro equivalente y
-        # Paper debe aproximar a Real; el kill switch manual SI se mantiene.
+        # Solo el kill switch manual (igual que real); sin pausas automáticas (no las simula el backtest).
 
         for config_id, cfg in self.config_map.items():
             label    = self._label(cfg)
