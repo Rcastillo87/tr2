@@ -27,7 +27,7 @@ BYBIT_BASE_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 FALLBACK_SYMBOLS   = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
 FALLBACK_INTERVALS = os.getenv('INTERVALS', '1,5,15,60,120').split(',')
 
-BYBIT_LIMIT  = 200
+BYBIT_LIMIT  = 1000  # máximo permitido por /v5/market/kline
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
 IG_HISTORY_DAYS = 365  # 1 año (IG tiene cuota semanal de 10,000 puntos)
 
@@ -307,53 +307,61 @@ class OhlcvCollector:
     # ─────────────────────────────────────────────
 
     async def save_bars(self, bars: list[dict], broker: str = 'bybit') -> int:
-        """Guarda velas en ohlcv_data. Requiere broker explícito (default 'bybit'
-        para compatibilidad, pero los callers DEBEN pasar el broker real de
-        collector_configs — de lo contrario EURUSD/GBPUSD/XAUUSD quedarían
-        mal etiquetados como 'bybit').
+        """
+        UPSERT de velas en ohlcv_data. Devuelve las filas REALMENTE escritas.
 
-        ON CONFLICT incluye broker porque el índice UNIQUE es
-        (broker, symbol, interval, time) desde la migración Fase 1.
-        Sin broker en el ON CONFLICT, Postgres lanza:
-        'there is no unique or exclusion constraint matching the ON CONFLICT specification'.
+        DO UPDATE es obligatorio: el collector descarga la vela en formación y la
+        vuelve a descargar cada minuto hasta que cierra. Con DO NOTHING quedaba
+        congelada con los OHLC de su primera descarga (~25 s de vida).
+        El WHERE evita reescribir filas idénticas (WAL y bloat innecesarios).
+        broker debe ser el real de collector_configs (no asumir 'bybit').
         """
         if not bars:
             return 0
 
+        series: dict[tuple[str, str], list[dict]] = {}
+        for b in bars:
+            series.setdefault((b['symbol'], b['interval']), []).append(b)
+
+        written = 0
         async with self.pool.acquire() as conn:
-            await conn.executemany(
-                """
-                INSERT INTO ohlcv_data
-                    (time, broker, symbol, interval, open, high, low, close, volume)
-                VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (broker, symbol, interval, time)
-                DO NOTHING
-                """,
-                [
-                    (
-                        b['time'], broker, b['symbol'], b['interval'],
-                        b['open'], b['high'], b['low'],
-                        b['close'], b['volume'],
-                    )
-                    for b in bars
-                ]
-            )
-        return len(bars)
+            for (symbol, interval), rows in series.items():
+                status = await conn.execute(
+                    """
+                    INSERT INTO ohlcv_data (time, broker, symbol, interval, open, high, low, close, volume)
+                    SELECT u.t, $2, $3, $4, u.o, u.h, u.l, u.c, u.v
+                    FROM unnest($1::timestamptz[], $5::float8[], $6::float8[], $7::float8[],
+                                $8::float8[], $9::float8[]) AS u(t, o, h, l, c, v)
+                    ON CONFLICT (broker, symbol, interval, time) DO UPDATE
+                    SET open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
+                        close = EXCLUDED.close, volume = EXCLUDED.volume
+                    WHERE (ohlcv_data.open, ohlcv_data.high, ohlcv_data.low, ohlcv_data.close, ohlcv_data.volume)
+                          IS DISTINCT FROM
+                          (EXCLUDED.open, EXCLUDED.high, EXCLUDED.low, EXCLUDED.close, EXCLUDED.volume)
+                    """,
+                    [r['time'] for r in rows], broker, symbol, interval,
+                    [float(r['open']) for r in rows], [float(r['high']) for r in rows],
+                    [float(r['low']) for r in rows], [float(r['close']) for r in rows],
+                    [float(r['volume']) for r in rows],
+                )
+                written += int(status.split()[-1])
+        return written
 
     # ─────────────────────────────────────────────
     # Último timestamp guardado
     # ─────────────────────────────────────────────
 
-    async def get_last_timestamp(self, symbol: str, interval: str) -> Optional[datetime]:
+    async def get_last_timestamp(self, symbol: str, interval: str, broker: str = 'bybit') -> Optional[datetime]:
+        """Última vela de ESTE broker (otras fuentes no cuentan: crearían huecos)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT MAX(time) as last_time
+                SELECT time AS last_time
                 FROM ohlcv_data
-                WHERE symbol = $1 AND interval = $2
+                WHERE broker = $1 AND symbol = $2 AND interval = $3
+                ORDER BY time DESC LIMIT 1
                 """,
-                symbol, interval
+                broker, symbol, interval
             )
             return row['last_time'] if row else None
 
@@ -363,7 +371,7 @@ class OhlcvCollector:
 
     async def initial_load(self, symbol: str, interval: str,
                             broker: str = 'bybit', epic: Optional[str] = None) -> int:
-        last = await self.get_last_timestamp(symbol, interval)
+        last = await self.get_last_timestamp(symbol, interval, broker)
 
         if last:
             logger.info(f"[{symbol}/{interval}] Ya tiene datos hasta {last} — saltando carga inicial")
@@ -392,7 +400,7 @@ class OhlcvCollector:
 
     async def update(self, symbol: str, interval: str,
                       broker: str = 'bybit', epic: Optional[str] = None) -> int:
-        last = await self.get_last_timestamp(symbol, interval)
+        last = await self.get_last_timestamp(symbol, interval, broker)
 
         if not last:
             return await self.initial_load(symbol, interval, broker, epic)

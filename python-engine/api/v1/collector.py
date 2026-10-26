@@ -48,9 +48,9 @@ async def initial_load():
         active_configs = await collector.get_active_configs()
 
         results = {}
-        for symbol, interval in active_configs:
+        for symbol, interval, broker, epic in active_configs:
             try:
-                saved = await collector.initial_load(symbol, interval)
+                saved = await collector.initial_load(symbol, interval, broker, epic)
                 results[f"{symbol}/{interval}"] = saved
             except Exception as e:
                 logger.error(f"[{symbol}/{interval}] Error en carga inicial: {e}")
@@ -77,8 +77,8 @@ async def collector_status():
         active_configs = await collector.get_active_configs()
 
         status = {}
-        for symbol, interval in active_configs:
-            last = await collector.get_last_timestamp(symbol, interval)
+        for symbol, interval, broker, _epic in active_configs:
+            last = await collector.get_last_timestamp(symbol, interval, broker)
             status[f"{symbol}/{interval}"] = {
                 "last_candle": last.isoformat() if last else None,
                 "has_data":    last is not None,

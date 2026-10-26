@@ -48,3 +48,6 @@ Thumbs.db
 Homestead.json
 Homestead.yaml
 *.bak_*
+
+# Python cache de pruebas forenses
+/tests/**/__pycache__/
