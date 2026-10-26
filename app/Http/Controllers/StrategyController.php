@@ -58,7 +58,7 @@ class StrategyController extends Controller
             $validated['config'] = [];
         }
 
-        $this->runSmokeTest($validated['code']);
+        $this->runSmokeTest($validated['code'], $validated['config']);
 
         try {
             Strategy::create($validated);
@@ -102,7 +102,7 @@ class StrategyController extends Controller
             $validated['config'] = [];
         }
 
-        $this->runSmokeTest($validated['code']);
+        $this->runSmokeTest($validated['code'], $validated['config']);
 
         $strategy->update($validated);
         return redirect()->route('strategies.index')->with('status', 'Estrategia actualizada y validada correctamente.');
@@ -133,14 +133,15 @@ class StrategyController extends Controller
         return back()->with('status', "Estrategia {$name} eliminada.");
     }
 
-    private function runSmokeTest($code)
+    /** Backtest real de 90 días en BTCUSDT H1: la estrategia debe generar al menos una operación. */
+    private function runSmokeTest(string $code, array $config = []): void
     {
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(30)->post(
+            ])->timeout(60)->post(
                 config('trading.python_engine_url') . '/v1/strategies/validate',
-                ['code' => $code, 'type' => 'python', 'run_backtest' => true]
+                ['code' => $code, 'type' => 'python', 'run_backtest' => true, 'config' => (object) $config]
             );
 
             if (!$response->successful()) {
@@ -153,7 +154,7 @@ class StrategyController extends Controller
             $trades = $response->json('trades');
             if ($trades !== null && $trades == 0) {
                 throw ValidationException::withMessages([
-                    'code' => "❌ Falló el Smoke Test: La estrategia no abrió ninguna operación en el último mes. Revisa la lógica o los filtros."
+                    'code' => "❌ Falló el Smoke Test: La estrategia no abrió ninguna operación en el backtest de prueba (últimos 90 días, BTCUSDT H1). Revisa la lógica o los filtros."
                 ]);
             }
 

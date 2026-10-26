@@ -480,10 +480,14 @@ class ValidateStrategyRequest(BaseModel):
     run_backtest: bool = False
     code: str
     type: str = "python"
+    config: Optional[dict] = None   # config propia de la estrategia (strategy_config)
+    symbol: str = "BTCUSDT"
+    interval: str = "60"
+    days: int = 90
 
 @router.post("/strategies/validate")
 async def validate_strategy_code(req: ValidateStrategyRequest):
-    """Smoke test: valida sintaxis y ejecuta 1 mes de backtest."""
+    """Smoke test: valida sintaxis y ejecuta un backtest REAL de los últimos `days` días."""
     if req.type == "json":
         try:
             import json
@@ -505,13 +509,26 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
             raise HTTPException(status_code=400, detail=f"Clase '{parts[0]}' no registrada en el motor.")
 
     if req.run_backtest:
+        end = datetime.now(timezone.utc).date() - timedelta(days=1)   # último día completo
+        start = end - timedelta(days=req.days - 1)
+        smoke = BacktestRequest(
+            strategy='smoke-test', strategy_code=req.code, strategy_config=req.config or {},
+            symbol=req.symbol, interval=req.interval,
+            start_date=start.isoformat(), end_date=end.isoformat(),
+            walk_forward=False, monthly_breakdown=False,
+        )
         try:
-            if "def generate_signals" in req.code or "class " in req.code or "|" in req.code:
-                return {"status": "ok", "message": "Smoke Test exitoso", "trades": 15}
-            else:
-                return {"status": "ok", "message": "Estrategia válida pero sin operaciones", "trades": 0}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error en Smoke Test: {str(e)}")
+            out = await run_backtest(smoke)
+        except HTTPException as e:
+            raise HTTPException(status_code=400, detail=f"Error en Smoke Test: {e.detail}")
+        trades = int(out['result']['metrics']['total_trades'])
+        scope = f"{req.symbol} {req.interval}, {start} → {end}"
+        return {
+            "status": "ok",
+            "message": f"Smoke Test: {trades} operaciones ({scope})" if trades else f"Sin operaciones ({scope})",
+            "trades": trades,
+            "warnings": out.get('warnings', []),
+        }
 
     return {"status": "ok", "message": "Sintaxis Python válida"}
 
