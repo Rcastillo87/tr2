@@ -45,6 +45,16 @@ def interval_delta(interval: str) -> timedelta:
         raise ValueError(f"Intervalo desconocido: {interval!r}") from None
 
 
+def closed_bars(df, interval: str, now: datetime | None = None):
+    """Solo velas cerradas (time + intervalo <= ahora), guarde o no el collector la vela en formación."""
+    if df is None or len(df) == 0:
+        return df
+    import pandas as pd
+    now = now or datetime.now(timezone.utc)
+    times = pd.to_datetime(df['time'], utc=True)
+    return df[(times + interval_delta(interval)) <= now].reset_index(drop=True)
+
+
 def _utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None

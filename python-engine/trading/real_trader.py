@@ -22,20 +22,20 @@ Cierre de posiciones:
 
 import asyncpg
 import asyncio
-import hashlib
-import hmac
 import httpx
 import json
 import logging
+import math
 import os
-import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from trading.bybit_client import get_current_price, bybit_sign
-from collectors.broker_resolver import resolve_live_broker
+import pandas as pd
+
+from trading.bybit_client import bybit_sign
+from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
-from backtesting.strategies.base_strategy import calculate_trailing_sl_standalone
+from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -75,7 +75,8 @@ def compute_native_trailing_params(entry_price, side, trailing_distance_pct, buf
 # Circuit breaker: pausar cuenta tras N errores consecutivos de API
 CIRCUIT_BREAKER_THRESHOLD = 3
 
-# Comision estimada Bybit (taker) — se actualiza con el valor real al cerrar
+# Comisión taker de Bybit por lado (cierres hechos por el bot). Los cierres detectados
+# en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
 BYBIT_TAKER_FEE = 0.00055  # 0.055%
 
 
@@ -135,29 +136,6 @@ class BybitClient:
         except Exception as e:
             logger.error(f"[BYBIT] get_closed_pnl_history exception: {e}")
             return []
-
-    async def get_closed_pnl(self, symbol: str) -> dict | None:
-        """Obtiene el ultimo trade cerrado de Bybit para obtener precio de salida y razon."""
-        params = {'category': 'linear', 'limit': '1', 'symbol': symbol}
-        # Construir query string ordenado para que coincida con la firma
-        query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
-        headers = self._sign(params)
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f'{self.base_url}/v5/position/closed-pnl?{query_string}',
-                    headers=headers,
-                )
-            data = r.json()
-            if data.get('retCode') == 0:
-                items = data.get('result', {}).get('list', [])
-                if items:
-                    return items[0]
-            else:
-                logger.error(f"[BYBIT] get_closed_pnl error: {data.get('retMsg')}")
-        except Exception as e:
-            logger.error(f"[BYBIT] get_closed_pnl exception: {e}")
-        return None
 
     async def get_market_price(self, symbol: str) -> float | None:
         """Obtiene precio actual usando la URL correcta (testnet o mainnet)."""
@@ -324,47 +302,6 @@ class BybitClient:
                         await asyncio.sleep(2)
             except Exception as e:
                 logger.error(f"[BYBIT] place_order exception (attempt {attempt+1}): {e}")
-                if attempt < 2:
-                    await asyncio.sleep(2)
-
-        return None
-
-    async def place_reduce_only_order(self, symbol: str, side: str, qty: float) -> dict | None:
-        """
-        Coloca una orden MARKET reduceOnly para cerrar parcialmente una
-        posicion (usada para TP2/TP3/TP4 manuales). No adjunta SL/TP -
-        Bybit rechaza la orden si reduceOnly=true viene junto con
-        stopLoss/takeProfit en el mismo request.
-        """
-        body = {
-            "category":   "linear",
-            "symbol":     symbol,
-            "side":       side,
-            "orderType":  "Market",
-            "qty":        str(qty),
-            "reduceOnly": True,
-        }
-        headers = self._sign_body(body)
-
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    r = await client.post(
-                        f"{self.base_url}/v5/order/create",
-                        content=json.dumps(body, separators=(",", ":"), ensure_ascii=True).encode(),
-                        headers=headers,
-                    )
-                data = r.json()
-                if data.get("retCode") == 0:
-                    return data["result"]
-                else:
-                    retmsg = data.get("retMsg")
-                    retcode = data.get("retCode")
-                    logger.error(f"[BYBIT] place_reduce_only_order error (attempt {attempt+1}): {retmsg} code={retcode}")
-                    if attempt < 2:
-                        await asyncio.sleep(2)
-            except Exception as e:
-                logger.error(f"[BYBIT] place_reduce_only_order exception (attempt {attempt+1}): {e}")
                 if attempt < 2:
                     await asyncio.sleep(2)
 
@@ -584,7 +521,8 @@ class RealTrader:
                 continue
 
             if trade.get("trailing_applied") and live_sl:
-                _, trailing_dist_pct = await self.get_trailing_config(trade["id"])
+                snap = self._snapshot(trade)
+                trailing_dist_pct = float(snap["trailing_distance_pct"]) if snap.get("trailing_distance_pct") else None
                 if trailing_dist_pct:
                     reference_price = live_sl
                     max_allowed_loss_pct = (trailing_dist_pct / 100) * max_loss_multiplier
@@ -629,35 +567,70 @@ class RealTrader:
         return results
 
     async def get_open_trades(self, account_id: int) -> list[dict]:
+        """Trades vivos con sus parámetros congelados (snapshot; config de la suscripción si es anterior)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, subscription_id, strategy, symbol, interval, side,
-                       entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated,
-                       size, original_size, tp2_hit, tp3_hit, tp4_hit, realized_pnl_partial,
-                       entry_time, updated_at, order_id, balance_before, status,
-                       trailing_applied, original_sl
-                FROM real_trades
-                WHERE broker_account_id = $1
-                  AND status IN ('open', 'pending_close')
+                SELECT rt.id, rt.subscription_id, rt.strategy, rt.symbol, rt.interval, rt.side,
+                       rt.entry_price, rt.sl, rt.tp, rt.tp2, rt.tp3, rt.tp4, rt.be_level, rt.be_activated,
+                       rt.size, rt.original_size, rt.realized_pnl_partial,
+                       rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
+                       rt.trailing_applied, rt.original_sl,
+                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot
+                FROM real_trades rt
+                LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
+                LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
+                WHERE rt.broker_account_id = $1
+                  AND rt.status IN ('open', 'pending_close')
                 """,
                 account_id
             )
         return [dict(r) for r in rows]
 
-    async def get_trailing_config(self, trade_id):
-        q = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'trailing_mode' as trailing_mode, "
-        q += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_distance_pct' as trailing_distance_pct FROM real_trades rt"
-        q += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-        q += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-        q += " WHERE rt.id = $1"
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(q, trade_id)
-        if not row:
+    # ─────────────────────────────────────────────
+    # Parámetros y niveles (mismas fórmulas que backtest y paper)
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def _snapshot(trade: dict) -> dict:
+        snap = trade.get('config_snapshot')
+        if isinstance(snap, str):
+            snap = json.loads(snap)
+        return snap or {}
+
+    def _trade_strategy(self, trade: dict):
+        """Estrategia con los parámetros CONGELADOS del trade. None si no se puede construir."""
+        params = self._snapshot(trade)
+        if not params:
+            logger.error(f"[REAL] Trade #{trade['id']}: sin config_snapshot ni config de suscripción")
+            return None
+        try:
+            return build_strategy({**params, 'symbol': trade['symbol'], 'interval': trade['interval']})
+        except Exception as e:
+            logger.error(f"[REAL] Trade #{trade['id']}: la estrategia del snapshot no se puede construir: {e}")
+            return None
+
+    @staticmethod
+    def _effective_sl_pct(strategy, params: dict | None) -> float:
+        """SL propuesto por la señal al abrir (si lo hubo); si no, el sl_pct de la config."""
+        sig = (params or {}).get('signal_sl_pct')
+        return float(sig) if sig is not None else float(strategy.sl_pct)
+
+    @staticmethod
+    def _levels(strategy, price: float, side: str, sl_pct: float) -> tuple:
+        """(sl, tp1, tp2, tp3, tp4, be) desde un precio de referencia."""
+        sl = round(price * (1 - sl_pct / 100) if side == 'long' else price * (1 + sl_pct / 100), 8)
+        tps = strategy.calculate_tp_levels(price, side)
+        be = round(strategy.calculate_breakeven(price, side), 8)
+        return sl, tps['tp1'], tps.get('tp2'), tps.get('tp3'), tps.get('tp4'), be
+
+    async def _closed_atr(self, symbol: str, interval: str) -> tuple[float | None, float | None]:
+        """(ATR, media 50 del ATR) de la última vela CERRADA del intervalo."""
+        df = closed_bars(await self.get_bars(symbol, interval), interval)
+        if df is None or len(df) < 51:
             return None, None
-        mode = row["trailing_mode"]
-        dist = float(row["trailing_distance_pct"]) if row["trailing_distance_pct"] else None
-        return mode, dist
+        atr = calculate_atr(df)
+        return float(atr.iloc[-1]), float(atr.rolling(50).mean().iloc[-1])
 
     async def has_open_trade(self, subscription_id: int, symbol: str) -> bool:
         # Verifica por simbolo Y por broker_account_id — evita duplicados entre suscripciones del mismo simbolo
@@ -719,33 +692,6 @@ class RealTrader:
             )
         logger.info(f"[CIRCUIT] Errores no criticos limpiados para cuenta {account_id}")
 
-    async def get_last_error_messages(self, account_id: int) -> list:
-        """Obtiene los mensajes de error recientes para clasificar el circuit breaker."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT error_message FROM real_trades
-                WHERE broker_account_id = $1 AND status = 'error'
-                AND updated_at >= NOW() - INTERVAL '2 hours'
-                ORDER BY updated_at DESC LIMIT 5
-                """,
-                account_id
-            )
-        return [r['error_message'] for r in rows]
-
-    async def clear_non_critical_errors(self, account_id: int):
-        """Marca errores no criticos como 'ignored' para no contar en el circuit breaker."""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE real_trades SET status = 'ignored', updated_at = now()
-                WHERE broker_account_id = $1 AND status = 'error'
-                AND updated_at >= NOW() - INTERVAL '2 hours'
-                """,
-                account_id
-            )
-        logger.info(f"[CIRCUIT] Errores no criticos limpiados para cuenta {account_id}")
-
     async def pause_account(self, account_id: int, reason: str):
         """Pausa la cuenta automaticamente (circuit breaker)."""
         async with self.pool.acquire() as conn:
@@ -755,40 +701,40 @@ class RealTrader:
             )
         logger.warning(f"[REAL] Circuit breaker activado — cuenta {account_id} pausada: {reason}")
 
+    @staticmethod
+    def _audit_list(raw) -> list:
+        """audit_log normalizado a lista (filas antiguas: string JSON, incluso doble)."""
+        for _ in range(2):
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except ValueError:
+                    return []
+        return raw if isinstance(raw, list) else []
+
     async def log_audit(self, trade_id: int, action: str, data: dict):
-        """Agrega entrada al audit_log del trade."""
+        """Agrega una entrada al audit_log del trade."""
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
-                raw = row['audit_log'] if row and row['audit_log'] else []
-                # Normalizar a lista — puede venir como str, str-dentro-str, lista o None
-                if isinstance(raw, list):
-                    existing = raw
-                elif isinstance(raw, str):
-                    try:
-                        parsed = json.loads(raw)
-                        # Doble encode: "[{...}]" -> parsea a string -> parsear de nuevo
-                        if isinstance(parsed, str):
-                            parsed = json.loads(parsed)
-                        existing = parsed if isinstance(parsed, list) else []
-                    except Exception:
-                        existing = []
-                else:
-                    existing = []
-                existing.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
-                await conn.execute(
-                    "UPDATE real_trades SET audit_log = $1::jsonb, updated_at = now() WHERE id = $2",
-                    json.dumps(existing), trade_id
-                )
+                async with conn.transaction():
+                    raw = await conn.fetchval("SELECT audit_log FROM real_trades WHERE id = $1 FOR UPDATE", trade_id)
+                    entries = self._audit_list(raw)
+                    entries.append({'action': action, 'timestamp': datetime.now(timezone.utc).isoformat(), 'data': data})
+                    await conn.execute("UPDATE real_trades SET audit_log = $1, updated_at = now() WHERE id = $2",
+                                       entries, trade_id)
         except Exception as e:
             logger.error(f"[REAL] log_audit error trade #{trade_id}: {e}")
+
+    async def _has_audit(self, trade_id: int, action: str) -> bool:
+        async with self.pool.acquire() as conn:
+            raw = await conn.fetchval("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
+        return any(isinstance(e, dict) and e.get('action') == action for e in self._audit_list(raw))
 
     # ─────────────────────────────────────────────
     # Datos de mercado
     # ─────────────────────────────────────────────
 
     async def get_bars(self, symbol: str, interval: str, broker: str | None = None) -> list:
-        import pandas as pd
         if broker is None:
             broker = await resolve_live_broker(self.pool, symbol, interval)
             if broker is None:  # sin datos o desactualizados: no operar
@@ -806,7 +752,6 @@ class RealTrader:
         if not rows:
             return []
 
-        import pandas as pd
         df = pd.DataFrame(rows, columns=['time','open','high','low','close','volume'])
         df = df.iloc[::-1].reset_index(drop=True)
         for col in ['open','high','low','close','volume']:
@@ -839,7 +784,8 @@ class RealTrader:
     # ─────────────────────────────────────────────
 
     async def open_trade(self, sub: dict, strategy_instance, side: str,
-                          entry_signal_price: float, regime: str, client: BybitClient) -> bool:
+                          entry_signal_price: float, regime: str, client: BybitClient,
+                          signal_sl_pct: float | None = None) -> bool:
         symbol   = sub['symbol']
         interval = sub['interval']
 
@@ -856,18 +802,8 @@ class RealTrader:
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.02:
             logger.warning(f"[REAL] Precio actual ({current_price}) difiere >2% del precio de señal ({entry_signal_price}) para {symbol}")
 
-        sl, tp1 = strategy_instance.calculate_sl_tp(entry_price_for_calc, side)
-        be      = strategy_instance.calculate_breakeven(entry_price_for_calc, side)
-
-        tp2 = strategy_instance.calculate_tp2(entry_price_for_calc, side) \
-              if hasattr(strategy_instance, 'calculate_tp2') else None
-        tp3 = getattr(strategy_instance, 'tp3_pct', None)
-        tp4 = getattr(strategy_instance, 'tp4_pct', None)
-
-        if tp3:
-            tp3 = entry_price_for_calc * (1 + tp3/100) if side == 'long' else entry_price_for_calc * (1 - tp3/100)
-        if tp4:
-            tp4 = entry_price_for_calc * (1 + tp4/100) if side == 'long' else entry_price_for_calc * (1 - tp4/100)
+        sl_pct = signal_sl_pct if signal_sl_pct is not None else float(strategy_instance.sl_pct)
+        sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct)
 
         # 3. Calcular tamaño con balance real y riesgo configurado
         # risk_override_pct de la suscripcion tiene prioridad sobre config
@@ -882,14 +818,14 @@ class RealTrader:
             risk_pct = float(config_params.get('risk_per_trade_pct', 1.0))
         logger.debug(f"[REAL] Risk calculado: {risk_pct}% (override={risk_override}) para {sub.get('symbol')}")
         risk_amount = balance * (risk_pct / 100)
-        sl_distance = abs(entry_signal_price - sl)
+        sl_distance = abs(entry_price_for_calc - sl)  # mismo precio con el que se calculó el SL
         raw_size    = (risk_amount / sl_distance) if sl_distance > 0 else 0
         _cfg = sub.get('config_params') or {}
         if isinstance(_cfg, str):
             import json as _j
             _cfg = _j.loads(_cfg)
         max_leverage = float(_cfg.get('max_leverage', 1.0))
-        max_size     = (balance * max_leverage) / entry_signal_price
+        max_size     = (balance * max_leverage) / entry_price_for_calc
         size         = round(min(raw_size, max_size), 6)
 
         if size <= 0:
@@ -903,7 +839,6 @@ class RealTrader:
             return False
         # Redondear al step size (ej. SOLUSDT = 0.1, BTCUSDT = 0.001)
         if qty_step > 0:
-            import math
             decimals = max(0, -int(math.floor(math.log10(qty_step))))
             size = round(math.floor(size / qty_step) * qty_step, decimals)
         if size <= 0:
@@ -938,7 +873,8 @@ class RealTrader:
                 be, size, balance, regime,
                 datetime.now(timezone.utc).replace(tzinfo=None),
                 # Parámetros congelados de ESTA posición (el pool codifica jsonb desde dict)
-                {**_cfg, 'symbol': symbol, 'interval': interval, 'risk_per_trade_pct': risk_pct},
+                {**_cfg, 'symbol': symbol, 'interval': interval, 'risk_per_trade_pct': risk_pct,
+                 'signal_sl_pct': signal_sl_pct},
             )
 
         # 6. Recalcular SL/TP con precio actual justo antes de enviar
@@ -947,14 +883,7 @@ class RealTrader:
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.005:
             # Precio movio mas de 0.5% — recalcular SL/TP con precio actual
             logger.warning(f"[REAL] Precio movio de {entry_signal_price} a {current_price} — recalculando SL/TP")
-            sl_pct = strategy_instance.sl_pct / 100
-            tp_pct = strategy_instance.tp_pct / 100
-            if side == 'long':
-                sl  = round(current_price * (1 - sl_pct), 8)
-                tp1 = round(current_price * (1 + tp_pct), 8)
-            else:
-                sl  = round(current_price * (1 + sl_pct), 8)
-                tp1 = round(current_price * (1 - tp_pct), 8)
+            sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, current_price, side, sl_pct)
             entry_signal_price = current_price
         # Actualizar SL/TP en DB si fueron recalculados
         async with self.pool.acquire() as conn:
@@ -1001,66 +930,41 @@ class RealTrader:
                 filled = True
                 logger.warning(f"[REAL] Confirmado via posicion (8s): {symbol} @ {filled_price}")
 
-        # Si sigue sin confirmar — reintentar hasta 3 veces (10s entre intentos)
+        # Sin confirmación: consultar el estado REAL de la orden. Nunca se reenvía a ciegas
+        # (si la primera se llenaba tarde, el reenvío duplicaba la posición sin SL/TP).
         if not filled:
-            for retry in range(3):
+            for check in range(3):
                 await asyncio.sleep(10)
-                logger.warning(f"[REAL] Reintento {retry+1}/3 abriendo {symbol}")
-                # Verificar si la senal sigue activa
-                df_retry = await self.get_bars(symbol, interval)
-                if len(df_retry) >= 64:
-                    df_retry = strategy_instance.prepare(df_retry)
-                    df_retry = strategy_instance.generate_signals(df_retry)
-                    current_signal = int(df_retry.iloc[-2]['signal'])
-                    expected_signal = 1 if side == 'long' else -1
-                    if current_signal != expected_signal:
-                        logger.warning(f"[REAL] Senal no activa en reintento {retry+1} para {symbol} — abortando")
-                        async with self.pool.acquire() as conn:
-                            await conn.execute(
-                                "UPDATE real_trades SET status='failed', error_message='Senal no activa en reintento', updated_at=now() WHERE id=$1",
-                                trade_id
-                            )
-                        return False
-                # Reintenta orden con provisionales actualizados
-                retry_result = await client.place_market_order(symbol, bybit_side, size)
-                if retry_result:
-                    await asyncio.sleep(3)
-                    position = await client.get_open_position(symbol)
-                    if position and float(position.get('size', 0) or 0) > 0:
-                        filled_price = float(position.get('avgPrice', entry_signal_price) or entry_signal_price)
-                        filled = True
-                        order_id = retry_result.get('orderId', order_id)
-                        logger.info(f"[REAL] Reintento {retry+1} exitoso: {symbol} @ {filled_price}")
-                        break
+                order = await client.get_order(symbol, order_id) if order_id else None
+                status = (order or {}).get('orderStatus')
+                position = await client.get_open_position(symbol)
+                if position and float(position.get('size', 0) or 0) > 0:
+                    filled_price = float(position.get('avgPrice', entry_signal_price) or entry_signal_price)
+                    filled = True
+                    logger.warning(f"[REAL] Confirmado en verificación {check + 1}: {symbol} @ {filled_price}")
+                    break
+                if status in ('Rejected', 'Cancelled', 'Deactivated'):
+                    logger.error(f"[REAL] Orden {order_id} {symbol} terminó en {status}: no hay posición")
+                    async with self.pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE real_trades SET status='failed', error_message=$1, updated_at=now() WHERE id=$2",
+                            f'Orden {status} en Bybit', trade_id
+                        )
+                    return False
 
         # Si despues de 3 reintentos sigue sin confirmar → orphaned
         if not filled:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE real_trades SET status='orphaned', error_message='No confirmada tras 3 reintentos (38s)', updated_at=now() WHERE id=$1",
+                    "UPDATE real_trades SET status='orphaned', error_message='No confirmada tras 3 verificaciones (38s)', updated_at=now() WHERE id=$1",
                     trade_id
                 )
-            logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 reintentos")
+            logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 verificaciones")
             return False
 
         # 7b. Calcular SL/TP reales con avgPrice real de ejecucion
         avg_price = filled_price
-        sl_pct_val = strategy_instance.sl_pct / 100
-        tp_pct_val = strategy_instance.tp_pct / 100
-        if side == 'long':
-            sl  = round(avg_price * (1 - sl_pct_val), 8)
-            tp1 = round(avg_price * (1 + tp_pct_val), 8)
-            if tp2: tp2 = round(avg_price * (1 + (strategy_instance.tp2_pct or 0)/100), 8)
-            if tp3: tp3 = round(avg_price * (1 + (strategy_instance.tp3_pct or 0)/100), 8)
-            if tp4: tp4 = round(avg_price * (1 + (strategy_instance.tp4_pct or 0)/100), 8)
-            be  = round(avg_price * (1 + strategy_instance.be_pct/100), 8)
-        else:
-            sl  = round(avg_price * (1 + sl_pct_val), 8)
-            tp1 = round(avg_price * (1 - tp_pct_val), 8)
-            if tp2: tp2 = round(avg_price * (1 - (strategy_instance.tp2_pct or 0)/100), 8)
-            if tp3: tp3 = round(avg_price * (1 - (strategy_instance.tp3_pct or 0)/100), 8)
-            if tp4: tp4 = round(avg_price * (1 - (strategy_instance.tp4_pct or 0)/100), 8)
-            be  = round(avg_price * (1 - strategy_instance.be_pct/100), 8)
+        sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, avg_price, side, sl_pct)
         logger.info(f"[REAL] SL/TP reales calculados: sl={sl} tp={tp1} be={be} avg={avg_price}")
 
         # 7c. Actualizar SL/TP reales en Bybit via trading-stop.
@@ -1153,20 +1057,26 @@ class RealTrader:
     # ─────────────────────────────────────────────
 
     async def close_trade(self, trade: dict, exit_reason: str, client: BybitClient,
-                           account_id: int, exit_price_override: float = None) -> bool:
+                           account_id: int, exit_price_override: float = None,
+                           bybit_net_pnl: float | None = None, closed_size: float | None = None) -> bool:
         side   = trade['side']
         symbol = trade['symbol']
         # Si viene exit_price_override — posicion ya cerrada en Bybit por SL/TP
         if exit_price_override:
             entry_price = float(trade["entry_price"])
-            size        = float(trade["size"])
+            size        = float(closed_size or trade["size"])
             bal_before  = float(trade["balance_before"]) if trade.get("balance_before") else 0
             if side == "short":
                 pnl = (entry_price - exit_price_override) * size
             else:
                 pnl = (exit_price_override - entry_price) * size
-            commission    = abs(exit_price_override * size * BYBIT_TAKER_FEE)
-            net_pnl       = pnl - commission
+            if bybit_net_pnl is not None:
+                # closedPnl de Bybit ya descuenta comisiones (y funding): costo = bruto - neto
+                net_pnl    = float(bybit_net_pnl)
+                commission = pnl - net_pnl
+            else:
+                commission = (entry_price + exit_price_override) * size * BYBIT_TAKER_FEE
+                net_pnl    = pnl - commission
             pnl_pct       = pnl / bal_before * 100 if bal_before > 0 else 0
             balance_after = await client.get_balance() or 0
             async with self.pool.acquire() as conn:
@@ -1263,7 +1173,7 @@ class RealTrader:
         partial_pnl = float(trade.get('realized_pnl_partial') or 0)
         pnl = pnl_leg + partial_pnl
 
-        commission = abs(exit_price * size * BYBIT_TAKER_FEE)
+        commission = (entry_price + exit_price) * size * BYBIT_TAKER_FEE  # entrada + salida
         net_pnl    = pnl - commission
         pnl_pct    = pnl / float(trade['balance_before']) * 100 if trade.get('balance_before') else 0
 
@@ -1300,54 +1210,33 @@ class RealTrader:
         )
         return True
 
-    async def update_breakeven(self, trade_id: int, new_sl: float,
-                               client: 'BybitClient' = None, symbol: str = None, side: str = None, tp: float = None):
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE real_trades SET sl = $1, be_activated = true WHERE id = $2",
-                new_sl, trade_id
-            )
-        if client and symbol and side:
-            await client.set_trading_stop(symbol, new_sl)
-            logger.info(f"[REAL] BE activado - SL actualizado en Bybit: {symbol} nuevo_sl={new_sl}")
-        await self.log_audit(trade_id, 'breakeven_activated', {'new_sl': new_sl})
-
-    async def close_partial(self, trade, level, client, current_price, original_size):
-        symbol   = trade["symbol"]
-        side     = trade["side"]
-        trade_id = trade["id"]
-
-        close_side = "Sell" if side == "long" else "Buy"
-        min_qty, qty_step = await client.get_min_qty(symbol)
-        qty_to_close = original_size * 0.25
-        if qty_step > 0:
-            qty_to_close = round(qty_to_close / qty_step) * qty_step
-        qty_to_close = round(qty_to_close, 8)
-
-        if qty_to_close < min_qty:
-            logger.warning(f"[REAL] {level} trade #{trade_id}: qty parcial {qty_to_close} menor a min_qty {min_qty}, se omite")
-            return False
-
-        result = await client.place_reduce_only_order(symbol, close_side, qty_to_close)
-        if result is None:
-            logger.error(f"[REAL] {level} trade #{trade_id}: orden reduceOnly rechazada por Bybit")
-            return False
-
-        entry_price = float(trade["entry_price"])
-        if side == "long":
-            pnl = (current_price - entry_price) * qty_to_close
-        else:
-            pnl = (entry_price - current_price) * qty_to_close
-
-        hit_columns = {"take_profit_2": "tp2_hit", "take_profit_3": "tp3_hit", "take_profit_4": "tp4_hit"}
-        hit_column = hit_columns[level]
-
-        async with self.pool.acquire() as conn:
-            query = "UPDATE real_trades SET size = size - $1, " + hit_column + " = true, realized_pnl_partial = realized_pnl_partial + $2, updated_at = now() WHERE id = $3"
-            await conn.execute(query, qty_to_close, round(pnl, 8), trade_id)
-
-        logger.info(f"[REAL] Cierre parcial {level}: {symbol} qty={qty_to_close} price={current_price} pnl={round(pnl, 4)}")
-        return True
+    async def settle_exchange_close(self, trade: dict, client: BybitClient, account_id: int,
+                                    since_time_ms: int, exit_reason: str | None = None) -> bool | None:
+        """
+        La posición ya no existe en Bybit: registra el cierre con los números de Bybit.
+        Devuelve el resultado de close_trade, o None si Bybit todavía no indexó el cierre.
+        """
+        entry   = float(trade['entry_price'])
+        history = await client.get_closed_pnl_history(trade['symbol'], entry, since_time_ms, limit=50)
+        closed_size = sum(float(h.get('closedSize') or 0) for h in history)
+        if closed_size <= 0:
+            return None
+        exit_price = sum(float(h.get('cumExitValue') or 0) for h in history) / closed_size
+        net_pnl    = sum(float(h.get('closedPnl') or 0) for h in history)
+        db_size    = float(trade['size'] or 0)
+        if db_size > 0 and abs(closed_size - db_size) / db_size > 0.01:
+            logger.warning(f"[REAL] #{trade['id']} {trade['symbol']}: tamaño cerrado en Bybit {closed_size} != DB {db_size}")
+        if len(history) > 1:
+            logger.info(f"[REAL] {trade['symbol']}: cierre dividido en {len(history)} tramos por Bybit")
+        if exit_reason is None:
+            sl, tp = float(trade['sl']), float(trade['tp'])
+            sl_label = 'trailing_stop' if trade.get('trailing_applied') else 'stop_loss'
+            if trade['side'] == 'long':
+                exit_reason = sl_label if exit_price <= sl else 'take_profit_1' if exit_price >= tp else 'closed_other'
+            else:
+                exit_reason = sl_label if exit_price >= sl else 'take_profit_1' if exit_price <= tp else 'closed_other'
+        return await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price,
+                                      bybit_net_pnl=net_pnl, closed_size=closed_size)
 
     # ─────────────────────────────────────────────
     # Monitor: revisar posiciones abiertas
@@ -1356,9 +1245,9 @@ class RealTrader:
     async def _monitor_single_trade(self, trade: dict, client: BybitClient,
                                      price_cache: dict, account_id: int) -> dict:
         """
-        Procesa el monitoreo de UN trade especifico - extraido de
-        monitor_open_trades() para poder correr todos los trades de una
-        cuenta EN PARALELO via asyncio.gather.
+        Un trade abierto, con las reglas de backtest y paper. SL/TP los ejecuta Bybit;
+        el bot mueve el SL (break-even, trailing del bot, volatilidad) y cierra por
+        volatilidad o duración. Corre en paralelo por cuenta (monitor_open_trades).
         """
         outcome  = {"checked": 1, "closed": 0, "be_activated": 0, "errors": 0}
         symbol   = trade["symbol"]
@@ -1366,276 +1255,128 @@ class RealTrader:
         entry    = float(trade["entry_price"])
         sl       = float(trade["sl"])
         tp       = float(trade["tp"])
-        tp2      = float(trade["tp2"]) if trade.get("tp2") is not None else None
-        tp3      = float(trade["tp3"]) if trade.get("tp3") is not None else None
-        tp4      = float(trade["tp4"]) if trade.get("tp4") is not None else None
-        original_size = float(trade["original_size"]) if trade.get("original_size") else float(trade["size"])
         be_level = float(trade["be_level"]) if trade.get("be_level") else 0
         trade_id = trade["id"]
+        long     = side == "long"
+
+        strategy = self._trade_strategy(trade)
+        if strategy is None:
+            outcome["errors"] += 1
+            return outcome
+
+        async def move_sl(new_sl: float, label: str, extra_sql: str = "") -> bool:
+            ok = await client.set_trading_stop(symbol, new_sl, tp)
+            if ok:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(f"UPDATE real_trades SET sl=$1{extra_sql}, updated_at=now() WHERE id=$2",
+                                       new_sl, trade_id)
+                logger.info(f"[MONITOR] {label}: {symbol} #{trade_id} sl={new_sl}")
+            else:
+                logger.warning(f"[MONITOR] Fallo {label}: {symbol} #{trade_id} sl={new_sl}; se reintenta el próximo ciclo")
+            return ok
 
         try:
-            # 1. Verificar si posicion existe en Bybit
+            # 1. ¿Sigue abierta en Bybit?
             try:
                 position = await client.get_open_position(symbol)
             except BybitAPIError as e:
                 logger.error(f"[MONITOR] {symbol} #{trade_id}: error consultando Bybit ({e}) — se omite este ciclo, NO se marca cerrado")
                 outcome["errors"] += 1
                 return outcome
-            pos_size = float(position.get("size", 0) or 0) if position else 0
 
-            if pos_size <= 0:
-                since_time_ms = 0
+            if not position or float(position.get("size", 0) or 0) <= 0:
                 ref_time = trade.get("updated_at") or trade.get("entry_time")
-                if ref_time:
-                    if ref_time.tzinfo is None:
-                        ref_time = ref_time.replace(tzinfo=timezone.utc)
-                    since_time_ms = int(ref_time.timestamp() * 1000)
-
-                history = await client.get_closed_pnl_history(symbol, entry, since_time_ms)
-
-                if not history:
-                    # Bybit puede tardar en indexar el cierre — reintentar una vez
-                    # antes de rendirnos, en vez de asumir pnl=0 de entrada.
+                if ref_time is not None and ref_time.tzinfo is None:
+                    ref_time = ref_time.replace(tzinfo=timezone.utc)
+                since_ms = int(ref_time.timestamp() * 1000) if ref_time else 0
+                settled = await self.settle_exchange_close(trade, client, account_id, since_ms)
+                if settled is None:  # Bybit puede tardar en indexar el cierre
                     await asyncio.sleep(3)
-                    history = await client.get_closed_pnl_history(symbol, entry, since_time_ms)
-
-                if not history:
-                    # Segundo intento tambien vacio: NO inventar pnl=0 (corrompe
-                    # las estadisticas reales vs paper). Se marca 'orphaned' para
-                    # revision manual — la posicion SI cerro en Bybit (pos_size<=0)
-                    # pero no pudimos determinar el pnl real del cierre.
-                    logger.error(
-                        f"[REAL] {symbol} #{trade_id}: posicion cerrada en Bybit pero "
-                        f"closed-pnl vacio tras reintento — marcando 'orphaned' para revision manual"
-                    )
+                    settled = await self.settle_exchange_close(trade, client, account_id, since_ms)
+                if settled is None:
+                    # NO inventar pnl: queda para el reconciliador
+                    logger.error(f"[REAL] {symbol} #{trade_id}: cerrada en Bybit sin closed-pnl tras reintento — 'orphaned'")
                     async with self.pool.acquire() as conn:
                         await conn.execute(
-                            """
-                            UPDATE real_trades
-                            SET status = 'orphaned',
-                                error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (closed-pnl vacio tras reintento)',
-                                updated_at = now()
-                            WHERE id = $1
-                            """,
+                            """UPDATE real_trades SET status = 'orphaned',
+                                   error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (closed-pnl vacio tras reintento)',
+                                   updated_at = now()
+                               WHERE id = $1""",
                             trade_id
                         )
                     outcome["errors"] += 1
-                    return outcome
-
-                total_pnl  = sum(float(h.get("closedPnl", 0)) for h in history)
-                total_size = sum(float(h.get("closedSize", 0)) for h in history)
-                last_entry = max(history, key=lambda h: int(h.get("updatedTime", 0)))
-                exit_price = float(last_entry.get("avgExitPrice", entry))
-
-                if len(history) > 1:
-                    logger.info(
-                        f"[REAL] {symbol}: cierre dividido en {len(history)} tramos por Bybit "
-                        f"(iliquidez) - pnl total sumado={round(total_pnl, 4)}"
-                    )
-
-                sl_val = float(trade["sl"])
-                tp_val = float(trade["tp"])
-                # NOTA (2026-07-09): trade["sl"] puede ser el SL original O
-                # el nivel movido por el trailing nativo (si trailing_applied
-                # ya sincronizo un valor nuevo) - distinguir la etiqueta para
-                # que el usuario sepa si lo protegio el trailing o el SL fijo
-                # original, en vez de "stop_loss" generico en ambos casos.
-                sl_label = "trailing_stop" if trade.get("trailing_applied") else "stop_loss"
-                if side == "short":
-                    if exit_price >= sl_val:
-                        exit_reason = sl_label
-                    elif exit_price <= tp_val:
-                        exit_reason = "take_profit_1"
-                    else:
-                        exit_reason = "closed_other"
-                else:
-                    if exit_price <= sl_val:
-                        exit_reason = sl_label
-                    elif exit_price >= tp_val:
-                        exit_reason = "take_profit_1"
-                    else:
-                        exit_reason = "closed_other"
-
-                remaining_size = float(trade["size"])
-                if remaining_size > 0 and total_size > 0:
-                    if side == "long":
-                        exit_price = entry + (total_pnl / remaining_size)
-                    else:
-                        exit_price = entry - (total_pnl / remaining_size)
-
-                success = await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price)
-                if success:
+                elif settled:
                     outcome["closed"] += 1
                 else:
                     outcome["errors"] += 1
                 return outcome
-            # 2. Verificar si SL es provisional (>2.5%) — reintentar trading-stop
-            sl_pct_actual = abs(sl - entry) / entry * 100 if entry > 0 else 0
-            if sl_pct_actual > 2.5:
-                strategy_sl_pct = 0.8
-                q = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'sl_pct' as sl_pct FROM real_trades rt"
-                q += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-                q += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-                q += " WHERE rt.id = $1"
-                async with self.pool.acquire() as conn:
-                    row = await conn.fetchrow(q, trade_id)
-                    if row and row["sl_pct"]:
-                        strategy_sl_pct = float(row["sl_pct"])
-                if side == "short":
-                    sl_real = round(entry * (1 + strategy_sl_pct/100), 8)
-                else:
-                    sl_real = round(entry * (1 - strategy_sl_pct/100), 8)
-                ts_ok = await client.set_trading_stop(symbol, sl_real)
-                if ts_ok:
-                    async with self.pool.acquire() as conn:
-                        await conn.execute("UPDATE real_trades SET sl=$1 WHERE id=$2", sl_real, trade_id)
-                    logger.info(f"[MONITOR] SL provisional actualizado a real: {symbol} sl={sl_real}")
-                else:
-                    logger.warning(f"[MONITOR] Fallo al actualizar SL provisional: {symbol} sl_intentado={sl_real}")
 
-            # 3. Precio actual
+            # 2. SL/TP del exchange = los de la DB (p. ej. trading-stop fallido tras abrir).
+            #    Con trailing nativo ya activo, Bybit es la fuente del SL: no se pisa.
+            if not (strategy.trailing_mode == "fixed" and trade.get("trailing_applied")):
+                ex_sl = float(position.get("stopLoss") or 0)
+                ex_tp = float(position.get("takeProfit") or 0)
+                if sl > 0 and (abs(ex_sl - sl) > entry * 1e-4 or abs(ex_tp - tp) > entry * 1e-4):
+                    if await client.set_trading_stop(symbol, sl, tp):
+                        logger.warning(f"[MONITOR] {symbol} #{trade_id}: SL/TP en Bybit ({ex_sl}/{ex_tp}) alineados a DB ({sl}/{tp})")
+
             current_price = price_cache.get(symbol)
             if current_price is None:
                 return outcome
 
-            # 4. Break-even via trading-stop
-            if be_level > 0 and not trade["be_activated"]:
-                be_reached = (side == "long" and current_price >= be_level) or \
-                             (side == "short" and current_price <= be_level)
-                if be_reached:
-                    ts_ok = await client.set_trading_stop(symbol, entry)
-                    if ts_ok:
-                        async with self.pool.acquire() as conn:
-                            await conn.execute(
-                                "UPDATE real_trades SET be_activated=true, sl=$1 WHERE id=$2",
-                                entry, trade_id
-                            )
-                        outcome["be_activated"] += 1
-                        logger.info(f"[MONITOR] BE activado: {symbol} sl movido a entry={entry}")
-                    else:
-                        logger.warning(f"[MONITOR] Fallo al activar BE: {symbol} - se reintentara en el proximo ciclo")
+            needs_atr = strategy.volatility_protection_mode is not None or strategy.trailing_mode == "atr"
+            closed_atr, closed_atr_avg = (await self._closed_atr(symbol, trade["interval"])) if needs_atr else (None, None)
 
-            # 5. Trailing Stop: modo 'fixed' usa el trailing NATIVO de Bybit,
-            # armado una sola vez al abrir el trade (ver open_trade) - Bybit
-            # lo gestiona en su propio motor, sin depender de que el bot este
-            # corriendo. Modo 'stepped' no tiene equivalente nativo en Bybit,
-            # sigue gestionado por el bot aca.
-            # 6. Proteccion por volatilidad, mas abajo, usa los mismos datos
-            # (params de la config, via el mismo JOIN) - se trae todo en UNA
-            # sola consulta en vez de dos separadas.
-            q_cfg = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'trailing_mode' as trailing_mode, "
-            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_distance_pct' as trailing_distance_pct, "
-            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_steps' as trailing_steps, "
-            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_protection_mode' as volatility_protection_mode, "
-            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
-            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
-            q_cfg += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q_cfg += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-            q_cfg += " WHERE rt.id = $1"
-            async with self.pool.acquire() as conn:
-                row_cfg = await conn.fetchrow(q_cfg, trade_id)
+            # 3. Break-even: nunca baja un SL que el trailing ya subió
+            if be_level > 0 and not trade["be_activated"] and \
+                    ((long and current_price >= be_level) or (not long and current_price <= be_level)):
+                new_sl = max(sl, entry) if long else min(sl, entry)
+                if new_sl == sl:
+                    async with self.pool.acquire() as conn:
+                        await conn.execute("UPDATE real_trades SET be_activated=true WHERE id=$1", trade_id)
+                    outcome["be_activated"] += 1
+                elif await move_sl(new_sl, "BE activado", ", be_activated=true"):
+                    sl = new_sl
+                    outcome["be_activated"] += 1
 
-            trailing_mode = row_cfg["trailing_mode"] if row_cfg else None
-            if trailing_mode == "stepped":
-                trailing_distance_pct = float(row_cfg["trailing_distance_pct"]) if row_cfg["trailing_distance_pct"] else 1.0
-                trailing_steps = json.loads(row_cfg["trailing_steps"]) if row_cfg["trailing_steps"] else []
-
-                new_sl = calculate_trailing_sl_standalone(
-                    trailing_mode, trailing_distance_pct, trailing_steps,
-                    entry, side, current_price, sl
-                )
-                if new_sl != sl:
-                    ts_ok = await client.set_trading_stop(symbol, new_sl)
-                    if ts_ok:
-                        async with self.pool.acquire() as conn:
-                            await conn.execute(
-                                "UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
-                                new_sl, trade_id
-                            )
-                        sl = new_sl
-                        logger.info(f"[MONITOR] Trailing aplicado (bot, modo stepped): {symbol} sl movido a {new_sl}")
-            elif trailing_mode == "fixed":
+            # 4. Trailing: 'fixed' = nativo de Bybit (armado al abrir); 'stepped'/'atr' = bot
+            if strategy.trailing_mode in ("stepped", "atr"):
+                new_sl = strategy.calculate_trailing_sl(entry, side, current_price, sl, current_atr=closed_atr)
+                if new_sl != sl and await move_sl(new_sl, f"Trailing {strategy.trailing_mode}", ", trailing_applied=true"):
+                    sl = new_sl
+            elif strategy.trailing_mode == "fixed":
                 native_sl = await client.get_native_trailing_level(symbol)
                 if native_sl is not None and round(native_sl, 8) != round(sl, 8):
                     async with self.pool.acquire() as conn:
-                        await conn.execute(
-                            "UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
-                            native_sl, trade_id
-                        )
+                        await conn.execute("UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
+                                           native_sl, trade_id)
                     sl = native_sl
                     logger.info(f"[MONITOR] Trailing nativo sincronizado: {symbol} sl={native_sl}")
 
-            # 6. Proteccion por volatilidad - usa ATR de las ultimas velas reales.
-            # mode="close": cierra la posicion completa (como time_exit).
-            # mode="widen": ensancha el SL fijo via set_trading_stop.
-            vol_mode = row_cfg["volatility_protection_mode"] if row_cfg else None
-            if vol_mode in ("close", "widen"):
-                bars = await self.get_bars(symbol, trade["interval"])
-                if len(bars) >= 51:
-                    atr_multiplier = float(row_cfg["volatility_atr_multiplier"]) if row_cfg["volatility_atr_multiplier"] else 2.5
-                    widen_pct = float(row_cfg["volatility_widen_pct"]) if row_cfg["volatility_widen_pct"] else 1.0
-                    atr_series = calculate_atr(bars)
-                    current_atr = float(atr_series.iloc[-1])
-                    avg_atr = float(atr_series.rolling(50).mean().iloc[-1])
+            # 5. Protección por volatilidad (velas cerradas; 'widen' una sola vez por trade)
+            if strategy.volatility_protection_mode and closed_atr is not None and closed_atr_avg is not None:
+                vol = strategy.check_volatility_protection(sl, side, closed_atr, closed_atr_avg)
+                if vol["action"] == "close":
+                    success = await self.close_trade(trade, "volatility_protection", client, account_id)
+                    outcome["closed" if success else "errors"] += 1
+                    return outcome
+                if vol["action"] == "widen" and vol["new_sl"] is not None \
+                        and not await self._has_audit(trade_id, "volatility_widen"):
+                    if await move_sl(vol["new_sl"], "SL ensanchado por volatilidad"):
+                        sl = vol["new_sl"]
+                        await self.log_audit(trade_id, "volatility_widen", {"new_sl": sl, "atr": closed_atr})
 
-                    if avg_atr > 0 and current_atr > avg_atr * atr_multiplier:
-                        if vol_mode == "close":
-                            success = await self.close_trade(trade, "volatility_protection", client, account_id)
-                            if success:
-                                outcome["closed"] += 1
-                            else:
-                                outcome["errors"] += 1
-                            return outcome
-                        elif vol_mode == "widen":
-                            if side == "long":
-                                new_sl_v = round(sl * (1 - widen_pct / 100), 8)
-                            else:
-                                new_sl_v = round(sl * (1 + widen_pct / 100), 8)
-                            ts_ok = await client.set_trading_stop(symbol, new_sl_v)
-                            if ts_ok:
-                                async with self.pool.acquire() as conn:
-                                    await conn.execute(
-                                        "UPDATE real_trades SET sl=$1 WHERE id=$2",
-                                        new_sl_v, trade_id
-                                    )
-                                sl = new_sl_v
-                                logger.info(f"[MONITOR] SL ensanchado por volatilidad: {symbol} nuevo_sl={new_sl_v}")
-
-            # 7. Take Profit parcial - TP4 > TP3 > TP2 (prioridad), 25% cada uno.
-            # No cierra si ya se disparo ese nivel antes.
-            for level, tp_level, hit_flag in [
-                ("take_profit_4", tp4, trade.get("tp4_hit")),
-                ("take_profit_3", tp3, trade.get("tp3_hit")),
-                ("take_profit_2", tp2, trade.get("tp2_hit")),
-            ]:
-                if tp_level is None or hit_flag:
-                    continue
-                reached = (side == "long" and current_price >= tp_level) or (side == "short" and current_price <= tp_level)
-                if reached:
-                    await self.close_partial(trade, level, client, current_price, original_size)
-                    break
-
-            # 8. Cierre por duracion maxima
-            q2 = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'max_duration' as max_duration FROM real_trades rt"
-            q2 += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q2 += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
-            q2 += " WHERE rt.id = $1"
-            max_duration = 24
-            async with self.pool.acquire() as conn:
-                row2 = await conn.fetchrow(q2, trade_id)
-                if row2 and row2["max_duration"]:
-                    max_duration = int(row2["max_duration"])
-
+            # 6. Duración máxima en VELAS del intervalo (y max_duration_profit)
+            max_bars = int(strategy.max_duration or 0)
             entry_time = trade["entry_time"]
             if entry_time.tzinfo is None:
                 entry_time = entry_time.replace(tzinfo=timezone.utc)
-            hours_open = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
-            if hours_open >= max_duration:
-                success = await self.close_trade(trade, "time_exit", client, account_id)
-                if success:
-                    outcome["closed"] += 1
-                else:
-                    outcome["errors"] += 1
+            if max_bars > 0 and datetime.now(timezone.utc) - entry_time >= interval_delta(trade["interval"]) * max_bars:
+                in_profit = current_price > entry if long else current_price < entry
+                if not strategy.max_duration_profit or in_profit:
+                    reason = "time_exit_profit" if strategy.max_duration_profit else "time_exit"
+                    success = await self.close_trade(trade, reason, client, account_id)
+                    outcome["closed" if success else "errors"] += 1
 
         except Exception as e:
             logger.error(f"[MONITOR] Error trade #{trade_id} {symbol}: {e}", exc_info=True)
@@ -1701,10 +1442,13 @@ class RealTrader:
         if bybit_position:
             return f"{symbol}: posicion abierta en Bybit (no registrada en DB)"
 
-        # Obtener barras y generar señal
-        df = await self.get_bars(symbol, interval)
-        if len(df) < 64:
+        # Velas CERRADAS (por tiempo): señal y régimen como en backtest y paper
+        now = datetime.now(timezone.utc)
+        df = closed_bars(await self.get_bars(symbol, interval), interval, now)
+        if df is None or len(df) < 64:
             return f"{symbol}: datos insuficientes"
+        if pd.to_datetime(df['time'].iloc[-1], utc=True) + 2 * interval_delta(interval) <= now:
+            return f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera"
 
         regime = await self.get_current_regime(
             df, trending_threshold=strategy_instance.regime_adx_trending,
@@ -1717,11 +1461,13 @@ class RealTrader:
         df = strategy_instance.prepare(df)
         df = strategy_instance.generate_signals(df)
 
-        last_closed = df.iloc[-2]
+        last_closed = df.iloc[-1]  # df solo contiene velas cerradas
         signal = int(last_closed['signal'])
 
         if signal == 0:
             return f"{symbol}: sin señal"
+        raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
+        signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
         candle_time = last_closed['time']
         if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
             candle_time = candle_time.tz_localize(None)
@@ -1743,7 +1489,7 @@ class RealTrader:
             return f"{symbol}: error obteniendo precio"
         try:
             success = await self.open_trade(sub, strategy_instance, side,
-                                                 entry_price, regime, client)
+                                            entry_price, regime, client, signal_sl_pct)
             return f"{symbol}: {'ABIERTA' if success else 'ERROR'} {side} @ {entry_price}"
         except Exception as e:
             logger.error(f"[REAL] open_trade exception {symbol}: {e}", exc_info=True)

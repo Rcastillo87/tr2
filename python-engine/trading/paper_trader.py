@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
-from collectors.broker_resolver import interval_delta, resolve_live_broker
+from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
@@ -87,10 +87,7 @@ class PaperTrader:
     @staticmethod
     def _closed_bars(df: pd.DataFrame, interval: str, now: datetime) -> pd.DataFrame:
         """Solo velas cerradas (time + intervalo <= ahora), guarde o no el collector la vela en formación."""
-        if df.empty:
-            return df
-        times = pd.to_datetime(df['time'], utc=True)
-        return df[(times + interval_delta(interval)) <= now].reset_index(drop=True)
+        return closed_bars(df, interval, now)
 
     def _strategy_for_open_trade(self, trade: dict):
         params = self._trade_params(trade)

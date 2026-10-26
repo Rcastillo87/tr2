@@ -113,7 +113,8 @@ async def main():
           len(closes) == 1 and abs(closes[0][0] - 100.0) < 1e-9, closes[0][:4] if closes else 'sin cierre')
 
     # 3. La vela de 1m en formación NO se procesa (el checkpoint no la salta)
-    m = [minute(NOW - timedelta(seconds=30), low=98.0)]
+    forming = datetime.now(timezone.utc).replace(second=0, microsecond=0)  # minuto en curso (abierto)
+    m = [minute(forming, low=98.0)]
     _, closes, store = await run_monitor(P, m)
     upd = [a for sql, a in store['exec'] if 'last_monitored_at' in sql]
     check('vela de 1m en formación ignorada', not closes and upd and upd[0][5] != m[0]['time'].replace(tzinfo=None),

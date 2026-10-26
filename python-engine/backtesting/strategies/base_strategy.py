@@ -285,6 +285,9 @@ class BaseStrategy(ABC):
         return {'action': None, 'new_sl': None}
 
 
+NATIVE_TRAILING_MIN_BUFFER_PCT = 0.3  # % de activación mínima del trailing nativo en real
+
+
 def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
                                       trailing_steps, entry_price, side,
                                       current_price, current_sl,
@@ -297,6 +300,10 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
     """
     if trailing_mode is None:
         return current_sl
+
+    if trailing_mode == 'fixed' and not (activation_buffer_pct and activation_buffer_pct > 0):
+        # Bybit rechaza activePrice == entrada: real arma el trailing nativo con 0.3% mínimo
+        activation_buffer_pct = NATIVE_TRAILING_MIN_BUFFER_PCT
 
     if side == 'long':
         gain_pct = (current_price - entry_price) / entry_price * 100
@@ -315,12 +322,12 @@ def calculate_trailing_sl_standalone(trailing_mode, trailing_distance_pct,
         # que exige que el precio se mueva al menos ese % a favor primero.
         if gain_pct < activation_buffer_pct:
             return current_sl
+        # Distancia ABSOLUTA = entrada x %, igual que trailingStop del nativo de Bybit
+        distance = entry_price * trailing_distance_pct / 100
         if side == 'long':
-            candidate = current_price * (1 - trailing_distance_pct / 100)
-            new_sl = max(current_sl, candidate)
+            new_sl = max(current_sl, current_price - distance)
         else:
-            candidate = current_price * (1 + trailing_distance_pct / 100)
-            new_sl = min(current_sl, candidate)
+            new_sl = min(current_sl, current_price + distance)
 
     elif trailing_mode == 'stepped':
         applicable = [s for s in (trailing_steps or []) if gain_pct >= s[0]]
