@@ -16,7 +16,6 @@ Uso (desde python-engine/):
     venv/bin/python -m cli.backfill_bybit --since 2026-06-01      # solo un tramo
     venv/bin/python -m cli.backfill_bybit --gaps --intervals 1    # solo los huecos reales de la DB
     venv/bin/python -m cli.backfill_bybit --since 2024-09-01 --until 2024-10-28   # solo un tramo acotado
-    venv/bin/python -m cli.backfill_bybit --since 2024-09-01 --until 2024-10-28   # solo un tramo acotado
 """
 import argparse
 import asyncio
@@ -265,7 +264,6 @@ async def main() -> int:
     p.add_argument('--audit', action='store_true', help='solo auditoría de la DB, sin llamar a la API')
     p.add_argument('--gaps', action='store_true', help='descarga solo los huecos reales de la DB')
     p.add_argument('--until', help='fin explícito YYYY-MM-DD (exclusivo); por defecto la última vela cerrada')
-    p.add_argument('--until', help='fin explícito YYYY-MM-DD (exclusivo); por defecto la última vela cerrada')
     args = p.parse_args()
 
     now = datetime.now(timezone.utc)
@@ -292,8 +290,6 @@ async def main() -> int:
         async with httpx.AsyncClient(timeout=30) as client:
             for symbol, interval in series:
                 until = floor_to_interval(now, interval) - interval_delta(interval)  # última vela cerrada
-                if args.until:
-                    until = min(until, datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc) - interval_delta(interval))
                 if args.until:
                     until = min(until, datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc) - interval_delta(interval))
                 if args.gaps:
