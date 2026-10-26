@@ -5,6 +5,7 @@ Proteccion por volatilidad, y desglose de resultados mes a mes.
 """
 
 import asyncpg
+from db import get_pool as shared_get_pool
 import pandas as pd
 import logging
 import os
@@ -97,8 +98,8 @@ class BacktestRequest(BaseModel):
     monthly_breakdown: bool = False
 
 
-async def get_pool() -> asyncpg.Pool:
-    return await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
+async def get_pool():
+    return await shared_get_pool('backtest')  # pool compartido por proceso (db.py)
 
 
 def parse_range(start_date: str | None, end_date: str | None) -> tuple[datetime | None, datetime | None]:

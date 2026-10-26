@@ -1,6 +1,6 @@
 """
 Trading Platform V2 — Python Engine
-FastAPI server — solo accesible en 127.0.0.1:8001
+FastAPI server — solo accesible en 127.0.0.1:8002
 """
 
 import logging
@@ -59,6 +59,11 @@ app.include_router(broker_router, prefix="/v1")
 app.include_router(real_trading_router, prefix="/v1")
 app.include_router(prices_router, prefix="/v1")
 app.include_router(period_pnl_router, prefix="/v1")
+
+from db import close_pools  # noqa: E402
+
+app.add_event_handler('shutdown', close_pools)
+
 
 @app.get("/health")
 async def health():

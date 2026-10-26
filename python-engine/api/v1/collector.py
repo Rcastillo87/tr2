@@ -2,6 +2,7 @@
 Endpoint Data Collector V2
 """
 import asyncpg
+from db import get_pool as shared_get_pool
 import logging
 import os
 from fastapi import APIRouter, HTTPException
@@ -15,8 +16,8 @@ router = APIRouter()
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
 
-async def get_pool() -> asyncpg.Pool:
-    return await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
+async def get_pool():
+    return await shared_get_pool('live')  # pool compartido por proceso (db.py)
 
 
 @router.post("/collector/run")

@@ -7,6 +7,7 @@ credenciales directamente de la DB para evitar el problema de encriptacion.
 
 import asyncio
 import asyncpg
+from db import get_json_pool
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -74,11 +75,6 @@ def instantiate_strategy(sub: SubscriptionPayload):
     instance.params = params
     return instance
 
-
-async def _setup_jsonb_codec(conn):
-    import json
-    await conn.set_type_codec('jsonb', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
-    await conn.set_type_codec('json', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')
 
 async def _process_account(trader, account):
     account_key     = f"account_{account.id}_{account.broker}"
@@ -152,7 +148,7 @@ async def real_tick(
     # simultaneos por cuenta (semaphore en monitor_open_trades). Antes
     # necesitaba mas margen porque un solo pedido procesaba TODAS las
     # cuentas juntas.
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=5, init=_setup_jsonb_codec)
+    pool    = await get_json_pool()  # compartido (db.py), con codec jsonb
     trader  = RealTrader(pool)
     results = {}
 
@@ -185,7 +181,7 @@ async def circuit_breaker_max_loss(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5, init=_setup_jsonb_codec)
+    pool    = await get_json_pool()  # compartido (db.py), con codec jsonb
     trader  = RealTrader(pool)
     results = {}
 
@@ -226,7 +222,7 @@ async def reconcile(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    pool    = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=5, init=_setup_jsonb_codec)
+    pool    = await get_json_pool()  # compartido (db.py), con codec jsonb
     trader  = RealTrader(pool)
     results = {'reconciled': [], 'orphaned': [], 'ok': []}
 

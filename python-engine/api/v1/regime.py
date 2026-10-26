@@ -3,6 +3,7 @@ Endpoint Market Regime Detector V2
 """
 
 import asyncpg
+from db import get_pool as shared_get_pool
 import redis.asyncio as redis
 import logging
 import json
@@ -20,8 +21,8 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379')
 
 
-async def get_pool() -> asyncpg.Pool:
-    return await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
+async def get_pool():
+    return await shared_get_pool('live')  # pool compartido por proceso (db.py)
 
 
 async def get_redis():
