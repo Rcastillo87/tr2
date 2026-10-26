@@ -86,7 +86,7 @@ class DashboardController extends Controller
                         SELECT close FROM (
                             SELECT close, time, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) as rn
                             FROM ohlcv_data
-                            WHERE symbol = ? AND interval = '1'
+                            WHERE broker = 'bybit' AND symbol = ? AND interval = '1'
                         ) sub WHERE rn <= 2 ORDER BY time DESC
                     ", [$sym]);
 

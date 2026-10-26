@@ -9,6 +9,7 @@ import pandas as pd
 import logging
 from datetime import datetime, timezone, timedelta
 from indicators.regime_indicators import calculate_atr
+from collectors.broker_resolver import resolve_live_broker
 
 logger = logging.getLogger(__name__)
 
@@ -161,16 +162,19 @@ class RiskManager:
 
     async def check_volatility(self, symbol: str) -> dict | None:
         """Retorna info si ATR actual > 2x ATR promedio (volatilidad extrema)."""
+        broker = await resolve_live_broker(self.pool, symbol, '60')  # una sola fuente: no mezclar mercados
+        if broker is None:
+            return None
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT time, open, high, low, close, volume
                 FROM ohlcv_data
-                WHERE symbol = $1 AND interval = '60'
+                WHERE broker = $2 AND symbol = $1 AND interval = '60'
                 ORDER BY time DESC
                 LIMIT 100
                 """,
-                symbol
+                symbol, broker
             )
 
         if len(rows) < 60:
