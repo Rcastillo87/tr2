@@ -481,8 +481,7 @@ class ValidateStrategyRequest(BaseModel):
     code: str
     type: str = "python"
     config: Optional[dict] = None   # config propia de la estrategia (strategy_config)
-    symbol: str = "BTCUSDT"
-    interval: str = "60"
+    matrix: list[str] = ["BTCUSDT:60", "BTCUSDT:240", "ETHUSDT:60"]  # "símbolo:intervalo"
     days: int = 90
 
 @router.post("/strategies/validate")
@@ -511,23 +510,36 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
     if req.run_backtest:
         end = datetime.now(timezone.utc).date() - timedelta(days=1)   # último día completo
         start = end - timedelta(days=req.days - 1)
-        smoke = BacktestRequest(
-            strategy='smoke-test', strategy_code=req.code, strategy_config=req.config or {},
-            symbol=req.symbol, interval=req.interval,
-            start_date=start.isoformat(), end_date=end.isoformat(),
-            walk_forward=False, monthly_breakdown=False,
-        )
-        try:
-            out = await run_backtest(smoke)
-        except HTTPException as e:
-            raise HTTPException(status_code=400, detail=f"Error en Smoke Test: {e.detail}")
-        trades = int(out['result']['metrics']['total_trades'])
-        scope = f"{req.symbol} {req.interval}, {start} → {end}"
+        tried, errors = [], []
+        for combo in req.matrix:
+            symbol, _, interval = combo.partition(':')
+            smoke = BacktestRequest(
+                strategy='smoke-test', strategy_code=req.code, strategy_config=req.config or {},
+                symbol=symbol, interval=interval,
+                start_date=start.isoformat(), end_date=end.isoformat(),
+                walk_forward=False, monthly_breakdown=False,
+            )
+            try:
+                out = await run_backtest(smoke)
+            except HTTPException as e:
+                errors.append(f"{symbol} {interval}: {e.detail}")
+                continue
+            trades = int(out['result']['metrics']['total_trades'])
+            tried.append(f"{symbol} {interval}={trades}")
+            if trades > 0:  # basta una combinación con operaciones
+                return {
+                    "status": "ok",
+                    "message": f"Smoke Test: {trades} operaciones en {symbol} {interval} ({start} → {end})",
+                    "trades": trades,
+                    "warnings": out.get('warnings', []),
+                }
+        if not tried:
+            raise HTTPException(status_code=400, detail="Error en Smoke Test: " + " | ".join(errors))
         return {
             "status": "ok",
-            "message": f"Smoke Test: {trades} operaciones ({scope})" if trades else f"Sin operaciones ({scope})",
-            "trades": trades,
-            "warnings": out.get('warnings', []),
+            "message": f"Sin operaciones en ninguna combinación ({', '.join(tried)}; {start} → {end})",
+            "trades": 0,
+            "warnings": errors,
         }
 
     return {"status": "ok", "message": "Sintaxis Python válida"}

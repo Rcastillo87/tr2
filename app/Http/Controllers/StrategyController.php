@@ -133,13 +133,13 @@ class StrategyController extends Controller
         return back()->with('status', "Estrategia {$name} eliminada.");
     }
 
-    /** Backtest real de 90 días en BTCUSDT H1: la estrategia debe generar al menos una operación. */
+    /** Backtest real de 90 días (BTCUSDT H1, BTCUSDT H4, ETHUSDT H1): debe operar en al menos uno. */
     private function runSmokeTest(string $code, array $config = []): void
     {
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(60)->post(
+            ])->timeout(120)->post(
                 config('trading.python_engine_url') . '/v1/strategies/validate',
                 ['code' => $code, 'type' => 'python', 'run_backtest' => true, 'config' => (object) $config]
             );
@@ -154,7 +154,7 @@ class StrategyController extends Controller
             $trades = $response->json('trades');
             if ($trades !== null && $trades == 0) {
                 throw ValidationException::withMessages([
-                    'code' => "❌ Falló el Smoke Test: La estrategia no abrió ninguna operación en el backtest de prueba (últimos 90 días, BTCUSDT H1). Revisa la lógica o los filtros."
+                    'code' => "❌ Falló el Smoke Test: La estrategia no abrió ninguna operación en el backtest de prueba (últimos 90 días en BTCUSDT H1, BTCUSDT H4 y ETHUSDT H1). Revisa la lógica o los filtros."
                 ]);
             }
 
