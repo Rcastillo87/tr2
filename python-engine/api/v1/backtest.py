@@ -153,8 +153,12 @@ _RUN_ONLY_FIELDS = {'strategy', 'start_date', 'end_date', 'walk_forward', 'n_win
 
 
 def strategy_params(request: BacktestRequest) -> dict:
-    """Parámetros de la estrategia: los mismos que Laravel guarda en config_params (snapshot de paper/real)."""
-    params = request.model_dump(exclude=_RUN_ONLY_FIELDS)
+    """
+    Parámetros de la estrategia: los mismos que Laravel guarda en config_params (snapshot de paper/real).
+    Solo los campos ENVIADOS: un valor por defecto del request no debe pisar una opción escrita en el JSON de la
+    estrategia (allow_short, hour_filter, tp2_pct...), igual que en paper/real (loader.build_strategy).
+    """
+    params = request.model_dump(exclude=_RUN_ONLY_FIELDS, exclude_unset=True)
     params['strategy_config'] = dict(request.strategy_config or {})
     return params
 

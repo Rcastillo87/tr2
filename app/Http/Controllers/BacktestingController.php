@@ -66,7 +66,12 @@ class BacktestingController extends Controller
         $finalConfig = $strategy->config;
         if (!empty($overrideConfig)) {
             $decoded = json_decode($overrideConfig, true);
-            if (json_last_error() === JSON_ERROR_NONE) $finalConfig = $decoded;
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                // Nunca ejecutar en silencio con otra configuración distinta a la escrita
+                return response()->json(['success' => false, 'error' => 'Los parámetros de la estrategia (JSON) no son válidos: '
+                    . json_last_error_msg() . '. Corrígelos antes de ejecutar el backtest.']);
+            }
+            $finalConfig = $decoded;
         }
 
         $resultsData = [];
