@@ -8,7 +8,6 @@ credenciales directamente de la DB para evitar el problema de encriptacion.
 import asyncio
 import asyncpg
 import json as _json
-import importlib
 import json
 import logging
 import os
@@ -26,10 +25,6 @@ router = APIRouter()
 
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
-
-STRATEGY_CLASS_MAP = {
-}
-
 
 class SubscriptionPayload(BaseModel):
     subscription_id:          int
@@ -80,18 +75,14 @@ class RealTickRequest(BaseModel):
 
 
 def instantiate_strategy(sub: SubscriptionPayload):
-    class_name = sub.strategy_class
-    if not class_name or class_name not in STRATEGY_CLASS_MAP:
-        raise ValueError(f"Clase no registrada: {class_name}")
-
-    module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
-    module = importlib.import_module(module_path)
-    cls    = getattr(module, cls_name)
-
-    params = sub.config_params or {}
+    """Misma construcción que paper y backtest (strategy_code compilado + params de la config)."""
+    from backtesting.strategies.loader import build_strategy
+    params = dict(sub.config_params or {})
+    if not params:
+        raise ValueError(f"Suscripción #{sub.subscription_id} sin config_params")
     params['symbol']   = sub.symbol
     params['interval'] = sub.interval
-    instance = cls(params)
+    instance = build_strategy(params)
     instance.params = params
     return instance
 
@@ -389,9 +380,9 @@ async def reconcile(
                     # Calcular SL/TP reales con avgPrice real
                     async with pool.acquire() as conn:
                         row = await conn.fetchrow(
-                            "SELECT psc.params FROM real_trades rt"
-                            " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-                            " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+                            "SELECT COALESCE(rt.config_snapshot, psc.params) AS params FROM real_trades rt"
+                            " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+                            " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
                             " WHERE rt.id = $1", trade['id']
                         )
                     params = row['params'] if row else {}

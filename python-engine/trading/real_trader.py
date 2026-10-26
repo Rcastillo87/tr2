@@ -646,10 +646,10 @@ class RealTrader:
         return [dict(r) for r in rows]
 
     async def get_trailing_config(self, trade_id):
-        q = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
-        q += "psc.params->>'trailing_distance_pct' as trailing_distance_pct FROM real_trades rt"
-        q += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-        q += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+        q = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'trailing_mode' as trailing_mode, "
+        q += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_distance_pct' as trailing_distance_pct FROM real_trades rt"
+        q += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+        q += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
         q += " WHERE rt.id = $1"
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(q, trade_id)
@@ -921,13 +921,13 @@ class RealTrader:
                      strategy, symbol, broker, interval, side,
                      entry_price, entry_price_signal, sl, tp, tp2, tp3, tp4,
                      be_level, be_activated, size, original_size, leverage,
-                     balance_before, regime, entry_time,
+                     balance_before, regime, entry_time, config_snapshot,
                      status, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                      $10, $11, $12, $13, $14, $15, $16,
                      $17, false, $18, $18, 1,
-                     $19, $20, $21,
+                     $19, $20, $21, $22,
                      'pending_open', now(), now())
                 RETURNING id
                 """,
@@ -936,7 +936,9 @@ class RealTrader:
                 sub['strategy'], symbol, sub['broker'], interval, side,
                 entry_signal_price, entry_signal_price, sl, tp1, tp2, tp3, tp4,
                 be, size, balance, regime,
-                datetime.now(timezone.utc).replace(tzinfo=None)
+                datetime.now(timezone.utc).replace(tzinfo=None),
+                # Parámetros congelados de ESTA posición (el pool codifica jsonb desde dict)
+                {**_cfg, 'symbol': symbol, 'interval': interval, 'risk_per_trade_pct': risk_pct},
             )
 
         # 6. Recalcular SL/TP con precio actual justo antes de enviar
@@ -1471,9 +1473,9 @@ class RealTrader:
             sl_pct_actual = abs(sl - entry) / entry * 100 if entry > 0 else 0
             if sl_pct_actual > 2.5:
                 strategy_sl_pct = 0.8
-                q = "SELECT psc.params->>'sl_pct' as sl_pct FROM real_trades rt"
-                q += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-                q += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+                q = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'sl_pct' as sl_pct FROM real_trades rt"
+                q += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+                q += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
                 q += " WHERE rt.id = $1"
                 async with self.pool.acquire() as conn:
                     row = await conn.fetchrow(q, trade_id)
@@ -1521,14 +1523,14 @@ class RealTrader:
             # 6. Proteccion por volatilidad, mas abajo, usa los mismos datos
             # (params de la config, via el mismo JOIN) - se trae todo en UNA
             # sola consulta en vez de dos separadas.
-            q_cfg = "SELECT psc.params->>'trailing_mode' as trailing_mode, "
-            q_cfg += "psc.params->>'trailing_distance_pct' as trailing_distance_pct, "
-            q_cfg += "psc.params->>'trailing_steps' as trailing_steps, "
-            q_cfg += "psc.params->>'volatility_protection_mode' as volatility_protection_mode, "
-            q_cfg += "psc.params->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
-            q_cfg += "psc.params->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
-            q_cfg += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q_cfg += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+            q_cfg = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'trailing_mode' as trailing_mode, "
+            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_distance_pct' as trailing_distance_pct, "
+            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'trailing_steps' as trailing_steps, "
+            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_protection_mode' as volatility_protection_mode, "
+            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_atr_multiplier' as volatility_atr_multiplier, "
+            q_cfg += "COALESCE(rt.config_snapshot, psc.params)->>'volatility_widen_pct' as volatility_widen_pct FROM real_trades rt"
+            q_cfg += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+            q_cfg += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
             q_cfg += " WHERE rt.id = $1"
             async with self.pool.acquire() as conn:
                 row_cfg = await conn.fetchrow(q_cfg, trade_id)
@@ -1614,9 +1616,9 @@ class RealTrader:
                     break
 
             # 8. Cierre por duracion maxima
-            q2 = "SELECT psc.params->>'max_duration' as max_duration FROM real_trades rt"
-            q2 += " JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
-            q2 += " JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
+            q2 = "SELECT COALESCE(rt.config_snapshot, psc.params)->>'max_duration' as max_duration FROM real_trades rt"
+            q2 += " LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id"
+            q2 += " LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id"
             q2 += " WHERE rt.id = $1"
             max_duration = 24
             async with self.pool.acquire() as conn:
