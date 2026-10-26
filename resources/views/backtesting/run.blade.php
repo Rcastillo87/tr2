@@ -3,25 +3,103 @@
 @section('header', 'Configurar Backtest')
 
 @section('content')
+{{-- Estilos propios de la página: no dependen del build de Tailwind (Vite). Misma paleta que el resto de módulos. --}}
 <style>
-    .multi-select-container { position: relative; }
-    .multi-select-dropdown {
-        position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
-        max-height: 200px; overflow-y: auto; border-radius: 0.5rem;
-        border: 1px solid var(--color-border-strong); background: var(--color-surface-raised); margin-top: 4px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none;
-    }
-    .multi-select-option { padding: 8px 12px; cursor: pointer; font-size: 11px; color: var(--color-text-muted); }
-    .multi-select-option:hover { background: var(--color-surface); color: var(--color-text-primary); }
-    .tag { background: var(--color-info); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 10px; display: flex; align-items: center; gap: 4px; }
-    .tag-close { cursor: pointer; font-weight: bold; }
-    .tab-btn { transition: all 0.15s ease-in-out; }
-    .tab-btn.active { background: var(--color-surface); border-bottom: 2px solid var(--color-info); color: var(--color-text-primary); }
+    button, a[href] { cursor: pointer; }
+    .bt-card { background: var(--color-surface); border: 1px solid var(--color-border-soft); border-radius: .5rem; overflow: hidden; }
+    .bt-body { padding: 1rem; }
+    .bt-body > * + * { margin-top: 1.25rem; }
+    .bt-section + .bt-section { border-top: 1px solid var(--color-border-soft); padding-top: 1rem; margin-top: 1.25rem; }
+    .bt-section-title { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--color-info); margin: 0 0 .75rem; }
+    .bt-section-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .bt-section-head .bt-section-title { margin: 0; }
+    .bt-label { display: block; font-size: 11px; margin-bottom: .25rem; color: var(--color-text-muted); }
+    .bt-hint { display: block; font-size: 10px; margin-top: .25rem; color: var(--color-text-muted); }
+    .bt-input { width: 100%; border-radius: .5rem; padding: .5rem .75rem; font-size: .875rem; line-height: 1.25rem; border: 1px solid var(--color-border-strong);
+                background: var(--color-surface-raised); color: var(--color-text-primary); outline: none; transition: border-color .15s; }
+    .bt-input:focus { border-color: var(--color-info); }
+    .bt-input.num { font-family: var(--font-mono, 'JetBrains Mono', monospace); }
+    textarea.bt-input { resize: vertical; color: var(--color-profit); }
     select option { background-color: var(--color-surface-raised) !important; color: var(--color-text-primary) !important; }
     select option:checked { background-color: var(--color-info) !important; color: #fff !important; }
+
+    /* Grillas responsive (móvil primero) */
+    .bt-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bt-grid-1 { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
+    .bt-span-2 { grid-column: span 2 / span 2; }
+    .bt-market { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
+    .bt-pair { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (min-width: 640px) {
+        .bt-grid-1.sm-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .bt-grid-1.sm-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .bt-filter-sub { padding-left: 1.5rem; }
+    }
+    @media (min-width: 768px) {
+        .bt-market { grid-template-columns: minmax(0, 1fr) 280px; }
+    }
+    @media (min-width: 1024px) {
+        .bt-grid.lg-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+        .bt-grid.lg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .bt-grid .bt-span-2 { grid-column: auto; }
+    }
+
+    /* Filtros (tarjeta con checkbox) */
+    .bt-filter { background: var(--color-surface-raised); border: 1px solid var(--color-border-soft); border-radius: .5rem; padding: .75rem; }
+    .bt-filter + .bt-filter { margin-top: .75rem; }
+    .bt-filter .bt-input { background: var(--color-surface); }
+    .bt-filter-sub { margin-top: .75rem; transition: opacity .15s; }
+    .bt-filter.is-off .bt-filter-sub { opacity: .4; }
+    .bt-filter-stack > * + * { margin-top: .75rem; }
+    .bt-check-row { display: flex; align-items: flex-start; gap: .5rem; cursor: pointer; }
+    .bt-check { width: 1rem; height: 1rem; accent-color: var(--color-info); margin-top: .125rem; flex-shrink: 0; }
+    .bt-check-title { display: block; font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
+    .bt-check-desc { display: block; font-size: 10px; color: var(--color-text-muted); }
+
+    /* Pestañas */
+    .bt-tabs { display: flex; border-bottom: 1px solid var(--color-border-soft); background: var(--color-surface-raised); }
+    .bt-tab { flex: 1 1 0; padding: .625rem .5rem; font-size: 11px; font-weight: 500; color: var(--color-text-muted); border-bottom: 2px solid transparent;
+              transition: all .15s; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+    .bt-tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-info); background: var(--color-surface); }
+    .bt-tab .n { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 9999px; font-size: 9px;
+                 margin-right: 6px; background: var(--color-border-strong); color: var(--color-text-secondary); }
+    .bt-tab.active .n { background: var(--color-info); color: #fff; }
+    .bt-tab .long { display: none; }
+    @media (min-width: 640px) { .bt-tab .long { display: inline; } .bt-tab .short { display: none; } }
+
+    /* Pie y botones */
+    .bt-footer { border-top: 1px solid var(--color-border-soft); padding-top: 1rem; display: flex; flex-direction: column-reverse; gap: .5rem; }
+    .bt-nav { display: flex; gap: .5rem; }
+    .bt-nav .btn-sec { flex: 1 1 0; }
+    @media (min-width: 640px) {
+        .bt-footer { flex-direction: row; justify-content: space-between; align-items: center; }
+        .bt-nav .btn-sec { flex: none; }
+    }
+    .btn-sec { font-size: 11px; padding: .5rem .75rem; border-radius: .5rem; border: 1px solid var(--color-border-strong); background: var(--color-surface-raised);
+               color: var(--color-text-secondary); transition: border-color .15s; }
+    .btn-sec:hover { border-color: var(--color-info); }
+    .btn-pri { font-size: .875rem; font-weight: 500; padding: .5rem 1.5rem; border-radius: .5rem; background: var(--color-info); color: #fff; width: 100%; }
+    @media (min-width: 640px) { .btn-pri { width: auto; } }
+
+    /* Selector múltiple de símbolos */
+    .multi-select-container { position: relative; }
+    .multi-select-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; max-height: 200px; overflow-y: auto; border-radius: .5rem;
+        border: 1px solid var(--color-border-strong); background: var(--color-surface-raised); margin-top: 4px; box-shadow: 0 10px 25px rgba(0,0,0,.5); display: none; }
+    .multi-select-option { padding: 8px 12px; cursor: pointer; font-size: 11px; color: var(--color-text-muted); }
+    .multi-select-option:hover { background: var(--color-surface); color: var(--color-text-primary); }
+    .symbols-box { min-height: 38px; display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; cursor: pointer; }
+    .tag { background: var(--color-info); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 10px; display: flex; align-items: center; gap: 4px; }
+    .tag-close { cursor: pointer; font-weight: bold; }
+
+    /* Guía de campos (modal) */
+    .bt-help { text-align: left; font-size: 12px; line-height: 1.5; color: var(--color-text-secondary); max-height: 65vh; overflow-y: auto; padding-right: .25rem; }
+    .bt-help h4 { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--color-info); margin: 1rem 0 .5rem; }
+    .bt-help h4:first-child { margin-top: 0; }
+    .bt-help dt { color: var(--color-text-primary); font-weight: 500; margin-top: .5rem; }
+    .bt-help dd { margin: 0; }
+    .bt-help .warn { color: var(--color-neutral); }
 </style>
 
-<div class="mb-3 flex justify-between items-center">
+<div class="mb-3 flex justify-between items-center gap-2 flex-wrap">
     @php
         // El controlador envía $strategyToLoad y $backtestToLoad
         $stratId = request('strategy_id') ?? ($strategyToLoad->id ?? ($backtestToLoad->strategy_id ?? null));
@@ -32,368 +110,304 @@
             $returnUrl = route('strategies.index');
             $returnLabel = '← Volver a Estrategias';
         }
-    @endphp
-    <a href="{{ $returnUrl }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">{{ $returnLabel }}</a>
-    
-    @php
         $activeStrategy = $backtestToLoad->strategy ?? $strategyToLoad ?? null;
     @endphp
-    @if($activeStrategy)
-    <div class="flex items-center gap-2 px-2.5 py-1 rounded border" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-        <span class="text-[11px] font-medium" style="color:var(--color-text-primary);">{{ $activeStrategy->name }}</span>
+    <a href="{{ $returnUrl }}" class="text-[11px] transition-colors" style="color:var(--color-text-muted);">{{ $returnLabel }}</a>
+
+    <div class="flex items-center gap-2">
+        <button type="button" onclick="showFieldGuide()" class="btn-sec" style="color:var(--color-info);">? Guía de campos</button>
+        @if($activeStrategy)
+        <div class="flex items-center gap-2 px-2.5 py-1 rounded border" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
+            <span class="text-[10px]" style="color:var(--color-text-muted);">Estrategia</span>
+            <span class="text-[11px] font-medium" style="color:var(--color-text-primary);">{{ $activeStrategy->name }}</span>
+        </div>
+        @endif
     </div>
-    @endif
 </div>
 
 @if ($error)
     <div class="rounded-lg border p-3 mb-3 text-sm" style="background:#3A1A1C; border-color:#5A2226; color:var(--color-loss);">{{ $error }}</div>
 @endif
 
-<div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-    
+<div class="bt-card">
     <!-- Pestañas -->
-    <div class="flex border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
-        <button type="button" onclick="switchTab('config')" id="tab-btn-config" class="tab-btn active px-4 py-2.5 text-[11px] font-medium w-1/3 text-center" style="color:var(--color-text-muted);">1. Configuración Base</button>
-        <button type="button" onclick="switchTab('apertura')" id="tab-btn-apertura" class="tab-btn px-4 py-2.5 text-[11px] font-medium w-1/3 text-center border-l border-r" style="color:var(--color-text-muted); border-color:var(--color-border-soft);">2. Filtros de Apertura</button>
-        <button type="button" onclick="switchTab('cierre')" id="tab-btn-cierre" class="tab-btn px-4 py-2.5 text-[11px] font-medium w-1/3 text-center" style="color:var(--color-text-muted);">3. Filtros de Cierre</button>
+    <div class="bt-tabs">
+        <button type="button" onclick="switchTab('config')" id="tab-btn-config" class="bt-tab active"><span class="n">1</span><span class="short">Configuración</span><span class="long">Configuración base</span></button>
+        <button type="button" onclick="switchTab('apertura')" id="tab-btn-apertura" class="bt-tab"><span class="n">2</span><span class="short">Apertura</span><span class="long">Filtros de apertura</span></button>
+        <button type="button" onclick="switchTab('cierre')" id="tab-btn-cierre" class="bt-tab"><span class="n">3</span><span class="short">Cierre</span><span class="long">Reglas de cierre</span></button>
     </div>
 
-    <form method="POST" action="#" onsubmit="return false" id="backtestForm" class="p-4 space-y-4">
+    <form method="POST" action="#" onsubmit="return false" id="backtestForm" class="bt-body">
         @csrf
-        
-        <!-- Inputs ocultos limpios -->
+
         <input type="hidden" id="current_backtest_id" name="backtest_id" value="{{ request('backtest_id', $backtestToLoad->id ?? '') }}">
         <input type="hidden" name="strategy_id" value="{{ request('strategy_id', $backtestToLoad->strategy_id ?? '') }}">
+        {{-- Balance oculto: los resultados en % no dependen de él (tamaño, comisión y slippage son proporcionales). Sigue viajando al motor. --}}
+        <input type="hidden" name="initial_balance" value="{{ old('initial_balance', $backtestToLoad->config_params['initial_balance'] ?? '10000') }}">
 
-        <!-- PESTAÑA 1 -->
-        <div id="tab-config" class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Símbolos (Selección Múltiple)</label>
-                    <div class="multi-select-container">
-                        <div onclick="event.stopPropagation(); toggleSymbolsDropdown()" id="symbols-input" class="w-full rounded-lg px-3 py-2 text-sm border min-h-[38px] flex flex-wrap gap-1 items-center cursor-pointer" style="background:var(--color-surface-raised); border-color:var(--color-border-strong);">
-                            <span id="symbols-placeholder" class="text-sm" style="color:var(--color-text-muted);">Seleccionar monedas...</span>
-                        </div>
-                        <div id="symbols-dropdown" class="multi-select-dropdown" onclick="event.stopPropagation()">
-                            <div class="p-2 border-b" style="border-color:var(--color-border-soft);">
-                                <input type="text" id="symbols-search" onkeyup="filterSymbols()" placeholder="Buscar moneda..." class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-primary);">
+        <!-- ═══ PESTAÑA 1: CONFIGURACIÓN BASE ═══ -->
+        <div id="tab-config">
+            <section class="bt-section">
+                <p class="bt-section-title">Mercado y periodo</p>
+                <div class="bt-market">
+                    <div>
+                        <label class="bt-label">Símbolos</label>
+                        <div class="multi-select-container">
+                            <div onclick="event.stopPropagation(); toggleSymbolsDropdown()" id="symbols-input" class="bt-input symbols-box">
+                                <span id="symbols-placeholder" class="text-sm" style="color:var(--color-text-muted);">Seleccionar monedas...</span>
                             </div>
-                            <div id="symbols-list"></div>
+                            <div id="symbols-dropdown" class="multi-select-dropdown" onclick="event.stopPropagation()">
+                                <div class="p-2 border-b" style="border-color:var(--color-border-soft);">
+                                    <input type="text" id="symbols-search" onkeyup="filterSymbols()" placeholder="Buscar moneda..." class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-soft); color:var(--color-text-primary);">
+                                </div>
+                                <div id="symbols-list"></div>
+                            </div>
+                        </div>
+                        <div id="hidden-symbols-inputs"></div>
+                    </div>
+                    <div class="bt-pair">
+                        <div>
+                            <label class="bt-label">Intervalo</label>
+                            <select name="interval" class="bt-input">
+                                @php $intervalLabels = ['1' => '1m', '5' => '5m', '15' => '15m', '30' => '30m', '60' => 'H1', '120' => 'H2', '240' => 'H4', 'D' => 'D1']; @endphp
+                                @foreach ($intervals as $iv)
+                                    <option value="{{ $iv }}" {{ old('interval', $backtestToLoad->interval ?? '60') == $iv ? 'selected' : '' }}>{{ $intervalLabels[$iv] ?? $iv }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="bt-label">Meses a probar</label>
+                            <select name="months" class="bt-input">
+                                @foreach ([1, 3, 6, 12, 18, 24] as $m)
+                                    <option value="{{ $m }}" {{ old('months', $backtestToLoad->months ?? 6) == $m ? 'selected' : '' }}>{{ $m }} meses</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
-                    <div id="hidden-symbols-inputs"></div>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Intervalo</label>
-                        <select name="interval" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            @foreach ($intervals as $iv)
-                                @php
-                                    $intervalLabels = ['1' => '1m', '5' => '5m', '15' => '15m', '30' => '30m', '60' => 'H1', '120' => 'H2', '240' => 'H4', 'D' => 'D1'];
-                                    $label = $intervalLabels[$iv] ?? $iv;
-                                @endphp
-                                <option value="{{ $iv }}" {{ old('interval', $backtestToLoad->interval ?? '60') == $iv ? 'selected' : '' }}>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Meses a probar</label>
-                        <select name="months" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            @foreach ([1, 3, 6, 12, 18, 24] as $m)
-                                <option value="{{ $m }}" {{ old('months', $backtestToLoad->months ?? 6) == $m ? 'selected' : '' }}>{{ $m }} meses</option>
-                            @endforeach
-                        </select>
-                    </div>
-                </div>
-            </div>
+            </section>
 
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <h4 class="text-[11px] font-medium mb-3" style="color:var(--color-text-secondary);">Configuración de Riesgo y Operación</h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <section class="bt-section">
+                <p class="bt-section-title">Riesgo y costos</p>
+                <div class="bt-grid lg-5">
                     <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Stop Loss %</label>
-                        <input type="number" step="0.1" name="sl_pct" value="{{ old('sl_pct', $backtestToLoad->config_params['sl_pct'] ?? '1.5') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Stop Loss %</label>
+                        <input type="number" step="0.1" name="sl_pct" value="{{ old('sl_pct', $backtestToLoad->config_params['sl_pct'] ?? '1.5') }}" class="bt-input num">
                     </div>
                     <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Take Profit 1 %</label>
-                        <input type="number" step="0.1" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Take Profit %</label>
+                        <input type="number" step="0.1" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="bt-input num">
                     </div>
                     <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Balance Inicial ($)</label>
-                        <input type="number" step="100" name="initial_balance" value="{{ old('initial_balance', $backtestToLoad->config_params['initial_balance'] ?? '10000') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Riesgo / trade %</label>
+                        <input type="number" step="0.1" name="risk_per_trade_pct" value="{{ old('risk_per_trade_pct', $backtestToLoad->config_params['risk_per_trade_pct'] ?? '1.0') }}" class="bt-input num">
+                        <span class="bt-hint">% del balance que se pierde en el SL</span>
                     </div>
                     <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Riesgo / Trade %</label>
-                        <input type="number" step="0.1" name="risk_per_trade_pct" value="{{ old('risk_per_trade_pct', $backtestToLoad->config_params['risk_per_trade_pct'] ?? '1.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Comisión % / lado</label>
+                        <input type="number" step="0.001" name="commission_pct" value="{{ old('commission_pct', $backtestToLoad->config_params['commission_pct'] ?? '0.055') }}" class="bt-input num">
+                        <span class="bt-hint">Bybit taker: 0.055</span>
                     </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión % (Auto)</label>
-                        <input type="number" step="0.001" name="commission_pct" value="{{ old('commission_pct', $backtestToLoad->config_params['commission_pct'] ?? '0.055') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Slippage % / lado</label>
-                        <input type="number" step="0.01" min="0" max="1" name="slippage_pct" value="{{ old('slippage_pct', $backtestToLoad->config_params['slippage_pct'] ?? '0.05') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    <div class="bt-span-2">
+                        <label class="bt-label">Slippage % / lado</label>
+                        <input type="number" step="0.01" min="0" max="1" name="slippage_pct" value="{{ old('slippage_pct', $backtestToLoad->config_params['slippage_pct'] ?? '0.05') }}" class="bt-input num">
+                        <span class="bt-hint">Precio peor al llenar la orden</span>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="border-t pt-4" style="border-color:var(--color-border-soft);">
-                <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Parámetros de la Estrategia (JSON)</label>
-                                    @php
-                        // Limpiamos los filtros del JSON para que no se mezclen con la UI
-                        $cleanConfig = $backtestToLoad ? ($backtestToLoad->strategy_snapshot['config'] ?? []) : ($strategyToLoad->config ?? []);
-                        $keysToRemove = ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
-                              'commission_pct', 'slippage_pct', 'risk_per_trade_pct', 'regime_filter', 'regime_adx_trending',
-                              'regime_adx_ranging', 'regime_ambiguous_as', 'volume_filter', 'volume_filter_period',
-                              'volume_filter_mult', 'macro_trend_filter', 'trailing_mode', 'trailing_distance_pct', 'trailing_atr_mult'];
-                        foreach ($keysToRemove as $k) {
-                            unset($cleanConfig[$k]);
-                        }
-                        $jsonString = json_encode($cleanConfig, JSON_PRETTY_PRINT);
-                    @endphp
-                    <textarea name="strategy_config_override" rows="8" class="w-full rounded-lg px-3 py-1.5 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-profit); resize: vertical;" placeholder='{"fast_period": 9}'>{{ old('strategy_config_override', $jsonString) }}</textarea>
-            </div>
+            <section class="bt-section">
+                <div class="bt-section-head">
+                    <p class="bt-section-title">Parámetros de la estrategia</p>
+                    <span class="text-[10px]" style="color:var(--color-text-muted);">JSON · sobrescribe los valores por defecto</span>
+                </div>
+                @php
+                    // Limpiamos los filtros del JSON para que no se mezclen con la UI
+                    $cleanConfig = $backtestToLoad ? ($backtestToLoad->strategy_snapshot['config'] ?? []) : ($strategyToLoad->config ?? []);
+                    $keysToRemove = ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
+                          'commission_pct', 'slippage_pct', 'risk_per_trade_pct', 'regime_filter', 'regime_adx_trending',
+                          'regime_adx_ranging', 'regime_ambiguous_as', 'volume_filter', 'volume_filter_period',
+                          'volume_filter_mult', 'macro_trend_filter', 'trailing_mode', 'trailing_distance_pct', 'trailing_atr_mult'];
+                    foreach ($keysToRemove as $k) {
+                        unset($cleanConfig[$k]);
+                    }
+                    $jsonString = json_encode($cleanConfig, JSON_PRETTY_PRINT);
+                @endphp
+                <textarea name="strategy_config_override" rows="8" class="bt-input num" placeholder='{"fast_period": 9}'>{{ old('strategy_config_override', $jsonString) }}</textarea>
+            </section>
         </div>
 
-        <!-- PESTAÑA 2 -->
-        <div id="tab-apertura" class="space-y-4" style="display: none;">
-            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
-                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
-                    <input type="checkbox" name="regime_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('regime_filter', !empty($backtestToLoad->config_params['regime_filter'])) ? 'checked' : '' }}>
-                    Régimen de Mercado (ADX)
+        <!-- ═══ PESTAÑA 2: FILTROS DE APERTURA ═══ -->
+        <div id="tab-apertura" style="display: none;">
+            <p class="bt-section-title">Filtros que deben cumplirse para abrir</p>
+
+            <div class="bt-filter" data-filter>
+                <label class="bt-check-row">
+                    <input type="checkbox" name="regime_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('regime_filter', !empty($backtestToLoad->config_params['regime_filter'])) ? 'checked' : '' }}>
+                    <span><span class="bt-check-title">Régimen de mercado (ADX)</span>
+                    <span class="bt-check-desc">Solo opera en los regímenes permitidos por la estrategia.</span></span>
                 </label>
-                <div class="grid grid-cols-3 gap-2 mt-3 pl-6">
+                <div class="bt-filter-sub bt-grid-1 sm-3">
                     <div>
-                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX Tendencia (Mayor a)</label>
-                        <input type="number" name="regime_adx_trending" value="{{ old('regime_adx_trending', $backtestToLoad->config_params['regime_adx_trending'] ?? '25') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">ADX tendencia (mayor a)</label>
+                        <input type="number" name="regime_adx_trending" value="{{ old('regime_adx_trending', $backtestToLoad->config_params['regime_adx_trending'] ?? '25') }}" class="bt-input num">
                     </div>
                     <div>
-                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">ADX Lateral (Menor a)</label>
-                        <input type="number" name="regime_adx_ranging" value="{{ old('regime_adx_ranging', $backtestToLoad->config_params['regime_adx_ranging'] ?? '20') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">ADX lateral (menor a)</label>
+                        <input type="number" name="regime_adx_ranging" value="{{ old('regime_adx_ranging', $backtestToLoad->config_params['regime_adx_ranging'] ?? '20') }}" class="bt-input num">
                     </div>
                     <div>
-                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Caso Ambiguo</label>
-                        <select name="regime_ambiguous_as" class="w-full rounded px-2 py-1 text-[11px] border outline-none" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                            <option value="RANGING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'RANGING' ? 'selected' : '' }}>Lateral (Asumir Rango)</option>
-                            <option value="TRENDING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'TRENDING' ? 'selected' : '' }}>Tendencia (Asumir Tendencia)</option>
-                            <option value="ignorar" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'ignorar' ? 'selected' : '' }}>No Operar (Filtrar)</option>
+                        <label class="bt-label">Caso ambiguo</label>
+                        <select name="regime_ambiguous_as" class="bt-input">
+                            <option value="RANGING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'RANGING' ? 'selected' : '' }}>Lateral (asumir rango)</option>
+                            <option value="TRENDING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'TRENDING' ? 'selected' : '' }}>Tendencia (asumir tendencia)</option>
+                            <option value="ignorar" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'ignorar' ? 'selected' : '' }}>No operar (filtrar)</option>
                         </select>
                     </div>
                 </div>
             </div>
 
-            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
-                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
-                    <input type="checkbox" name="volume_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('volume_filter', !empty($backtestToLoad->config_params['volume_filter'])) ? 'checked' : '' }}>
-                    Filtro de Volumen Mínimo
+            <div class="bt-filter" data-filter>
+                <label class="bt-check-row">
+                    <input type="checkbox" name="volume_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('volume_filter', !empty($backtestToLoad->config_params['volume_filter'])) ? 'checked' : '' }}>
+                    <span><span class="bt-check-title">Volumen mínimo</span>
+                    <span class="bt-check-desc">Volumen de la vela mayor o igual al promedio × multiplicador.</span></span>
                 </label>
-                <div class="grid grid-cols-2 gap-2 mt-3 pl-6">
+                <div class="bt-filter-sub bt-grid-1 sm-2">
                     <div>
-                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Período Promedio</label>
-                        <input type="number" name="volume_filter_period" value="{{ old('volume_filter_period', $backtestToLoad->config_params['volume_filter_period'] ?? '20') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Período del promedio (velas)</label>
+                        <input type="number" name="volume_filter_period" value="{{ old('volume_filter_period', $backtestToLoad->config_params['volume_filter_period'] ?? '20') }}" class="bt-input num">
                     </div>
                     <div>
-                        <label class="block text-[10px] mb-1" style="color:var(--color-text-muted);">Multiplicador (Ej: 1.2x)</label>
-                        <input type="number" step="0.1" name="volume_filter_mult" value="{{ old('volume_filter_mult', $backtestToLoad->config_params['volume_filter_mult'] ?? '1.2') }}" class="w-full rounded px-2 py-1 text-[11px] border outline-none font-mono" style="background:var(--color-surface); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                        <label class="bt-label">Multiplicador</label>
+                        <input type="number" step="0.1" name="volume_filter_mult" value="{{ old('volume_filter_mult', $backtestToLoad->config_params['volume_filter_mult'] ?? '1.2') }}" class="bt-input num">
                     </div>
                 </div>
             </div>
 
-            <div class="rounded-lg p-3 border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
-                <label class="flex items-center gap-2 cursor-pointer text-[12px]" style="color:var(--color-text-primary);">
-                    <input type="checkbox" name="macro_trend_filter" value="1" class="w-4 h-4 rounded" style="accent-color:var(--color-info);" {{ old('macro_trend_filter', !empty($backtestToLoad->config_params['macro_trend_filter'])) ? 'checked' : '' }}>
-                    Tendencia Macro H4 (EMA 50)
+            <div class="bt-filter" data-filter>
+                <label class="bt-check-row">
+                    <input type="checkbox" name="macro_trend_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('macro_trend_filter', !empty($backtestToLoad->config_params['macro_trend_filter'])) ? 'checked' : '' }}>
+                    <span><span class="bt-check-title">Tendencia macro H4 (EMA 50)</span>
+                    <span class="bt-check-desc">Sin largos con H4 bajista ni cortos con H4 alcista.</span></span>
                 </label>
             </div>
         </div>
 
-        <!-- PESTAÑA 3 -->
-        <div id="tab-cierre" class="space-y-4" style="display: none;">
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Duración máxima (velas)</label>
-                    <input type="number" name="max_duration" value="{{ old('max_duration', $backtestToLoad->config_params['max_duration'] ?? '24') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Break-even %</label>
-                    <input type="number" step="0.1" name="be_pct" value="{{ old('be_pct', $backtestToLoad->config_params['be_pct'] ?? '2.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-                <div>
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Modo Trailing Stop</label>
-                    <select name="trailing_mode" id="trailing_mode_select" onchange="toggleTrailingInputs()" class="w-full rounded-lg px-3 py-2 text-sm border outline-none" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                        <option value="none" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'none' ? 'selected' : '' }}>Ninguno</option>
-                        <option value="fixed" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'fixed' ? 'selected' : '' }}>Fijo (%)</option>
-                        <option value="atr" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'atr' ? 'selected' : '' }}>Dinámico (ATR)</option>
-                    </select>
-                </div>
-
-                <!-- Inputs ocultos para Trailing -->
-                <div id="div_trailing_fixed" style="display: none;">
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Distancia Trailing Fijo (%)</label>
-                    <input type="number" step="0.1" name="trailing_distance_pct" value="{{ old('trailing_distance_pct', $backtestToLoad->config_params['trailing_distance_pct'] ?? '1.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-
-                <div id="div_trailing_atr" style="display: none;">
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Multiplicador ATR</label>
-                    <input type="number" step="0.1" name="trailing_atr_mult" value="{{ old('trailing_atr_mult', $backtestToLoad->config_params['trailing_atr_mult'] ?? '2.0') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-
-                <div id="div_trailing_buffer" style="display: none;">
-                    <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Activación Trailing (%)</label>
-                    <input type="number" step="0.1" name="trailing_activation_buffer_pct" value="{{ old('trailing_activation_buffer_pct', $backtestToLoad->config_params['trailing_activation_buffer_pct'] ?? '0.5') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                </div>
-            </div>
-
-            {{-- Checkboxes de cierre --}}
-            <div class="rounded-lg p-3 border space-y-3" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
-                <label class="flex items-start gap-2 cursor-pointer">
-                    <input type="checkbox" name="max_duration_profit" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('max_duration_profit', !empty($backtestToLoad->config_params['max_duration_profit'])) ? 'checked' : '' }}>
+        <!-- ═══ PESTAÑA 3: REGLAS DE CIERRE ═══ -->
+        <div id="tab-cierre" style="display: none;">
+            <section class="bt-section">
+                <p class="bt-section-title">Gestión de la posición</p>
+                <div class="bt-grid lg-3">
                     <div>
-                        <span class="text-[12px] font-medium block" style="color:var(--color-text-primary);">Cierre por tiempo inteligente</span>
-                        <span class="text-[10px] block" style="color:var(--color-text-muted);">Cierra al llegar al tiempo máximo solo si está en ganancia.</span>
+                        <label class="bt-label">Duración máxima (velas)</label>
+                        <input type="number" name="max_duration" value="{{ old('max_duration', $backtestToLoad->config_params['max_duration'] ?? '24') }}" class="bt-input num">
                     </div>
-                </label>
-
-                <label class="flex items-start gap-2 cursor-pointer">
-                    <input type="checkbox" name="close_on_opposite" value="1" class="w-4 h-4 rounded mt-0.5" style="accent-color:var(--color-info);" {{ old('close_on_opposite', !empty($backtestToLoad->config_params['close_on_opposite'])) ? 'checked' : '' }}>
                     <div>
-                        <span class="text-[12px] font-medium block" style="color:var(--color-text-primary);">Cierre por Señal Opuesta</span>
-                        <span class="text-[10px] block" style="color:var(--color-text-muted);">Si la estrategia emite una señal contraria, cierra la posición al instante.</span>
+                        <label class="bt-label">Break-even %</label>
+                        <input type="number" step="0.1" name="be_pct" value="{{ old('be_pct', $backtestToLoad->config_params['be_pct'] ?? '2.0') }}" class="bt-input num">
+                        <span class="bt-hint">Debe ser menor que el TP</span>
                     </div>
-                </label>
-            </div>
-        </div> <!-- Cierre de la Tarjeta Oscura -->
+                    <div class="bt-span-2">
+                        <label class="bt-label">Trailing stop</label>
+                        <select name="trailing_mode" id="trailing_mode_select" onchange="toggleTrailingInputs()" class="bt-input">
+                            <option value="none" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'none' ? 'selected' : '' }}>Ninguno</option>
+                            <option value="fixed" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'fixed' ? 'selected' : '' }}>Fijo (%)</option>
+                            <option value="atr" {{ old('trailing_mode', $backtestToLoad->config_params['trailing_mode'] ?? '') == 'atr' ? 'selected' : '' }}>Dinámico (ATR)</option>
+                        </select>
+                    </div>
 
-        <!-- Footer con Botones (DENTRO de la tarjeta) -->
-        <div class="border-t pt-4 mt-6 flex justify-between items-center" style="border-color:var(--color-border-soft);">
-            <button type="button" onclick="nextTab()" id="btn-next" class="text-[11px] px-3 py-1.5 rounded border transition-colors" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-info);">
-                Siguiente paso →
-            </button>
-            <button type="submit" onclick="showLoading()" class="text-sm font-medium px-6 py-2 rounded-lg transition-colors" style="background:var(--color-info); color:#fff;">
-                🚀 Ejecutar Backtest
-            </button>
+                    <div id="div_trailing_fixed" style="display: none;">
+                        <label class="bt-label">Distancia fija %</label>
+                        <input type="number" step="0.1" name="trailing_distance_pct" value="{{ old('trailing_distance_pct', $backtestToLoad->config_params['trailing_distance_pct'] ?? '1.0') }}" class="bt-input num">
+                        <span class="bt-hint">Mínimo 1.0%</span>
+                    </div>
+                    <div id="div_trailing_atr" style="display: none;">
+                        <label class="bt-label">Multiplicador ATR</label>
+                        <input type="number" step="0.1" name="trailing_atr_mult" value="{{ old('trailing_atr_mult', $backtestToLoad->config_params['trailing_atr_mult'] ?? '2.0') }}" class="bt-input num">
+                    </div>
+                    <div id="div_trailing_buffer" style="display: none;">
+                        <label class="bt-label">Activación trailing %</label>
+                        <input type="number" step="0.1" name="trailing_activation_buffer_pct" value="{{ old('trailing_activation_buffer_pct', $backtestToLoad->config_params['trailing_activation_buffer_pct'] ?? '0.5') }}" class="bt-input num">
+                    </div>
+                </div>
+            </section>
+
+            <section class="bt-section">
+                <p class="bt-section-title">Cierres adicionales</p>
+                <div class="bt-filter bt-filter-stack">
+                    <label class="bt-check-row">
+                        <input type="checkbox" name="max_duration_profit" value="1" class="bt-check" {{ old('max_duration_profit', !empty($backtestToLoad->config_params['max_duration_profit'])) ? 'checked' : '' }}>
+                        <span><span class="bt-check-title">Cierre por tiempo solo en ganancia</span>
+                        <span class="bt-check-desc">Al cumplir la duración máxima cierra solo si va ganando.</span></span>
+                    </label>
+                    <label class="bt-check-row">
+                        <input type="checkbox" name="close_on_opposite" value="1" class="bt-check" {{ old('close_on_opposite', !empty($backtestToLoad->config_params['close_on_opposite'])) ? 'checked' : '' }}>
+                        <span><span class="bt-check-title">Cierre por señal opuesta</span>
+                        <span class="bt-check-desc">Si la estrategia da la señal contraria, cierra la posición.</span></span>
+                    </label>
+                </div>
+            </section>
+        </div>
+
+        <!-- Pie: navegación + ejecutar -->
+        <div class="bt-footer">
+            <div class="bt-nav">
+                <button type="button" onclick="prevTab()" id="btn-prev" class="btn-sec" style="display:none;">← Anterior</button>
+                <button type="button" onclick="nextTab()" id="btn-next" class="btn-sec" style="color:var(--color-info);">Siguiente →</button>
+            </div>
+            <button type="submit" class="btn-pri">Ejecutar backtest</button>
         </div>
     </form>
+</div>
 
+{{-- RESULTADOS: fuera de la tarjeta del formulario --}}
+<div id="results-container" class="mt-4"></div>
 
-{{-- RESULTADOS (Bloque único, sin duplicados) --}}
-<div id="results-container"></div>
-
-<script>
-    // Esta función se define aquí para que esté disponible cuando los resultados carguen por AJAX
-    function confirmSaveBacktest() {
-        Swal.fire({
-            title: '¿Guardar Backtest?',
-            text: "Se guardará esta configuración en el historial.",
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#10B981',
-            cancelButtonColor: '#374151',
-            confirmButtonText: 'Sí, guardar',
-            cancelButtonText: 'Cancelar',
-            background: '#1f2937',
-            color: '#f3f4f6'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Guardando...',
-                    allowOutsideClick: false,
-                    didOpen: () => { Swal.showLoading(); }
-                });
-                
-                // Envío por AJAX
-                const form = document.getElementById('saveBacktestForm');
-                const formData = new FormData(form);
-                
-                fetch(form.action, {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                        'Accept': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Guardamos el ID en un input oculto para el próximo backtest
-                        let hiddenId = document.getElementById('current_backtest_id');
-                        if (!hiddenId) {
-                            hiddenId = document.createElement('input');
-                            hiddenId.type = 'hidden';
-                            hiddenId.id = 'current_backtest_id';
-                            hiddenId.name = 'backtest_id';
-                            document.getElementById('backtestForm').appendChild(hiddenId);
-                        }
-                        hiddenId.value = data.backtest_id;
-                        console.log('--- BACKTEST GUARDADO --- ID asignado al input oculto:', data.backtest_id);
-
-                        Swal.fire({
-                            title: data.sync_blocked ? 'Guardado sin sincronizar' : '¡Guardado!',
-                            text: data.message || 'El backtest se guardó en el historial.',
-                            icon: data.sync_blocked ? 'warning' : 'success',
-                            confirmButtonColor: '#10B981',
-                            background: '#1f2937',
-                            color: '#f3f4f6'
-                        });
-                    } else {
-                        throw new Error(data.message || 'Error al guardar');
-                    }
-                })
-                .catch(error => {
-                    Swal.fire({
-                        title: 'Error',
-                        text: error.message,
-                        icon: 'error',
-                        background: '#1f2937',
-                        color: '#f3f4f6'
-                    });
-                });
-            }
-        });
-    }
-</script>
-
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-
-<script>
-    function toggleTrailingInputs() {
-        const mode = document.getElementById('trailing_mode_select').value;
-        const divFixed = document.getElementById('div_trailing_fixed');
-        const divAtr = document.getElementById('div_trailing_atr');
-        
-        const divBuffer = document.getElementById('div_trailing_buffer');
-        if (mode === 'fixed') {
-            divFixed.style.display = 'block';
-            divAtr.style.display = 'none';
-            divBuffer.style.display = 'block';
-        } else if (mode === 'atr') {
-            divFixed.style.display = 'none';
-            divAtr.style.display = 'block';
-            divBuffer.style.display = 'block';
-        } else {
-            divFixed.style.display = 'none';
-            divAtr.style.display = 'none';
-            divBuffer.style.display = 'none';
-        }
-    }
-    
-    // Ejecutar al cargar la página para mostrar el campo correcto si ya estaba seleccionado
-    document.addEventListener('DOMContentLoaded', function() {
-        toggleTrailingInputs();
-    });
-</script>
+{{-- Guía de campos (se muestra en un modal con "? Guía de campos") --}}
+<template id="field-guide">
+    <div class="bt-help">
+        <h4>1 · Configuración base</h4>
+        <dl>
+            <dt>Símbolos</dt><dd>Monedas a probar. Cada una se simula por separado con los mismos parámetros y el resultado se suma.</dd>
+            <dt>Intervalo</dt><dd>Temporalidad de las velas con las que la estrategia busca señales. El SL, TP, BE y trailing se revisan con velas de 1 minuto cuando hay datos de 1m para todo el periodo (más realista).</dd>
+            <dt>Meses a probar</dt><dd>Cuánta historia se simula. Más meses = resultado más confiable (más operaciones y más tipos de mercado).</dd>
+            <dt>Stop Loss %</dt><dd>Distancia desde la entrada a la que se corta la pérdida. Ej.: 1.5 en un largo a 100 → SL en 98.5.</dd>
+            <dt>Take Profit %</dt><dd>Distancia del objetivo. Al tocarlo se cierra el 100% de la posición.</dd>
+            <dt>Riesgo / trade %</dt><dd>Lo que se pierde del balance si salta el SL. Define el tamaño: balance × riesgo ÷ distancia al SL. El tamaño nunca supera el balance (sin apalancamiento), así que con SL muy cortos el riesgo real puede ser menor.</dd>
+            <dt>Comisión % / lado</dt><dd>Se cobra al entrar y al salir sobre el valor de la posición. Bybit taker: 0.055%.</dd>
+            <dt>Slippage % / lado</dt><dd>Diferencia entre el precio de la vela y el precio real de llenado. Se aplica en contra al entrar y al salir (0.05% ≈ 0.10% por operación completa). Se calibrará con la cuenta demo.</dd>
+            <dt>Parámetros de la estrategia (JSON)</dt><dd>Valores propios de la estrategia (periodos, multiplicadores…). Lo que no escribas usa el valor por defecto de la estrategia. Debe ser JSON válido.</dd>
+        </dl>
+        <h4>2 · Filtros de apertura</h4>
+        <dl>
+            <dt>Régimen de mercado (ADX)</dt><dd>Cada vela se clasifica: <b>Volátil</b> si el ATR supera 1.8× su promedio de 50 velas; <b>Tendencia</b> si el ADX supera "ADX tendencia"; <b>Lateral</b> si el ADX está bajo "ADX lateral" y las Bandas de Bollinger están estrechas. Solo se abre en los regímenes que la estrategia permite.</dd>
+            <dt>Caso ambiguo</dt><dd>Qué hacer con las velas que no encajan en ningún régimen: tratarlas como lateral, como tendencia, o no operar.</dd>
+            <dt>Volumen mínimo</dt><dd>Solo abre si el volumen de la vela de la señal es ≥ promedio de N velas × multiplicador. Ej.: 20 y 1.2 → al menos 20% sobre el promedio.</dd>
+            <dt>Tendencia macro H4 (EMA 50)</dt><dd>Pensado para no abrir largos con H4 bajista ni cortos con H4 alcista. <span class="warn">En revisión: hoy no tiene efecto en el backtest (se corrige en la validación de filtros).</span></dd>
+        </dl>
+        <h4>3 · Reglas de cierre</h4>
+        <dl>
+            <dt>Duración máxima (velas)</dt><dd>Cierra al cierre de la vela N contada desde la entrada (velas del intervalo elegido). 0 = sin límite.</dd>
+            <dt>Break-even %</dt><dd>Cuando el precio avanza ese % a favor, el SL se mueve al precio de entrada. Debe ser menor que el TP; si no, nunca se activa. Al cerrar en break-even se pierde la comisión y el slippage.</dd>
+            <dt>Trailing stop · Fijo</dt><dd>El SL persigue al precio a una distancia fija (% de la entrada) y solo se mueve a favor. Mínimo 1.0% para evitar cierres por ruido.</dd>
+            <dt>Trailing stop · Dinámico (ATR)</dt><dd>La distancia es ATR × multiplicador: se abre en mercados volátiles y se cierra en mercados tranquilos.</dd>
+            <dt>Activación trailing %</dt><dd>El trailing solo empieza a mover el SL cuando la ganancia supera este %.</dd>
+            <dt>Cierre por tiempo solo en ganancia</dt><dd>Al cumplir la duración máxima cierra solo si va ganando; si va perdiendo sigue abierta hasta SL, TP, BE o trailing.</dd>
+            <dt>Cierre por señal opuesta</dt><dd>Si la estrategia da la señal contraria con una posición abierta, la cierra al abrir la vela siguiente y abre la contraria si pasa los filtros. Sin esta opción, las señales contrarias se ignoran mientras hay posición.</dd>
+        </dl>
+    </div>
+</template>
 @endsection
-
-
-
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+// Tema único de SweetAlert (misma paleta que la app)
+const SWAL_THEME = { background: '#11161F', color: '#E5E9F0', confirmButtonColor: '#4D8FE8', cancelButtonColor: '#232B38' };
+
 // ═══════════════════════════════════════════════════════════
-// LÓGICA DE TABS
+// PESTAÑAS
 // ═══════════════════════════════════════════════════════════
 let currentTab = 'config';
 const tabs = ['config', 'apertura', 'cierre'];
@@ -406,19 +420,36 @@ function switchTab(tabName) {
     });
     document.getElementById('tab-' + tabName).style.display = 'block';
     document.getElementById('tab-btn-' + tabName).classList.add('active');
-    
-    const btnNext = document.getElementById('btn-next');
-    if (tabName === 'cierre') { btnNext.style.display = 'none'; } 
-    else { btnNext.style.display = 'inline-block'; }
+
+    const idx = tabs.indexOf(tabName);
+    document.getElementById('btn-prev').style.display = idx === 0 ? 'none' : '';
+    document.getElementById('btn-next').style.display = idx === tabs.length - 1 ? 'none' : '';
+}
+function nextTab() { const i = tabs.indexOf(currentTab); if (i < tabs.length - 1) switchTab(tabs[i + 1]); }
+function prevTab() { const i = tabs.indexOf(currentTab); if (i > 0) switchTab(tabs[i - 1]); }
+
+// Filtro apagado: sus campos se atenúan (solo visual; los valores se envían igual que siempre)
+function dimFilter(checkbox) { checkbox.closest('[data-filter]').classList.toggle('is-off', !checkbox.checked); }
+
+function toggleTrailingInputs() {
+    const mode = document.getElementById('trailing_mode_select').value;
+    document.getElementById('div_trailing_fixed').style.display  = mode === 'fixed' ? 'block' : 'none';
+    document.getElementById('div_trailing_atr').style.display    = mode === 'atr' ? 'block' : 'none';
+    document.getElementById('div_trailing_buffer').style.display = (mode === 'fixed' || mode === 'atr') ? 'block' : 'none';
 }
 
-function nextTab() {
-    const idx = tabs.indexOf(currentTab);
-    if (idx < tabs.length - 1) { switchTab(tabs[idx + 1]); }
+function showFieldGuide() {
+    Swal.fire({
+        ...SWAL_THEME,
+        title: 'Guía de campos',
+        html: document.getElementById('field-guide').innerHTML,
+        width: '760px',
+        confirmButtonText: 'Entendido',
+    });
 }
 
 // ═══════════════════════════════════════════════════════════
-// LÓGICA DE MULTISELECT
+// SELECTOR MÚLTIPLE DE SÍMBOLOS
 // ═══════════════════════════════════════════════════════════
 let rawSymbols = @json($symbols);
 let allSymbols = Array.isArray(rawSymbols) ? rawSymbols : Object.values(rawSymbols || {});
@@ -430,7 +461,6 @@ function renderSymbols() {
     const input = document.getElementById('symbols-input');
     const list = document.getElementById('symbols-list');
     const hiddenInputs = document.getElementById('hidden-symbols-inputs');
-    
     if (!input || !list || !hiddenInputs) return;
 
     input.innerHTML = '';
@@ -470,147 +500,154 @@ function renderSymbols() {
         });
     }
 }
-
-function addSymbol(sym) {
-    if (!selectedSymbols.includes(sym)) {
-        selectedSymbols.push(sym);
-        renderSymbols();
-    }
-}
-
-function removeSymbol(sym, event) {
-    if (event) event.stopPropagation();
-    selectedSymbols = selectedSymbols.filter(s => s !== sym);
-    renderSymbols();
-}
-
+function addSymbol(sym) { if (!selectedSymbols.includes(sym)) { selectedSymbols.push(sym); renderSymbols(); } }
+function removeSymbol(sym, event) { if (event) event.stopPropagation(); selectedSymbols = selectedSymbols.filter(s => s !== sym); renderSymbols(); }
 function toggleSymbolsDropdown() {
     const dd = document.getElementById('symbols-dropdown');
     if (!dd) return;
     const isHidden = dd.style.display === 'none' || dd.style.display === '';
     dd.style.display = isHidden ? 'block' : 'none';
-    if (isHidden) {
-        setTimeout(() => {
-            const search = document.getElementById('symbols-search');
-            if (search) search.focus();
-        }, 50);
-    }
+    if (isHidden) setTimeout(() => { const s = document.getElementById('symbols-search'); if (s) s.focus(); }, 50);
 }
-
 function filterSymbols() { renderSymbols(); }
 
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const dropdown = document.getElementById('symbols-dropdown');
     const input = document.getElementById('symbols-input');
     if (!dropdown || !input) return;
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = 'none';
-    }
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
 });
 
-document.addEventListener('DOMContentLoaded', () => { renderSymbols(); });
+document.addEventListener('DOMContentLoaded', () => {
+    renderSymbols();
+    toggleTrailingInputs();
+    document.querySelectorAll('[data-filter] input[type=checkbox]').forEach(dimFilter);
+});
 
 // ═══════════════════════════════════════════════════════════
-// LOADING OVERLAY
+// EJECUTAR BACKTEST (AJAX)
 // ═══════════════════════════════════════════════════════════
 function showLoading() {
     Swal.fire({
+        ...SWAL_THEME,
         title: 'Ejecutando Backtest...',
         html: 'Procesando símbolos. Esto puede tardar unos segundos por moneda.',
         allowOutsideClick: false, allowEscapeKey: false,
-        background: '#11161F', color: '#E5E9F0',
         didOpen: () => Swal.showLoading()
     });
 }
-document.getElementById('backtestForm').addEventListener('submit', function(e) {
-    e.preventDefault(); // Evita que la página se recargue
-    
+
+document.getElementById('backtestForm').addEventListener('submit', function (e) {
+    e.preventDefault();
     showLoading();
-    
-    const form = e.target;
-    const formData = new FormData(form);
-    
+
     fetch('{{ route("backtesting.execute-ajax") }}', {
         method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            'Accept': 'application/json'
-        }
+        body: new FormData(e.target),
+        headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
     })
     .then(response => response.json())
     .then(data => {
         Swal.close();
-        
         if (data.success) {
             document.getElementById('results-container').innerHTML = data.html;
             window.currentWarnings = data.warnings || [];
             document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
         } else {
-            Swal.fire({
-                title: 'Error',
-                text: data.error || 'Hubo un problema al ejecutar el backtest.',
-                icon: 'error',
-                background: '#11161F', color: '#E5E9F0'
-            });
+            Swal.fire({ ...SWAL_THEME, title: 'Error', text: data.error || 'Hubo un problema al ejecutar el backtest.', icon: 'error' });
         }
     })
-    .catch(error => {
+    .catch(() => {
         Swal.close();
-        Swal.fire({
-            title: 'Error de conexión',
-            text: 'No se pudo conectar con el servidor.',
-            icon: 'error',
-            background: '#11161F', color: '#E5E9F0'
-        });
+        Swal.fire({ ...SWAL_THEME, title: 'Error de conexión', text: 'No se pudo conectar con el servidor.', icon: 'error' });
     });
 });
 
-    // Función para el Modal de Errores
-    window.showBacktestLog = function() {
-        if (!window.currentWarnings || window.currentWarnings.length === 0) {
-            Swal.fire({ title: 'Sin errores', text: 'No hay advertencias para este backtest.', icon: 'info', background: '#11161F', color: '#E5E9F0' });
-            return;
-        }
-        
-        let logHtml = '<div style="text-align:left; font-family:monospace; font-size:12px; background:#0D1117; padding:15px; border-radius:5px; border:1px solid #30363D; max-height:400px; overflow-y:auto;">';
-        window.currentWarnings.forEach(w => {
-            logHtml += `<div style="margin-bottom:10px; color:#F2545B;">- ${w}</div>`;
-        });
-        logHtml += '</div>';
+// ═══════════════════════════════════════════════════════════
+// GUARDAR BACKTEST (botón del panel de resultados)
+// ═══════════════════════════════════════════════════════════
+function confirmSaveBacktest() {
+    Swal.fire({
+        ...SWAL_THEME,
+        title: '¿Guardar Backtest?',
+        text: 'Se guardará esta configuración en el historial.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3DD68C',
+        confirmButtonText: 'Sí, guardar',
+        cancelButtonText: 'Cancelar',
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({ ...SWAL_THEME, title: 'Guardando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
-        Swal.fire({
-            title: 'Log de Errores del Backtest',
-            html: logHtml,
-            icon: 'warning',
-            background: '#11161F', 
-            color: '#E5E9F0',
-            confirmButtonColor: '#374151',
-            confirmButtonText: 'Cerrar',
-            showDenyButton: true,
-            denyButtonText: '📥 Descargar .txt',
-            denyButtonColor: '#3b82f6',
-            width: '85%',          /* 🔥 AQUÍ ESTÁ LA MAGIA: 85% DEL ANCHO DE LA PANTALLA */
-            maxWidth: '1200px'     /* Límite máximo para pantallas muy grandes */
-        }).then((result) => {
-            if (result.isDenied) {
-                let textContent = `LOG DE ERRORES - Backtest\nFecha: ${new Date().toLocaleString()}\n\n`;
-                window.currentWarnings.forEach((w, i) => {
-                    textContent += `${i + 1}. ${w}\n`;
-                });
-                
-                const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Log_Backtest.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+        const form = document.getElementById('saveBacktestForm');
+        fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Error al guardar');
+            // El id guardado viaja en el próximo backtest (edición del mismo registro)
+            let hiddenId = document.getElementById('current_backtest_id');
+            if (!hiddenId) {
+                hiddenId = document.createElement('input');
+                hiddenId.type = 'hidden';
+                hiddenId.id = 'current_backtest_id';
+                hiddenId.name = 'backtest_id';
+                document.getElementById('backtestForm').appendChild(hiddenId);
             }
-        });
-    };
+            hiddenId.value = data.backtest_id;
 
+            Swal.fire({
+                ...SWAL_THEME,
+                title: data.sync_blocked ? 'Guardado sin sincronizar' : '¡Guardado!',
+                text: data.message || 'El backtest se guardó en el historial.',
+                icon: data.sync_blocked ? 'warning' : 'success',
+            });
+        })
+        .catch(error => Swal.fire({ ...SWAL_THEME, title: 'Error', text: error.message, icon: 'error' }));
+    });
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOG DE ADVERTENCIAS (botón del panel de resultados)
+// ═══════════════════════════════════════════════════════════
+window.showBacktestLog = function () {
+    if (!window.currentWarnings || window.currentWarnings.length === 0) {
+        Swal.fire({ ...SWAL_THEME, title: 'Sin advertencias', text: 'No hay advertencias para este backtest.', icon: 'info' });
+        return;
+    }
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let logHtml = '<div style="text-align:left; font-family:monospace; font-size:12px; background:#0A0E14; padding:15px; border-radius:5px; border:1px solid #232B38; max-height:400px; overflow-y:auto;">';
+    window.currentWarnings.forEach(w => { logHtml += `<div style="margin-bottom:10px; color:#F2545B;">- ${esc(w)}</div>`; });
+    logHtml += '</div>';
+
+    Swal.fire({
+        ...SWAL_THEME,
+        title: 'Log de advertencias del backtest',
+        html: logHtml,
+        icon: 'warning',
+        confirmButtonColor: '#232B38',
+        confirmButtonText: 'Cerrar',
+        showDenyButton: true,
+        denyButtonText: 'Descargar .txt',
+        denyButtonColor: '#4D8FE8',
+        width: 'min(1200px, 95vw)',
+    }).then((result) => {
+        if (!result.isDenied) return;
+        let textContent = `LOG DE ADVERTENCIAS - Backtest\nFecha: ${new Date().toLocaleString()}\n\n`;
+        window.currentWarnings.forEach((w, i) => { textContent += `${i + 1}. ${w}\n`; });
+        const url = URL.createObjectURL(new Blob([textContent], { type: 'text/plain;charset=utf-8' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Log_Backtest.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+};
 </script>
 @endpush
