@@ -35,7 +35,7 @@ class CollectOhlcvDataJob implements ShouldQueue
             $totalSaved  = $data['total_saved'] ?? 0;
 
             if ($totalSaved > 0) {
-                Log::info("CollectOhlcvDataJob: {$totalSaved} velas nuevas guardadas", $data['results'] ?? []);
+                Log::debug("CollectOhlcvDataJob: {$totalSaved} velas escritas (nuevas o actualizadas)", $data['results'] ?? []);
             }
 
         } catch (\Throwable $e) {

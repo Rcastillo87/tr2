@@ -421,7 +421,7 @@ class OhlcvCollector:
         saved = await self.save_bars(bars, broker=broker)
 
         if saved > 0:
-            logger.info(f"[{symbol}/{interval}] Actualización: {saved} velas nuevas")
+            logger.debug(f"[{symbol}/{interval}] {saved} velas escritas (nuevas o actualizadas)")
 
         return saved
 

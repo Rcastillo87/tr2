@@ -16,6 +16,8 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
 )
 
+logging.getLogger('httpx').setLevel(logging.WARNING)  # una línea por request a Bybit saturaba el log
+
 logger = logging.getLogger(__name__)
 
 from api.v1.collector import router as collector_router
