@@ -14,6 +14,7 @@ Uso (desde python-engine/):
     venv/bin/python -m cli.backfill_bybit                         # backfill 730 días, todas las series
     venv/bin/python -m cli.backfill_bybit --only BTCUSDT --intervals 60,1
     venv/bin/python -m cli.backfill_bybit --since 2026-06-01      # solo un tramo
+    venv/bin/python -m cli.backfill_bybit --gaps --intervals 1    # solo los huecos reales de la DB
 """
 import argparse
 import asyncio
@@ -148,33 +149,70 @@ async def backfill_series(pool, collector: OhlcvCollector, client, limiter, symb
         return res
     res.first_available = max(floor_to_interval(since, interval), listed)
 
-    cursor = res.first_available
-    total_windows = max(1, int((until - cursor) / (step * BYBIT_LIMIT)) + 1)
+    total_windows = max(1, int((until - res.first_available) / (step * BYBIT_LIMIT)) + 1)
     if dry_run:
         res.windows = total_windows
         return res
+    await fill_range(collector, client, limiter, res, res.first_available, until, total_windows)
+    return res
 
-    last_log = time.monotonic()
-    while cursor <= until:
-        window_end = min(until, cursor + step * (BYBIT_LIMIT - 1))
+
+async def fill_range(collector: OhlcvCollector, client, limiter, res: SeriesResult,
+                     start: datetime, end: datetime, total_windows: int | None = None) -> None:
+    """Descarga [start, end] en ventanas de BYBIT_LIMIT velas. Las ventanas fallidas o vacías
+    se reintentan una vez al final; si siguen fallando quedan en res.errors (nunca en silencio)."""
+    symbol, interval = res.symbol, res.interval
+    step = interval_delta(interval)
+
+    async def one(w_start: datetime, w_end: datetime) -> bool:
         try:
-            bars = await fetch_window(client, limiter, symbol, interval, cursor, window_end)
-        except Exception as e:  # registrar y seguir con la siguiente ventana: la re-ejecución lo completa
-            res.errors.append(f"{cursor:%Y-%m-%d %H:%M}: {e}")
-            logger.error(f"{symbol} {interval} ventana {cursor:%Y-%m-%d %H:%M}: {e}")
-            cursor = window_end + step
-            continue
+            bars = await fetch_window(client, limiter, symbol, interval, w_start, w_end)
+        except Exception as e:
+            logger.warning(f"{symbol} {interval} ventana {w_start:%Y-%m-%d %H:%M}: {e}")
+            return False
+        if not bars:
+            logger.warning(f"{symbol} {interval} ventana {w_start:%Y-%m-%d %H:%M} vacía")
+            return False
         good = [b for b in bars if valid_bar(b)]
         res.rejected += len(bars) - len(good)
         res.received += len(good)
         res.written += await collector.save_bars(good, broker=BROKER)
         res.windows += 1
-        cursor = window_end + step
+        return True
+
+    failed: list[tuple[datetime, datetime]] = []
+    cursor, last_log = start, time.monotonic()
+    while cursor <= end:
+        w_end = min(end, cursor + step * (BYBIT_LIMIT - 1))
+        if not await one(cursor, w_end):
+            failed.append((cursor, w_end))
+        cursor = w_end + step
         if time.monotonic() - last_log > 30:
-            logger.info(f"{symbol} {interval}: {res.windows}/{total_windows} ventanas, "
-                        f"recibidas={res.received} escritas={res.written} (hasta {window_end:%Y-%m-%d %H:%M})")
+            logger.info(f"{symbol} {interval}: {res.windows}/{total_windows or '?'} ventanas, "
+                        f"recibidas={res.received} escritas={res.written} (hasta {w_end:%Y-%m-%d %H:%M})")
             last_log = time.monotonic()
-    return res
+
+    if failed:  # 2ª pasada tras una pausa: los fallos de red/tasa suelen ser transitorios
+        logger.warning(f"{symbol} {interval}: reintentando {len(failed)} ventana(s) fallida(s) o vacía(s)")
+        await asyncio.sleep(10)
+        for w_start, w_end in failed:
+            if not await one(w_start, w_end):
+                res.errors.append(f"{w_start:%Y-%m-%d %H:%M} → {w_end:%Y-%m-%d %H:%M}: sin datos tras 2 pasadas")
+
+
+async def find_gaps(pool, symbol: str, interval: str, since: datetime, until: datetime) -> list[tuple[datetime, datetime]]:
+    """Tramos faltantes [desde, hasta] entre velas consecutivas de la DB."""
+    step = interval_delta(interval)
+    rows = await pool.fetch(
+        """
+        SELECT prev + $5 AS gap_start, time - $5 AS gap_end
+        FROM (SELECT time, lag(time) OVER (ORDER BY time) AS prev
+              FROM ohlcv_data WHERE broker = $1 AND symbol = $2 AND interval = $3 AND time >= $4) s
+        WHERE prev IS NOT NULL AND time - prev > $5 AND time <= $6
+        ORDER BY prev
+        """,
+        BROKER, symbol, interval, since, step, until + step)
+    return [(r['gap_start'], r['gap_end']) for r in rows]
 
 
 async def audit(pool, series: list[tuple[str, str]], since: datetime, now: datetime) -> int:
@@ -223,6 +261,7 @@ async def main() -> int:
     p.add_argument('--rate', type=float, default=8.0, help='llamadas por segundo (default 8)')
     p.add_argument('--dry-run', action='store_true', help='solo planifica: llamadas y duración, sin escribir')
     p.add_argument('--audit', action='store_true', help='solo auditoría de la DB, sin llamar a la API')
+    p.add_argument('--gaps', action='store_true', help='descarga solo los huecos reales de la DB')
     args = p.parse_args()
 
     now = datetime.now(timezone.utc)
@@ -249,6 +288,16 @@ async def main() -> int:
         async with httpx.AsyncClient(timeout=30) as client:
             for symbol, interval in series:
                 until = floor_to_interval(now, interval) - interval_delta(interval)  # última vela cerrada
+                if args.gaps:
+                    gaps = await find_gaps(pool, symbol, interval, since, until)
+                    res = SeriesResult(symbol, interval)
+                    logger.info(f"=== {symbol} {interval}: {len(gaps)} hueco(s)")
+                    for g_start, g_end in gaps:
+                        res.first_available = res.first_available or g_start
+                        if not args.dry_run:
+                            await fill_range(collector, client, limiter, res, g_start, g_end)
+                    results.append(res)
+                    continue
                 logger.info(f"=== {symbol} {interval}  {since:%Y-%m-%d} → {until:%Y-%m-%d %H:%M}")
                 results.append(await backfill_series(pool, collector, client, limiter, symbol, interval,
                                                      since, until, args.dry_run))
