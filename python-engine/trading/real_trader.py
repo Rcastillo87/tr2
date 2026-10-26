@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
 BYBIT_MAINNET = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
-BYBIT_TESTNET = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
+BYBIT_DEMO_URL = os.getenv('BYBIT_DEMO_URL', 'https://api-demo.bybit.com')  # Bybit Demo Trading (precios reales)
 
 
 def compute_native_trailing_params(entry_price, side, trailing_distance_pct, buffer_pct=0.003):
@@ -95,7 +95,7 @@ class BybitClient:
     def __init__(self, api_key: str, api_secret: str, account_type: str = 'real'):
         self.api_key    = api_key
         self.api_secret = api_secret
-        self.base_url   = BYBIT_TESTNET if account_type == 'demo' else BYBIT_MAINNET
+        self.base_url   = BYBIT_DEMO_URL if account_type == 'demo' else BYBIT_MAINNET
 
     async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20):
         """
@@ -138,7 +138,7 @@ class BybitClient:
             return []
 
     async def get_market_price(self, symbol: str) -> float | None:
-        """Obtiene precio actual usando la URL correcta (testnet o mainnet)."""
+        """Obtiene precio actual usando la URL de la cuenta (Demo Trading o real)."""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(
@@ -257,11 +257,10 @@ class BybitClient:
         # Calcular SL/TP provisionales basados en mark_price actual
         mark_price = await self.get_market_price(symbol)
         if mark_price:
-            # SL provisional: 5% para demo (testnet volatil), 3% para mainnet
-            is_demo = 'testnet' in self.base_url
-            # Demo: SL=5%, TP=10% | Mainnet: SL=2%, TP=4%
-            sl_margin = 1.05 if is_demo else 1.02
-            tp_margin = 0.90 if is_demo else 0.96
+            # SL/TP provisionales (2% / 4%) hasta fijar los de la estrategia con trading-stop. Igual en demo y
+            # real: Demo Trading usa los precios reales del mercado.
+            is_demo = self.base_url == BYBIT_DEMO_URL
+            sl_margin, tp_margin = 1.02, 0.96
             if side == 'Sell':  # SHORT
                 sl_prov = round(mark_price * sl_margin, 8)         # SL arriba
                 tp_prov = round(mark_price * tp_margin, 8)         # TP abajo
@@ -811,7 +810,7 @@ class RealTrader:
             return False
 
         # 2. Obtener precio actual del mercado para calcular SL/TP
-        # Usar el precio del mismo entorno (testnet/mainnet) donde se ejecutara la orden
+        # Usar el precio del mismo entorno (Demo Trading / real) donde se ejecutara la orden
         current_price = await client.get_market_price(symbol)
         entry_price_for_calc = current_price if current_price else entry_signal_price
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.02:

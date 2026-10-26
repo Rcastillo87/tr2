@@ -196,26 +196,6 @@ class TradingController extends Controller
         ]);
     }
 
-    private function getTestnetPrices(array $symbols): array
-    {
-        $prices = [];
-        foreach ($symbols as $symbol) {
-            try {
-                $response = Http::timeout(5)->get('https://api-testnet.bybit.com/v5/market/tickers', [
-                    'category' => 'linear',
-                    'symbol'   => $symbol,
-                ]);
-                if ($response->successful()) {
-                    $list = $response->json('result.list', []);
-                    if (!empty($list)) {
-                        $prices[$symbol] = (float) $list[0]['lastPrice'];
-                    }
-                }
-            } catch (\Throwable $e) {}
-        }
-        return $prices;
-    }
-
     private function getLivePrices(array $symbols): array
     {
         $prices = [];
@@ -368,9 +348,8 @@ class TradingController extends Controller
             ->with('brokerAccount')
             ->get(['id', 'symbol', 'side', 'entry_price', 'sl', 'tp', 'size', 'broker_account_id']);
         $symbols = $openTrades->pluck('symbol')->unique()->toArray();
-        // Usar precios testnet si hay cuentas demo
-        $hasDemo = $openTrades->filter(fn($t) => $t->brokerAccount?->account_type === 'demo')->isNotEmpty();
-        $prices  = $hasDemo ? $this->getTestnetPrices($symbols) : $this->getLivePrices($symbols);
+        // Demo Trading de Bybit usa los precios reales del mercado: misma fuente para demo y real
+        $prices = $this->getLivePrices($symbols);
 
         $result = $openTrades->map(function ($trade) use ($prices) {
             $currentPrice   = $prices[$trade->symbol] ?? null;

@@ -147,7 +147,7 @@
                 <div><span class="font-medium" style="color:var(--color-text-primary);">Comisión</span> — Costo de la operación (taker fee Bybit ~0.055%).</div>
                 <div><span class="font-medium" style="color:var(--color-text-primary);">P&L neto</span> — Ganancia/pérdida real en USDT después de comisiones.</div>
                 <div><span class="font-medium" style="color:var(--color-text-primary);">Bal. antes/después</span> — Balance de la cuenta antes y después de la operación.</div>
-                <div><span class="font-medium" style="color:var(--color-text-primary);">DEMO/REAL</span> — Indica si la cuenta es testnet (demo) o mainnet (real).</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">DEMO/REAL</span> — Indica si la cuenta es de Demo Trading de Bybit (precios reales, dinero ficticio) o real.</div>
             </div>
         </div>
     </div>

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BYBIT_MAINNET_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
-BYBIT_TESTNET_URL = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
+BYBIT_DEMO_URL = os.getenv('BYBIT_DEMO_URL', 'https://api-demo.bybit.com')  # Bybit Demo Trading (precios reales)
 
 
 class PeriodPnlRequest(BaseModel):
@@ -33,7 +33,7 @@ async def period_pnl(request: PeriodPnlRequest):
     """Suma el campo 'change' de todo el transaction-log de Bybit en el
     rango pedido — es el cambio de balance real, ground truth, sin importar
     si vino de un trade, un funding fee, o cualquier otro evento de cuenta."""
-    base_url = BYBIT_TESTNET_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
+    base_url = BYBIT_DEMO_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
 
     total_change = 0.0
     cursor = None

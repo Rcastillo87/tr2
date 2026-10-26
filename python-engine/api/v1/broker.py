@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BYBIT_MAINNET_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
-BYBIT_TESTNET_URL = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
+BYBIT_DEMO_URL = os.getenv('BYBIT_DEMO_URL', 'https://api-demo.bybit.com')  # Bybit Demo Trading (precios reales)
 INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
 
 
@@ -44,7 +44,7 @@ async def validate_credentials(
         raise HTTPException(status_code=400, detail=f'Broker no soportado: {request.broker}')
 
     # Usar URL correcta segun tipo de cuenta
-    base_url = BYBIT_TESTNET_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
+    base_url = BYBIT_DEMO_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
 
     try:
         params = {'accountType': 'UNIFIED'}
@@ -110,7 +110,7 @@ async def account_info(
     if x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail='Unauthorized')
 
-    base_url = BYBIT_TESTNET_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
+    base_url = BYBIT_DEMO_URL if request.account_type == 'demo' else BYBIT_MAINNET_URL
 
     try:
         params  = {}
