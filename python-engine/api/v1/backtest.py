@@ -83,7 +83,7 @@ class BacktestRequest(BaseModel):
     commission_pct:         float                = 0.055
     # data_broker: fuente de datos para el backtest. Si None, se resuelve
     # via collector_configs (mismo comportamiento que paper/real).
-    # Valores válidos: None | "bybit" | "binance_vision" | "ig".
+    # Valores válidos: None | "bybit" | "binance_vision".
     # Permite comparar la MISMA estrategia contra distintos exchanges.
     data_broker:            Optional[str]        = None
     max_leverage:           float                = 1.0

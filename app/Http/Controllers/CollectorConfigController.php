@@ -208,10 +208,9 @@ class CollectorConfigController extends Controller
 
         $validated = $request->validate([
             'symbol'    => ['required', 'string', 'max:20'],
-            'broker'    => ['required', 'string', 'in:bybit,ig'],
+            'broker'    => ['required', 'string', 'in:bybit'],
             'intervals' => ['required', 'array', 'min:1'],
             'intervals.*' => ['string'],
-            'epic'      => ['nullable', 'string', 'max:40'],
         ]);
 
         try {

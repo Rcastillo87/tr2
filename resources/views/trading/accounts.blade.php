@@ -29,10 +29,9 @@
         @csrf
         <div>
             <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Broker</label>
-            <select name="broker" id="brokerSelect" onchange="toggleIgFields()" class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
+            <select name="broker" id="brokerSelect" class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
                     style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                 <option value="bybit">Bybit</option>
-                <option value="ig">IG</option>
             </select>
         </div>
         <div>
@@ -53,20 +52,8 @@
         </div>
         <div id="apiSecretField">
             <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">API Secret</label>
-            <input type="password" name="api_secret" id="apiSecretInput" placeholder="Secreto API" autocomplete="off"
+            <input type="password" name="api_secret" id="apiSecretInput" placeholder="Secreto API" autocomplete="off" required
                    class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none font-mono"
-                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-        </div>
-        <div id="igUsernameField" class="hidden">
-            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Usuario IG</label>
-            <input type="text" name="ig_username" placeholder="Usuario de login IG" autocomplete="off"
-                   class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
-                   style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
-        </div>
-        <div id="igPasswordField" class="hidden">
-            <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Contraseña IG</label>
-            <input type="password" name="ig_password" placeholder="Contraseña de login IG" autocomplete="off"
-                   class="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none"
                    style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
         </div>
         <div class="sm:col-span-2 lg:col-span-4 flex justify-end">
@@ -76,15 +63,6 @@
             </button>
         </div>
     </form>
-<script>
-function toggleIgFields() {
-    const isIg = document.getElementById('brokerSelect').value === 'ig';
-    document.getElementById('igUsernameField').classList.toggle('hidden', !isIg);
-    document.getElementById('igPasswordField').classList.toggle('hidden', !isIg);
-    document.getElementById('apiSecretField').classList.toggle('hidden', isIg);
-    document.getElementById('apiSecretInput').required = !isIg;
-}
-</script>
     <p class="text-[10px] mt-2" style="color:var(--color-text-muted);">Las credenciales se almacenan cifradas. El nombre se genera automáticamente (ej. "Bybit Real").</p>
 </div>
 

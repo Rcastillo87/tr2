@@ -12,7 +12,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from trading.ig_client import IGClient
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -35,6 +34,7 @@ class SubscriptionPayload(BaseModel):
     interval:                 str
     strategy_class:           Optional[str] = None
     config_params:            Optional[dict] = None
+    risk_override_pct:        Optional[float] = None   # sin declararlo Pydantic lo descartaba
 
 
 class AccountPayload(BaseModel):
@@ -43,25 +43,13 @@ class AccountPayload(BaseModel):
     account_type: str
     api_key:      str
     api_secret:   str
-    credentials_extra: Optional[str] = None
     subscriptions: list[SubscriptionPayload]
 
 
-def _build_broker_client(account):
-    """
-    Instancia el cliente correcto segun account.broker.
-    IG requiere usuario+contraseña ademas de la api_key, viajan en
-    credentials_extra como JSON string: {"username": "...", "password": "..."}
-    """
-    if account.broker == 'ig':
-        import json as _json
-        extra = _json.loads(account.credentials_extra) if account.credentials_extra else {}
-        return IGClient(
-            api_key      = account.api_key,
-            username     = extra.get('username', ''),
-            password     = extra.get('password', ''),
-            account_type = account.account_type,
-        )
+def _build_broker_client(account) -> BybitClient:
+    """Cliente del broker de la cuenta. Hoy solo Bybit."""
+    if account.broker != 'bybit':
+        raise ValueError(f"Broker no soportado en Real: {account.broker}")
     return BybitClient(
         api_key      = account.api_key,
         api_secret   = account.api_secret,

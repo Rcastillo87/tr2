@@ -325,7 +325,6 @@ function openAddSymbol() {
             <label style="display:block; margin-bottom:4px; font-size:11px;">Broker:</label>
             <select id="as-broker" class="swal2-input" style="width:100%; margin:0 0 8px 0; font-size:12px;">
                 <option value="bybit">Bybit</option>
-                <option value="ig">IG</option>
             </select>
             <label style="display:block; margin-bottom:4px; font-size:11px;">Intervals (coma):</label>
             <input id="as-intervals" type="text" class="swal2-input" value="1,5,15,60,120,240" style="width:100%; margin:0; font-size:12px;">

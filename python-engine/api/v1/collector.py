@@ -48,9 +48,9 @@ async def initial_load():
         active_configs = await collector.get_active_configs()
 
         results = {}
-        for symbol, interval, broker, epic in active_configs:
+        for symbol, interval, broker in active_configs:
             try:
-                saved = await collector.initial_load(symbol, interval, broker, epic)
+                saved = await collector.initial_load(symbol, interval, broker)
                 results[f"{symbol}/{interval}"] = saved
             except Exception as e:
                 logger.error(f"[{symbol}/{interval}] Error en carga inicial: {e}")
@@ -77,7 +77,7 @@ async def collector_status():
         active_configs = await collector.get_active_configs()
 
         status = {}
-        for symbol, interval, broker, _epic in active_configs:
+        for symbol, interval, broker in active_configs:
             last = await collector.get_last_timestamp(symbol, interval, broker)
             status[f"{symbol}/{interval}"] = {
                 "last_candle": last.isoformat() if last else None,
@@ -120,7 +120,6 @@ class AddSymbolRequest(BaseModel):
     symbol: str
     broker: str
     intervals: list[str]
-    epic: Optional[str] = None
     active: bool = True
 
 
@@ -188,7 +187,7 @@ async def collector_symbols():
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT symbol, interval, broker, epic, active
+                SELECT symbol, interval, broker, active
                 FROM collector_configs
                 ORDER BY broker, symbol, interval::text
                 """,
@@ -215,18 +214,6 @@ async def collector_backfill(req: BackfillRequest):
 
         if req.broker == "bybit":
             bars = await collector.fetch_from_bybit(req.symbol, req.interval, start_ts, end_ts)
-        elif req.broker == "ig":
-            # IG necesita el epic; lo buscamos en collector_configs
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT epic FROM collector_configs WHERE symbol=$1 AND interval=$2 AND broker='ig'",
-                    req.symbol, req.interval,
-                )
-            if not row or not row["epic"]:
-                raise ValueError(f"No hay epic configurado para {req.symbol}/{req.interval} en IG")
-            bars = await collector.fetch_from_ig(row["epic"], req.interval, start_ts, end_ts)
-            for b in bars:
-                b["symbol"] = req.symbol
         else:
             raise ValueError(f"Broker no soportado: {req.broker}")
 
@@ -284,6 +271,8 @@ async def collector_reload(symbol: str, interval: str, broker: str, confirm: boo
             status_code=400,
             detail="Debes pasar ?confirm=true para ejecutar esta operación destructiva",
         )
+    if broker != 'bybit':
+        raise HTTPException(status_code=400, detail=f"Broker no soportado: {broker}")
     try:
         from collectors.ohlcv_collector import OhlcvCollector
         pool = await get_pool()
@@ -298,17 +287,7 @@ async def collector_reload(symbol: str, interval: str, broker: str, confirm: boo
 
         # 2. Recargar todo el histórico disponible
         collector = OhlcvCollector(pool)
-        if broker == "ig":
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT epic FROM collector_configs WHERE symbol=$1 AND interval=$2 AND broker='ig'",
-                    symbol, interval,
-                )
-            if not row or not row["epic"]:
-                raise ValueError(f"No hay epic para {symbol}/{interval} en IG")
-            saved = await collector.initial_load(symbol, interval, broker=broker, epic=row["epic"])
-        else:
-            saved = await collector.initial_load(symbol, interval, broker=broker)
+        saved = await collector.initial_load(symbol, interval, broker=broker)
 
         await pool.close()
         return {
@@ -333,11 +312,11 @@ async def collector_add_symbol(req: AddSymbolRequest):
             for interval in req.intervals:
                 result = await conn.execute(
                     """
-                    INSERT INTO collector_configs (symbol, interval, broker, epic, active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, now(), now())
+                    INSERT INTO collector_configs (symbol, interval, broker, active, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, now(), now())
                     ON CONFLICT (symbol, interval, broker) DO NOTHING
                     """,
-                    req.symbol, interval, req.broker, req.epic, req.active,
+                    req.symbol, interval, req.broker, req.active,
                 )
                 if result.startswith("INSERT"):
                     inserted += 1
@@ -360,18 +339,14 @@ async def collector_add_symbol(req: AddSymbolRequest):
 async def collector_unified(
     broker: Optional[str] = None,
     symbol: Optional[str] = None,
-    include_ig: bool = False,
 ):
-    """Vista unificada: collector_configs (reglas) + ohlcv_data (historial).
-    IG queda excluido por defecto (include_ig=false)."""
+    """Vista unificada: collector_configs (reglas) + ohlcv_data (historial)."""
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             where = []
             args = []
             i = 1
-            if not include_ig:
-                where.append("cc.broker != 'ig'")
             if broker:
                 where.append(f"cc.broker = ${i}"); args.append(broker); i += 1
             if symbol:
@@ -381,7 +356,7 @@ async def collector_unified(
             rows = await conn.fetch(
                 f"""
                 SELECT
-                    cc.broker, cc.symbol, cc.interval, cc.active, cc.epic,
+                    cc.broker, cc.symbol, cc.interval, cc.active,
                     COALESCE(o.total, 0) AS total,
                     o.desde, o.hasta,
                     COALESCE(o.actualizado, false) AS actualizado
@@ -410,7 +385,7 @@ async def collector_unified(
             "data": [
                 {
                     "broker": r["broker"], "symbol": r["symbol"], "interval": r["interval"],
-                    "active": bool(r["active"]), "epic": r["epic"], "total": r["total"],
+                    "active": bool(r["active"]), "total": r["total"],
                     "desde": r["desde"].isoformat() if r["desde"] else None,
                     "hasta": r["hasta"].isoformat() if r["hasta"] else None,
                     "actualizado": bool(r["actualizado"]),

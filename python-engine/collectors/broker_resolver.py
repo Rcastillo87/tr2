@@ -30,7 +30,8 @@ LIVE_VENUE_BROKER = 'bybit'
 # Dos fuentes con coberturas que difieren menos de esto se consideran empatadas.
 COVERAGE_TIE_RATIO = 0.005
 # Brokers de mercados con horario (sin velas en fin de semana): no se evalúan huecos.
-SESSION_MARKET_BROKERS = frozenset({'ig'})
+# Vacío desde que se quitó IG; añadir aquí el broker de forex/oro que se integre.
+SESSION_MARKET_BROKERS: frozenset[str] = frozenset()
 # Completitud mínima (velas presentes / esperadas) para no reportar huecos.
 MIN_COMPLETENESS = 0.98
 
