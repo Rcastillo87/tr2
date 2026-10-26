@@ -325,11 +325,10 @@
                         console.log('--- BACKTEST GUARDADO --- ID asignado al input oculto:', data.backtest_id);
 
                         Swal.fire({
-                            title: '¡Guardado!',
-                            text: 'El backtest se guardó en el historial.',
-                            icon: 'success',
-                            timer: 2000,
-                            showConfirmButton: false,
+                            title: data.sync_blocked ? 'Guardado sin sincronizar' : '¡Guardado!',
+                            text: data.message || 'El backtest se guardó en el historial.',
+                            icon: data.sync_blocked ? 'warning' : 'success',
+                            confirmButtonColor: '#10B981',
                             background: '#1f2937',
                             color: '#f3f4f6'
                         });

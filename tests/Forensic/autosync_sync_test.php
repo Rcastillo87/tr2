@@ -60,8 +60,7 @@ $check('detecta total_trades alterado', ! StrategyConfigSync::verify(
     $sign->invoke(null, $roundTrip, 5000), $roundTrip['signature']));
 
 echo "=== 2. Reglas de aptitud para vivo\n";
-$check('bt ' . BT_SHORT . ' (12 meses) bloqueado', str_contains((string) $block->invoke($ctrl, Backtest::findOrFail(BT_SHORT), 59), '12 meses'),
-    (string) $block->invoke($ctrl, Backtest::findOrFail(BT_SHORT), 59));
+$check('bt ' . BT_SHORT . ' (12 meses) apto: el usuario decide', $block->invoke($ctrl, Backtest::findOrFail(BT_SHORT), 59) === null);
 $check('bt ' . BT_LIVE . ' con 0 trades bloqueado', $block->invoke($ctrl, $bt, 0) !== null);
 $check('bt ' . BT_LIVE . ' apto', $block->invoke($ctrl, $bt, 111) === null);
 

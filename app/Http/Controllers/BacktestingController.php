@@ -14,9 +14,6 @@ use Illuminate\Support\Facades\Gate;
 
 class BacktestingController extends Controller
 {
-    /** Historial mínimo para que un backtest pueda operar en Paper/Real. */
-    private const MIN_LIVE_MONTHS = 24;
-
     private function getStrategies()
     {
         return \App\Models\Strategy::where('active', true)->orderBy('name')->get();
@@ -505,10 +502,6 @@ class BacktestingController extends Controller
         if ($totalTrades <= 0) {
             return 'el backtest no generó operaciones';
         }
-        if ((int) $backtest->months < self::MIN_LIVE_MONTHS) {
-            return "historial de {$backtest->months} meses (mínimo " . self::MIN_LIVE_MONTHS . ')';
-        }
-
         return null;
     }
 
