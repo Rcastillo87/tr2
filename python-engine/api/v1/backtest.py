@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from backtesting.metrics import calculate_metrics
 from backtesting.engine import BacktestEngine
+from backtesting.strategies.loader import build_strategy
 from collectors.broker_resolver import (
     coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
 )
@@ -50,22 +51,6 @@ class BacktestRequest(BaseModel):
     slippage_pct:        float           = 0.0    # % por lado en cada ejecución a mercado
     n_windows:           int             = 5
     macro_trend_filter:  bool            = False
-    volume_filter:       bool            = False
-    volume_filter_period: int            = 20
-    volume_filter_mult:  float           = 1.2
-    train_pct:           float           = 0.7
-    mode:                Optional[str]   = None
-    macro_trend_filter:  Optional[bool]  = None  # None = usar default de la estrategia segun mode
-
-    # Filtro de persistencia de tendencia (solo VWAP Tendencia)
-    trend_persistence_filter: bool          = False
-    trend_persistence_bars:   int            = 4
-    trend_adx_threshold:      float          = 25
-
-    # SL dinamico en zona ADX debil (solo VWAP Tendencia)
-    dynamic_sl_filter:    bool  = False
-    adx_strong_threshold: float = 30
-    sl_pct_weak_zone:     float = 0.7
 
     # Rango de fechas opcional — si no se especifica, usa todo el historico disponible
     start_date: Optional[str] = None  # formato YYYY-MM-DD
@@ -87,7 +72,7 @@ class BacktestRequest(BaseModel):
     # Permite comparar la MISMA estrategia contra distintos exchanges.
     data_broker:            Optional[str]        = None
     max_leverage:           float                = 1.0
-    trailing_steps:         Optional[list]       = None  # [[gain_pct, new_sl_pct], ...]
+    trailing_steps:         list                 = []    # [[gain_pct, new_sl_pct], ...] (mismo default que BaseStrategy)
 
     # Proteccion por volatilidad
     volatility_protection_mode: Optional[str] = None  # None | "close" | "widen"
@@ -161,165 +146,28 @@ async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str, broker: str
     return df
 
 
+# Campos del request que son del backtest (datos/reporte), no de la estrategia
+_RUN_ONLY_FIELDS = {'strategy', 'start_date', 'end_date', 'walk_forward', 'n_windows',
+                    'monthly_breakdown', 'data_broker', 'initial_balance'}
+
+
+def strategy_params(request: BacktestRequest) -> dict:
+    """Parámetros de la estrategia: los mismos que Laravel guarda en config_params (snapshot de paper/real)."""
+    params = request.model_dump(exclude=_RUN_ONLY_FIELDS)
+    params['strategy_config'] = dict(request.strategy_config or {})
+    return params
+
+
 def load_strategy(request: BacktestRequest):
-    """Carga la estrategia solicitada. Si viene código dinámico, lo compila y ejecuta."""
-    
-    if request.strategy_code and request.strategy_code.strip():
-        from backtesting.strategies.base_strategy import BaseStrategy
-        import pandas as pd
-        import numpy as np
-        
-        # Namespace seguro para la ejecución
-        namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
-        try:
-            exec(request.strategy_code, namespace)
-        except Exception as e:
-            raise ValueError(f"Error compilando el código Python: {str(e)}")
-        
-            # Buscar la clase que herede de BaseStrategy
-        strategy_cls = None
-        for k, v in namespace.items():
-            if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
-                strategy_cls = v
-                break
-        
-        if not strategy_cls:
-            raise ValueError("El código no contiene una clase que herede de BaseStrategy.")
-        
-        # Mezclar la configuración propia de la estrategia con los parámetros de operación
-        params = request.strategy_config or {}
-        params.update({
-            'symbol': request.symbol,
-            'interval': request.interval,
-            'sl_pct': request.sl_pct,
-            'tp_pct': request.tp_pct,
-            'close_on_opposite': request.close_on_opposite,
-            'exit_on_opposite': request.exit_on_opposite,
-            'allow_short': request.allow_short,
-            'max_duration_profit': request.max_duration_profit,
-            'trailing_atr_mult': request.trailing_atr_mult,
-            'tp2_pct': request.tp2_pct,
-            'tp3_pct': request.tp3_pct,
-            'tp4_pct': request.tp4_pct,
-            'be_pct': request.be_pct,
-            'max_duration': request.max_duration,
-            'regime_filter': request.regime_filter,
-            'risk_per_trade_pct': request.risk_per_trade_pct,
-            'commission_pct': request.commission_pct,
-            'trailing_mode': request.trailing_mode,
-            'trailing_distance_pct': request.trailing_distance_pct,
-            'trailing_activation_buffer_pct': request.trailing_activation_buffer_pct,
-            'trailing_distance_pct': request.trailing_distance_pct,
-            'trailing_activation_buffer_pct': request.trailing_activation_buffer_pct,
-            'trailing_steps': request.trailing_steps,
-            'regime_adx_trending': request.regime_adx_trending,
-            'regime_adx_ranging': request.regime_adx_ranging,
-            'regime_ambiguous_as': request.regime_ambiguous_as,
-            'macro_trend_filter': request.macro_trend_filter,
-            'volume_filter': request.volume_filter,
-            'volume_filter_period': request.volume_filter_period,
-            'volume_filter_mult': request.volume_filter_mult,
-        })
-        # FIX FORENSE: Sobrescribir explícitamente con los valores de la request (UI)
-        params['sl_pct'] = request.sl_pct
-        params['tp_pct'] = request.tp_pct
-        params['be_pct'] = request.be_pct
-        params['trailing_mode'] = request.trailing_mode
-        params['trailing_distance_pct'] = request.trailing_distance_pct
-        params['trailing_activation_buffer_pct'] = request.trailing_activation_buffer_pct
-        
-        # FIX: Agregamos los 3 parámetros de volatilidad que faltaban
-        params['volatility_protection_mode'] = request.volatility_protection_mode
-        params['volatility_atr_multiplier'] = request.volatility_atr_multiplier
-        params['volatility_widen_pct'] = request.volatility_widen_pct
-
-        return strategy_cls(params)
-
-    # Si no hay código dinámico, usar la lógica legacy (mapeo de nombres)
-    params = {
-        "symbol":        request.symbol,
-        "interval":      request.interval,
-        "sl_pct":        request.sl_pct,
-        "tp_pct":        request.tp_pct,
-        "close_on_opposite": request.close_on_opposite,
-        "max_duration_profit": request.max_duration_profit,
-        "trailing_atr_mult": request.trailing_atr_mult,
-        "tp2_pct":       request.tp2_pct,
-        "tp3_pct":       request.tp3_pct,
-        "tp4_pct":       request.tp4_pct,
-        "be_pct":        request.be_pct,
-        "max_duration":  request.max_duration,
-        "regime_filter": request.regime_filter,
-        "regime_adx_trending": request.regime_adx_trending,
-        "regime_adx_ranging":  request.regime_adx_ranging,
-        "regime_ambiguous_as": request.regime_ambiguous_as,
-
-        "trailing_mode":          request.trailing_mode,
-        "trailing_distance_pct":  request.trailing_distance_pct,
-        "trailing_activation_buffer_pct": request.trailing_activation_buffer_pct,
-        "commission_pct":         request.commission_pct,
-        "max_leverage":           request.max_leverage,
-        "trailing_steps":         request.trailing_steps or [],
-
-        "volatility_protection_mode": request.volatility_protection_mode,
-        "volatility_atr_multiplier":  request.volatility_atr_multiplier,
-        "volatility_widen_pct":       request.volatility_widen_pct,
-        "volume_filter":              request.volume_filter,
-        "volume_filter_period":       request.volume_filter_period,
-        "volume_filter_mult":         request.volume_filter_mult,
-        "hour_filter":                request.hour_filter,
-        "hour_filter_start":          request.hour_filter_start,
-        "hour_filter_end":            request.hour_filter_end,
-        "weekend_filter":             request.weekend_filter,
-        "blocked_hours":              request.blocked_hours,
-        "blocked_days":               request.blocked_days,
-
-        "trend_persistence_filter": request.trend_persistence_filter,
-        "trend_persistence_bars":   request.trend_persistence_bars,
-        "trend_adx_threshold":      request.trend_adx_threshold,
-
-        "dynamic_sl_filter":    request.dynamic_sl_filter,
-        "adx_strong_threshold": request.adx_strong_threshold,
-        "sl_pct_weak_zone":     request.sl_pct_weak_zone,
-    }
-
+    """Construye la estrategia con el MISMO constructor que paper y real (loader.build_strategy)."""
+    if not (request.strategy_code or '').strip():
+        raise ValueError("La estrategia no trae código (strategy_code): no hay nada que ejecutar.")
     try:
-        from backtesting.strategies.vwap_strategy import VwapStrategy
-
-        if request.macro_trend_filter is not None:
-            params["macro_trend_filter"] = request.macro_trend_filter
-
-        if request.strategy == "VWAP Tendencia":
-            params["mode"] = request.mode or "trend_follow"
-            params["allowed_regimes"] = ["TRENDING"]
-            return VwapStrategy(params)
-
-        if request.strategy == "VWAP Reversión":
-            params["mode"] = request.mode or "reversion"
-            params["allowed_regimes"] = ["TRENDING"]
-            return VwapStrategy(params)
-
-    except ImportError as e:
-        logger.warning(f"VwapStrategy no disponible: {e}")
-
-    try:
-        from backtesting.strategies.mean_reversion import MeanReversionStrategy
-        if request.strategy == "Reversión a la Media":
-            params["allowed_regimes"] = ["RANGING"]
-            return MeanReversionStrategy(params)
-    except ImportError:
-        pass
-
-    try:
-        from backtesting.strategies.ema_donchian import EmaDonchianStrategy
-        if request.strategy == "Tendencia EMA/Donchian":
-            params["allowed_regimes"] = ["TRENDING"]
-            return EmaDonchianStrategy(params)
-    except ImportError:
-        pass
-
-    available = ["VWAP Tendencia", "VWAP Reversión", "Reversión a la Media", "Tendencia EMA/Donchian"]
-    raise ValueError(f"Estrategia '{request.strategy}' no encontrada. Disponibles: {available}")
+        return build_strategy(strategy_params(request))
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Error compilando la estrategia: {e}") from e
 
 
 WARMUP_BARS = 500  # velas previas al inicio para calentar indicadores (paper usa 500)
@@ -475,17 +323,6 @@ async def run_backtest(request: BacktestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/backtest/strategies")
-async def list_strategies():
-    available = [
-        {"name": "VWAP Tendencia",         "description": "VWAP trend follow"},
-        {"name": "VWAP Reversión",          "description": "VWAP reversión extremos ±2σ con filtro macro H4"},
-        {"name": "Reversión a la Media",    "description": "Bollinger + RSI en régimen RANGING"},
-        {"name": "Tendencia EMA/Donchian",  "description": "EMA cruce + Donchian breakout en régimen TRENDING"},
-    ]
-    return {"status": "ok", "strategies": available}
-
-
 @router.get("/backtest/data-range/{symbol}/{interval}")
 async def get_data_range(symbol: str, interval: str):
     """Rango disponible de la MEJOR fuente única (la unión de fuentes sobrestima la historia real)."""
@@ -536,12 +373,6 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
         ast.parse(req.code)
     except SyntaxError as e:
         raise HTTPException(status_code=400, detail=f"Error de sintaxis Python: {e.msg} (línea {e.lineno})")
-
-    if "|" in req.code:
-        parts = req.code.split("|")
-        valid_classes = ["VwapStrategy", "MeanReversionStrategy", "EmaDonchianStrategy", "DynamicStrategy"]
-        if parts[0] not in valid_classes:
-            raise HTTPException(status_code=400, detail=f"Clase '{parts[0]}' no registrada en el motor.")
 
     if req.run_backtest:
         end = datetime.now(timezone.utc).date() - timedelta(days=1)   # último día completo
