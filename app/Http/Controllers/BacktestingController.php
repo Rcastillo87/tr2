@@ -51,6 +51,12 @@ class BacktestingController extends Controller
         $end = now()->subMonthNoOverflow()->endOfMonth();
         $start = $end->copy()->subMonths($months - 1)->startOfMonth();
 
+        // El motor sube el trailing fijo < 1% a 1% (escudo anti-comisiones): se rechaza aquí para que
+        // el backtest corra exactamente lo que muestra la UI.
+        if ($request->input('trailing_mode') === 'fixed' && (float) $request->input('trailing_distance_pct', 1.0) < 1.0) {
+            return response()->json(['success' => false, 'error' => 'El trailing fijo debe ser al menos 1.0% (con menos, las comisiones y el ruido lo cierran casi siempre en pérdida).']);
+        }
+
         $overrideConfig = $request->input('strategy_config_override');
         $finalConfig = $strategy->config;
         if (!empty($overrideConfig)) {
@@ -63,6 +69,8 @@ class BacktestingController extends Controller
         $totalTrades = 0;
         $totalWins = 0;
         $totalPnl = 0;
+        $grossProfit = 0.0;
+        $grossLoss = 0.0;
 
         // 1. RESTAURAMOS LA CREACIÓN DEL PAYLOAD POR CADA MONEDA
         $payloads = [];
@@ -156,6 +164,8 @@ class BacktestingController extends Controller
                 $totalTrades += $agg['total_trades'] ?? 0;
                 $totalWins += $agg['winning_trades'] ?? 0;
                 $totalPnl += $agg['total_return_pct'] ?? 0;
+                $grossProfit += (float) ($agg['gross_profit'] ?? 0);
+                $grossLoss += (float) ($agg['gross_loss'] ?? 0);
             } catch (\Throwable $e) {
                 return response()->json(['success' => false, 'error' => "Error procesando $sym: " . $e->getMessage()]);
             }
@@ -172,6 +182,9 @@ class BacktestingController extends Controller
         }
 
         $winRate = $totalTrades > 0 ? round($totalWins / $totalTrades * 100, 2) : 0;
+        // PF global sobre TODAS las operaciones (no el promedio de los PF por símbolo).
+        // Sin pérdidas: 999.99, el mismo tope que se guarda en paper_strategy_configs.
+        $profitFactor = $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : ($grossProfit > 0 ? 999.99 : 0);
 
         // Calcular promedio mensual y consistencia global (igual que en results.blade.php)
         $monthlyTotals = [];
@@ -199,7 +212,7 @@ class BacktestingController extends Controller
                 'win_rate' => $winRate,
                 'total_return_pct' => round($totalPnl, 2),
                 'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
-                'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+                'profit_factor' => $profitFactor,
             ],
             'individual_results' => $resultsData,
             'save_payload' => [
@@ -215,7 +228,7 @@ class BacktestingController extends Controller
                     'total_trades' => $totalTrades,
                     'win_rate' => $winRate,
                     'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
-                    'profit_factor' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.profit_factor'), 2) : 0,
+                    'profit_factor' => $profitFactor,
                     'avg_monthly_pnl' => round($avgGlobal, 2),
                     'consist_pct' => $consistGlobal,
                 ]

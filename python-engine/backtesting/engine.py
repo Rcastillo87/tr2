@@ -228,6 +228,7 @@ class BacktestEngine:
                             'sl': sl, 'tp1': levels['tp1'], 'tp2': levels.get('tp2'), 'tp3': levels.get('tp3'),
                             'tp4': levels.get('tp4'), 'be_level': s.calculate_breakeven(entry, side),
                             'be_activated': False, 'trailing_applied': False, 'size': size, 'regime': regime,
+                            'vol_widened': False,
                         }
 
             if pos is None:
@@ -253,8 +254,9 @@ class BacktestEngine:
                                                     float(atr_avg[i]) if not np.isnan(atr_avg[i]) else 0.0)
                 if vol['action'] == 'close':
                     level, reason = closes[i], 'volatility_protection'
-                elif vol['action'] == 'widen' and vol['new_sl'] is not None:
-                    pos['sl'] = vol['new_sl']
+                elif vol['action'] == 'widen' and vol['new_sl'] is not None and not pos['vol_widened']:
+                    pos['sl'] = vol['new_sl']   # una sola vez por trade (igual que paper y real)
+                    pos['vol_widened'] = True
 
             if level is None and max_duration > 0 and bars_held >= max_duration:
                 in_profit = closes[i] > pos['entry_price'] if pos['side'] == 'long' else closes[i] < pos['entry_price']

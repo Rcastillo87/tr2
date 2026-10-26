@@ -124,13 +124,15 @@ class FakeClient:
         return None
 
 
-def trade(params=P, hours_ago=1.0, sl=99.0, tp=104.0, be_level=101.5, be_activated=False, trailing=False, audit=None):
+def trade(params=P, hours_ago=1.0, sl=99.0, tp=104.0, be_level=101.5, be_activated=False, trailing=False,
+          vol_widened=False):
     return {'id': 5, 'subscription_id': 1, 'strategy': 'T', 'symbol': 'BTCUSDT', 'interval': '60', 'side': 'long',
             'entry_price': 100.0, 'sl': sl, 'tp': tp, 'tp2': None, 'tp3': None, 'tp4': None,
             'be_level': be_level, 'be_activated': be_activated, 'size': 1.0, 'original_size': 1.0,
             'realized_pnl_partial': 0, 'entry_time': datetime.now(timezone.utc) - timedelta(hours=hours_ago),
             'updated_at': None, 'order_id': 'A', 'balance_before': 1000.0, 'status': 'open',
-            'trailing_applied': trailing, 'original_sl': 99.0, 'config_snapshot': dict(params)}
+            'trailing_applied': trailing, 'original_sl': 99.0, 'config_snapshot': dict(params),
+            'vol_widened': vol_widened}
 
 
 def position(sl=99.0, tp=104.0):
@@ -194,7 +196,10 @@ async def main():
     widened = c.stops[0][0] if c.stops else None
     check('widen aplicado la primera vez', widened is not None and abs(widened - 99.0 * 0.99) < 1e-6, c.stops)
     c2 = FakeClient(position(sl=widened or 0))
-    out, s2 = await monitor(trade(pv, sl=widened or 0, be_level=150), c2, 100.1, df=bars(atr_spike=True), audit=s['audit'])
+    marked = any('vol_widened=true' in sql for sql, a in s['exec'])
+    check('widen persistido en vol_widened', marked)
+    out, s2 = await monitor(trade(pv, sl=widened or 0, be_level=150, vol_widened=True), c2, 100.1,
+                            df=bars(atr_spike=True))
     check('widen NO se repite en el ciclo siguiente', not c2.stops, c2.stops)
     check('audit_log guardado como lista (no string)', isinstance(s['audit'], list), type(s['audit']).__name__)
 

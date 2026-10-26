@@ -163,7 +163,7 @@ class PaperTrader:
             rows = await conn.fetch(
                 """
                 SELECT id, strategy, paper_strategy_config_id, config_snapshot, symbol, interval, side,
-                       entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated, trailing_applied,
+                       entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated, trailing_applied, vol_widened,
                        size, entry_time, regime, max_profit_pct, max_loss_pct, last_monitored_at
                 FROM paper_trades
                 WHERE status = 'open'
@@ -350,6 +350,7 @@ class PaperTrader:
             tp       = float(trade['tp'])
             be_level = float(trade['be_level'])
             be_activated = bool(trade['be_activated'])
+            vol_widened  = bool(trade.get('vol_widened', False))
             trailing_applied = bool(trade.get('trailing_applied', False))
             entry    = float(trade['entry_price'])
             size     = float(trade['size'])
@@ -432,8 +433,9 @@ class PaperTrader:
                 vol_check = strategy_instance.check_volatility_protection(sl, side, closed_atr, closed_atr_avg)
                 if vol_check['action'] == 'close':
                     exit_price, exit_reason = float(bars[-1]['close']), 'volatility_protection'
-                elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
-                    sl = vol_check['new_sl']
+                elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None and not vol_widened:
+                    sl = vol_check['new_sl']   # una sola vez por trade
+                    vol_widened = True
 
             if exit_price is not None:
                 await self.close_trade(trade, exit_price, exit_reason)
@@ -447,12 +449,12 @@ class PaperTrader:
                     UPDATE paper_trades
                     SET sl = $1, be_activated = $2, trailing_applied = $3,
                         max_profit_pct = $4, max_loss_pct = $5,
-                        last_monitored_at = $6, updated_at = now()
+                        last_monitored_at = $6, vol_widened = $8, updated_at = now()
                     WHERE id = $7
                     """,
                     sl, be_activated, trailing_applied,
                     round(max_profit_pct, 4), round(max_loss_pct, 4),
-                    checkpoint_to_store, trade['id']
+                    checkpoint_to_store, trade['id'], vol_widened
                 )
 
             entry_time = trade['entry_time']

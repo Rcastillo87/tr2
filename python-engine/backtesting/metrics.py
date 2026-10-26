@@ -47,8 +47,6 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
     equity = initial_balance + df['pnl'].cumsum()
     equity_with_start = pd.concat([pd.Series([initial_balance]), equity], ignore_index=True)
 
-    returns = equity_with_start.pct_change().dropna()
-
     # Sharpe con retornos PERIODICOS (diarios), no por trade.
     # Anualizar por trade con sqrt(252) es incorrecto: asume un trade por dia
     # habil, lo cual infla el Sharpe ~2-3x cuando hay pocos trades por anio.
@@ -58,9 +56,13 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
             df_s = df.copy()
             df_s['exit_dt'] = pd.to_datetime(df_s['exit_time'])
             daily_pnl = df_s.groupby(df_s['exit_dt'].dt.date)['pnl'].sum()
+            # Todos los días del período (los días sin cierres cuentan como 0%): sin esto el
+            # Sharpe solo veía días con operaciones y salía inflado.
+            all_days = pd.date_range(daily_pnl.index.min(), daily_pnl.index.max(), freq='D').date
+            daily_pnl = daily_pnl.reindex(all_days, fill_value=0.0)
             if len(daily_pnl) >= 2:
-                daily_equity = initial_balance + daily_pnl.cumsum()
-                daily_returns = daily_equity.pct_change().dropna()
+                equity_prev = initial_balance + daily_pnl.cumsum().shift(1, fill_value=0.0)
+                daily_returns = daily_pnl / equity_prev
                 std = daily_returns.std()
                 if std > 1e-8:
                     sharpe_ratio = (daily_returns.mean() / std) * np.sqrt(365)
@@ -102,6 +104,8 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
         "sharpe_ratio":      round(float(sharpe_ratio), 2),
         "max_drawdown_pct":  round(float(max_drawdown), 2),
         "total_pnl":         round(float(df['pnl'].sum()), 2),
+        "gross_profit":      round(float(gross_profit), 4),   # para el PF combinado de varios símbolos
+        "gross_loss":        round(float(gross_loss), 4),
         "total_return_pct":  round(float(total_return_pct), 2),
         "initial_balance":   initial_balance,
         "final_balance":     round(final_balance, 2),

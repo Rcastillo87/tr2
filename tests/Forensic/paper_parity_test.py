@@ -78,19 +78,23 @@ def minute(t, high=100.4, low=99.6, close=100.0):
     return {'time': t, 'open': 100.0, 'high': high, 'low': low, 'close': close}
 
 
-def trade(params, hours_ago=1.0, entry=100.0):
+def trade(params, hours_ago=1.0, entry=100.0, vol_widened=False):
     et = NOW - timedelta(hours=hours_ago)
     return {'id': 1, 'strategy': 'T', 'paper_strategy_config_id': 9, 'config_snapshot': json.dumps(params),
             'symbol': 'BTCUSDT', 'interval': '60', 'side': 'long', 'entry_price': entry,
             'sl': entry * 0.99, 'tp': entry * 1.02, 'tp2': None, 'tp3': None, 'tp4': None,
             'be_level': entry * 1.015, 'be_activated': False, 'trailing_applied': False, 'size': 1.0,
             'entry_time': et, 'regime': 'RANGING', 'max_profit_pct': 0, 'max_loss_pct': 0,
-            'last_monitored_at': None}
+            'last_monitored_at': None, 'vol_widened': vol_widened}
 
 
-async def run_monitor(params, minutes, hours_ago=1.0):
-    store = {'minutes': minutes, 'trade': trade(params, hours_ago), 'exec': []}
+async def run_monitor(params, minutes, hours_ago=1.0, vol_widened=False, vbars=None):
+    store = {'minutes': minutes, 'trade': trade(params, hours_ago, vol_widened=vol_widened), 'exec': []}
     trader = PaperTrader(FakePool(store), {}, {})
+    if vbars is not None:
+        async def _bars(symbol, interval, broker=None):
+            return vbars
+        trader.get_bars = _bars
     res = await trader.monitor_open_trades()
     closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
     return res, closes, store
@@ -166,7 +170,24 @@ async def main():
     except Exception as e:
         check('snapshot sin código no tumba el monitor', False, repr(e))
 
-    print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
+    # 10. Volatilidad 'widen' una sola vez por trade
+    import numpy as np
+    h0 = NOW.replace(minute=0)
+    n = 120
+    rng = np.full(n, 1.0)
+    rng[-5:] = 12.0
+    vb = pd.DataFrame({'time': [h0 - timedelta(hours=n - k) for k in range(n)], 'open': 100.0,
+                       'high': 100 + rng / 2, 'low': 100 - rng / 2, 'close': 100.0, 'volume': 1.0})
+    PV = dict(P, volatility_protection_mode='widen', volatility_atr_multiplier=1.5, volatility_widen_pct=1.0)
+    _, _, st = await run_monitor(PV, [minute(base_t)], vbars=vb)
+    upd = [a for sql, a in st['exec'] if 'last_monitored_at' in sql]
+    check('paper: widen aplicado y marcado', upd and abs(upd[0][0] - 99.0 * 0.99) < 1e-9 and upd[0][7] is True,
+          upd[0] if upd else '')
+    _, _, st = await run_monitor(PV, [minute(base_t)], vbars=vb, vol_widened=True)
+    upd = [a for sql, a in st['exec'] if 'last_monitored_at' in sql]
+    check('paper: widen NO se repite', upd and abs(upd[0][0] - 99.0) < 1e-9, upd[0][0] if upd else '')
+
+    print('\nRESULTADO:' , 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
 
 
 if __name__ == '__main__':

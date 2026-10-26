@@ -575,7 +575,7 @@ class RealTrader:
                        rt.entry_price, rt.sl, rt.tp, rt.tp2, rt.tp3, rt.tp4, rt.be_level, rt.be_activated,
                        rt.size, rt.original_size, rt.realized_pnl_partial,
                        rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
-                       rt.trailing_applied, rt.original_sl,
+                       rt.trailing_applied, rt.original_sl, rt.vol_widened,
                        COALESCE(rt.config_snapshot, psc.params) AS config_snapshot
                 FROM real_trades rt
                 LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
@@ -724,11 +724,6 @@ class RealTrader:
                                        entries, trade_id)
         except Exception as e:
             logger.error(f"[REAL] log_audit error trade #{trade_id}: {e}")
-
-    async def _has_audit(self, trade_id: int, action: str) -> bool:
-        async with self.pool.acquire() as conn:
-            raw = await conn.fetchval("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
-        return any(isinstance(e, dict) and e.get('action') == action for e in self._audit_list(raw))
 
     # ─────────────────────────────────────────────
     # Datos de mercado
@@ -1360,9 +1355,8 @@ class RealTrader:
                     success = await self.close_trade(trade, "volatility_protection", client, account_id)
                     outcome["closed" if success else "errors"] += 1
                     return outcome
-                if vol["action"] == "widen" and vol["new_sl"] is not None \
-                        and not await self._has_audit(trade_id, "volatility_widen"):
-                    if await move_sl(vol["new_sl"], "SL ensanchado por volatilidad"):
+                if vol["action"] == "widen" and vol["new_sl"] is not None and not trade.get("vol_widened"):
+                    if await move_sl(vol["new_sl"], "SL ensanchado por volatilidad", ", vol_widened=true"):
                         sl = vol["new_sl"]
                         await self.log_audit(trade_id, "volatility_widen", {"new_sl": sl, "atr": closed_atr})
 
