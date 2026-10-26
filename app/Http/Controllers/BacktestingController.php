@@ -7,10 +7,16 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Models\CollectorConfig;
 use App\Models\PaperStrategyConfig;
+use App\Models\Backtest;
+use App\Services\StrategyConfigSync;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class BacktestingController extends Controller
 {
+    /** Historial mínimo para que un backtest pueda operar en Paper/Real. */
+    private const MIN_LIVE_MONTHS = 24;
+
     private function getStrategies()
     {
         return \App\Models\Strategy::where('active', true)->orderBy('name')->get();
@@ -219,6 +225,12 @@ class BacktestingController extends Controller
             ]
         ];
 
+        // Firma de integridad: lo que vuelva en "Guardar" debe ser exactamente lo ejecutado.
+        $result['save_payload']['signed_total_trades'] = $totalTrades;
+        $result['save_payload']['signature'] = StrategyConfigSync::sign(
+            self::saveSignatureFields($result['save_payload'], $totalTrades)
+        );
+
         // Renderizar la vista parcial y devolverla como HTML
         $prevBacktest = $request->input('backtest_id') ? \App\Models\Backtest::find($request->input('backtest_id')) : null;
         
@@ -314,49 +326,27 @@ class BacktestingController extends Controller
     }
 
 
-    public function implementPaper(\App\Models\Backtest $backtest)
+    public function implementPaper(Backtest $backtest, StrategyConfigSync $sync)
     {
         Gate::authorize('viewAnalysisTools');
-        
 
-
-        $strategy = $backtest->strategy;
-        $configParams = $backtest->config_params;
-        $metrics = $backtest->metrics;
-        
-        // Ahora se permiten múltiples configuraciones en Paper por estrategia.
-
-        // 2. Crear o activar el nuevo (para CADA moneda)
-        foreach ($backtest->symbols as $sym) {
-            \App\Models\PaperStrategyConfig::updateOrCreate(
-                [
-                    'strategy_class' => 'DynamicStrategy',
-                    'symbol' => $sym,
-                    'interval' => $backtest->interval,
-                ],
-                [
-                    'display_name' => $strategy->name . ' — ' . $sym . ' ' . $backtest->interval,
-                    'params' => $configParams,
-                    'backtest_id' => $backtest->id,
-                    'active' => true,
-                    'avg_win_rate' => $metrics['win_rate'] ?? null,
-                    'sharpe_ratio' => $metrics['sharpe_ratio'] ?? null,
-                    'profit_factor' => $metrics['profit_factor'] ?? null,
-                    'total_return_pct' => $metrics['total_return_pct'] ?? null,
-                    'avg_monthly_pnl' => $metrics['avg_monthly_pnl'] ?? null,
-                    'consistency_pct' => $metrics['consist_pct'] ?? null,
-                    'star_rating' => \App\Helpers\RatingHelper::calculate(
-                        (float)($metrics['win_rate'] ?? 0),
-                        (float)($metrics['sharpe_ratio'] ?? 0),
-                        (float)($metrics['profit_factor'] ?? 0),
-                        (float)($metrics['avg_monthly_pnl'] ?? 0),
-                        (float)($metrics['consist_pct'] ?? 0)
-                    ),
-                ]
-            );
+        $blocked = $this->liveBlockReason($backtest, (int) ($backtest->metrics['total_trades'] ?? 0));
+        if ($blocked !== null) {
+            return back()->withErrors(['error' => "No se puede implementar el backtest #{$backtest->id}: {$blocked}."]);
         }
 
-        return redirect()->route('strategies.index')->with('status', 'Backtest implementado en Paper Trading correctamente.');
+        try {
+            $summary = $sync->syncFromBacktest($backtest, StrategyConfigSync::SOURCE_IMPLEMENT, true, auth()->id());
+        } catch (\Throwable $e) {
+            Log::error("[IMPLEMENT] Backtest #{$backtest->id}: {$e->getMessage()}");
+
+            return back()->withErrors(['error' => 'No se pudo implementar: ' . $e->getMessage()]);
+        }
+
+        $total = count($summary['created']) + count($summary['updated']) + count($summary['unchanged']);
+
+        return redirect()->route('strategies.index')
+            ->with('status', "Backtest #{$backtest->id} implementado: {$total} moneda(s) activas en Paper.");
     }
 
 
@@ -397,100 +387,164 @@ class BacktestingController extends Controller
     }
 
 
-    public function saveBacktest(Request $request)
+    public function saveBacktest(Request $request, StrategyConfigSync $sync)
     {
         Gate::authorize('viewAnalysisTools');
-        
-        $jsonStr = $request->input('save_data');
-        if (!$jsonStr) {
-            return back()->withErrors(['error' => 'No hay datos para guardar.']);
+
+        $data = self::decodeSavePayload($request->input('save_data'));
+        if ($data === null) {
+            return $this->saveResponse($request, false, 'Los datos del backtest están vacíos o corruptos.');
         }
 
-        // Decodificar el JSON (viene en Base64 para evitar problemas de HTML)
-        $decoded = base64_decode($jsonStr, true);
-        if ($decoded === false) {
-            $decoded = $jsonStr; // Fallback si no viene en base64
+        $signed = self::saveSignatureFields($data, (int) ($data['signed_total_trades'] ?? -1));
+        if (! StrategyConfigSync::verify($signed, $data['signature'] ?? null)) {
+            Log::warning('[BACKTEST-SAVE] Firma inválida (payload alterado o anterior al despliegue).', ['user' => auth()->id()]);
+
+            return $this->saveResponse($request, false, 'El resultado no coincide con lo ejecutado en el servidor. Vuelve a correr el backtest y guarda de nuevo.');
         }
 
-        $data = json_decode($decoded, true);
-        
-        // DEBUG: Vamos a detener la ejecución y ver qué está llegando exactamente
-         
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            \Illuminate\Support\Facades\Log::error('Error JSON saveBacktest: ' . json_last_error_msg());
-            return back()->withErrors(['error' => 'Los datos del backtest están corruptos.']);
-        }
+        $strategyId = $signed['strategy_id'];
+        $hash = StrategyConfigSync::backtestHash(
+            $strategyId, $signed['symbols'], $signed['interval'], $signed['months'], $signed['config_params']
+        );
 
         try {
-            $backtest = null;
+            // Guardado y auto-sync en la MISMA transacción: o queda todo, o no queda nada.
+            $outcome = DB::transaction(function () use ($data, $signed, $strategyId, $hash, $sync) {
+                $backtest = null;
+                if (! empty($data['backtest_id'])) {
+                    $backtest = Backtest::whereKey((int) $data['backtest_id'])->lockForUpdate()->first();
+                    // Un re-test solo sobrescribe backtests de la MISMA estrategia.
+                    if ($backtest !== null && (int) $backtest->strategy_id !== $strategyId) {
+                        $backtest = null;
+                    }
+                }
 
-            // Si viene un backtest_id (al darle a 'Probar de nuevo'), actualizamos ese registro
-            if (!empty($data['backtest_id'])) {
-                $backtest = \App\Models\Backtest::find($data['backtest_id']);
-            }
+                $duplicate = Backtest::where('hash', $hash)
+                    ->when($backtest, fn ($q) => $q->whereKeyNot($backtest->id))
+                    ->first(['id']);
+                if ($duplicate !== null) {
+                    return ['duplicate_id' => $duplicate->id];
+                }
 
-            // Si no existe el ID, buscamos por configuración para evitar duplicados
-            if (!$backtest) {
-                $symbolsJson = json_encode($data['symbols']);
-                $backtest = \App\Models\Backtest::where('strategy_id', $data['strategy_id'])
-                    ->where('interval', $data['interval'])
-                    ->where('months', $data['months'])
-                    ->whereRaw("symbols::text = ?", [$symbolsJson])
-                    ->first();
-            }
+                $metrics = (array) ($data['metrics'] ?? []);
+                $metrics['total_trades'] = $signed['total_trades']; // dato firmado, no el del navegador
 
-            if (!$backtest) {
-                $backtest = new \App\Models\Backtest();
-                $backtest->hash = $data['hash']; // Se guarda el hash que venga del frontend
-            }
-            
-            // Asignar los datos
-            $backtest->strategy_id = $data['strategy_id'];
-            $backtest->symbols = $data['symbols'];
-            $backtest->interval = $data['interval'];
-            $backtest->months = $data['months'];
-            $backtest->config_params = $data['config_params'];
-            $backtest->strategy_snapshot = $data['strategy_snapshot'];
-            $backtest->metrics = $data['metrics'];
-            $backtest->approved = false;
-            
-            // Si es un registro existente, forzamos que la fecha de actualización sea AHORA
-            if ($backtest->exists) {
-                $backtest->updated_at = now('America/Bogota');
-            }
-            
-            $backtest->save();
-
-            // Si es una petición AJAX, devolvemos JSON para que el SweetAlert no recargue la página
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'backtest_id' => $backtest->id,
-                    'message' => 'Backtest guardado correctamente.'
+                $backtest ??= new Backtest();
+                $backtest->fill([
+                    'hash'              => $hash,
+                    'strategy_id'       => $strategyId,
+                    'symbols'           => $signed['symbols'],
+                    'interval'          => $signed['interval'],
+                    'months'            => $signed['months'],
+                    'config_params'     => $signed['config_params'],
+                    'strategy_snapshot' => (array) ($data['strategy_snapshot'] ?? []),
+                    'metrics'           => $metrics,
+                    'approved'          => false,
                 ]);
-            }
+                $backtest->save();
 
-            // Fallback por si se envía el formulario de forma tradicional
-            return redirect()->route('backtesting.run', ['strategy_id' => $data['strategy_id'], 'backtest_id' => $backtest->id])
-                ->with('status', 'Backtest guardado en el historial correctamente.');
-                
+                // Auto-sync: solo backtests ya implementados (tienen configs en Paper).
+                $syncResult = null;
+                $blocked = null;
+                if (PaperStrategyConfig::where('backtest_id', $backtest->id)->exists()) {
+                    $blocked = $this->liveBlockReason($backtest, $signed['total_trades']);
+                    if ($blocked === null) {
+                        $syncResult = $sync->syncFromBacktest(
+                            $backtest, StrategyConfigSync::SOURCE_BACKTEST_SAVE, null, auth()->id()
+                        );
+                    } else {
+                        Log::warning("[CONFIG-SYNC] Backtest #{$backtest->id} guardado SIN sincronizar: {$blocked}");
+                    }
+                }
+
+                return ['backtest' => $backtest, 'sync' => $syncResult, 'blocked' => $blocked];
+            });
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Error guardando backtest: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Error de Base de Datos: ' . $e->getMessage()]);
+            Log::error('[BACKTEST-SAVE] ' . $e->getMessage());
+
+            return $this->saveResponse($request, false, 'Error guardando el backtest: ' . $e->getMessage());
         }
+
+        if (isset($outcome['duplicate_id'])) {
+            return $this->saveResponse($request, false, "Ya existe el backtest #{$outcome['duplicate_id']} con exactamente esta configuración.");
+        }
+
+        $backtest = $outcome['backtest'];
+        $message  = 'Backtest guardado correctamente.';
+        if ($outcome['blocked'] !== null) {
+            $message .= " NO se sincronizó con Paper/Real: {$outcome['blocked']}.";
+        } elseif ($outcome['sync'] !== null) {
+            $s = $outcome['sync'];
+            $message .= sprintf(
+                ' Paper/Real sincronizados: %d actualizada(s), %d sin cambios, %d nueva(s), %d desactivada(s).',
+                count($s['updated']), count($s['unchanged']), count($s['created']), count($s['deactivated'])
+            );
+        }
+
+        return $this->saveResponse($request, true, $message, [
+            'backtest_id' => $backtest->id,
+            'sync'        => $outcome['sync'],
+            'sync_blocked'=> $outcome['blocked'],
+        ]);
     }
 
 
-    public function stopPaper(\App\Models\Backtest $backtest)
+    public function stopPaper(Backtest $backtest, StrategyConfigSync $sync)
     {
         Gate::authorize('viewAnalysisTools');
-        
-        // Desactivar la configuración de Paper vinculada a este backtest
-        \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)
-            ->update(['active' => false]);
 
-        return back()->with('status', 'Estrategia detenida en Paper Trading correctamente.');
+        $count = $sync->deactivateBacktest($backtest, auth()->id());
+
+        return back()->with('status', "Estrategia detenida: {$count} configuración(es) desactivadas (sin nuevas entradas en Paper ni Real).");
+    }
+
+    /** Motivo por el que un backtest NO puede operar en vivo, o null si es apto. */
+    private function liveBlockReason(Backtest $backtest, int $totalTrades): ?string
+    {
+        if ($totalTrades <= 0) {
+            return 'el backtest no generó operaciones';
+        }
+        if ((int) $backtest->months < self::MIN_LIVE_MONTHS) {
+            return "historial de {$backtest->months} meses (mínimo " . self::MIN_LIVE_MONTHS . ')';
+        }
+
+        return null;
+    }
+
+    /** Campos cubiertos por la firma HMAC del guardado (tipos normalizados). */
+    private static function saveSignatureFields(array $payload, int $totalTrades): array
+    {
+        return [
+            'strategy_id'   => (int) ($payload['strategy_id'] ?? 0),
+            'symbols'       => array_values(array_map('strval', (array) ($payload['symbols'] ?? []))),
+            'interval'      => (string) ($payload['interval'] ?? ''),
+            'months'        => (int) ($payload['months'] ?? 0),
+            'config_params' => (array) ($payload['config_params'] ?? []),
+            'total_trades'  => $totalTrades,
+        ];
+    }
+
+    private static function decodeSavePayload(mixed $raw): ?array
+    {
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+        $decoded = base64_decode($raw, true);
+        $data = json_decode($decoded === false ? $raw : $decoded, true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    private function saveResponse(Request $request, bool $ok, string $message, array $extra = [])
+    {
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['success' => $ok, 'message' => $message] + $extra, $ok ? 200 : 422);
+        }
+
+        return $ok
+            ? redirect()->route('backtesting.run', ['backtest_id' => $extra['backtest_id'] ?? null])->with('status', $message)
+            : back()->withErrors(['error' => $message]);
     }
 
     public function retest(PaperStrategyConfig $config)
