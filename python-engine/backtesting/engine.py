@@ -1,29 +1,51 @@
 """
-Backtesting Engine V2 — Extendido
-Motor genérico que simula trades sobre datos históricos.
-Soporta: SL, hasta 4 niveles de TP, Break-even, Trailing Stop,
-Proteccion por volatilidad, Cierre por tiempo, Filtro de régimen.
+Backtesting Engine V3 — simulación continua y pesimista.
+
+Orden de eventos en cada vela i (todo con información disponible en ese momento):
+  1. Open de la vela i: cierre por señal opuesta (señal de la vela i-1, ya cerrada).
+  2. Open de la vela i: entrada si la vela i-1 dio señal y el régimen de la vela i-1
+     (cerrada) lo permite. Solo desde trade_from (las velas previas calientan indicadores).
+  3. Gestión de la posición DURANTE la vela i, incluida la vela de entrada:
+       por cada sub-vela (1m si hay datos que cubren el rango; si no, la vela completa):
+         SL vigente -> TP1 -> break-even -> trailing   (lo adverso primero)
+       al cierre: protección por volatilidad y cierre por duración (en velas).
+Costos: comisión en entrada y salida + slippage por lado en TODAS las ejecuciones
+(entradas y salidas a mercado: SL, TP, tiempo, volatilidad, señal opuesta).
 """
 
-import pandas as pd
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+import pandas as pd
+
 from backtesting.metrics import calculate_metrics
 from backtesting.strategies.base_strategy import BaseStrategy
-from indicators.regime_indicators import calculate_atr
+from indicators.regime_indicators import calculate_adx, calculate_atr, calculate_bb_width
 
 logger = logging.getLogger(__name__)
 
+INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
 
 
-from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
+def compute_regimes(df: pd.DataFrame, trending: float, ranging: float, ambiguous_as: str) -> np.ndarray:
+    """Régimen por vela, vectorizado. Misma lógica que indicators.regime_indicators.classify_regime."""
+    atr = calculate_atr(df)
+    adx = calculate_adx(df)
+    bbw = calculate_bb_width(df)
+    atr_avg = atr.rolling(50).mean()
+    bbw_avg = bbw.rolling(50).mean()
+    conditions = [
+        (atr > atr_avg * 1.8).to_numpy(),
+        (adx > trending).to_numpy(),
+        ((adx < ranging) & (bbw < bbw_avg)).to_numpy(),
+    ]
+    return np.select(conditions, ["VOLATILE", "TRENDING", "RANGING"], default=ambiguous_as)
+
 
 class BacktestEngine:
 
-    # Duracion en minutos de cada intervalo soportado - usado para decidir
-    # si aplica la simulacion de salida granular (1 min) y para acotar el
-    # rango de velas de 1 min que corresponden a cada vela de la estrategia.
-    INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
+    INTERVAL_MINUTES = INTERVAL_MINUTES
 
     def __init__(
         self,
@@ -33,452 +55,228 @@ class BacktestEngine:
         risk_per_trade_pct: float = 1.0,
         regime_data: dict | None = None,
         minute_df: pd.DataFrame | None = None,
+        trade_from=None,
     ):
-        self.strategy            = strategy
-        self.df                  = df.copy()
-        self.initial_balance     = initial_balance
-        self.balance             = initial_balance
-        self.risk_per_trade_pct  = risk_per_trade_pct
-        self.max_leverage        = getattr(strategy, 'max_leverage', 1.0)
-        self.regime_data         = regime_data or {}
-        self.trades              = []
+        self.strategy           = strategy
+        self.df                 = df.reset_index(drop=True).copy()
+        self.initial_balance    = initial_balance
+        self.balance            = initial_balance
+        self.risk_per_trade_pct = risk_per_trade_pct
+        self.max_leverage       = float(getattr(strategy, 'max_leverage', 1.0) or 1.0)
+        self.commission_rate    = float(getattr(strategy, 'commission_pct', 0.0) or 0.0) / 100
+        self.slippage_rate      = float(getattr(strategy, 'slippage_pct', 0.0) or 0.0) / 100
+        self.regime_data        = regime_data or {}
+        self.trade_from         = pd.Timestamp(trade_from) if trade_from is not None else None
+        self.trades: list[dict] = []
+        self.interval_minutes   = INTERVAL_MINUTES.get(str(getattr(strategy, 'interval', '60')), 60)
 
-        # Simulacion de salida granular (2026-07-09): para intervalos >= H1
-        # con trailing activo, el SL/BE/trailing/TP se evalua vela a vela de
-        # 1 minuto dentro de cada vela de la estrategia, en vez de una sola
-        # vez con el high/low agregado de toda la vela grande. Sin esto, el
-        # backtest le da al trailing hasta 1 vela COMPLETA de retraso (ver
-        # comentario historico mas abajo) - mucho mas permisivo que Paper
-        # (que ya monitorea a 1 min) y que el trailing nativo de Bybit en
-        # real (reacciona tick a tick). Resultado: backtest sistematicamente
-        # mas optimista que produccion para estrategias con trailing en H1+.
-        self.minute_df = None
-        if minute_df is not None and not minute_df.empty:
-            # Indexado por tiempo (DatetimeIndex ordenado) en vez de solo
-            # ordenar + reset_index - permite busqueda binaria (searchsorted,
-            # O(log n)) en vez de escanear el dataset completo con una
-            # mascara booleana en cada vela con posicion abierta (era el
-            # cuello de botella real: O(n) por vela, ~1M filas en 2 años).
-            self.minute_df = minute_df.sort_values('time').set_index('time')
+        # Velas de 1m como arrays (búsqueda binaria, sin iterrows)
+        self._m_time = self._m_high = self._m_low = self._m_close = None
+        if minute_df is not None and not minute_df.empty and self.interval_minutes > 1:
+            m = minute_df.sort_values('time')
+            self._m_time  = pd.to_datetime(m['time'], utc=True).dt.tz_convert(None).to_numpy()  # UTC naive
+            self._m_high  = m['high'].to_numpy(dtype=float)
+            self._m_low   = m['low'].to_numpy(dtype=float)
+            self._m_close = m['close'].to_numpy(dtype=float)
 
-        interval_minutes = self.INTERVAL_MINUTES.get(getattr(strategy, 'interval', None), 0)
-        # minute_exit se activa SIEMPRE que haya minute_df y interval >= H1,
-        # no solo con trailing. Antes la condicion `trailing_mode is not None`
-        # hacia que estrategias sin trailing (como VWAP Tendencia) cayeran al
-        # fallback high/low de vela grande con SL-first, asumiendo que el low
-        # precede al high — divergencia sistematica contra paper/real que
-        # recorren minuto a minuto. Confirmado en comparacion directa:
-        # 2026-09-22 paper tp=+161% vs backtest sl=-97% mismo entry.
-        self.use_minute_exit = (
-            self.minute_df is not None
-            and interval_minutes >= 60
-        )
+    # ─────────────────────────────── helpers ───────────────────────────────
 
+    def _fill(self, price: float, side: str, is_entry: bool) -> float:
+        """Precio ejecutado con slippage en contra (compra más cara, venta más barata)."""
+        buying = (side == 'long') == is_entry
+        return price * (1 + self.slippage_rate) if buying else price * (1 - self.slippage_rate)
 
-
-
-    def _calculate_regimes(self):
-        if self.regime_data is not None:
-            return
-            
-        atr = calculate_atr(self.df)
-        adx = calculate_adx(self.df)
-        bb_width = calculate_bb_width(self.df)
-        atr_avg = atr.rolling(50).mean()
-        bb_width_avg = bb_width.rolling(50).mean()
-
-        self.regime_data = {}
-        for i, row in self.df.iterrows():
-            timestamp = str(row['time'])
-            self.regime_data[timestamp] = classify_regime(
-                adx=float(adx.iloc[i]),
-                atr=float(atr.iloc[i]),
-                atr_avg=float(atr_avg.iloc[i]),
-                bb_width=float(bb_width.iloc[i]),
-                bb_width_avg=float(bb_width_avg.iloc[i]),
-                trending_threshold=getattr(self.strategy, 'regime_adx_trending', 25),
-                ranging_threshold=getattr(self.strategy, 'regime_adx_ranging', 20),
-                ambiguous_as=getattr(self.strategy, 'regime_ambiguous_as', 'RANGING')
-            )
-
-    def _get_regime_at(self, timestamp) -> str:
-        if not self.regime_data:
-            return "TRENDING"
-        return self.regime_data.get(str(timestamp), "TRENDING")
-
-    def _calculate_position_size(self, entry_price: float, sl_price: float) -> float:
-        risk_amount = self.balance * (self.risk_per_trade_pct / 100)
-        sl_distance = abs(entry_price - sl_price)
-        if sl_distance == 0:
+    def _position_size(self, entry: float, sl: float) -> float:
+        distance = abs(entry - sl)
+        if distance <= 0:
             return 0.0
-        raw_size = risk_amount / sl_distance
-        # Tope de nocional: la posicion no puede exceder balance * max_leverage.
-        # Sin este tope, un SL ajustado (0.8%) con riesgo 2% implica 2.5x de
-        # apalancamiento implicito no declarado, imposible de replicar en real.
-        max_leverage = getattr(self, 'max_leverage', 1.0)
-        max_size_by_notional = (self.balance * max_leverage) / entry_price
-        size = min(raw_size, max_size_by_notional)
-        return round(size, 6)
+        raw  = self.balance * (self.risk_per_trade_pct / 100) / distance
+        capd = self.balance * self.max_leverage / entry  # tope de nocional (sin apalancamiento implícito)
+        return round(min(raw, capd), 6)
 
-    def _simulate_exit_minute_bars(self, position: dict, row_time, interval_minutes: int, main_atr: float = None) -> tuple[float | None, str | None, bool]:
-        """
-        Recorre las velas de 1 minuto correspondientes a la vela de la
-        estrategia (row_time, row_time + interval_minutes) evaluando BE, SL,
-        trailing y TP en orden cronologico real - mismo criterio y orden que
-        paper_trader.py's monitor_open_trades(). Actualiza position in-place
-        (sl, be_activated, trailing_applied). Devuelve (exit_price, exit_reason)
-        o (None, None) si no se cerro dentro de esta vela.
+    def _sub_bars(self, start, end):
+        """(highs, lows) de las velas de 1m en [start, end). None si no hay datos de 1m."""
+        if self._m_time is None:
+            return None
+        a = np.searchsorted(self._m_time, pd.Timestamp(start).to_datetime64(), side='left')
+        b = np.searchsorted(self._m_time, pd.Timestamp(end).to_datetime64(), side='left')
+        if a >= b:
+            return None
+        return self._m_high[a:b], self._m_low[a:b]
 
-        NOTA: si no hay velas de 1 min en el rango (hueco de datos), no hace
-        nada aca - el caller cae de vuelta al chequeo con el high/low de la
-        vela grande como fallback.
-        """
-        window_end = row_time + timedelta(minutes=interval_minutes)
-        start_idx = self.minute_df.index.searchsorted(row_time, side='left')
-        end_idx   = self.minute_df.index.searchsorted(window_end, side='left')
-        minute_bars = self.minute_df.iloc[start_idx:end_idx]
-        if minute_bars.empty:
-            return None, None, False
-
-        for _, mbar in minute_bars.iterrows():
-            high = float(mbar['high'])
-            low  = float(mbar['low'])
-
-            if not position['be_activated']:
-                be_level = position['be_level']
-                if position['side'] == 'long' and high >= be_level:
-                    position['sl'] = position['entry_price']
-                    position['be_activated'] = True
-                elif position['side'] == 'short' and low <= be_level:
-                    position['sl'] = position['entry_price']
-                    position['be_activated'] = True
-
-            # SL - etiqueta segun si el trailing ya estaba activo ANTES de
-            # este chequeo (mismo criterio que el fix de 2026-07-09 en
-            # paper_trader.py/real_trader.py: distinguir stop_loss original
-            # de trailing_stop, no ambos como 'stop_loss' generico).
-            sl_label = 'trailing_stop' if position.get('trailing_applied') else 'stop_loss'
-            if position['side'] == 'long' and low <= position['sl']:
-                return position['sl'], sl_label, True
-            elif position['side'] == 'short' and high >= position['sl']:
-                return position['sl'], sl_label, True
-
-            if hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
-                ref_price = high if position['side'] == 'long' else low
-                # Usar el ATR de la vela principal (H1/H2) para el trailing
-                new_sl = self.strategy.calculate_trailing_sl(
-                    position['entry_price'], position['side'], ref_price, position['sl'], 
-                    current_atr=main_atr
-                )
-                if new_sl != position['sl']:
-                    position['sl'] = new_sl
-                    position['trailing_applied'] = True
-
-            # Solo TP1 — coincide con el comportamiento real de Bybit hoy:
-            # tpslMode='Full' con TP1 como takeProfit cierra el 100% en TP1,
-            # los TP2/3/4 nunca se alcanzan. Antes el backtest iteraba TP4→TP1
-            # y cerraba al TP MÁS ALTO alcanzado por el high de la vela,
-            # asumiendo que el trade aguantaba sin retroceder (lookahead intrabar).
-            level = position.get('tp1')
-            if level is not None:
-                if position['side'] == 'long' and high >= level:
-                    return level, 'take_profit_1', True
-                elif position['side'] == 'short' and low <= level:
-                    return level, 'take_profit_1', True
-
-        return None, None, True
-
-    def _get_active_tp(self, position: dict) -> tuple[float | None, str | None]:
-        """
-        Devuelve el nivel de TP activo con mayor prioridad (TP4 > TP3 > TP2 > TP1)
-        entre los definidos para esta posicion.
-        """
-        for key, label in [('tp4', 'take_profit_4'), ('tp3', 'take_profit_3'),
-                            ('tp2', 'take_profit_2'), ('tp1', 'take_profit_1')]:
-            if position.get(key) is not None:
-                return position[key], label
+    def _step(self, pos: dict, high: float, low: float, atr: float | None) -> tuple[float | None, str | None]:
+        """Una sub-vela: SL vigente -> TP1 -> break-even -> trailing. Devuelve (nivel, motivo) o (None, None)."""
+        long = pos['side'] == 'long'
+        if (long and low <= pos['sl']) or (not long and high >= pos['sl']):
+            return pos['sl'], ('trailing_stop' if pos['trailing_applied'] else 'stop_loss')
+        tp = pos['tp1']
+        if tp is not None and ((long and high >= tp) or (not long and low <= tp)):
+            return tp, 'take_profit_1'
+        if not pos['be_activated'] and ((long and high >= pos['be_level']) or (not long and low <= pos['be_level'])):
+            pos['sl'] = max(pos['sl'], pos['entry_price']) if long else min(pos['sl'], pos['entry_price'])
+            pos['be_activated'] = True
+        if getattr(self.strategy, 'trailing_mode', None):
+            new_sl = self.strategy.calculate_trailing_sl(
+                pos['entry_price'], pos['side'], high if long else low, pos['sl'], current_atr=atr)
+            if new_sl != pos['sl']:
+                pos['sl'] = new_sl
+                pos['trailing_applied'] = True
         return None, None
 
+    def _close(self, pos: dict, level: float, reason: str, exit_time, bars_held: int) -> None:
+        exit_price = self._fill(level, pos['side'], is_entry=False)
+        size = pos['size']
+        gross = (exit_price - pos['entry_price']) * size if pos['side'] == 'long' else (pos['entry_price'] - exit_price) * size
+        commission = (pos['entry_price'] + exit_price) * size * self.commission_rate
+        pnl = gross - commission
+        pnl_pct = pnl / self.balance * 100
+        self.balance += pnl
+        self.trades.append({
+            "entry_time":   pos['entry_time'],
+            "exit_time":    exit_time,
+            "symbol":       self.strategy.symbol,
+            "side":         pos['side'],
+            "entry_price":  pos['entry_price'],
+            "exit_price":   exit_price,
+            "exit_level":   level,
+            "sl":           pos['sl'],
+            "tp1":          pos['tp1'],
+            "tp2":          pos['tp2'],
+            "tp3":          pos['tp3'],
+            "tp4":          pos['tp4'],
+            "size":         size,
+            "gross_pnl":    round(gross, 4),
+            "commission":   round(commission, 4),
+            "pnl":          round(pnl, 4),
+            "pnl_pct":      round(pnl_pct, 4),
+            "exit_reason":  reason,
+            "bars_open":    bars_held,
+            "be_activated": pos['be_activated'],
+            "trailing_applied": pos['trailing_applied'],
+            "regime":       pos['regime'],
+        })
+
+    # ─────────────────────────────── simulación ───────────────────────────────
+
     def run(self) -> dict:
-        logger.info(f"Iniciando backtest: {self.strategy.name} | {self.strategy.symbol} | {len(self.df)} velas")
-        self._calculate_regimes()
-        
-        df = self.strategy.prepare(self.df)
-        df = self.strategy.generate_signals(df)
+        s = self.strategy
+        logger.info(f"Iniciando backtest: {s.name} | {s.symbol} | {len(self.df)} velas")
 
-        # Precalcular ATR para proteccion por volatilidad, si esta activada
-        needs_atr = (getattr(self.strategy, 'volatility_protection_mode', None) is not None 
-                     or getattr(self.strategy, 'trailing_mode', None) == 'atr')
+        df = s.generate_signals(s.prepare(self.df))
+        n = len(df)
+        times  = pd.to_datetime(df['time'])
+        opens  = df['open'].to_numpy(dtype=float)
+        highs  = df['high'].to_numpy(dtype=float)
+        lows   = df['low'].to_numpy(dtype=float)
+        closes = df['close'].to_numpy(dtype=float)
+        signals = df['signal'].fillna(0).astype(int).to_numpy()
+        signal_sl = df['signal_sl_pct'].to_numpy(dtype=float) if 'signal_sl_pct' in df.columns else None
 
-        # Asegurar que el ATR exista si se usa trailing ATR o protección de volatilidad
-        if needs_atr:
-            if '_atr' not in df.columns:
-                df['_atr'] = calculate_atr(df)
-            if '_atr_avg' not in df.columns:
-                df['_atr_avg'] = df['_atr'].rolling(50).mean()
-        if needs_atr:
-            df['_atr']     = calculate_atr(df)
-            df['_atr_avg'] = df['_atr'].rolling(50).mean()
+        if self.regime_data:
+            regimes = np.array([self.regime_data.get(str(t), "TRENDING") for t in df['time']])
+        else:
+            regimes = compute_regimes(df, getattr(s, 'regime_adx_trending', 25),
+                                      getattr(s, 'regime_adx_ranging', 20),
+                                      getattr(s, 'regime_ambiguous_as', 'RANGING'))
 
-        position     = None
+        needs_atr = getattr(s, 'volatility_protection_mode', None) is not None or getattr(s, 'trailing_mode', None) == 'atr'
+        atr = calculate_atr(df).to_numpy() if needs_atr else None
+        atr_avg = pd.Series(atr).rolling(50).mean().to_numpy() if needs_atr else None
+
+        first_trade_idx = 1
+        if self.trade_from is not None:  # velas previas: solo calentamiento de indicadores
+            tf = self.trade_from
+            if times.dt.tz is not None and tf.tzinfo is None:
+                tf = tf.tz_localize('UTC')
+            elif times.dt.tz is None and tf.tzinfo is not None:
+                tf = tf.tz_convert('UTC').tz_localize(None)
+            first_trade_idx = max(1, int((times < tf).sum()))
+        step = timedelta(minutes=self.interval_minutes)
+        exit_on_opposite = bool(getattr(s, 'close_on_opposite', False) or getattr(s, 'exit_on_opposite', False))
+        reverse_on_opposite = not bool(getattr(s, 'exit_on_opposite', False))
+        allow_short = bool(getattr(s, 'allow_short', True))
+        max_duration = int(getattr(s, 'max_duration', 0) or 0)
         equity_curve = [self.initial_balance]
+        pos = None
 
-        for i in range(1, len(df)):
-            row  = df.iloc[i]
-            prev = df.iloc[i - 1]
+        for i in range(max(1, first_trade_idx), n):
+            bar_time = times.iloc[i]
+            prev_signal = signals[i - 1]
 
-            # ── Gestión de posición abierta ──────────────────────────────
-            if position is not None:
-                high  = float(row['high'])
-                low   = float(row['low'])
-                close = float(row['close'])
-                bars_open = i - position['entry_bar']
-
-                exit_price  = None
-                exit_reason = None
-
-                # Simulacion granular (1 min) para BE/SL/trailing, cuando
-                # aplica (interval >= H1, trailing activo, hay minute_df
-                # disponible). Reemplaza el chequeo con el high/low de la
-                # vela grande - actualiza position['sl']/be_activated/
-                # trailing_applied in-place y puede devolver un cierre ya
-                # resuelto (incluye su propio chequeo de TP internamente).
-                used_minute_bars = False
-                if self.use_minute_exit:
-                    row_time = row.get('time', None)
-                    if row_time is not None:
-                        interval_minutes = self.INTERVAL_MINUTES.get(self.strategy.interval, 60)
-                        curr_atr = float(row['_atr']) if '_atr' in row and pd.notna(row['_atr']) else None
-                        exit_price, exit_reason, used_minute_bars = self._simulate_exit_minute_bars(
-                            position, row_time, interval_minutes, main_atr=curr_atr
-                        )
-
-                if not used_minute_bars:
-                    # Fallback al comportamiento original: sin minute_df para
-                    # esta vela (hueco de datos), sin trailing, o interval < H1.
-                    # Break-even: mover SL a entrada si precio llegó al nivel BE
-                    if not position['be_activated']:
-                        be_level = position['be_level']
-                        if position['side'] == 'long' and high >= be_level:
-                            position['sl'] = position['entry_price']
-                            position['be_activated'] = True
-                        elif position['side'] == 'short' and low <= be_level:
-                            position['sl'] = position['entry_price']
-                            position['be_activated'] = True
-
-                    # Stop Loss — se evalúa con el SL vigente ANTES de aplicar el
-                    # trailing de esta vela. Evita look-ahead bias: no podemos
-                    # asumir que el high (usado para mover el trailing) ocurrió
-                    # antes que el low (usado para disparar el SL) dentro de la
-                    # misma vela OHLC.
-                    if position['side'] == 'long' and low <= position['sl']:
-                        exit_price  = position['sl']
-                        exit_reason = 'stop_loss'
-                    elif position['side'] == 'short' and high >= position['sl']:
-                        exit_price  = position['sl']
-                        exit_reason = 'stop_loss'
-
-                    # Trailing Stop (independiente del break-even, puede moverlo mas)
-                    # Solo se aplica si la posición no se cerró por SL en esta vela;
-                    # su efecto rige recién desde la vela siguiente.
-                    if exit_price is None and hasattr(self.strategy, 'calculate_trailing_sl') and self.strategy.trailing_mode:
-                        ref_price = high if position['side'] == 'long' else low
-                        curr_atr = float(row['_atr']) if '_atr' in row and pd.notna(row['_atr']) else None
-                        new_sl = self.strategy.calculate_trailing_sl(
-                            position['entry_price'], position['side'], ref_price, position['sl'], current_atr=curr_atr
-                        )
-                        if new_sl != position['sl']:
-                            position['sl'] = new_sl
-                            position['trailing_applied'] = True
-
-                # Proteccion por volatilidad
-                if exit_price is None and needs_atr and hasattr(self.strategy, 'check_volatility_protection'):
-                    current_atr = float(row['_atr']) if pd.notna(row['_atr']) else 0
-                    avg_atr     = float(row['_atr_avg']) if pd.notna(row['_atr_avg']) else 0
-
-                    vol_check = self.strategy.check_volatility_protection(
-                        position['sl'], position['side'], current_atr, avg_atr
-                    )
-
-                    if vol_check['action'] == 'close':
-                        exit_price  = close
-                        exit_reason = 'volatility_protection'
-                    elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None:
-                        position['sl'] = vol_check['new_sl']
-
-                # Take Profit — solo TP1 (ver comentario en _simulate_exit_minute_bars)
-                if exit_price is None:
-                    level = position.get('tp1')
-                    if level is not None:
-                        if position['side'] == 'long' and high >= level:
-                            exit_price, exit_reason = level, 'take_profit_1'
-                        elif position['side'] == 'short' and low <= level:
-                            exit_price, exit_reason = level, 'take_profit_1'
-
-                # Cierre por tiempo
-                if exit_price is None and bars_open >= self.strategy.max_duration:
-                    if getattr(self.strategy, 'max_duration_profit', False):
-                        # Solo cerrar si está en positivo
-                        is_profit = (position['side'] == 'long' and close > position['entry_price']) or (position['side'] == 'short' and close < position['entry_price'])
-                        if is_profit:
-                            exit_price  = close
-                            exit_reason = 'time_exit_profit'
-                    else:
-                        exit_price  = close
-                        exit_reason = 'time_exit'
-
-                # Registrar trade cerrado
-                if exit_price is not None:
-                    if position['side'] == 'long':
-                        gross_pnl = (exit_price - position['entry_price']) * position['size']
-                    else:
-                        gross_pnl = (position['entry_price'] - exit_price) * position['size']
-
-                    # Comision sobre el valor nocional, entrada + salida (mismo
-                    # criterio que BYBIT_TAKER_FEE en real_trader.py). Antes de
-                    # 2026-07-09 el backtest no descontaba ningun costo aca.
-                    commission_pct = getattr(self.strategy, 'commission_pct', 0.0) / 100
-                    entry_notional = position['entry_price'] * position['size']
-                    exit_notional  = exit_price * position['size']
-                    commission = (entry_notional + exit_notional) * commission_pct
-                    pnl = gross_pnl - commission
-
-                    pnl_pct = pnl / self.balance * 100
-                    self.balance += pnl
-
-                    self.trades.append({
-                        "entry_time":   position['entry_time'],
-                        "exit_time":    row['time'] if 'time' in df.columns else str(i),
-                        "symbol":       self.strategy.symbol,
-                        "side":         position['side'],
-                        "entry_price":  position['entry_price'],
-                        "exit_price":   exit_price,
-                        "sl":           position['sl'],
-                        "tp1":          position.get('tp1'),
-                        "tp2":          position.get('tp2'),
-                        "tp3":          position.get('tp3'),
-                        "tp4":          position.get('tp4'),
-                        "size":         position['size'],
-                        "gross_pnl":    round(gross_pnl, 4),
-                        "commission":   round(commission, 4),
-                        "pnl":          round(pnl, 4),
-                        "pnl_pct":      round(pnl_pct, 4),
-                        "exit_reason":  exit_reason,
-                        "bars_open":    bars_open,
-                        "be_activated": position['be_activated'],
-                        "trailing_applied": position.get('trailing_applied', False),
-                        "regime":       position['regime'],
-                    })
-
-                    position = None
+            # 1. Señal opuesta (vela i-1 cerrada) -> salida al open de la vela i
+            if pos is not None and exit_on_opposite and prev_signal != 0:
+                if (pos['side'] == 'long' and prev_signal == -1) or (pos['side'] == 'short' and prev_signal == 1):
+                    self._close(pos, opens[i], 'opposite_signal', bar_time, i - pos['entry_bar'])
+                    pos = None
                     equity_curve.append(self.balance)
+                    if not reverse_on_opposite:
+                        continue
 
-            # ── Cierre por Señal Opuesta ─────────────────────────────────
-            should_exit = getattr(self.strategy, 'close_on_opposite', False) or getattr(self.strategy, 'exit_on_opposite', False)
-            if position is not None and should_exit:
-                if prev['signal'] != 0:
-                    current_signal = int(prev['signal'])
-                    opposite_signal = (position['side'] == 'long' and current_signal == -1) or (position['side'] == 'short' and current_signal == 1)
-                    if opposite_signal:
-                        exit_price = float(row['open']) # Cerrar al open de la vela actual (evita lookahead)
-                        exit_reason = 'opposite_signal'
-                        # Registrar trade (lógica duplicada de cierre)
-                        if position['side'] == 'long':
-                            gross_pnl = (exit_price - position['entry_price']) * position['size']
-                        else:
-                            gross_pnl = (position['entry_price'] - exit_price) * position['size']
-                        commission_pct = getattr(self.strategy, 'commission_pct', 0.0) / 100
-                        commission = (position['entry_price'] * position['size'] + exit_price * position['size']) * commission_pct
-                        pnl = gross_pnl - commission
-                        pnl_pct = pnl / self.balance * 100
-                        self.balance += pnl
-                        self.trades.append({
-                            "entry_time":   position['entry_time'], "exit_time": row['time'] if 'time' in df.columns else str(i),
-                            "symbol":       self.strategy.symbol, "side": position['side'],
-                            "entry_price":  position['entry_price'], "exit_price": exit_price,
-                            "sl": position['sl'], "tp1": position.get('tp1'), "tp2": position.get('tp2'),
-                            "tp3": position.get('tp3'), "tp4": position.get('tp4'), "size": position['size'],
-                            "gross_pnl": round(gross_pnl, 4), "commission": round(commission, 4), "pnl": round(pnl, 4),
-                            "pnl_pct": round(pnl_pct, 4), "exit_reason": exit_reason, "bars_open": i - position['entry_bar'],
-                            "be_activated": position['be_activated'], "trailing_applied": position.get('trailing_applied', False),
-                            "regime": position['regime'],
-                        })
-                        position = None
-                        equity_curve.append(self.balance)
+            # 2. Entrada al open de la vela i con señal y régimen de la vela i-1 (ambos ya conocidos)
+            if pos is None and prev_signal != 0:
+                side = 'long' if prev_signal == 1 else 'short'
+                regime = str(regimes[i - 1])
+                if (side == 'long' or allow_short) and s.should_operate(regime):
+                    entry = self._fill(opens[i], side, is_entry=True)
+                    sl_pct = signal_sl[i - 1] if signal_sl is not None and not np.isnan(signal_sl[i - 1]) else s.sl_pct
+                    sl = round(entry * (1 - sl_pct / 100) if side == 'long' else entry * (1 + sl_pct / 100), 8)
+                    levels = s.calculate_tp_levels(entry, side)
+                    size = self._position_size(entry, sl)
+                    if size > 0:
+                        pos = {
+                            'side': side, 'entry_price': entry, 'entry_time': bar_time, 'entry_bar': i,
+                            'sl': sl, 'tp1': levels['tp1'], 'tp2': levels.get('tp2'), 'tp3': levels.get('tp3'),
+                            'tp4': levels.get('tp4'), 'be_level': s.calculate_breakeven(entry, side),
+                            'be_activated': False, 'trailing_applied': False, 'size': size, 'regime': regime,
+                        }
 
-            # ── Nueva entrada ────────────────────────────────────────────
-            if position is None and prev['signal'] != 0:
-                signal = int(prev['signal'])
-                side   = 'long' if signal == 1 else 'short'
-                
-                # Si allow_short es False y la señal es Short, ignorar
-                if side == 'short' and not getattr(self.strategy, 'allow_short', True):
-                    continue
-                entry  = float(row['open'])
+            if pos is None:
+                continue
 
-                regime = self._get_regime_at(row.get('time', i))
+            # 3. Gestión DURANTE la vela i (incluida la vela de entrada)
+            bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None
+            sub = self._sub_bars(bar_time, bar_time + step)
+            level = reason = None
+            if sub is not None:
+                for h, l in zip(*sub):
+                    level, reason = self._step(pos, float(h), float(l), bar_atr)
+                    if level is not None:
+                        break
+            else:
+                level, reason = self._step(pos, highs[i], lows[i], bar_atr)
 
-                if not self.strategy.should_operate(regime):
-                    continue
+            bars_held = i - pos['entry_bar'] + 1
+            if level is None and needs_atr and getattr(s, 'volatility_protection_mode', None):
+                vol = s.check_volatility_protection(pos['sl'], pos['side'], bar_atr or 0.0,
+                                                    float(atr_avg[i]) if not np.isnan(atr_avg[i]) else 0.0)
+                if vol['action'] == 'close':
+                    level, reason = closes[i], 'volatility_protection'
+                elif vol['action'] == 'widen' and vol['new_sl'] is not None:
+                    pos['sl'] = vol['new_sl']
 
-                # SL dinamico: si la estrategia marco un sl_pct especifico para esta
-                # señal (ej. zona ADX debil), se usa temporalmente en vez del sl_pct fijo
-                effective_sl_pct = prev['signal_sl_pct'] if 'signal_sl_pct' in df.columns else self.strategy.sl_pct
+            if level is None and max_duration > 0 and bars_held >= max_duration:
+                in_profit = closes[i] > pos['entry_price'] if pos['side'] == 'long' else closes[i] < pos['entry_price']
+                if not getattr(s, 'max_duration_profit', False):
+                    level, reason = closes[i], 'time_exit'
+                elif in_profit:
+                    level, reason = closes[i], 'time_exit_profit'
 
-                if side == 'long':
-                    sl = entry * (1 - effective_sl_pct / 100)
-                else:
-                    sl = entry * (1 + effective_sl_pct / 100)
-                sl = round(sl, 8)
-
-                tp1 = self.strategy.calculate_sl_tp(entry, side)[1]
-                be  = self.strategy.calculate_breakeven(entry, side)
-                size = self._calculate_position_size(entry, sl)
-
-                # Niveles TP2-TP4 opcionales
-                if hasattr(self.strategy, 'calculate_tp_levels'):
-                    tp_levels = self.strategy.calculate_tp_levels(entry, side)
-                    tp2, tp3, tp4 = tp_levels.get('tp2'), tp_levels.get('tp3'), tp_levels.get('tp4')
-                else:
-                    tp2 = self.strategy.calculate_tp2(entry, side) if hasattr(self.strategy, 'calculate_tp2') else None
-                    tp3 = None
-                    tp4 = None
-
-                if size <= 0:
-                    continue
-
-                position = {
-                    'side':         side,
-                    'entry_price':  entry,
-                    'entry_time':   row.get('time', i),
-                    'entry_bar':    i,
-                    'sl':           sl,
-                    'tp1':          tp1,
-                    'tp2':          tp2,
-                    'tp3':          tp3,
-                    'tp4':          tp4,
-                    'be_level':     be,
-                    'be_activated': False,
-                    'trailing_applied': False,
-                    'size':         size,
-                    'regime':       regime,
-                }
+            if level is not None:
+                at_close = reason in ('volatility_protection', 'time_exit', 'time_exit_profit')
+                self._close(pos, level, reason, bar_time + step if at_close else bar_time, bars_held)
+                pos = None
+                equity_curve.append(self.balance)
 
         metrics = calculate_metrics(self.trades, self.initial_balance)
         metrics['equity_curve'] = equity_curve
-
-        logger.info(
-            f"Backtest completo: {metrics['total_trades']} trades | "
-            f"WR: {metrics['win_rate']}% | PF: {metrics['profit_factor']} | "
-            f"Sharpe: {metrics['sharpe_ratio']} | DD: {metrics['max_drawdown_pct']}%"
-        )
-
+        logger.info(f"Backtest completo: {metrics['total_trades']} trades | WR: {metrics['win_rate']}% | "
+                    f"PF: {metrics['profit_factor']} | Sharpe: {metrics['sharpe_ratio']} | DD: {metrics['max_drawdown_pct']}%")
         return {
-            "backtest_id": f"BT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{self.strategy.symbol}-{self.strategy.name.replace(' ', '_').upper()}",
-            "strategy":    self.strategy.name,
-            "symbol":      self.strategy.symbol,
-            "interval":    self.strategy.interval,
-            "total_bars":  len(df),
+            "backtest_id": f"BT-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{s.symbol}-{s.name.replace(' ', '_').upper()}",
+            "strategy":    s.name,
+            "symbol":      s.symbol,
+            "interval":    s.interval,
+            "total_bars":  n,
             "metrics":     metrics,
             "trades":      self.trades,
         }

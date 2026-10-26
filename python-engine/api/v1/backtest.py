@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from backtesting.walk_forward import WalkForwardValidator
+from backtesting.metrics import calculate_metrics
 from backtesting.engine import BacktestEngine
 from collectors.broker_resolver import (
     coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
@@ -46,7 +46,8 @@ class BacktestRequest(BaseModel):
     regime_adx_trending: float           = 25
     regime_adx_ranging:  float           = 20
     regime_ambiguous_as: str             = "RANGING"
-    walk_forward:        bool            = True
+    walk_forward:        bool            = True   # True = reportar estabilidad por ventanas (sin descartar datos)
+    slippage_pct:        float           = 0.0    # % por lado en cada ejecución a mercado
     n_windows:           int             = 5
     macro_trend_filter:  bool            = False
     volume_filter:       bool            = False
@@ -321,39 +322,80 @@ def load_strategy(request: BacktestRequest):
     raise ValueError(f"Estrategia '{request.strategy}' no encontrada. Disponibles: {available}")
 
 
-def build_monthly_breakdown(trades: list[dict], initial_balance: float) -> list[dict]:
+WARMUP_BARS = 500  # velas previas al inicio para calentar indicadores (paper usa 500)
+
+
+def build_monthly_breakdown(trades: list[dict], initial_balance: float,
+                            start: datetime | None = None, end: datetime | None = None) -> list[dict]:
     """
-    Agrupa los trades cerrados por mes calendario (segun entry_time) y calcula
-    metricas resumidas por mes: trades, win_rate, pnl_pct, pnl total.
+    Métricas por mes calendario (según entry_time). Incluye TODOS los meses del rango
+    pedido: un mes sin operaciones aparece con 0 (antes se omitía e inflaba el promedio
+    mensual y la consistencia).
     """
-    if not trades:
+    rows: dict[str, dict] = {}
+    if start is not None and end is not None:
+        for p in pd.period_range(start.replace(tzinfo=None), (end - timedelta(seconds=1)).replace(tzinfo=None), freq='M'):
+            rows[str(p)] = {"month": str(p), "total_trades": 0, "wins": 0, "losses": 0,
+                            "win_rate": 0.0, "total_pnl": 0.0, "total_pnl_pct": 0.0}
+    if trades:
+        df = pd.DataFrame(trades)
+        df['month'] = pd.to_datetime(df['entry_time'], utc=True).dt.strftime('%Y-%m')
+        for month, group in df.groupby('month'):
+            total = len(group)
+            wins = int((group['pnl'] > 0).sum())
+            rows[month] = {
+                "month":         month,
+                "total_trades":  int(total),
+                "wins":          wins,
+                "losses":        int(total - wins),
+                "win_rate":      round(wins / total * 100, 2) if total else 0.0,
+                "total_pnl":     round(float(group['pnl'].sum()), 4),
+                "total_pnl_pct": round(float(group['pnl_pct'].sum()), 4),
+            }
+    return [rows[k] for k in sorted(rows)]
+
+
+def window_stats(trades: list[dict], start: datetime | None, end: datetime | None,
+                 n_windows: int, initial_balance: float) -> list[dict]:
+    """Estabilidad: métricas de los trades de cada tramo temporal (todos los datos simulados)."""
+    if start is None or end is None or n_windows < 2:
         return []
-
-    df = pd.DataFrame(trades)
-    df['entry_time'] = pd.to_datetime(df['entry_time'])
-    df['month'] = df['entry_time'].dt.strftime('%Y-%m')
-
-    breakdown = []
-    for month, group in df.groupby('month'):
-        total = len(group)
-        wins  = (group['pnl'] > 0).sum()
-        breakdown.append({
-            "month":       month,
-            "total_trades": int(total),
-            "wins":        int(wins),
-            "losses":      int(total - wins),
-            "win_rate":    round(float(wins) / total * 100, 2) if total > 0 else 0.0,
-            "total_pnl":   round(float(group['pnl'].sum()), 4),
-            "total_pnl_pct": round(float(group['pnl_pct'].sum()), 4),
+    edges = pd.date_range(start, end, periods=n_windows + 1)
+    entry_times = pd.to_datetime([t['entry_time'] for t in trades], utc=True) if trades else []
+    out = []
+    for k in range(n_windows):
+        chunk = [t for t, ts in zip(trades, entry_times) if edges[k] <= ts < edges[k + 1]]
+        m = calculate_metrics(chunk, initial_balance)
+        out.append({
+            "window": k + 1, "from": edges[k].isoformat(), "to": edges[k + 1].isoformat(),
+            "total_trades": m['total_trades'], "win_rate": m['win_rate'],
+            "profit_factor": m['profit_factor'], "sharpe_ratio": m['sharpe_ratio'],
+            "max_drawdown_pct": m['max_drawdown_pct'], "total_return_pct": m['total_return_pct'],
+            "total_pnl": m['total_pnl'],
         })
+    return out
 
-    breakdown.sort(key=lambda x: x['month'])
-    return breakdown
+
+def evaluate_for_paper(aggregate: dict) -> dict:
+    """Criterios mínimos orientativos (los mismos que usaba el walk-forward)."""
+    reasons = []
+    if aggregate['total_trades'] < 10:
+        reasons.append(f"Trades insuficientes: {aggregate['total_trades']} (mínimo 10)")
+    if aggregate['sharpe_ratio'] < 0.5:
+        reasons.append(f"Sharpe Ratio bajo: {aggregate['sharpe_ratio']} (mínimo 0.5)")
+    if aggregate['win_rate'] < 45:
+        reasons.append(f"Win Rate bajo: {aggregate['win_rate']}% (mínimo 45%)")
+    if aggregate['max_drawdown_pct'] > 15:
+        reasons.append(f"Drawdown alto: {aggregate['max_drawdown_pct']}% (máximo 15%)")
+    if aggregate['profit_factor'] is not None and aggregate['profit_factor'] < 1.2:
+        reasons.append(f"Profit Factor bajo: {aggregate['profit_factor']} (mínimo 1.2)")
+    passed = not reasons
+    return {"passed": passed, "reasons": reasons or ["Estrategia aprobada para paper trading"]}
 
 
 @router.post("/backtest/run")
 async def run_backtest(request: BacktestRequest):
-    """Ejecuta un backtest completo con walk-forward validation."""
+    """Backtest continuo de todo el rango, con calentamiento, régimen, slippage y comisiones."""
     warnings = []
     coverage = {}
     try:
@@ -371,7 +413,9 @@ async def run_backtest(request: BacktestRequest):
                 raise ValueError(f"No hay velas de {request.symbol} {request.interval} en el rango solicitado.")
             warnings.extend(main_src.problems())
             coverage['main'] = main_src.as_dict()
-            df = await load_ohlcv(pool, request.symbol, request.interval, main_src.broker, start, end)
+            # Calentamiento: velas previas al inicio solo para indicadores (como paper, 500 velas)
+            warm_start = start - interval_delta(request.interval) * WARMUP_BARS if start else None
+            df = await load_ohlcv(pool, request.symbol, request.interval, main_src.broker, warm_start, end)
 
             strategy = load_strategy(request)
 
@@ -381,7 +425,7 @@ async def run_backtest(request: BacktestRequest):
             #    ambos métodos daría un backtest con dos criterios distintos según el mes.
             minute_df = None
             if interval_delta(request.interval) >= timedelta(hours=1):
-                data_start = df['time'].iloc[0].to_pydatetime()
+                data_start = max(df['time'].iloc[0].to_pydatetime(), start) if start else df['time'].iloc[0].to_pydatetime()
                 data_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(request.interval)
                 minute_src = await resolve_backtest_source(pool, request.symbol, '1', data_start, data_end)
                 coverage['minute'] = minute_src.as_dict() if minute_src else None
@@ -400,35 +444,27 @@ async def run_backtest(request: BacktestRequest):
         finally:
             await pool.close()
 
-        if request.walk_forward:
-            validator = WalkForwardValidator(
-                strategy=strategy,
-                df=df,
-                initial_balance=request.initial_balance,
-                risk_per_trade_pct=request.risk_per_trade_pct,
-                n_windows=request.n_windows,
-                train_pct=request.train_pct,
-                minute_df=minute_df,
-            )
-            result = validator.run()
-            
-            # Usar los trades del Walk-Forward para el desglose mensual
-            if request.monthly_breakdown:
-                result['monthly_breakdown'] = build_monthly_breakdown(
-                    result.get('trades', []), request.initial_balance
-                )
-        else:
-            engine = BacktestEngine(
-                strategy=strategy, df=df,
-                initial_balance=request.initial_balance,
-                risk_per_trade_pct=request.risk_per_trade_pct,
-                minute_df=minute_df,
-            )
-            result = engine.run()
-            if request.monthly_breakdown:
-                result['monthly_breakdown'] = build_monthly_breakdown(
-                    result['trades'], request.initial_balance
-                )
+        strategy.slippage_pct = float(request.slippage_pct)
+        if request.slippage_pct <= 0:
+            warnings.append("Aviso: slippage en 0%: entradas y salidas al precio exacto (optimista frente a órdenes reales).")
+
+        # Simulación CONTINUA de todo el rango (sin descartar datos)
+        engine = BacktestEngine(
+            strategy=strategy, df=df,
+            initial_balance=request.initial_balance,
+            risk_per_trade_pct=request.risk_per_trade_pct,
+            minute_df=minute_df,
+            trade_from=start,
+        )
+        result = engine.run()
+        result['aggregate_metrics'] = result['metrics']
+        result['n_windows'] = request.n_windows if request.walk_forward else 1
+        result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)
+                                    if request.walk_forward else [])
+        verdict = evaluate_for_paper(result['metrics'])
+        result.update(passed=verdict['passed'], pass_reasons=verdict['reasons'], ready_for_paper=verdict['passed'])
+        if request.monthly_breakdown:
+            result['monthly_breakdown'] = build_monthly_breakdown(result['trades'], request.initial_balance, start, end)
 
         return {"status": "ok", "result": result, "warnings": warnings, "data_coverage": coverage}
 
