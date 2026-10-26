@@ -7,12 +7,13 @@ eliminando cualquier config hardcodeada. El admin gestiona todo desde Laravel.
 import asyncpg
 import logging
 import os
-import importlib
+import json
 from fastapi import APIRouter, HTTPException
 from dotenv import load_dotenv
 
 from trading.paper_trader import PaperTrader
 from trading.risk_manager import RiskManager
+from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
 
@@ -21,9 +22,13 @@ router = APIRouter()
 
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
-# Mapa de clase Python por nombre (extensible sin tocar logica del motor)
-STRATEGY_CLASS_MAP = {
-    'DynamicStrategy': ('backtesting.strategies.base_strategy', 'BaseStrategy'),
+DEFAULT_PARAMS = {
+    "sl_pct":             1.5,
+    "tp_pct":             3.0,
+    "be_pct":             2.0,
+    "max_duration":       24,
+    "regime_filter":      True,
+    "risk_per_trade_pct": 1.0,
 }
 
 
@@ -48,47 +53,17 @@ async def load_active_configs(pool: asyncpg.Pool) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def instantiate_strategy(config: dict) -> object:
-    """
-    Instancia la clase de estrategia correspondiente con los params de la config.
-    Soporta clases fijas (STRATEGY_CLASS_MAP) y codigo dinamico (DynamicStrategy).
-    """
-    import json
-    class_name = config['strategy_class']
-
-    if class_name not in STRATEGY_CLASS_MAP:
-        raise ValueError(f"Clase de estrategia no registrada: {class_name}")
-
-    params = config['params'] if isinstance(config['params'], dict) else json.loads(config['params'])
-    params['symbol']   = config['symbol']
-    params['interval'] = config['interval']
-
-    # Rama dinamica: codigo Python embebido en params.strategy_code
-    if class_name == 'DynamicStrategy':
-        strategy_code = params.get('strategy_code')
-        if not strategy_code:
-            raise ValueError(f"Config '{config['display_name']}' es DynamicStrategy sin params.strategy_code")
-        from backtesting.strategies.base_strategy import BaseStrategy
-        import pandas as pd
-        import numpy as np
-        namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
-        exec(strategy_code, namespace)
-        strategy_cls = None
-        for k, v in namespace.items():
-            if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
-                strategy_cls = v
-                break
-        if not strategy_cls:
-            raise ValueError(f"No se encontro clase BaseStrategy en strategy_code de '{config['display_name']}'")
-        merged = dict(params.get('strategy_config') or {})
-        merged.update(params)
-        return strategy_cls(merged)
-
-    # Rama legacy: importar clase fija
-    module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
-    module = importlib.import_module(module_path)
-    cls    = getattr(module, cls_name)
-    return cls(params)
+def build_config_map(configs: list[dict]) -> dict[int, dict]:
+    """{config_id: config} solo con las configs cuya estrategia se puede construir."""
+    config_map = {}
+    for cfg in configs:
+        try:
+            params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
+            build_strategy({**params, 'symbol': cfg['symbol'], 'interval': cfg['interval']})
+            config_map[cfg['id']] = cfg
+        except Exception as e:
+            logger.error(f"Config #{cfg['id']} '{cfg['display_name']}' no se puede construir: {e}")
+    return config_map
 
 
 @router.post("/paper/tick")
@@ -108,39 +83,15 @@ async def paper_tick():
             await pool.close()
             return {"status": "ok", "message": "Sin configuraciones activas", "monitor": {}, "signals": {}}
 
-        # Construir el mapa de estrategias para el PaperTrader:
-        # {display_name: clase} y params por config
-        strategies = {}
-        config_map = {}  # display_name -> config completa
-
-        for cfg in configs:
-            try:
-                strategy_instance = instantiate_strategy(cfg)
-                strategies[cfg['display_name']] = type(strategy_instance)
-                config_map[cfg['display_name']] = cfg
-            except Exception as e:
-                logger.error(f"Error instanciando {cfg['display_name']}: {e}")
-
-        # Parametros base comunes (pueden ser sobreescritos por los params de cada config)
-        default_params = {
-            "sl_pct":             1.5,
-            "tp_pct":             3.0,
-            "be_pct":             2.0,
-            "max_duration":       24,
-            "regime_filter":      True,
-            "risk_per_trade_pct": 1.0,
-        }
+        config_map = build_config_map(configs)
 
         risk_manager = RiskManager(pool)
-        symbols = list(set(cfg['symbol'] for cfg in configs))
-        strategy_names = list(strategies.keys())
-
         risk_results = await risk_manager.evaluate(
-            strategies=strategy_names,
-            symbols=symbols,
+            strategies=[cfg['display_name'] for cfg in config_map.values()],
+            symbols=list({cfg['symbol'] for cfg in config_map.values()}),
         )
 
-        trader = PaperTrader(pool, strategies, default_params, config_map)
+        trader = PaperTrader(pool, DEFAULT_PARAMS, config_map)
 
         monitor_results = await trader.monitor_open_trades()
         signal_results  = await trader.check_new_signals()
@@ -166,20 +117,7 @@ async def paper_open_trades():
         pool    = await get_pool()
         configs = await load_active_configs(pool)
 
-        strategies = {}
-        config_map = {}
-        default_params = {"sl_pct": 1.5, "tp_pct": 3.0, "be_pct": 2.0,
-                          "max_duration": 24, "regime_filter": True, "risk_per_trade_pct": 1.0}
-
-        for cfg in configs:
-            try:
-                strategy_instance = instantiate_strategy(cfg)
-                strategies[cfg['display_name']] = type(strategy_instance)
-                config_map[cfg['display_name']] = cfg
-            except Exception as e:
-                logger.error(f"Error instanciando {cfg['display_name']}: {e}")
-
-        trader = PaperTrader(pool, strategies, default_params, config_map)
+        trader = PaperTrader(pool, DEFAULT_PARAMS, build_config_map(configs))
         trades = await trader.get_open_trades_with_live_price()
 
         await pool.close()

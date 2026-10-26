@@ -7,11 +7,9 @@ Los parametros de cada estrategia/simbolo se leen desde config_map
 
 import asyncpg
 import pandas as pd
-from backtesting.strategies.base_strategy import BaseStrategy
 import logging
 import os
 import json
-import importlib
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -19,6 +17,7 @@ from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
 from collectors.broker_resolver import resolve_live_broker
+from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
 
@@ -29,51 +28,58 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 VIRTUAL_BALANCE = 10000.0
 
 
-# Mismo mapa que STRATEGY_CLASS_MAP en api/v1/paper_trading.py - duplicado
-# aca (no importado) para evitar import circular (paper_trading.py importa
-# PaperTrader). Usado solo como fallback cuando un trade abierto pertenece
-# a una estrategia que ya no esta activa (ver _get_strategy_instance_for_trade).
-STRATEGY_CLASS_MAP = {
-}
-
-
 class PaperTrader:
 
-    def __init__(self, pool: asyncpg.Pool, strategies: dict, default_params: dict,
-                 config_map: dict | None = None):
+    def __init__(self, pool: asyncpg.Pool, default_params: dict, config_map: dict | None = None):
         """
         pool:           asyncpg connection pool
-        strategies:     dict {display_name: StrategyClass}
-        default_params: parametros base de respaldo
-        config_map:     dict {display_name: config_dict} con params especificos por config
+        default_params: parámetros base de respaldo (los de cada config los sobrescriben)
+        config_map:     {paper_strategy_config_id: config} de las configs ACTIVAS
         """
-        self.pool          = pool
-        self.strategies    = strategies
+        self.pool           = pool
         self.default_params = default_params
-        self.config_map    = config_map or {}
-        self.risk_manager  = RiskManager(pool)
+        self.config_map     = config_map or {}
+        self.risk_manager   = RiskManager(pool)
 
     # ─────────────────────────────────────────────
     # Helpers de params
     # ─────────────────────────────────────────────
 
-    def _get_params_for(self, display_name: str, symbol: str) -> dict:
-        """
-        Devuelve los parametros combinados para una config especifica.
-        Los params de config_map sobreescriben los default_params.
-        """
+    @staticmethod
+    def _label(cfg: dict) -> str:
+        return f"{cfg['display_name']} [#{cfg['id']}]"
+
+    def _get_params_for(self, config_id: int) -> dict:
+        """Parámetros VIVOS de una config activa (para entradas nuevas)."""
+        cfg = self.config_map[config_id]
         params = dict(self.default_params)
-
-        if display_name in self.config_map:
-            cfg         = self.config_map[display_name]
-            cfg_params  = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
-            params.update(cfg_params)
-            params['symbol']   = cfg['symbol']
-            params['interval'] = cfg['interval']
-        else:
-            params['symbol'] = symbol
-
+        cfg_params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
+        params.update(cfg_params)
+        params['symbol']   = cfg['symbol']
+        params['interval'] = cfg['interval']
         return params
+
+    def _trade_params(self, trade: dict) -> dict | None:
+        """
+        Parámetros CONGELADOS con los que se abrió el trade (config_snapshot).
+        Un cambio de config (Auto-Sync) solo afecta a entradas nuevas.
+        """
+        snapshot = trade.get('config_snapshot')
+        if isinstance(snapshot, str):
+            snapshot = json.loads(snapshot)
+        if snapshot:
+            return snapshot
+        config_id = trade.get('paper_strategy_config_id')
+        if config_id in self.config_map:
+            logger.warning(f"[PAPER] Trade #{trade['id']} sin config_snapshot (anterior al snapshot): "
+                           f"se usa la config viva #{config_id}")
+            return self._get_params_for(config_id)
+        logger.error(f"[PAPER] Trade #{trade['id']} sin snapshot ni config activa (#{config_id}): no se gestiona")
+        return None
+
+    def _strategy_for_open_trade(self, trade: dict):
+        params = self._trade_params(trade)
+        return build_strategy(params) if params is not None else None
 
     # ─────────────────────────────────────────────
     # Datos
@@ -138,23 +144,20 @@ class PaperTrader:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4,
-                       be_level, be_activated, trailing_applied, size, entry_time, regime,
-                       max_profit_pct, max_loss_pct, last_monitored_at
+                SELECT id, strategy, paper_strategy_config_id, config_snapshot, symbol, interval, side,
+                       entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated, trailing_applied,
+                       size, entry_time, regime, max_profit_pct, max_loss_pct, last_monitored_at
                 FROM paper_trades
                 WHERE status = 'open'
                 """
             )
         return [dict(r) for r in rows]
 
-    async def has_open_trade(self, display_name: str, symbol: str) -> bool:
+    async def has_open_trade(self, config_id: int) -> bool:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                SELECT id FROM paper_trades
-                WHERE strategy = $1 AND symbol = $2 AND status = 'open'
-                """,
-                display_name, symbol
+                "SELECT id FROM paper_trades WHERE paper_strategy_config_id = $1 AND status = 'open'",
+                config_id
             )
         return row is not None
 
@@ -175,16 +178,12 @@ class PaperTrader:
     # Abrir nueva posicion
     # ─────────────────────────────────────────────
 
-    async def open_trade(self, display_name: str, strategy_instance, symbol: str,
-                          side: str, entry_price: float, regime: str, interval: str):
-        # Leer params especificos de la config (paper_strategy_configs)
-        cfg_params = self._get_params_for(display_name, symbol)
-
-        # Actualizar instancia con params correctos de la config
-        for attr in ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
-                     'trailing_mode', 'trailing_distance_pct', 'trailing_steps']:
-            if attr in cfg_params:
-                setattr(strategy_instance, attr, cfg_params[attr])
+    async def open_trade(self, config_id: int, strategy_instance, side: str, entry_price: float, regime: str):
+        cfg          = self.config_map[config_id]
+        cfg_params   = self._get_params_for(config_id)  # los mismos con los que se construyó strategy_instance
+        display_name = cfg['display_name']
+        symbol       = cfg['symbol']
+        interval     = cfg['interval']
 
         sl, _  = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
@@ -202,31 +201,29 @@ class PaperTrader:
         if size <= 0:
             return
 
-        # Snapshot de la config usada al abrir. Sin esto no se puede auditar
-        # retroactivamente que parametros (trailing, sl, tp, comision) aplico
-        # cada trade — el caso que nos costo el analisis del 2026-10-16:
-        # paper trades viejos con trailing_mode=algo que ya no esta en DB y
-        # que hizo imposible compararlos con backtest sin ambiguedad.
-        import json as _json
-        config_snapshot = _json.dumps(cfg_params)
-
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO paper_trades
-                    (strategy, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be_level,
-                     be_activated, size, regime, entry_time, status,
-                     max_profit_pct, max_loss_pct, config_snapshot, created_at, updated_at)
-                VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, $12, $13, $14, 'open', 0, 0, $15::jsonb, now(), now())
-                """,
-                display_name, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be,
-                size, regime, datetime.now(timezone.utc).replace(tzinfo=None),
-                config_snapshot
-            )
+        # config_snapshot: parámetros congelados de ESTE trade. La gestión de la
+        # posición y la comisión de cierre se calculan con ellos, no con la config viva.
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO paper_trades
+                        (strategy, paper_strategy_config_id, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4,
+                         be_level, be_activated, size, regime, entry_time, status,
+                         max_profit_pct, max_loss_pct, config_snapshot, created_at, updated_at)
+                    VALUES
+                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13, $14, $15, 'open', 0, 0, $16::jsonb, now(), now())
+                    """,
+                    display_name, config_id, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be,
+                    size, regime, datetime.now(timezone.utc).replace(tzinfo=None),
+                    json.dumps(cfg_params)
+                )
+        except asyncpg.UniqueViolationError:
+            logger.warning(f"[PAPER] {self._label(cfg)}: ya existe una posición abierta (tick concurrente); no se duplica")
+            return
 
         logger.info(
-            f"[PAPER] OPEN {display_name} {symbol} {side.upper()} @ {entry_price} "
+            f"[PAPER] OPEN {self._label(cfg)} {symbol} {side.upper()} @ {entry_price} "
             f"SL={sl} TP1={tp} TP2={tp2} TP3={tp3} TP4={tp4} BE={be} regime={regime} interval={interval}"
         )
 
@@ -250,7 +247,7 @@ class PaperTrader:
         # Paper si la necesita para reflejar el costo real de operar, igual
         # que backtest - sin esto, Paper subestimaba resultados igual que
         # el backtest lo hacia antes del fix de 2026-07-09.
-        cfg_params = self._get_params_for(trade['strategy'], trade['symbol'])
+        cfg_params = self._trade_params(trade) or {}  # comisión con la que se abrió el trade
         if 'commission_pct' in cfg_params:
             commission_pct = cfg_params['commission_pct'] / 100
         else:
@@ -337,57 +334,6 @@ class PaperTrader:
     # Monitor: revisar posiciones abiertas
     # ─────────────────────────────────────────────
 
-    async def _get_strategy_instance_for_trade(self, trade: dict, strategy_instances: dict):
-        """
-        Devuelve la instancia de estrategia correcta para este trade abierto.
-        Si su config sigue activa, ya esta en strategy_instances (fast path).
-        Si no (se desactivo o se edito mientras el trade estaba abierto),
-        busca la config REAL de este trade directo en la DB (activa o no) -
-        antes de este fix, el fallback usaba 'la primera estrategia de la
-        lista' sin ninguna relacion con el trade, aplicando max_duration/
-        sl_pct/trailing de una estrategia completamente ajena. Cachea el
-        resultado en strategy_instances para no repetir la consulta si hay
-        varios trades abiertos de la misma estrategia ya inactiva.
-        """
-        display_name = trade['strategy']
-        if display_name in strategy_instances:
-            return strategy_instances[display_name]
-
-        logger.warning(
-            f"[PAPER] Trade #{trade['id']} pertenece a '{display_name}', que ya "
-            f"no esta activa - cargando su config original directo de la DB "
-            f"en vez de usar una estrategia ajena por error."
-        )
-        async with self.pool.acquire() as conn:
-            cfg = await conn.fetchrow(
-                "SELECT strategy_class, symbol, interval, params FROM paper_strategy_configs WHERE display_name = $1",
-                display_name
-            )
-        if not cfg:
-            logger.error(
-                f"[PAPER] Trade #{trade['id']} '{display_name}': config no "
-                f"encontrada en absoluto (borrada?) - usando defaults genericos "
-                f"como ultimo recurso, puede no reflejar la config real."
-            )
-            fallback = list(strategy_instances.values())[0] if strategy_instances else None
-            return fallback
-
-        class_name = cfg['strategy_class']
-        if class_name not in STRATEGY_CLASS_MAP:
-            logger.error(f"[PAPER] Trade #{trade['id']}: clase '{class_name}' no registrada")
-            return list(strategy_instances.values())[0] if strategy_instances else None
-
-        module_path, cls_name = STRATEGY_CLASS_MAP[class_name]
-        module = importlib.import_module(module_path)
-        cls    = getattr(module, cls_name)
-        params = cfg['params'] if isinstance(cfg['params'], dict) else json.loads(cfg['params'])
-        params['symbol']   = cfg['symbol']
-        params['interval'] = cfg['interval']
-
-        instance = cls(params)
-        strategy_instances[display_name] = instance
-        return instance
-
     async def monitor_open_trades(self) -> dict:
         """
         Evalua cada trade abierto recorriendo, vela a vela, las velas de 1min
@@ -402,10 +348,6 @@ class PaperTrader:
         """
         open_trades = await self.get_open_trades()
         results     = {"checked": 0, "closed": 0, "be_activated": 0}
-        strategy_instances = {}
-        for display_name, cls in self.strategies.items():
-            params = self._get_params_for(display_name, '')
-            strategy_instances[display_name] = cls(params)
 
         now = datetime.now(timezone.utc)
 
@@ -413,7 +355,7 @@ class PaperTrader:
             results["checked"] += 1
             symbol = trade['symbol']
             side   = trade['side']
-            strategy_instance = await self._get_strategy_instance_for_trade(trade, strategy_instances)
+            strategy_instance = self._strategy_for_open_trade(trade)  # parámetros congelados del trade
             if strategy_instance is None:
                 logger.error(f"[PAPER] Trade #{trade['id']}: no se pudo determinar la estrategia, saltando este ciclo")
                 continue
@@ -595,77 +537,41 @@ class PaperTrader:
         results = {}
 
         if await self.risk_manager.is_kill_switch_active():
-            for display_name in self.strategies:
-                results[display_name] = "KILL SWITCH activo — sin nuevas entradas"
+            for cfg in self.config_map.values():
+                results[self._label(cfg)] = "KILL SWITCH activo — sin nuevas entradas"
             return results
 
-        for display_name, strategy_cls in self.strategies.items():
-            cfg = self.config_map.get(display_name, {})
-            cfg_params = cfg.get('params', {})
-            if isinstance(cfg_params, str):
-                cfg_params = json.loads(cfg_params)
+        # NOTA (2026-07-09): se quito el chequeo de is_paused() (pausas automáticas
+        # por volatilidad, tabla risk_controls). Real no tiene un filtro equivalente y
+        # Paper debe aproximar a Real; el kill switch manual SI se mantiene.
 
-            symbol   = cfg.get('symbol', 'BTCUSDT')
-            interval = cfg.get('interval', '60')
+        for config_id, cfg in self.config_map.items():
+            label    = self._label(cfg)
+            symbol   = cfg['symbol']
+            interval = cfg['interval']
 
-            if await self.has_open_trade(display_name, symbol):
-                results[display_name] = f"{symbol}: ya tiene posicion abierta"
+            if await self.has_open_trade(config_id):
+                results[label] = f"{symbol}: ya tiene posicion abierta"
                 continue
-
-            # NOTA (2026-07-09): se quito el chequeo de is_paused() (pausas
-            # automaticas por volatilidad extrema, tabla risk_controls). Real
-            # Trading no tiene ningun filtro equivalente, y Paper existe para
-            # aproximar el comportamiento de Real lo mas fiel posible - un
-            # filtro exclusivo de Paper generaba divergencia silenciosa (una
-            # pausa automatica del 2026-07-06 bloqueo BTCUSDT en TODAS las
-            # estrategias de Paper durante 3 dias mientras Real seguia
-            # operando normal, sin que nadie lo supiera hasta revisar). El
-            # kill switch manual (is_kill_switch_active) SI se mantiene -
-            # es control explicito del usuario, no se dispara solo.
 
             df = await self.get_bars(symbol, interval)
             if len(df) < 64:
-                results[display_name] = f"{symbol}: datos insuficientes"
+                results[label] = f"{symbol}: datos insuficientes o desactualizados"
                 continue
 
-            params = self._get_params_for(display_name, symbol)
-            
-            # Si la config tiene código dinámico (backtest), usarlo
-            cfg = self.config_map.get(display_name, {})
-            strategy_code = cfg_params.get('strategy_code')
-            strategy_config = cfg_params.get('strategy_config')
-            
-            if strategy_code:
-                import numpy as np
-                namespace = {"BaseStrategy": BaseStrategy, "pd": pd, "np": np}
-                try:
-                    exec(strategy_code, namespace)
-                    strategy_cls = None
-                    for k, v in namespace.items():
-                        if isinstance(v, type) and k != 'BaseStrategy' and issubclass(v, BaseStrategy):
-                            strategy_cls = v
-                            break
-                    if not strategy_cls:
-                        raise ValueError("No se encontró clase BaseStrategy en el código.")
-                    
-                    # Mezclar config de la estrategia con params de operación
-                    merged_params = strategy_config or {}
-                    merged_params.update(params)
-                    strategy = strategy_cls(merged_params)
-                except Exception as e:
-                    results[display_name] = f"Error compilando código: {str(e)}"
-                    continue
-            else:
-                strategy = strategy_cls(params)
+            try:
+                strategy = build_strategy(self._get_params_for(config_id))
+            except Exception as e:
+                results[label] = f"Error construyendo la estrategia: {e}"
+                continue
 
-            regime   = await self.get_current_regime(
+            regime = await self.get_current_regime(
                 df, trending_threshold=strategy.regime_adx_trending,
                 ranging_threshold=strategy.regime_adx_ranging,
                 ambiguous_as=strategy.regime_ambiguous_as
             )
-
             if not strategy.should_operate(regime):
-                results[display_name] = f"{symbol}: regimen no permitido ({regime})"
+                results[label] = f"{symbol}: regimen no permitido ({regime})"
                 continue
 
             df = strategy.prepare(df)
@@ -673,35 +579,31 @@ class PaperTrader:
 
             last_closed = df.iloc[-2]
             signal = int(last_closed['signal'])
-
             if signal == 0:
-                results[display_name] = f"{symbol}: sin senal"
+                results[label] = f"{symbol}: sin senal"
                 continue
 
             candle_time = last_closed['time']
             if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
-                candle_time = candle_time.tz_localize(None)
+                candle_time = candle_time.tz_convert('UTC').tz_localize(None)
             async with self.pool.acquire() as conn:
                 already_traded = await conn.fetchrow(
                     """SELECT id FROM paper_trades
-                       WHERE strategy = $1 AND symbol = $2
-                         AND entry_time >= $3
+                       WHERE paper_strategy_config_id = $1 AND entry_time >= $2
                        ORDER BY entry_time DESC LIMIT 1""",
-                    display_name, symbol, candle_time
+                    config_id, candle_time
                 )
             if already_traded:
-                results[display_name] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
+                results[label] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
                 continue
 
             side        = 'long' if signal == 1 else 'short'
             entry_price = await get_current_price(symbol)
-
             if entry_price is None:
-                results[display_name] = f"{symbol}: error obteniendo precio"
+                results[label] = f"{symbol}: error obteniendo precio"
                 continue
 
-            await self.open_trade(display_name, strategy, symbol, side,
-                                   entry_price, regime, interval)
-            results[display_name] = f"{symbol}: ABIERTA {side} @ {entry_price} (regime={regime})"
+            await self.open_trade(config_id, strategy, side, entry_price, regime)
+            results[label] = f"{symbol}: ABIERTA {side} @ {entry_price} (regime={regime})"
 
         return results
