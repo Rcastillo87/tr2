@@ -16,8 +16,9 @@ Artisan::command('inspire', function () {
 
 Schedule::job(new CollectOhlcvDataJob)->everyMinute();
 Schedule::job(new DetectMarketRegimeJob)->everyFifteenMinutes();
-Schedule::job(new PaperTradingTickJob)->everyFiveMinutes();
-Schedule::job(new RealTradingTickJob)->everyFiveMinutes();
+// Cada minuto: entrada y gestión a ≤ ~1 min del cierre de vela (como el backtest). Los jobs son únicos (sin solapes).
+Schedule::job(new PaperTradingTickJob)->everyMinute();
+Schedule::job(new RealTradingTickJob)->everyMinute();
 Schedule::job(new RealTradingReconcileJob)->everyFiveMinutes();
 Schedule::job(new CircuitBreakerMaxLossJob)->everyMinute();
 

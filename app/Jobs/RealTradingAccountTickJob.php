@@ -3,20 +3,28 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class RealTradingAccountTickJob implements ShouldQueue
+class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
     public int $tries   = 1;
     public int $timeout = 75;
+    /** Vencimiento de seguridad del bloqueo (s): nunca dos ticks de la MISMA cuenta a la vez. */
+    public int $uniqueFor = 120;
 
     public function __construct(public int $accountId)
     {
+    }
+
+    public function uniqueId(): string
+    {
+        return (string) $this->accountId;
     }
 
     public function handle(): void
@@ -67,6 +75,7 @@ class RealTradingAccountTickJob implements ShouldQueue
             ]],
         ];
 
+        $started = microtime(true);
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
@@ -83,6 +92,11 @@ class RealTradingAccountTickJob implements ShouldQueue
 
             $data = $response->json();
             RealTradingTickJob::logAccountResults($data['results'] ?? []);
+
+            $secs = round(microtime(true) - $started, 1);
+            if ($secs > 40) {
+                Log::warning("RealTradingAccountTickJob lento: cuenta {$this->accountId} {$secs}s (el tick corre cada minuto)");
+            }
 
         } catch (\Throwable $e) {
             Log::error("RealTradingAccountTickJob: error (cuenta {$this->accountId}) — " . $e->getMessage());

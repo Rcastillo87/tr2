@@ -3,13 +3,16 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class RealTradingTickJob implements ShouldQueue
+class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
+
+    public int $uniqueFor = 60;
 
     public int $tries   = 1;
     public int $timeout = 30;

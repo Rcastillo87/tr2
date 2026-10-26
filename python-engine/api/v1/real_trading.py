@@ -135,6 +135,18 @@ async def _process_account(trader, account):
         return account_key, {"error": f"Error inesperado procesando la cuenta: {str(e)}"}
 
 
+_account_locks: dict[int, asyncio.Lock] = {}
+
+
+async def _process_account_locked(trader, account):
+    """Un solo tick a la vez por cuenta (corre cada minuto): si hay otro en curso, este se omite."""
+    lock = _account_locks.setdefault(account.id, asyncio.Lock())
+    if lock.locked():
+        return f"account_{account.id}_{account.broker}", {"signals": "tick anterior de la cuenta aún en curso: omitido"}
+    async with lock:
+        return await _process_account(trader, account)
+
+
 @router.post('/real/tick')
 async def real_tick(
     request: RealTickRequest,
@@ -157,7 +169,7 @@ async def real_tick(
             return {'status': 'ok', 'message': 'Sin cuentas activas', 'results': {}}
 
         account_results_list = await asyncio.gather(
-            *[_process_account(trader, account) for account in request.accounts],
+            *[_process_account_locked(trader, account) for account in request.accounts],
             return_exceptions=True
         )
         for item in account_results_list:

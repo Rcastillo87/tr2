@@ -4,6 +4,7 @@ Lee las configuraciones de estrategias desde la tabla paper_strategy_configs,
 eliminando cualquier config hardcodeada. El admin gestiona todo desde Laravel.
 """
 
+import asyncio
 import asyncpg
 from db import get_pool as shared_get_pool
 import logging
@@ -66,8 +67,19 @@ def build_config_map(configs: list[dict]) -> dict[int, dict]:
     return config_map
 
 
+_tick_lock = asyncio.Lock()
+
+
 @router.post("/paper/tick")
 async def paper_tick():
+    """Un solo tick a la vez por proceso: si llega otro con uno en curso, se omite (corre cada minuto)."""
+    if _tick_lock.locked():
+        return {"status": "busy", "message": "Tick anterior aún en curso: omitido", "monitor": {}, "signals": {}}
+    async with _tick_lock:
+        return await _paper_tick()
+
+
+async def _paper_tick():
     """
     Ejecuta un ciclo completo de paper trading:
       0. Carga configs activas desde DB
