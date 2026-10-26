@@ -24,6 +24,13 @@ async def _no_sleep(*_a, **_k):
 
 asyncio.sleep = _no_sleep  # los esperas de confirmación no hacen falta en el test
 
+
+async def _live_broker(*_a, **_k):
+    return 'bybit'
+
+
+rt_mod.resolve_live_broker = _live_broker  # fuente de velas fija (sin DB)
+
 CODE = "class T(BaseStrategy):\n    def generate_signals(self, df):\n        df['signal'] = 0\n        return df\n"
 P = dict(sl_pct=1.0, tp_pct=4.0, be_pct=1.5, max_duration=5, regime_filter=False, commission_pct=0.055,
          strategy_code=CODE)
@@ -64,6 +71,8 @@ class FakeConn:
         return None
 
     async def fetchrow(self, sql, *a):
+        if 'max(high)' in sql:
+            return self.s.get('extremes')
         return None
 
     async def fetch(self, sql, *a):
@@ -151,8 +160,8 @@ def bars(atr_spike=False):
     return pd.DataFrame({'time': t, 'open': c, 'high': c + rng / 2, 'low': c - rng / 2, 'close': c, 'volume': 1.0})
 
 
-async def monitor(tr, client, price, df=None, audit=None):
-    s = {'exec': [], 'audit': audit}
+async def monitor(tr, client, price, df=None, audit=None, extremes=None):
+    s = {'exec': [], 'audit': audit, 'extremes': extremes}
     trader = RealTrader(FakePool(s))
     if df is not None:
         async def _bars(symbol, interval, broker=None):
@@ -176,6 +185,16 @@ async def main():
     c = FakeClient(position())
     out, s = await monitor(trade(), c, 101.6)
     check('BE mueve SL a la entrada', c.stops and c.stops[0][0] == 100.0, c.stops)
+
+    # 2b. Mecha de 1m tocó el BE (101.6) entre ciclos; precio actual 100.5 (> entrada): se activa
+    c = FakeClient(position())
+    out, s = await monitor(trade(), c, 100.5, extremes={'hi': 101.6, 'lo': 99.8})
+    check('BE por mecha de 1m entre ciclos', c.stops and c.stops[0][0] == 100.0 and out['be_activated'] == 1, c.stops)
+
+    # 2c. Mecha tocó el BE pero el precio ya está por debajo de la entrada: no se mueve (Bybit lo rechazaría)
+    c = FakeClient(position())
+    out, s = await monitor(trade(), c, 99.7, extremes={'hi': 101.6, 'lo': 99.5})
+    check('BE alcanzado con precio bajo la entrada: SL no se mueve', not c.stops and out['be_activated'] == 0, c.stops)
 
     # 3. SL del exchange distinto al de DB (trading-stop fallido) -> se alinea
     c = FakeClient(position(sl=95.0, tp=110.0))

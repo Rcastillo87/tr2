@@ -27,7 +27,7 @@ import json
 import logging
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 import pandas as pd
@@ -623,6 +623,26 @@ class RealTrader:
         tps = strategy.calculate_tp_levels(price, side)
         be = round(strategy.calculate_breakeven(price, side), 8)
         return sl, tps['tp1'], tps.get('tp2'), tps.get('tp3'), tps.get('tp4'), be
+
+    async def _minute_extremes_since_entry(self, trade: dict) -> tuple[float | None, float | None]:
+        """(máximo, mínimo) de las velas de 1m CERRADAS desde la entrada (mismo dato que usan backtest y paper)."""
+        broker = await resolve_live_broker(self.pool, trade['symbol'], '1', require_fresh=False)
+        if broker is None:
+            return None, None
+        entry_time = trade['entry_time']
+        if entry_time.tzinfo is None:
+            entry_time = entry_time.replace(tzinfo=timezone.utc)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT max(high) AS hi, min(low) AS lo
+                FROM ohlcv_data
+                WHERE broker = $1 AND symbol = $2 AND interval = '1' AND time > $3 AND time <= $4
+                """,
+                broker, trade['symbol'], entry_time, datetime.now(timezone.utc) - timedelta(minutes=1))
+        if not row or row['hi'] is None:
+            return None, None
+        return float(row['hi']), float(row['lo'])
 
     async def _closed_atr(self, symbol: str, interval: str) -> tuple[float | None, float | None]:
         """(ATR, media 50 del ATR) de la última vela CERRADA del intervalo."""
@@ -1322,11 +1342,23 @@ class RealTrader:
             needs_atr = strategy.volatility_protection_mode is not None or strategy.trailing_mode == "atr"
             closed_atr, closed_atr_avg = (await self._closed_atr(symbol, trade["interval"])) if needs_atr else (None, None)
 
-            # 3. Break-even: nunca baja un SL que el trailing ya subió
-            if be_level > 0 and not trade["be_activated"] and \
-                    ((long and current_price >= be_level) or (not long and current_price <= be_level)):
+            # 3. Break-even: precio actual O mecha de 1m desde la entrada (como backtest/paper);
+            #    nunca baja un SL que el trailing ya subió
+            be_hit = False
+            if be_level > 0 and not trade["be_activated"]:
+                be_hit = (long and current_price >= be_level) or (not long and current_price <= be_level)
+                if not be_hit:
+                    hi, lo = await self._minute_extremes_since_entry(trade)
+                    be_hit = (long and hi is not None and hi >= be_level) or \
+                             (not long and lo is not None and lo <= be_level)
+            if be_hit:
                 new_sl = max(sl, entry) if long else min(sl, entry)
-                if new_sl == sl:
+                price_ok = current_price > new_sl if long else current_price < new_sl
+                if new_sl != sl and not price_ok:
+                    # El precio ya volvió más allá de la entrada: Bybit rechazaría ese SL. Se reintenta.
+                    logger.warning(f"[MONITOR] {symbol} #{trade_id}: BE alcanzado pero precio {current_price} "
+                                   f"ya cruzó la entrada {entry}; SL no movido, se reintenta el próximo ciclo")
+                elif new_sl == sl:
                     async with self.pool.acquire() as conn:
                         await conn.execute("UPDATE real_trades SET be_activated=true WHERE id=$1", trade_id)
                     outcome["be_activated"] += 1
