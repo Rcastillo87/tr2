@@ -177,6 +177,13 @@ class BacktestingController extends Controller
             }
         }
 
+        $bePct = (float) $request->input('be_pct', 2.0);
+        $tpPct = (float) $request->input('tp_pct', 3.0);
+        if ($bePct > 0 && $tpPct > 0 && $bePct >= $tpPct) {
+            $warnings[] = "AVISO: el break-even nunca se activa (BE {$bePct}% >= TP {$tpPct}%). El TP cierra toda la "
+                . 'posición antes de llegar al nivel de BE. Usa un BE menor que el TP (p. ej. la mitad) o desactívalo.';
+        }
+
         if ($totalTrades === 0) {
             $warnings[] = 'Resultado: 0 operaciones generadas. Posible causa: Filtros muy estrictos o falta de señales en el período.';
         } elseif ($totalPnl < -50) {
