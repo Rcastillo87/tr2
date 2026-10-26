@@ -384,12 +384,12 @@
             <dt>Régimen de mercado (ADX)</dt><dd>Cada vela se clasifica: <b>Volátil</b> si el ATR supera 1.8× su promedio de 50 velas; <b>Tendencia</b> si el ADX supera "ADX tendencia"; <b>Lateral</b> si el ADX está bajo "ADX lateral" y las Bandas de Bollinger están estrechas. Solo se abre en los regímenes que la estrategia permite.</dd>
             <dt>Caso ambiguo</dt><dd>Qué hacer con las velas que no encajan en ningún régimen: tratarlas como lateral, como tendencia, o no operar.</dd>
             <dt>Volumen mínimo</dt><dd>Solo abre si el volumen de la vela de la señal es ≥ promedio de N velas × multiplicador. Ej.: 20 y 1.2 → al menos 20% sobre el promedio.</dd>
-            <dt>Tendencia macro H4 (EMA 50)</dt><dd>Pensado para no abrir largos con H4 bajista ni cortos con H4 alcista. <span class="warn">En revisión: hoy no tiene efecto en el backtest (se corrige en la validación de filtros).</span></dd>
+            <dt>Tendencia macro H4 (EMA 50)</dt><dd>No abre largos si el H4 es bajista (cierre H4 bajo su EMA 50) ni cortos si es alcista. Usa la última vela H4 ya cerrada al cerrar la vela de la señal (sin mirar al futuro). Si no hay velas H4 suficientes, no opera.</dd>
         </dl>
         <h4>3 · Reglas de cierre</h4>
         <dl>
             <dt>Duración máxima (velas)</dt><dd>Cierra al cierre de la vela N contada desde la entrada (velas del intervalo elegido). 0 = sin límite.</dd>
-            <dt>Break-even %</dt><dd>Cuando el precio avanza ese % a favor, el SL se mueve al precio de entrada. Debe ser menor que el TP; si no, nunca se activa. Al cerrar en break-even se pierde la comisión y el slippage.</dd>
+            <dt>Break-even %</dt><dd>Cuando el precio avanza ese % a favor, el SL se mueve al precio de entrada. Debe ser menor que el TP; si no, nunca se activa. Con 0 se activa apenas el precio pasa la entrada. Al cerrar en break-even se pierde la comisión y el slippage.</dd>
             <dt>Trailing stop · Fijo</dt><dd>El SL persigue al precio a una distancia fija (% de la entrada) y solo se mueve a favor. Mínimo 1.0% para evitar cierres por ruido.</dd>
             <dt>Trailing stop · Dinámico (ATR)</dt><dd>La distancia es ATR × multiplicador: se abre en mercados volátiles y se cierra en mercados tranquilos.</dd>
             <dt>Activación trailing %</dt><dd>El trailing solo empieza a mover el SL cuando la ganancia supera este %.</dd>
