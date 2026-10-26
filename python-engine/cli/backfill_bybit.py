@@ -36,6 +36,7 @@ from collectors.ohlcv_collector import BYBIT_BASE_URL, BYBIT_LIMIT, OhlcvCollect
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger('backfill_bybit')
+logging.getLogger('httpx').setLevel(logging.WARNING)  # sin una línea por request en el journal
 
 DSN = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
@@ -203,10 +204,12 @@ async def audit(pool, series: list[tuple[str, str]], since: datetime, now: datet
         expected = int((row['last_bar'] - row['first_bar']) / step) + 1
         pct = row['bars'] / expected * 100
         max_gap = row['max_gap'] if row['max_gap'] and row['max_gap'] > step else timedelta(0)
-        bad = pct < 99.9 or row['gaps'] > 0 or row['last_bar'] < until - step
+        late_days = max(0.0, (row['first_bar'] - since).total_seconds() / 86400 - 1)
+        bad = pct < 99.9 or row['gaps'] > 0 or row['last_bar'] < until - step or late_days > 0
         incomplete += bad
+        note = f"  <-- revisar{f' (faltan {late_days:.0f} días al inicio; normal si la moneda se listó después)' if late_days > 0 else ''}" if bad else ''
         print(f"{symbol + ' ' + interval:16} {row['first_bar']:%Y-%m-%d %H:%M} {row['last_bar']:%Y-%m-%d %H:%M} "
-              f"{row['bars']:>9} {expected:>9} {pct:>6.2f}% {row['gaps']:>7} {str(max_gap):>12}{'  <-- revisar' if bad else ''}")
+              f"{row['bars']:>9} {expected:>9} {pct:>6.2f}% {row['gaps']:>7} {str(max_gap):>12}{note}")
     print(f"\nSeries incompletas: {incomplete}/{len(series)}")
     return incomplete
 
