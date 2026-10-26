@@ -79,16 +79,14 @@ async def paper_tick():
         pool    = await get_pool()
         configs = await load_active_configs(pool)
 
-        if not configs:
-            await pool.close()
-            return {"status": "ok", "message": "Sin configuraciones activas", "monitor": {}, "signals": {}}
-
         config_map = build_config_map(configs)
 
         trader = PaperTrader(pool, DEFAULT_PARAMS, config_map)
 
+        # Siempre: las posiciones abiertas usan su config_snapshot, no la config viva.
         monitor_results = await trader.monitor_open_trades()
-        signal_results  = await trader.check_new_signals()
+        # sin configs activas: solo se gestionan las posiciones abiertas (no hay señales que buscar)
+        signal_results  = await trader.check_new_signals() if config_map else {}
 
         await pool.close()
 
