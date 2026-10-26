@@ -30,7 +30,13 @@ class RealTradingAccountTickJob implements ShouldQueue
                 ->with('paperStrategyConfig')])
             ->first();
 
-        if (!$account || $account->subscriptions->isEmpty()) {
+        if (!$account) {
+            return;
+        }
+        // Sin suscripciones activas solo se gestionan las posiciones abiertas (Python omite las señales).
+        if ($account->subscriptions->isEmpty()
+            && !\App\Models\RealTrade::where('broker_account_id', $account->id)
+                ->whereIn('status', ['open', 'pending_close'])->exists()) {
             return;
         }
 

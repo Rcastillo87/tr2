@@ -23,8 +23,12 @@ class RealTradingTickJob implements ShouldQueue
      */
     public function handle(): void
     {
+        // Cuentas con suscripciones activas O con posiciones abiertas (estas se gestionan hasta cerrarse,
+        // aunque se haya pausado la última suscripción).
         $accountIds = BrokerAccount::where('status', 'active')
-            ->whereHas('subscriptions', fn ($q) => $q->where('status', 'active'))
+            ->where(fn ($q) => $q
+                ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active'))
+                ->orWhereExists(fn ($e) => self::openRealTrades($e)))
             ->pluck('id');
 
         if ($accountIds->isEmpty()) {
@@ -37,6 +41,14 @@ class RealTradingTickJob implements ShouldQueue
         }
 
         Log::debug('RealTradingTickJob: despachados ' . $accountIds->count() . ' job(s) de cuenta');
+    }
+
+    /** Subconsulta: trades reales abiertos de la cuenta (broker_accounts.id). */
+    public static function openRealTrades($query)
+    {
+        return $query->selectRaw('1')->from('real_trades')
+            ->whereColumn('real_trades.broker_account_id', 'broker_accounts.id')
+            ->whereIn('real_trades.status', ['open', 'pending_close']);
     }
 
     /**
