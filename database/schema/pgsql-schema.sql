@@ -1368,7 +1368,6 @@ CREATE TABLE public.broker_accounts (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     single_position_per_symbol boolean DEFAULT true NOT NULL,
-    credentials_extra text,
     CONSTRAINT broker_accounts_account_type_check CHECK (((account_type)::text = ANY ((ARRAY['real'::character varying, 'demo'::character varying])::text[]))),
     CONSTRAINT broker_accounts_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[])))
 );

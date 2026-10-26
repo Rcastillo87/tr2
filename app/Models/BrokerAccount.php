@@ -18,7 +18,6 @@ class BrokerAccount extends Model
         'label',
         'api_key',
         'api_secret',
-        'credentials_extra',
         'status',
         'single_position_per_symbol',
     ];
@@ -26,7 +25,6 @@ class BrokerAccount extends Model
     protected $casts = [
         'api_key' => 'encrypted',
         'api_secret' => 'encrypted',
-        'credentials_extra' => 'encrypted',
         'single_position_per_symbol' => 'boolean',
     ];
 
@@ -36,7 +34,6 @@ class BrokerAccount extends Model
     protected $hidden = [
         'api_key',
         'api_secret',
-        'credentials_extra',
     ];
 
     public function user(): BelongsTo
