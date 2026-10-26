@@ -130,6 +130,10 @@
                         <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Comisión % (Auto)</label>
                         <input type="number" step="0.001" name="commission_pct" value="{{ old('commission_pct', $backtestToLoad->config_params['commission_pct'] ?? '0.055') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
                     </div>
+                    <div>
+                        <label class="block text-[11px] mb-1" style="color:var(--color-text-muted);">Slippage % / lado</label>
+                        <input type="number" step="0.01" min="0" max="1" name="slippage_pct" value="{{ old('slippage_pct', $backtestToLoad->config_params['slippage_pct'] ?? '0.05') }}" class="w-full rounded-lg px-3 py-2 text-sm border outline-none font-mono" style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                    </div>
                 </div>
             </div>
 
@@ -139,7 +143,7 @@
                         // Limpiamos los filtros del JSON para que no se mezclen con la UI
                         $cleanConfig = $backtestToLoad ? ($backtestToLoad->strategy_snapshot['config'] ?? []) : ($strategyToLoad->config ?? []);
                         $keysToRemove = ['sl_pct', 'tp_pct', 'tp2_pct', 'tp3_pct', 'tp4_pct', 'be_pct', 'max_duration',
-                              'commission_pct', 'risk_per_trade_pct', 'regime_filter', 'regime_adx_trending',
+                              'commission_pct', 'slippage_pct', 'risk_per_trade_pct', 'regime_filter', 'regime_adx_trending',
                               'regime_adx_ranging', 'regime_ambiguous_as', 'volume_filter', 'volume_filter_period',
                               'volume_filter_mult', 'macro_trend_filter', 'trailing_mode', 'trailing_distance_pct', 'trailing_atr_mult'];
                         foreach ($keysToRemove as $k) {

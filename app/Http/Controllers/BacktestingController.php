@@ -57,6 +57,11 @@ class BacktestingController extends Controller
             return response()->json(['success' => false, 'error' => 'El trailing fijo debe ser al menos 1.0% (con menos, las comisiones y el ruido lo cierran casi siempre en pérdida).']);
         }
 
+        $slippage = (float) $request->input('slippage_pct', 0.05);
+        if ($slippage < 0 || $slippage > 1) {
+            return response()->json(['success' => false, 'error' => 'El slippage debe estar entre 0% y 1% por lado.']);
+        }
+
         $overrideConfig = $request->input('strategy_config_override');
         $finalConfig = $strategy->config;
         if (!empty($overrideConfig)) {
@@ -84,6 +89,7 @@ class BacktestingController extends Controller
                 'initial_balance' => (float) $request->input('initial_balance', 10000), // FIX: Ya no está quemado
                 'risk_per_trade_pct' => (float) $request->input('risk_per_trade_pct', 1.0),
                 'commission_pct' => (float) $request->input('commission_pct', 0.055),
+                'slippage_pct' => (float) $request->input('slippage_pct', 0.05), // % por lado, en contra
                 'sl_pct' => (float) $request->input('sl_pct', 1.5),
                 'tp_pct' => (float) $request->input('tp_pct', 3.0),
                 'be_pct' => (float) $request->input('be_pct', 2.0),
