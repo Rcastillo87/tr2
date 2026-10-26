@@ -21,7 +21,22 @@ from api.v1.backtest import BacktestRequest, run_backtest  # noqa: E402
 
 DSN = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
-BT_ID = int(sys.argv[1]) if len(sys.argv) > 1 else 75
+import argparse
+from datetime import date, timedelta as _td
+_ap = argparse.ArgumentParser()
+_ap.add_argument('backtest_id', nargs='?', type=int, default=75)
+_ap.add_argument('--slippage', type=float, default=0.05, help='%% por lado (defecto 0.05)')
+_ap.add_argument('--months', type=int, help='rango como la UI: N meses hasta el fin del mes anterior')
+ARGS = _ap.parse_args()
+BT_ID = ARGS.backtest_id
+
+
+def _ui_range(months: int) -> tuple[str, str]:
+    end = date.today().replace(day=1) - _td(days=1)
+    y, m = end.year, end.month - (months - 1)
+    while m <= 0:
+        y, m = y - 1, m + 12
+    return date(y, m, 1).isoformat(), end.isoformat()
 
 
 def _j(value):
@@ -38,7 +53,10 @@ async def main() -> None:
           f"consistencia={old.get('consist_pct')}")
     total = 0
     for sym in symbols:
-        req = BacktestRequest(**{**cfg, 'symbol': sym, 'monthly_breakdown': True})
+        over = {'symbol': sym, 'monthly_breakdown': True, 'slippage_pct': ARGS.slippage}
+        if ARGS.months:
+            over['start_date'], over['end_date'] = _ui_range(ARGS.months)
+        req = BacktestRequest(**{**cfg, **over})
         t0 = time.monotonic()
         out = await run_backtest(req)
         elapsed = time.monotonic() - t0
