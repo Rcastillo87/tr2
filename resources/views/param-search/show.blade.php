@@ -55,7 +55,7 @@
             <thead><tr>
                 <th style="width:30px"></th><th>Estrellas</th><th>Configuración</th>
                 <th class="r">PF en muestra</th><th class="r">PF fuera</th><th class="r">PF total · <span style="color:#C4B5FD">Retorno ↓</span></th>
-                <th>Monedas que ganan</th><th class="r">Consistencia</th><th class="r">Trades</th><th class="r">DD máx</th><th>Estado</th>
+                <th>Monedas que quedan</th><th class="r">Consistencia</th><th class="r">Trades</th><th class="r">DD máx</th><th>Estado</th>
             </tr></thead>
             <tbody id="sbRows"></tbody>
         </table>
@@ -182,14 +182,9 @@
     const rowById = id => data.rows.find(r => r.id === id);
 
     function wins(r) {
-        const det = r.detail || {};
-        const of = role => { const k = Object.keys(det).filter(s => det[s].role === role && r.summary.symbols.includes(s));
-                             return [k.filter(s => det[s].ret > 0).length, k.length, k.filter(s => !(det[s].ret > 0))]; };
-        const [ws, ns, ls] = of('search'), [wv, nv, lv] = of('validation');
-        const lose = ls.concat(lv).map(s => s.replace('USDT', ''));
-        return `búsqueda <b class="${ws * 4 >= ns * 3 ? 'sb-pos' : 'sb-neg'}">${ws}/${ns}</b>` +
-               (nv ? ` · nuevas <b class="${wv * 10 >= nv * 6 ? 'sb-pos' : 'sb-neg'}">${wv}/${nv}</b>` : '') +
-               (lose.length ? `<span class="sb-sub">pierde: ${SB.esc(lose.join(', '))}</span>` : '');
+        // "4 de 6 · quedan: LINK, NEAR, SOL, SUI" (las monedas rentables que quedaron en la configuración)
+        const keep = r.survivors || [], out = r.discarded || [], short = s => s.replace('USDT', '');
+        return `<b class="sb-pos">${keep.length} de ${keep.length + out.length}</b> · quedan: ${SB.esc(keep.map(short).join(', ') || '—')}`;
     }
     function status(r) {
         const c = r.created;
@@ -246,6 +241,7 @@
               <div class="sb-rc-top"><label class="sb-switch"><input type="checkbox" class="sb-chk" data-id="${r.id}" ${on ? 'checked' : ''} ${pick ? '' : 'disabled'}>
                 <span class="sb-stars" style="color:${SB.starColor(m.rating)}">${SB.stars(m.rating)}</span><b style="color:${SB.starColor(m.rating)}">${SB.num(m.rating, 1)}</b></label>${status(r)}</div>
               ${SB.cfgTags(r.cfg)}
+              <div class="sb-sub" style="margin:6px 0">${wins(r)}</div>
               <div class="sb-rc-grid"><div><span>PF en muestra</span><b class="${SB.pfCls(r.is.pf)}">${SB.num(r.is.pf)}</b></div>
                 <div><span>PF fuera</span><b class="${SB.pfCls(r.oos.pf)}">${SB.num(r.oos.pf)}</b></div>
                 <div><span>Retorno total</span><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></div>
