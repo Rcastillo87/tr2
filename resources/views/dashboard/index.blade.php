@@ -127,46 +127,11 @@
         @endif
     </div>
 
-    {{-- 4. Data Collector — solo admin y consultor --}}
-    @can('viewAnalysisTools')
+    {{-- 4. Data Collector: el detalle (estado, validación, historial) vive en /collector --}}
+    @can('manageUsers')
         <div class="rounded-lg border p-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
-            <div class="flex items-center justify-between mb-3">
-                <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Data collector</h3>
-                @can('manageUsers')
-                    <a href="{{ route('collector.unified') }}" class="text-xs" style="color:var(--color-info);">Configurar →</a>
-                @endcan
-            </div>
-
-            @if (count($collector) === 0)
-                <p class="text-sm" style="color:var(--color-text-muted);">Sin datos disponibles.</p>
-            @else
-                <div class="overflow-x-auto -mx-1">
-                    <table class="w-full font-mono text-[11px] text-left" style="color:var(--color-text-muted);">
-                        <thead>
-                            <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                <th class="py-2 px-1 font-normal">Par/Int</th>
-                                <th class="py-2 px-1 font-normal">Última vela</th>
-                                <th class="py-2 px-1 font-normal">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($collector as $key => $data)
-                                <tr class="border-b" style="border-color:var(--color-border-soft);">
-                                    <td class="py-2 px-1" style="color:var(--color-text-primary);">{{ $key }}</td>
-                                    <td class="py-2 px-1 whitespace-nowrap">{{ $data['last_candle'] ?? '—' }}</td>
-                                    <td class="py-2 px-1">
-                                        @if ($data['has_data'])
-                                            <span style="color:var(--color-profit);">●</span> OK
-                                        @else
-                                            <span style="color:var(--color-loss);">●</span> Sin datos
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
+            <h3 class="text-xs font-medium mb-2" style="color:var(--color-text-secondary);">Data collector</h3>
+            <a href="{{ route('collector.unified') }}" class="text-xs" style="color:var(--color-info);">Ver estado de los datos y configurar →</a>
         </div>
     @endcan
 

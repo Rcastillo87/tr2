@@ -41,12 +41,19 @@ class RunParamSearchJob implements ShouldQueue
             Log::warning("[PARAM-SEARCH] #{$this->runId} terminó con código {$result->exitCode()}: "
                 . mb_substr(trim($result->errorOutput()), -1500));
         }
-        $this->closeIfOpen(mb_substr(trim($result->errorOutput()) ?: 'El proceso terminó sin resultado.', -2000));
+        $err = trim($result->errorOutput());
+        if (in_array($result->exitCode(), [143, 137, -15, -9], true) || str_contains($err, 'signal')) {
+            $err = 'Interrumpida por un reinicio del servidor, del motor o de Horizon. Vuelve a lanzarla.';
+        }
+        $this->closeIfOpen(mb_substr($err ?: 'El proceso terminó sin resultado.', -2000));
     }
 
     public function failed(?Throwable $e): void
     {
-        $this->closeIfOpen('La tarea de búsqueda falló: ' . ($e?->getMessage() ?? 'desconocido'));
+        $msg = $e?->getMessage() ?? 'desconocido';
+        $this->closeIfOpen(str_contains($msg, 'signal')
+            ? 'Interrumpida por un reinicio del servidor, del motor o de Horizon. Vuelve a lanzarla.'
+            : 'La tarea de búsqueda falló: ' . $msg);
     }
 
     private function closeIfOpen(string $error): void

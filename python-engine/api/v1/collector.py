@@ -358,7 +358,17 @@ async def collector_unified(
     broker: Optional[str] = None,
     symbol: Optional[str] = None,
 ):
-    """Vista unificada: collector_configs (reglas) + ohlcv_data (historial)."""
+    """
+    Data Collector: collector_configs + primera y última vela REAL de cada serie (historial completo, por índice:
+    sin contar millones de filas) + atraso y estado con la regla POR INTERVALO (la última vela guardada es la que
+    está en curso, así que en 4h/1D su hora de inicio puede ser de hace horas y estar al día):
+      ok       = atraso ≤ 1 vela + 2 min
+      atrasado = atraso ≤ 3 velas + 2 min
+      detenido = más atrasado
+      vacio    = sin velas
+    """
+    from datetime import timezone as _tz
+    from collectors.broker_resolver import interval_delta
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -373,44 +383,46 @@ async def collector_unified(
 
             rows = await conn.fetch(
                 f"""
-                SELECT
-                    cc.broker, cc.symbol, cc.interval, cc.active,
-                    COALESCE(o.total, 0) AS total,
-                    o.desde, o.hasta,
-                    COALESCE(o.actualizado, false) AS actualizado
+                SELECT cc.broker, cc.symbol, cc.interval, cc.active,
+                       (SELECT o.time FROM ohlcv_data o
+                         WHERE o.broker = cc.broker AND o.symbol = cc.symbol AND o.interval = cc.interval
+                         ORDER BY o.time ASC LIMIT 1) AS desde,
+                       (SELECT o.time FROM ohlcv_data o
+                         WHERE o.broker = cc.broker AND o.symbol = cc.symbol AND o.interval = cc.interval
+                         ORDER BY o.time DESC LIMIT 1) AS hasta
                 FROM collector_configs cc
-                LEFT JOIN (
-                    SELECT broker, symbol, interval,
-                        COUNT(*) AS total,
-                        MIN(time) AS desde,
-                        MAX(time) AS hasta,
-                        (MAX(time) > now() - interval '1 hour') AS actualizado
-                    FROM ohlcv_data
-                    WHERE time > now() - interval '30 days'
-                    GROUP BY broker, symbol, interval
-                ) o
-                  ON o.broker = cc.broker
-                 AND o.symbol = cc.symbol
-                 AND o.interval = cc.interval
                 {where_sql}
                 ORDER BY cc.broker, cc.symbol, cc.interval::text
                 """,
                 *args,
             )
         await pool.close()
-        return {
-            "status": "ok",
-            "data": [
-                {
-                    "broker": r["broker"], "symbol": r["symbol"], "interval": r["interval"],
-                    "active": bool(r["active"]), "total": r["total"],
-                    "desde": r["desde"].isoformat() if r["desde"] else None,
-                    "hasta": r["hasta"].isoformat() if r["hasta"] else None,
-                    "actualizado": bool(r["actualizado"]),
-                }
-                for r in rows
-            ],
-        }
+        now = datetime.now(_tz.utc)
+        grace = 120
+        data = []
+        for r in rows:
+            try:
+                step_s = int(interval_delta(r["interval"]).total_seconds())
+            except ValueError:
+                step_s = None
+            lag_s = int((now - r["hasta"]).total_seconds()) if r["hasta"] else None
+            if lag_s is None:
+                estado = "vacio"
+            elif step_s is None or lag_s <= step_s + grace:
+                estado = "ok"
+            elif lag_s <= 3 * step_s + grace:
+                estado = "atrasado"
+            else:
+                estado = "detenido"
+            data.append({
+                "broker": r["broker"], "symbol": r["symbol"], "interval": r["interval"],
+                "active": bool(r["active"]),
+                "desde": r["desde"].isoformat() if r["desde"] else None,
+                "hasta": r["hasta"].isoformat() if r["hasta"] else None,
+                "lag_s": lag_s, "step_s": step_s, "estado": estado,
+                "actualizado": estado == "ok",
+            })
+        return {"status": "ok", "data": data}
     except Exception as e:
         logger.error(f"[UNIFIED] error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

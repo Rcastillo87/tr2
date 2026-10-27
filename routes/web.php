@@ -101,4 +101,6 @@ Route::middleware('can:manageUsers')->prefix('collector')->name('collector.')->g
     Route::post('/invalidate', [CollectorConfigController::class, 'invalidate'])->name('invalidate');
     Route::post('/reload', [CollectorConfigController::class, 'reload'])->name('reload');
     Route::post('/add-symbol', [CollectorConfigController::class, 'addSymbol'])->name('add-symbol');
+    Route::post('/validar', [CollectorConfigController::class, 'validateData'])->name('validate');
+    Route::get('/validacion', [CollectorConfigController::class, 'validationStatus'])->name('validation-status');
 });

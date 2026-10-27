@@ -44,9 +44,6 @@ class DashboardController extends Controller
             ];
         }
 
-        $collectorStatus = auth()->user()?->canViewAnalysisTools()
-            ? $this->getCollectorStatus()
-            : [];
 
         $closedThisMonth = PaperTrade::closed()->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
 
@@ -105,7 +102,6 @@ class DashboardController extends Controller
         return view('dashboard.index', [
             'regimes'         => $regimes,
             'summary'         => $summary,
-            'collector'       => $collectorStatus,
             'openTrades'      => $openTrades,
             'totalPnlPct'     => $totalPnlPct,
             'totalTrades'     => $totalTrades,
@@ -163,18 +159,4 @@ class DashboardController extends Controller
         return [];
     }
 
-    private function getCollectorStatus(): array
-    {
-        try {
-            $response = Http::withHeaders([
-                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(10)->get(config('trading.python_engine_url') . '/v1/collector/status');
-            if ($response->successful()) {
-                return $response->json('data') ?? [];
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Dashboard: error obteniendo estado collector — ' . $e->getMessage());
-        }
-        return [];
-    }
 }

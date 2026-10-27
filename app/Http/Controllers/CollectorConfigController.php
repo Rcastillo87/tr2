@@ -38,9 +38,40 @@ class CollectorConfigController extends Controller
         }
 
         return view('data-collector.index', [
-            'rows'    => $data,
-            'filters' => $filters,
-            'debug'   => $debug,
+            'rows'            => $data,
+            'filters'         => $filters,
+            'debug'           => $debug,
+            'lastRun'         => \Illuminate\Support\Facades\Cache::get(\App\Jobs\CollectOhlcvDataJob::LAST_RUN_KEY),
+            'validation'      => \Illuminate\Support\Facades\Cache::get(\App\Jobs\ValidateCollectorDataJob::RESULT_KEY),
+            'validating'      => \Illuminate\Support\Facades\Cache::has(\App\Jobs\ValidateCollectorDataJob::RUNNING_KEY),
+            'validationError' => \Illuminate\Support\Facades\Cache::get(\App\Jobs\ValidateCollectorDataJob::ERROR_KEY),
+        ]);
+    }
+
+    /** "Validar contra Bybit": encola la validación (cola research, 1 proceso). */
+    public function validateData()
+    {
+        Gate::authorize('manageUsers');
+        $cache = \Illuminate\Support\Facades\Cache::store();
+        if (! $cache->add(\App\Jobs\ValidateCollectorDataJob::RUNNING_KEY, now()->toIso8601String(), now()->addMinutes(25))) {
+            return response()->json(['ok' => true, 'running' => true, 'since' => $cache->get(\App\Jobs\ValidateCollectorDataJob::RUNNING_KEY)]);
+        }
+        \App\Jobs\ValidateCollectorDataJob::dispatch()
+            ->onConnection(\App\Services\ParamSearchService::QUEUE_CONNECTION)->onQueue(\App\Services\ParamSearchService::QUEUE);
+
+        return response()->json(['ok' => true, 'running' => true, 'since' => now()->toIso8601String()]);
+    }
+
+    public function validationStatus()
+    {
+        Gate::authorize('manageUsers');
+        $v = \Illuminate\Support\Facades\Cache::get(\App\Jobs\ValidateCollectorDataJob::RESULT_KEY);
+
+        return response()->json([
+            'running' => \Illuminate\Support\Facades\Cache::has(\App\Jobs\ValidateCollectorDataJob::RUNNING_KEY),
+            'at'      => $v['at'] ?? null,
+            'summary' => $v['summary'] ?? null,
+            'error'   => \Illuminate\Support\Facades\Cache::get(\App\Jobs\ValidateCollectorDataJob::ERROR_KEY),
         ]);
     }
 
