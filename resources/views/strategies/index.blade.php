@@ -92,6 +92,7 @@
                     <td>
                         <span class="font-medium text-sm block" style="color:var(--color-text-primary);">{{ $s->name }}</span>
                         <span class="text-[10px]" style="color:var(--color-text-muted);">{{ $s->description }}</span>
+                        @include('param-search._chip', ['sbRun' => $latestRuns[$s->id] ?? null])
                     </td>
                     <td class="text-center">
                         <span class="px-2 py-1 rounded-full text-[10px] font-medium" style="background:{{ $s->active ? '#16331F' : '#33221B' }}; color:{{ $s->active ? 'var(--color-profit)' : '#F59E0B' }};">
@@ -114,6 +115,8 @@
                     </td>
                     <td class="text-right pr-4">
                         <div class="flex items-center justify-end gap-2">
+                            <button type="button" onclick="sbOpen({{ $s->id }}, @js($s->name))" class="btn-action btn-search px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap"
+                                    @if($searchActive) disabled title="Ya hay una búsqueda en curso (solo una a la vez)" @endif>🔍 Buscar</button>
                             <a href="{{ route('backtesting.run', ['strategy_id' => $s->id]) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#3b82f6;">+ Nuevo Backtest</a>
                             <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap" style="background:#374151; color:#e5e7eb;">Historial</a>
                             <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#10b981;">Editar</a>
@@ -191,4 +194,8 @@
     </div>
 </div>
 
+@include('param-search._styles')
+@include('param-search._helpers')
+@include('param-search._modal')
+@include('param-search._index_script')
 @endsection

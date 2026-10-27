@@ -28,7 +28,17 @@ class StrategyController extends Controller
             $groupedPapers[$bt->strategy_id][] = $bt;
         }
 
-        return view('strategies.index', compact('strategies', 'groupedPapers'));
+        // Búsqueda de configuraciones: la última de cada estrategia (chip de estado) y si hay una en curso (solo una a la vez)
+        app(\App\Services\ParamSearchService::class)->reapStale();
+        $latestRuns = \App\Models\ParamSearchRun::whereIn('id',
+                \App\Models\ParamSearchRun::selectRaw('max(id)')->groupBy('strategy_id'))
+            ->select(['id', 'strategy_id', 'status', 'intervals', 'progress_done', 'progress_total', 'finished_at'])
+            ->selectRaw("results->>'validated' AS validated")
+            ->get()->keyBy('strategy_id');
+        $searchActive = $latestRuns->contains(fn ($r) => in_array($r->status, \App\Models\ParamSearchRun::ACTIVE, true));
+        $sbLabels = ['15' => '15m', '60' => '1h', '120' => '2h', '240' => '4h', 'D' => '1D'];
+
+        return view('strategies.index', compact('strategies', 'groupedPapers', 'latestRuns', 'searchActive', 'sbLabels'));
     }
 
     public function create()

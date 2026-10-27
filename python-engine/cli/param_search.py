@@ -355,10 +355,10 @@ def run_mode(run_id: int, max_minutes: float) -> int:
 
     def finish(status, results=None, error=None):
         rep.q("""UPDATE param_search_runs SET status = $2, results = $3::jsonb, error = $4, finished_at = now(),
-                 heartbeat_at = now(), updated_at = now(), progress_done = $5, progress_total = $6, phase = $7
-                 WHERE id = $1 RETURNING id""",
+                 heartbeat_at = now(), updated_at = now(), progress_done = $5, progress_total = $6, phase = $7,
+                 progress_note = $8 WHERE id = $1 RETURNING id""",
               run_id, status, json.dumps(results, ensure_ascii=False) if results is not None else None, error,
-              rep.done, rep.total, rep.phase)
+              rep.done, rep.total, rep.phase, rep.note)
 
     row = rep.q("""UPDATE param_search_runs SET status = 'running', pid = $2, started_at = now(), heartbeat_at = now(),
                    updated_at = now() WHERE id = $1 AND status = 'queued' RETURNING *""", run_id, os.getpid())
@@ -453,7 +453,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
                        elapsed_s=round(time.time() - t0, 1),
                        peak_mem_mb=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
                        rows=rows)
-        rep.set(force=False, phase='fin', note='Terminada')
+        rep.phase, rep.note, rep.done, rep.total = 'fin', 'Terminada', rep.total, rep.total   # 100 %
         finish('done', results)
         print(f"Búsqueda #{run_id}: {len(per_cfg)} configuraciones · {results['candidates']} candidatas · "
               f"{results['robust']} robustas · {results['validated']} validadas · {results['elapsed_s']} s · "

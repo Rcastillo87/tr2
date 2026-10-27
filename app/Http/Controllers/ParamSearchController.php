@@ -17,6 +17,26 @@ class ParamSearchController extends Controller
     {
     }
 
+    /** Página de la búsqueda: progreso en vivo, resultados y búsquedas anteriores de la estrategia. */
+    public function show(ParamSearchRun $run)
+    {
+        $this->service->reapStale();
+        $run->load('strategy');
+        $history = ParamSearchRun::where('strategy_id', $run->strategy_id)->orderByDesc('id')
+            ->limit(ParamSearchService::KEEP_PER_STRATEGY)
+            ->select(['id', 'status', 'intervals', 'created_at', 'strategy_code_md5'])
+            ->selectRaw("results->>'tested' AS tested, results->>'robust' AS robust, results->>'validated' AS validated")
+            ->get();
+
+        return view('param-search.show', [
+            'run'     => $run,
+            'history' => $history,
+            'keep'    => ParamSearchService::KEEP_PER_STRATEGY,
+            'labels'  => ['15' => '15m', '60' => '1h', '120' => '2h', '240' => '4h', 'D' => '1D'],
+            'codeMd5' => $run->strategy?->code !== null ? md5($run->strategy->code) : null,
+        ]);
+    }
+
     /** Datos para la ventana: monedas con datos por temporalidad, búsqueda activa y estimación de tiempo. */
     public function options(Strategy $strategy): JsonResponse
     {
@@ -95,6 +115,8 @@ class ParamSearchController extends Controller
                 'oos'       => $row['oos'],
                 'val'       => $row['val'],
                 'summary'   => $this->service->summarize($row, $symbols),
+                'detail'    => array_map(fn ($s) => ['role' => $s['role'] ?? 'search', 'ret' => $s['ret'] ?? null, 'pf' => $s['pf'] ?? null,
+                                                     'n' => $s['n'] ?? 0, 'dd' => $s['dd'] ?? null, 'm1' => $s['m1'] ?? null], $row['symbols']),
                 'created'   => $run->results['created'][$row['id']] ?? null,
             ];
         }
@@ -102,7 +124,8 @@ class ParamSearchController extends Controller
         usort($rows, fn ($a, $b) => [$b['summary']['total_return_pct'], $b['summary']['rating'], $b['summary']['consist_pct']]
             <=> [$a['summary']['total_return_pct'], $a['summary']['rating'], $a['summary']['consist_pct']]);
 
-        return response()->json(['run' => $this->state($run->fresh('strategy')), 'symbols_mode' => $mode, 'rows' => $rows]);
+        return response()->json(['run' => $this->state($run->fresh('strategy')), 'symbols_mode' => $mode,
+                                 'months' => count($run->results['months'] ?? []), 'rows' => $rows]);
     }
 
     public function create(Request $request, ParamSearchRun $run): JsonResponse

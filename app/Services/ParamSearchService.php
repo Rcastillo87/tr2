@@ -27,7 +27,7 @@ class ParamSearchService
     public const QUEUE_CONNECTION = 'redis-research';
     public const QUEUE = 'research';
     /** Minutos medidos/estimados por intervalo (4 monedas + validación). 4h medido: ~3 min. */
-    public const MINUTES_PER_INTERVAL = ['15' => 8, '60' => 5, '120' => 4, '240' => 3, 'D' => 1];
+    public const MINUTES_PER_INTERVAL = ['15' => 8, '60' => 5, '120' => 3, '240' => 3, 'D' => 1];   // 2h y 4h medidos
 
     /** Monedas de Bybit activas en el collector para TODOS los intervalos pedidos. */
     public function availableSymbols(array $intervals): array
