@@ -110,11 +110,11 @@ class FakeClient:
         self.stops.append((sl, tp, k))
         return True
 
-    async def place_market_order(self, symbol, side, qty, sl=None, tp=None):
-        self.orders.append((side, qty, sl, tp))
-        return {'orderId': 'X1'}
+    async def place_market_order(self, symbol, side, qty, sl=None, tp=None, **k):
+        self.orders.append((side, qty, sl, tp, k))
+        return {'orderId': 'X1', 'orderLinkId': 'tr2-test'}
 
-    async def get_order(self, symbol, order_id):
+    async def get_order(self, symbol, order_id=None, link_id=None):
         return {'orderStatus': self.order_status, 'avgPrice': str(self.price)}
 
     async def get_market_price(self, symbol):

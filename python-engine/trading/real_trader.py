@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -78,6 +79,9 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 # Comisión taker de Bybit por lado (cierres hechos por el bot). Los cierres detectados
 # en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
 BYBIT_TAKER_FEE = 0.00055  # 0.055%
+
+# Estados finales de una orden sin ejecución
+ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -243,71 +247,147 @@ class BybitClient:
         except Exception:
             return 0.001, 0.001
 
+    @staticmethod
+    def new_order_link_id() -> str:
+        """orderLinkId propio (máx. 36 caracteres). Se usa el MISMO en todos los reintentos de una orden:
+        Bybit no acepta dos órdenes con el mismo id y permite consultar si la primera llegó."""
+        return f"tr2-{uuid.uuid4().hex[:28]}"
+
+    async def _signed_post(self, path: str, body: dict, timeout: float = 15) -> httpx.Response:
+        """POST firmado. Firma en cada llamada (timestamp nuevo): un reintento con la firma del primer
+        intento puede quedar fuera de recv_window. El body se serializa una sola vez para firma y envío."""
+        payload = json.dumps(body, separators=(',', ':'), ensure_ascii=True)
+        headers = bybit_sign(self.api_key, self.api_secret, payload, recv_window='10000')
+        headers['Content-Type'] = 'application/json'
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.post(f'{self.base_url}{path}', content=payload.encode(), headers=headers)
+
+    async def get_order_by_link_id(self, symbol: str, link_id: str) -> dict | None:
+        """
+        Busca una orden por orderLinkId en realtime y en history.
+        Devuelve la orden, o None si NO existe (ambas consultas respondieron vacías).
+        Lanza BybitAPIError si alguna consulta falló y no apareció: estado desconocido, nunca "no existe".
+        """
+        params = {'category': 'linear', 'symbol': symbol, 'orderLinkId': link_id}
+        answered = 0
+        for path in ('/v5/order/realtime', '/v5/order/history'):
+            try:
+                data = (await self._signed_get(path, params)).json()
+            except Exception as e:
+                logger.error(f"[BYBIT] get_order_by_link_id {path} exception: {e}")
+                continue
+            if data.get('retCode') != 0:
+                logger.error(f"[BYBIT] get_order_by_link_id {path} error: {data.get('retMsg')} code={data.get('retCode')}")
+                continue
+            answered += 1
+            items = (data.get('result') or {}).get('list') or []
+            if items:
+                return items[0]
+        if answered < 2:
+            raise BybitAPIError(f"no se pudo consultar la orden {link_id}")
+        return None
+
+    async def _resolve_link_id(self, symbol: str, link_id: str) -> tuple[str, dict | None]:
+        """Estado de una orden enviada con respuesta ambigua: ('found', orden) | ('absent', None) | ('unknown', None)."""
+        try:
+            order = await self.get_order_by_link_id(symbol, link_id)
+        except BybitAPIError:
+            return 'unknown', None
+        return ('found', order) if order else ('absent', None)
+
     async def place_market_order(self, symbol: str, side: str, qty: float,
-                                  sl: float = None, tp: float = None) -> dict | None:
+                                  sl: float = None, tp: float = None,
+                                  reduce_only: bool = False, link_id: str | None = None) -> dict | None:
         """
-        Coloca una orden MARKET con SL/TP provisionales para garantizar aceptacion.
-        SL provisional = mark_price × 1.03 (SHORT) | × 0.97 (LONG)
-        TP provisional = mark_price × 0.95 (SHORT) | × 1.05 (LONG)
-        Los provisionales se reemplazan con valores reales via trading-stop despues de confirmar.
+        Orden MARKET idempotente.
+          - Apertura: lleva SL/TP provisionales (2 % / 4 %) hasta fijar los de la estrategia con trading-stop.
+          - Cierre (reduce_only=True): sin SL/TP y con reduceOnly; si la posición ya no existe, Bybit la
+            rechaza en vez de abrir una posición en sentido contrario.
+        Todos los intentos usan el mismo orderLinkId. Tras una respuesta ambigua (red, timeout, no-JSON)
+        se consulta la orden por ese id ANTES de reenviar.
+        Devuelve:
+          {'orderId', 'orderLinkId'}                       -> creada
+          {'orderId': None, 'orderLinkId', 'unconfirmed'}  -> estado desconocido; NO se reenvió
+          None                                             -> rechazada por Bybit (no existe)
         """
+        link_id = link_id or self.new_order_link_id()
         body = {
-            'category':  'linear',
-            'symbol':    symbol,
-            'side':      side,
-            'orderType': 'Market',
-            'qty':       str(qty),
+            'category':    'linear',
+            'symbol':      symbol,
+            'side':        side,
+            'orderType':   'Market',
+            'qty':         str(qty),
+            'orderLinkId': link_id,
         }
-        # Calcular SL/TP provisionales basados en mark_price actual
-        mark_price = await self.get_market_price(symbol)
-        if mark_price:
-            # SL/TP provisionales (2% / 4%) hasta fijar los de la estrategia con trading-stop. Igual en demo y
-            # real: Demo Trading usa los precios reales del mercado.
-            is_demo = self.base_url == BYBIT_DEMO_URL
-            sl_margin, tp_margin = 1.02, 0.96
-            if side == 'Sell':  # SHORT
-                sl_prov = round(mark_price * sl_margin, 8)         # SL arriba
-                tp_prov = round(mark_price * tp_margin, 8)         # TP abajo
-            else:  # LONG
-                sl_prov = round(mark_price * (2 - sl_margin), 8)  # SL abajo
-                tp_prov = round(mark_price * (2 - tp_margin), 8)  # TP arriba
-            body['stopLoss']    = str(sl_prov)
-            body['slTriggerBy'] = 'LastPrice'
-            body['takeProfit']  = str(tp_prov)
-            body['tpTriggerBy'] = 'LastPrice'
-            logger.info(f"[BYBIT] SL provisional={sl_prov} TP provisional={tp_prov} mark={mark_price} side={side} symbol={symbol} demo={is_demo}")
+        if reduce_only:
+            body['reduceOnly'] = True
         else:
-            # Sin mark price — incluir SL/TP originales si existen
-            if sl and sl > 0:
-                body['stopLoss']    = str(round(sl, 8))
+            mark_price = await self.get_market_price(symbol)
+            if mark_price:
+                # SL/TP provisionales (2% / 4%) hasta fijar los de la estrategia con trading-stop. Igual en demo y
+                # real: Demo Trading usa los precios reales del mercado.
+                sl_margin, tp_margin = 1.02, 0.96
+                if side == 'Sell':  # SHORT
+                    sl_prov = round(mark_price * sl_margin, 8)         # SL arriba
+                    tp_prov = round(mark_price * tp_margin, 8)         # TP abajo
+                else:  # LONG
+                    sl_prov = round(mark_price * (2 - sl_margin), 8)  # SL abajo
+                    tp_prov = round(mark_price * (2 - tp_margin), 8)  # TP arriba
+                body['stopLoss']    = str(sl_prov)
                 body['slTriggerBy'] = 'LastPrice'
-            if tp and tp > 0:
-                body['takeProfit']  = str(round(tp, 8))
+                body['takeProfit']  = str(tp_prov)
                 body['tpTriggerBy'] = 'LastPrice'
+                logger.info(f"[BYBIT] SL provisional={sl_prov} TP provisional={tp_prov} mark={mark_price} "
+                            f"side={side} symbol={symbol} demo={self.base_url == BYBIT_DEMO_URL}")
+            else:
+                # Sin mark price — incluir SL/TP originales si existen
+                if sl and sl > 0:
+                    body['stopLoss']    = str(round(sl, 8))
+                    body['slTriggerBy'] = 'LastPrice'
+                if tp and tp > 0:
+                    body['takeProfit']  = str(round(tp, 8))
+                    body['tpTriggerBy'] = 'LastPrice'
         logger.info(f"[BYBIT] body orden: {body}")
 
-        headers = self._sign_body(body)
+        def created(order_id):
+            return {'orderId': order_id, 'orderLinkId': link_id}
 
+        def unconfirmed():
+            logger.critical(f"[BYBIT] Orden {link_id} {symbol} en estado DESCONOCIDO: no se reenvía "
+                            f"(se confirma por posición/orderLinkId; si no, conciliación)")
+            return {'orderId': None, 'orderLinkId': link_id, 'unconfirmed': True}
+
+        ambiguous = False  # alguna respuesta no permitió saber si Bybit creó la orden
         for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(2)
+                if ambiguous:
+                    state, order = await self._resolve_link_id(symbol, link_id)
+                    if state == 'unknown':
+                        return unconfirmed()
+                    if state == 'found':
+                        status = order.get('orderStatus')
+                        logger.warning(f"[BYBIT] Orden {link_id} ya existía en Bybit ({status}): no se reenvía")
+                        return None if status in ORDER_DEAD_STATUSES else created(order.get('orderId'))
             try:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    r = await client.post(
-                        f'{self.base_url}/v5/order/create',
-                        content=json.dumps(body, separators=(',', ':'), ensure_ascii=True).encode(),
-                        headers=headers,
-                    )
-                data = r.json()
-                if data.get('retCode') == 0:
-                    return data['result']
-                else:
-                    logger.error(f"[BYBIT] place_order error (attempt {attempt+1}): {data.get('retMsg')} code={data.get('retCode')}")
-                    if attempt < 2:
-                        await asyncio.sleep(2)
+                data = (await self._signed_post('/v5/order/create', body)).json()
             except Exception as e:
-                logger.error(f"[BYBIT] place_order exception (attempt {attempt+1}): {e}")
-                if attempt < 2:
-                    await asyncio.sleep(2)
+                ambiguous = True
+                logger.error(f"[BYBIT] place_order respuesta ambigua (attempt {attempt+1}) {link_id}: {e!r}")
+                continue
+            if data.get('retCode') == 0:
+                return created((data.get('result') or {}).get('orderId'))
+            logger.error(f"[BYBIT] place_order error (attempt {attempt+1}) {link_id}: "
+                         f"{data.get('retMsg')} code={data.get('retCode')}")
 
+        if ambiguous:
+            await asyncio.sleep(2)
+            state, order = await self._resolve_link_id(symbol, link_id)
+            if state == 'unknown':
+                return unconfirmed()
+            if state == 'found' and order.get('orderStatus') not in ORDER_DEAD_STATUSES:
+                logger.warning(f"[BYBIT] Orden {link_id} sí se creó pese a los errores: {order.get('orderStatus')}")
+                return created(order.get('orderId'))
         return None
 
     async def get_native_trailing_level(self, symbol):
@@ -385,9 +465,14 @@ class BybitClient:
             logger.error(f"[BYBIT] set_trading_stop exception: {e}")
             return False
 
-    async def get_order(self, symbol: str, order_id: str) -> dict | None:
-        """Verifica el estado de una orden por su ID."""
-        params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id}
+    async def get_order(self, symbol: str, order_id: str | None = None, link_id: str | None = None) -> dict | None:
+        """Estado de una orden por orderId o, si no llegó el orderId, por orderLinkId. None si no se encuentra."""
+        if order_id:
+            params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id}
+        elif link_id:
+            params = {'category': 'linear', 'symbol': symbol, 'orderLinkId': link_id}
+        else:
+            return None
         try:
             # realtime: órdenes vivas/recientes; history: las ya llenadas/canceladas que salieron de realtime
             for path in ('/v5/order/realtime', '/v5/order/history'):
@@ -920,6 +1005,9 @@ class RealTrader:
             return False
 
         order_id = result.get('orderId')
+        link_id  = result.get('orderLinkId')
+        if result.get('unconfirmed'):
+            await self.log_audit(trade_id, 'order_unconfirmed', {'order_link_id': link_id})
 
         # 7. Esperar confirmacion — 1s inicial
         filled_price = entry_signal_price
@@ -945,7 +1033,7 @@ class RealTrader:
         if not filled:
             for check in range(3):
                 await asyncio.sleep(10)
-                order = await client.get_order(symbol, order_id) if order_id else None
+                order = await client.get_order(symbol, order_id, link_id=link_id)
                 status = (order or {}).get('orderStatus')
                 position = await client.get_open_position(symbol)
                 if position and float(position.get('size', 0) or 0) > 0:
@@ -971,6 +1059,10 @@ class RealTrader:
                 )
             logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 verificaciones")
             return False
+
+        # orderId que no llegó en la respuesta (envío ambiguo): recuperarlo por orderLinkId
+        if not order_id and link_id:
+            order_id = ((await client.get_order(symbol, link_id=link_id)) or {}).get('orderId')
 
         # 7b. Calcular SL/TP reales con avgPrice real de ejecucion
         avg_price = filled_price
@@ -1049,6 +1141,7 @@ class RealTrader:
 
         await self.log_audit(trade_id, 'opened', {
             'order_id': order_id,
+            'order_link_id': link_id,
             'filled_price': filled_price,
             'signal_price': entry_signal_price,
             'slippage_pct': slippage_pct,
@@ -1142,7 +1235,7 @@ class RealTrader:
         close_side  = 'Sell' if side == 'long' else 'Buy'
         live_size   = float(position.get('size', 0) or 0)
         size        = live_size if live_size > 0 else float(trade['size'])
-        result      = await client.place_market_order(symbol, close_side, size)
+        result      = await client.place_market_order(symbol, close_side, size, reduce_only=True)
 
         if result is None:
             async with self.pool.acquire() as conn:
@@ -1159,12 +1252,13 @@ class RealTrader:
             return False
 
         close_order_id = result.get('orderId')
+        close_link_id  = result.get('orderLinkId')
 
         # Esperar confirmacion
         exit_price = await client.get_market_price(symbol) or float(trade['entry_price'])
         for _ in range(6):
             await asyncio.sleep(5)
-            order = await client.get_order(symbol, close_order_id)
+            order = await client.get_order(symbol, close_order_id, link_id=close_link_id)
             if order and order.get('orderStatus') == 'Filled':
                 exit_price = float(order.get('avgPrice', exit_price))
                 break
