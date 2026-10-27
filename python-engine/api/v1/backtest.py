@@ -8,6 +8,7 @@ import asyncpg
 from db import get_pool as shared_get_pool
 import pandas as pd
 import logging
+from dataclasses import dataclass
 import os
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -246,6 +247,75 @@ def evaluate_for_paper(aggregate: dict) -> dict:
     return {"passed": passed, "reasons": reasons or ["Estrategia aprobada para paper trading"]}
 
 
+@dataclass
+class BacktestData:
+    df: pd.DataFrame                       # velas principales (con calentamiento)
+    macro_df: Optional[pd.DataFrame]       # H4 para 'Tendencia macro H4' (None si no se pidió o no hay)
+    minute_df: Optional[pd.DataFrame]      # 1m para simular salidas (None = vela grande, SL primero)
+    warnings: list
+    coverage: dict
+
+
+async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, start: datetime | None,
+                             end: datetime | None, macro: bool, data_broker: str | None = None) -> BacktestData:
+    """
+    Velas de un backtest. ÚNICO camino de datos para /backtest/run y cli/param_search (la búsqueda de
+    configuraciones debe dar exactamente lo mismo que un backtest de la pantalla). Sin velas -> ValueError.
+    """
+    warnings: list = []
+    coverage: dict = {}
+    # 1. Velas principales: fuente con la mayor cobertura REAL del rango pedido.
+    if data_broker:
+        forced = [c for c in await coverage_by_broker(pool, symbol, interval, start, end) if c.broker == data_broker]
+        main_src = forced[0] if forced else None
+    else:
+        main_src = await resolve_backtest_source(pool, symbol, interval, start, end)
+    if main_src is None:
+        raise ValueError(f"No hay velas de {symbol} {interval} en el rango solicitado.")
+    warnings.extend(main_src.problems())
+    coverage['main'] = main_src.as_dict()
+    # Calentamiento: velas previas al inicio solo para indicadores (como paper, 500 velas)
+    warm_start = start - interval_delta(interval) * WARMUP_BARS if start else None
+    df = await load_ohlcv(pool, symbol, interval, main_src.broker, warm_start, end)
+
+    # Tendencia macro H4: velas H4 reales con calentamiento para la EMA (igual que paper/real)
+    macro_df = None
+    if macro:
+        from backtesting.strategies.base_strategy import MACRO_INTERVAL, MACRO_WARMUP_BARS
+        m_from = (start or df['time'].iloc[0].to_pydatetime()) - interval_delta(MACRO_INTERVAL) * MACRO_WARMUP_BARS
+        m_src = await resolve_backtest_source(pool, symbol, MACRO_INTERVAL, m_from, end)
+        if m_src is None:
+            warnings.append(f"Aviso: sin velas H4 de {symbol}: con 'Tendencia macro H4' activa no se opera.")
+        else:
+            warnings.extend(m_src.problems())
+            macro_df = await load_ohlcv(pool, symbol, MACRO_INTERVAL, m_src.broker, m_from, end)
+            coverage['macro'] = m_src.as_dict()
+
+    # 2. Velas de 1m para simular la salida dentro de cada vela (interval >= H1).
+    #    Regla de oro 4: solo si cubren TODO el rango del dataset principal.
+    #    Si no, vela grande con SL primero (pesimista) en TODO el rango: mezclar
+    #    ambos métodos daría un backtest con dos criterios distintos según el mes.
+    minute_df = None
+    if interval_delta(interval) >= timedelta(hours=1):
+        data_start = max(df['time'].iloc[0].to_pydatetime(), start) if start else df['time'].iloc[0].to_pydatetime()
+        data_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(interval)
+        minute_src = await resolve_backtest_source(pool, symbol, '1', data_start, data_end)
+        coverage['minute'] = minute_src.as_dict() if minute_src else None
+        if minute_src is not None and minute_src.covers(data_start, data_end):
+            minute_df = await load_ohlcv(pool, symbol, '1', minute_src.broker, data_start, data_end)
+        else:
+            available = (
+                f"{minute_src.first_bar:%Y-%m-%d} → {minute_src.last_bar:%Y-%m-%d}, "
+                f"{minute_src.completeness * 100:.0f}% completo" if minute_src else "ninguna"
+            )
+            warnings.append(
+                f"Aviso: velas de 1 minuto de {symbol} insuficientes para "
+                f"{data_start:%Y-%m-%d} → {data_end:%Y-%m-%d} (disponibles: {available}). "
+                f"Salidas simuladas con vela grande y SL primero (pesimista) en todo el rango."
+            )
+    return BacktestData(df=df, macro_df=macro_df, minute_df=minute_df, warnings=warnings, coverage=coverage)
+
+
 @router.post("/backtest/run")
 async def run_backtest(request: BacktestRequest):
     """Backtest continuo de todo el rango, con calentamiento, régimen, slippage y comisiones."""
@@ -255,59 +325,17 @@ async def run_backtest(request: BacktestRequest):
         start, end = parse_range(request.start_date, request.end_date)
         pool = await get_pool()
         try:
-            # 1. Velas principales: fuente con la mayor cobertura REAL del rango pedido.
-            if request.data_broker:
-                forced = [c for c in await coverage_by_broker(pool, request.symbol, request.interval, start, end)
-                          if c.broker == request.data_broker]
-                main_src = forced[0] if forced else None
-            else:
-                main_src = await resolve_backtest_source(pool, request.symbol, request.interval, start, end)
-            if main_src is None:
-                raise ValueError(f"No hay velas de {request.symbol} {request.interval} en el rango solicitado.")
-            warnings.extend(main_src.problems())
-            coverage['main'] = main_src.as_dict()
-            # Calentamiento: velas previas al inicio solo para indicadores (como paper, 500 velas)
-            warm_start = start - interval_delta(request.interval) * WARMUP_BARS if start else None
-            df = await load_ohlcv(pool, request.symbol, request.interval, main_src.broker, warm_start, end)
-
-            strategy = load_strategy(request)
-
-            # Tendencia macro H4: velas H4 reales con calentamiento para la EMA (igual que paper/real)
-            if request.macro_trend_filter:
-                from backtesting.strategies.base_strategy import MACRO_INTERVAL, MACRO_WARMUP_BARS
-                m_from = (start or df['time'].iloc[0].to_pydatetime()) - interval_delta(MACRO_INTERVAL) * MACRO_WARMUP_BARS
-                m_src = await resolve_backtest_source(pool, request.symbol, MACRO_INTERVAL, m_from, end)
-                if m_src is None:
-                    warnings.append(f"Aviso: sin velas H4 de {request.symbol}: con 'Tendencia macro H4' activa no se opera.")
-                else:
-                    warnings.extend(m_src.problems())
-                    strategy.macro_df = await load_ohlcv(pool, request.symbol, MACRO_INTERVAL, m_src.broker, m_from, end)
-                    coverage['macro'] = m_src.as_dict()
-
-            # 2. Velas de 1m para simular la salida dentro de cada vela (interval >= H1).
-            #    Regla de oro 4: solo si cubren TODO el rango del dataset principal.
-            #    Si no, vela grande con SL primero (pesimista) en TODO el rango: mezclar
-            #    ambos métodos daría un backtest con dos criterios distintos según el mes.
-            minute_df = None
-            if interval_delta(request.interval) >= timedelta(hours=1):
-                data_start = max(df['time'].iloc[0].to_pydatetime(), start) if start else df['time'].iloc[0].to_pydatetime()
-                data_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(request.interval)
-                minute_src = await resolve_backtest_source(pool, request.symbol, '1', data_start, data_end)
-                coverage['minute'] = minute_src.as_dict() if minute_src else None
-                if minute_src is not None and minute_src.covers(data_start, data_end):
-                    minute_df = await load_ohlcv(pool, request.symbol, '1', minute_src.broker, data_start, data_end)
-                else:
-                    available = (
-                        f"{minute_src.first_bar:%Y-%m-%d} → {minute_src.last_bar:%Y-%m-%d}, "
-                        f"{minute_src.completeness * 100:.0f}% completo" if minute_src else "ninguna"
-                    )
-                    warnings.append(
-                        f"Aviso: velas de 1 minuto de {request.symbol} insuficientes para "
-                        f"{data_start:%Y-%m-%d} → {data_end:%Y-%m-%d} (disponibles: {available}). "
-                        f"Salidas simuladas con vela grande y SL primero (pesimista) en todo el rango."
-                    )
+            data = await load_backtest_data(pool, request.symbol, request.interval, start, end,
+                                            macro=request.macro_trend_filter, data_broker=request.data_broker)
         finally:
             await pool.close()
+        warnings.extend(data.warnings)
+        coverage.update(data.coverage)
+        df, minute_df = data.df, data.minute_df
+
+        strategy = load_strategy(request)
+        if request.macro_trend_filter:
+            strategy.macro_df = data.macro_df   # None si no hay H4: con el filtro activo no se opera
 
         strategy.slippage_pct = float(request.slippage_pct)
         if request.slippage_pct <= 0:
