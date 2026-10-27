@@ -143,8 +143,10 @@ class ParamSearchController extends Controller
                 'is'         => $row['is'],
                 'oos'        => $row['oos'],
                 'val'        => $row['val'] ?? null,
-                'summary'    => $this->service->summarize($row, $this->service->symbolsFor($run, $row, $mode)),
-                'detail'     => array_map(fn ($s) => ['role' => $s['role'] ?? 'search', 'why' => $s['why'] ?? null, 'ret' => $s['ret'] ?? null,
+                // symbols: lista para la columna "Monedas que ganan" (sobrevivientes + descartadas); las métricas son de las sobrevivientes
+                'summary'    => ['symbols' => array_values(array_unique(array_merge($this->service->symbolsFor($run, $row, $mode), $row['discarded'] ?? [])))]
+                                + $this->service->summarize($row, $this->service->symbolsFor($run, $row, $mode)),
+                'detail'     => array_map(fn ($s) => ['role' => in_array($s['role'] ?? 'search', ['survivor', 'discarded'], true) ? 'search' : ($s['role'] ?? 'search'), 'why' => $s['why'] ?? null, 'ret' => $s['ret'] ?? null,
                                                       'pf' => $s['pf'] ?? null, 'n' => $s['n'] ?? 0, 'dd' => $s['dd'] ?? null,
                                                       'm1' => $s['m1'] ?? null], $row['symbols']),
                 'created'    => $run->results['created'][$row['id']] ?? null,
