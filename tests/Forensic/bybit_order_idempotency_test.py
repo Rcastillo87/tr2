@@ -55,7 +55,8 @@ class FakeBybit:
       ok        -> crea la orden y responde retCode 0
       lost      -> crea la orden pero la respuesta se pierde (timeout)
       timeout   -> timeout SIN crear la orden
-      reject    -> retCode != 0, no crea nada
+      reject    -> retCode != 0 reintentable (error interno), no crea nada
+      final     -> retCode 110017 (reduceOnly con posición en cero), no crea nada
     Un orderLinkId repetido siempre se rechaza (como Bybit). `query_fail` hace fallar las consultas de órdenes;
     `hidden_queries` oculta las órdenes durante las primeras N consultas (retraso de visibilidad).
     """
@@ -89,7 +90,9 @@ class FakeBybit:
             if link in self.orders:
                 return httpx.Response(200, json={'retCode': 110072, 'retMsg': 'OrderLinkedID is duplicate'})
             if action == 'reject':
-                return httpx.Response(200, json={'retCode': 110017, 'retMsg': 'rechazada (simulada)'})
+                return httpx.Response(200, json={'retCode': 10016, 'retMsg': 'error interno (simulado)'})
+            if action == 'final':
+                return httpx.Response(200, json={'retCode': 110017, 'retMsg': 'current position is zero (simulado)'})
             if action == 'timeout':
                 raise httpx.ReadTimeout('timeout simulado', request=req)
             oid = f'OID{len(self.orders) + 1}'
@@ -170,7 +173,7 @@ check('estado desconocido: no reenvía', len(f.post_bodies) == 1, len(f.post_bod
 check('estado desconocido: unconfirmed con orderLinkId y sin orderId',
       r and r.get('unconfirmed') and r['orderId'] is None and r['orderLinkId'] == f.post_bodies[0]['orderLinkId'], r)
 
-# 5. Rechazos definitivos -> 3 intentos, None, sin consultas innecesarias
+# 5. Rechazos reintentables -> 3 intentos, None, sin consultas innecesarias
 f = FakeBybit(['reject', 'reject', 'reject'])
 r = run(f, lambda c: c.place_market_order('BTCUSDT', 'Buy', 0.01))
 check('rechazo x3: None, 3 envíos, 0 órdenes', r is None and len(f.post_bodies) == 3 and not f.orders, (r, len(f.post_bodies)))
@@ -186,6 +189,7 @@ f = FakeBybit(['lost'], hidden_queries=2)
 r = run(f, lambda c: c.place_market_order('BTCUSDT', 'Buy', 0.01))
 check('retraso de visibilidad: Bybit rechaza el duplicado, 1 sola orden', len(f.orders) == 1, len(f.orders))
 check('retraso de visibilidad: devuelve la orden creada', r and r['orderId'] == 'OID1', r)
+check('retraso de visibilidad: tras el 110072 no sigue reintentando (2 envíos)', len(f.post_bodies) == 2, len(f.post_bodies))
 
 # 8. Cierre: reduceOnly, sin SL/TP provisionales, sin pedir precio
 f = FakeBybit(['ok'])
@@ -195,10 +199,21 @@ check('cierre: reduceOnly=true', b.get('reduceOnly') is True, b)
 check('cierre: sin stopLoss/takeProfit', 'stopLoss' not in b and 'takeProfit' not in b, b)
 check('cierre: no consulta el precio', f.tickers == 0, f.tickers)
 
-# 9. Cierre con la posición ya cerrada -> Bybit rechaza el reduceOnly: nada se abre
-f = FakeBybit(['reject', 'reject', 'reject'])
+# 9. Cierre con la posición ya cerrada -> Bybit rechaza el reduceOnly (110017): nada se abre, sin reintentos
+f = FakeBybit(['final'])
 r = run(f, lambda c: c.place_market_order('BTCUSDT', 'Sell', 0.01, reduce_only=True))
 check('cierre sin posición: None y ninguna orden creada', r is None and not f.orders, r)
+check('cierre sin posición: 110017 no se reintenta (1 envío)', len(f.post_bodies) == 1, len(f.post_bodies))
+
+# 9b. Reenvío explícito con un orderLinkId ya usado -> devuelve la orden ORIGINAL (no None)
+f = FakeBybit(['ok'])
+async def _dup(c):
+    first = await c.place_market_order('BTCUSDT', 'Buy', 0.01)
+    again = await c.place_market_order('BTCUSDT', 'Buy', 0.01, link_id=first['orderLinkId'])
+    return first, again
+first, again = run(f, _dup)
+check('id duplicado: devuelve la orden original', again == first, again)
+check('id duplicado: 2 envíos en total, 1 orden', len(f.post_bodies) == 2 and len(f.orders) == 1, (len(f.post_bodies), len(f.orders)))
 
 # 10. get_order por orderLinkId
 f = FakeBybit(['ok'])
@@ -218,6 +233,129 @@ async def _q(c):
         return 'ERR'
 check('consulta parcial -> BybitAPIError (no "no existe")', run(f, _q) == 'ERR')
 check('consulta completa vacía -> None', run(FakeBybit([]), lambda c: c.get_order_by_link_id('BTCUSDT', 'tr2-x')) is None)
+
+
+# ─────────────── close_trade: nunca dar por cerrado sin confirmación real ───────────────
+from trading.real_trader import RealTrader  # noqa: E402
+
+
+class _Conn:
+    def __init__(self, log):
+        self.log = log
+
+    def transaction(self):
+        class _T:
+            async def __aenter__(self_):
+                return self_
+
+            async def __aexit__(self_, *e):
+                return False
+        return _T()
+
+    async def execute(self, sql, *a):
+        self.log.append((' '.join(sql.split()), a))
+        return "UPDATE 1"
+
+    async def fetchval(self, sql, *a):
+        return None
+
+
+class _Pool:
+    def __init__(self):
+        self.log = []
+
+    def acquire(self):
+        pool = self
+
+        class _C:
+            async def __aenter__(self_):
+                return _Conn(pool.log)
+
+            async def __aexit__(self_, *e):
+                return False
+        return _C()
+
+
+class _CloseClient:
+    """positions: respuestas sucesivas de get_open_position (dict, None o 'ERR')."""
+
+    def __init__(self, positions, order_status='Filled', history=None):
+        self.positions, self.order_status, self.history = list(positions), order_status, history or []
+        self.sent = []
+
+    async def get_open_position(self, symbol):
+        p = self.positions.pop(0) if self.positions else None
+        if p == 'ERR':
+            raise BybitAPIError('caída simulada')
+        return p
+
+    async def place_market_order(self, symbol, side, qty, sl=None, tp=None, **k):
+        self.sent.append((side, qty, k))
+        return {'orderId': 'C1', 'orderLinkId': 'tr2-cierre'}
+
+    async def get_order(self, symbol, order_id=None, link_id=None):
+        return {'orderId': 'C1', 'orderStatus': self.order_status, 'avgPrice': '101.0'}
+
+    async def get_market_price(self, symbol):
+        return 100.5
+
+    async def get_balance(self):
+        return 1001.0
+
+    async def get_closed_pnl_history(self, symbol, entry, since, limit=20):
+        return self.history
+
+
+def _trade():
+    return {'id': 9, 'side': 'long', 'symbol': 'BTCUSDT', 'strategy': 'T', 'entry_price': 100.0, 'size': 1.0,
+            'balance_before': 1000.0, 'realized_pnl_partial': 0, 'sl': 98.0, 'tp': 104.0, 'trailing_applied': False}
+
+
+def close_case(client):
+    pool = _Pool()
+    ok = asyncio.run(RealTrader(pool).close_trade(_trade(), 'time_exit', client, 1))
+    sqls = [s for s, _ in pool.log if 'audit_log' not in s]
+    closed = [(s, a) for s, a in pool.log if "SET status = 'closed'" in s or "SET status='closed'" in s]
+    return ok, sqls, closed
+
+
+POS = {'size': '1', 'avgPrice': '100'}
+
+# C1. Cierre normal: reduceOnly, Filled -> closed con el avgPrice de Bybit
+c = _CloseClient([POS])
+ok, sqls, closed = close_case(c)
+check('close: envía la orden con reduce_only=True', c.sent and c.sent[0][2].get('reduce_only') is True, c.sent)
+check('close: Filled -> closed con avgPrice 101.0', ok and closed and 101.0 in closed[-1][1], closed)
+
+# C2. Sin Filled y la posición SIGUE abierta -> vuelve a 'open', no se marca cerrado
+c = _CloseClient([POS, POS], order_status='New')
+ok, sqls, closed = close_case(c)
+check('close sin Filled + posición viva: devuelve False', ok is False, ok)
+check('close sin Filled + posición viva: NO marca closed', not closed, closed)
+check('close sin Filled + posición viva: vuelve a status open',
+      any("SET status='open'" in s and "status='pending_close'" in s for s in sqls), sqls)
+
+# C3. Sin Filled y la posición ya no existe -> se liquida con los números de Bybit (closed-pnl), no con el precio de mercado
+hist = [{'closedSize': '1', 'cumExitValue': '101.2', 'closedPnl': '1.09'}]
+c = _CloseClient([POS, None], order_status='New', history=hist)
+ok, sqls, closed = close_case(c)
+check('close sin Filled + posición cerrada: liquida con closed-pnl de Bybit',
+      ok is True and closed and 101.2 in closed[-1][1] and 1.09 in closed[-1][1], closed)
+check('close sin Filled + posición cerrada: no usa el precio de mercado (100.5)',
+      closed and 100.5 not in closed[-1][1], closed)
+check('liquidación acepta filas en pending_close',
+      closed and "status IN ('open','pending_close')" in closed[-1][0], closed[-1][0] if closed else '')
+
+# C4. Sin Filled y Bybit no responde -> queda pending_close (el monitor lo resuelve), nada inventado
+c = _CloseClient([POS, 'ERR'], order_status='New')
+ok, sqls, closed = close_case(c)
+check('close sin Filled + Bybit caído: False y sin closed', ok is False and not closed, (ok, closed))
+check('close sin Filled + Bybit caído: no revierte a open', not any("SET status='open'" in s for s in sqls), sqls)
+
+# C5. Sin Filled, posición cerrada pero closed-pnl aún vacío -> queda pending_close, nada inventado
+c = _CloseClient([POS, None], order_status='New', history=[])
+ok, sqls, closed = close_case(c)
+check('close sin Filled + closed-pnl vacío: False y sin closed', ok is False and not closed, (ok, closed))
 
 print(f"\n{'TODO OK' if not fails else f'{fails} FALLOS'}")
 sys.exit(1 if fails else 0)

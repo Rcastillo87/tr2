@@ -83,6 +83,10 @@ BYBIT_TAKER_FEE = 0.00055  # 0.055%
 # Estados finales de una orden sin ejecución
 ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
 
+# Rechazos de /v5/order/create con tratamiento propio (confirmados en Bybit Demo)
+ORDER_LINK_DUPLICATE = 110072    # el orderLinkId ya existe: la orden se creó antes, se devuelve esa
+ORDER_FINAL_REJECTS = {110017}   # reduceOnly con la posición en cero: reintentar no cambia nada
+
 
 # ─────────────────────────────────────────────────────────────────
 # Cliente Bybit autenticado
@@ -377,8 +381,17 @@ class BybitClient:
                 continue
             if data.get('retCode') == 0:
                 return created((data.get('result') or {}).get('orderId'))
+            code = data.get('retCode')
             logger.error(f"[BYBIT] place_order error (attempt {attempt+1}) {link_id}: "
-                         f"{data.get('retMsg')} code={data.get('retCode')}")
+                         f"{data.get('retMsg')} code={code}")
+            if code == ORDER_LINK_DUPLICATE:
+                # La orden ya existe (intento anterior o reenvío): devolver la original, nunca crear otra
+                state, order = await self._resolve_link_id(symbol, link_id)
+                if state == 'found':
+                    return None if order.get('orderStatus') in ORDER_DEAD_STATUSES else created(order.get('orderId'))
+                return unconfirmed()
+            if code in ORDER_FINAL_REJECTS:
+                break
 
         if ambiguous:
             await asyncio.sleep(2)
@@ -1191,7 +1204,7 @@ class RealTrader:
                 result = await conn.execute(
                     "UPDATE real_trades SET status='closed', exit_price=$1, exit_reason=$2,"
                     " exit_time=now(), pnl=$3, pnl_pct=$4, net_pnl=$5, commission=$6,"
-                    " balance_after=$7, updated_at=now() WHERE id=$8 AND status='open'",
+                    " balance_after=$7, updated_at=now() WHERE id=$8 AND status IN ('open','pending_close')",
                     exit_price_override, exit_reason,
                     round(pnl,4), round(pnl_pct,4), round(net_pnl,4), round(commission,4),
                     balance_after, trade["id"]
@@ -1235,6 +1248,7 @@ class RealTrader:
         close_side  = 'Sell' if side == 'long' else 'Buy'
         live_size   = float(position.get('size', 0) or 0)
         size        = live_size if live_size > 0 else float(trade['size'])
+        since_ms    = int(datetime.now(timezone.utc).timestamp() * 1000) - 5000  # ventana del closed-pnl
         result      = await client.place_market_order(symbol, close_side, size, reduce_only=True)
 
         if result is None:
@@ -1254,14 +1268,18 @@ class RealTrader:
         close_order_id = result.get('orderId')
         close_link_id  = result.get('orderLinkId')
 
-        # Esperar confirmacion
-        exit_price = await client.get_market_price(symbol) or float(trade['entry_price'])
+        # Esperar confirmacion (~30 s). Sin Filled NO se inventa el cierre con el precio de mercado.
+        exit_price = None
         for _ in range(6):
             await asyncio.sleep(5)
             order = await client.get_order(symbol, close_order_id, link_id=close_link_id)
             if order and order.get('orderStatus') == 'Filled':
-                exit_price = float(order.get('avgPrice', exit_price))
+                close_order_id = close_order_id or order.get('orderId')
+                exit_price = float(order.get('avgPrice') or 0) or await client.get_market_price(symbol)
                 break
+        if not exit_price:
+            return await self._settle_unconfirmed_close(trade, exit_reason, client, account_id,
+                                                        close_link_id, since_ms)
 
         # Balance real despues del cierre
         balance_after = await client.get_balance()
@@ -1313,6 +1331,39 @@ class RealTrader:
             f"pnl={round(pnl, 2)} net_pnl={round(net_pnl, 2)} commission={round(commission, 4)}"
         )
         return True
+
+    async def _settle_unconfirmed_close(self, trade: dict, exit_reason: str, client: BybitClient,
+                                        account_id: int, link_id: str | None, since_ms: int) -> bool:
+        """
+        Bybit no confirmó el Filled del cierre. Se decide por el estado REAL de la posición, nunca con el
+        precio de mercado:
+          - sigue abierta      -> vuelve a 'open'; el monitor reintenta el cierre (reduceOnly, sin riesgo de invertir)
+          - ya no existe       -> se liquida con el closed-pnl de Bybit
+          - Bybit no responde  -> queda 'pending_close'; el monitor lo resuelve en el próximo ciclo
+        """
+        trade_id, symbol = trade['id'], trade['symbol']
+        try:
+            position = await client.get_open_position(symbol)
+        except BybitAPIError as e:
+            logger.error(f"[REAL] CLOSE #{trade_id} {symbol} sin confirmar y Bybit no responde ({e}): queda pending_close")
+            await self.log_audit(trade_id, 'close_unconfirmed', {'order_link_id': link_id, 'state': 'unknown'})
+            return False
+        live_size = float(position.get('size', 0) or 0) if position else 0.0
+        if live_size > 0:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE real_trades SET status='open', updated_at=now() WHERE id=$1 AND status='pending_close'",
+                    trade_id
+                )
+            logger.error(f"[REAL] CLOSE #{trade_id} {symbol} NO ejecutado (posición viva {live_size}): vuelve a open")
+            await self.log_audit(trade_id, 'close_not_filled', {'order_link_id': link_id, 'live_size': live_size})
+            return False
+        settled = await self.settle_exchange_close(trade, client, account_id, since_ms, exit_reason=exit_reason)
+        if settled is None:
+            logger.error(f"[REAL] CLOSE #{trade_id} {symbol} cerrado en Bybit sin closed-pnl todavía: queda pending_close")
+            await self.log_audit(trade_id, 'close_unconfirmed', {'order_link_id': link_id, 'state': 'pnl_pending'})
+            return False
+        return settled
 
     async def settle_exchange_close(self, trade: dict, client: BybitClient, account_id: int,
                                     since_time_ms: int, exit_reason: str | None = None) -> bool | None:
