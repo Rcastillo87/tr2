@@ -27,13 +27,20 @@ class ValidateCollectorDataJob implements ShouldQueue, ShouldBeUnique
     public int $timeout = 1200;
     public int $uniqueFor = 1500;
 
+    /** repair=true: valida, repara lo que falla (sin borrar nunca) y revalida (cli/collector_repair.py). */
+    public function __construct(public bool $repair = false)
+    {
+    }
+
     public function handle(): void
     {
         $engine = base_path('python-engine');
         $out = storage_path('app/collector_validation.json');
         try {
             $result = Process::path($engine)->timeout(1100)
-                ->run(['nice', '-n', '19', 'ionice', '-c3', $engine . '/venv/bin/python', 'cli/collector_validate.py',
+                ->run(['nice', '-n', '19', 'ionice', '-c3', $engine . '/venv/bin/python',
+                       $this->repair ? 'cli/collector_repair.py' : 'cli/collector_validate.py',
+                       ...($this->repair ? ['--max-days', '7'] : []),
                        '--recent', '300', '--json-out', $out, '--quiet']);
             $data = is_file($out) ? json_decode((string) file_get_contents($out), true) : null;
             // código 1 = hay series con fallas (resultado válido); otro código sin JSON = error de la herramienta

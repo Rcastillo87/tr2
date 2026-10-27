@@ -83,6 +83,15 @@ class SystemAlerts
     {
         $s = $data['summary'] ?? [];
         $bad = (int) ($s['series'] ?? 0) - (int) ($s['ok'] ?? 0);
+        $r = $data['repair'] ?? null;
+        if ($r && empty($r['dry_run']) && ($r['recent_written'] + $r['days_written'] + $r['bybit_gaps_new'] + $r['errors']) > 0) {
+            $this->notify($r['errors'] ? 'warning' : 'info', 'repair', 'Reparación automática del collector',
+                sprintf('%d serie(s) · %d velas recientes corregidas · %d día(s) revisados (+%d velas) · pendientes %d día(s)'
+                    . ' · %d día(s) sin datos en Bybit · errores %d · antes %d/%d OK, ahora %d/%d OK',
+                    count($r['series']), $r['recent_written'], $r['days_fixed'], $r['days_written'], $r['pending_days'],
+                    $r['bybit_gaps_new'], $r['errors'], $r['before']['ok'] ?? 0, $r['before']['series'] ?? 0,
+                    $s['ok'] ?? 0, $s['series'] ?? 0), '/collector');
+        }
         if ($bad > 0) {
             $this->openIncident('validation_failed', 'warning', 'validation',
                 "Validación del collector: {$bad} serie(s) con fallas",

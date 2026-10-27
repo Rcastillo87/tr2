@@ -38,6 +38,16 @@ FIELDS = ('open', 'high', 'low', 'close', 'volume')
 REL_TOL = 1e-9
 SETTLE = timedelta(minutes=2)   # una vela recién cerrada se compara solo tras ≥ 1 corrida del collector
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# Días en que Bybit no publica todas las velas (los registra cli/collector_repair.py): no son huecos reparables
+BYBIT_GAPS_FILE = Path(__file__).resolve().parents[2] / 'storage/app/collector_bybit_gaps.json'
+
+
+def bybit_gaps() -> dict:
+    """{'SYMBOL|interval': {'AAAA-MM-DD': velas que Bybit no tiene}}"""
+    try:
+        return json.loads(BYBIT_GAPS_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
 
 
 def current_bar(now: datetime, step: timedelta) -> datetime:
@@ -83,9 +93,11 @@ async def check_series(conn, client, symbol: str, interval: str, n: int, now: da
     lag = now - hist['last']
     aligned = hist['bars'] - hist['misaligned']
     expected = int((hist['last'] - hist['first']) / step) + 1
+    known = sum(int(v) for v in bybit_gaps().get(f'{symbol}|{interval}', {}).values())
     res.update(first=hist['first'].isoformat(), last=hist['last'].isoformat(), lag_s=int(lag.total_seconds()),
                stale=lag > step + timedelta(minutes=2), bars=int(hist['bars']), expected=expected,
-               missing_hist=max(0, expected - aligned), misaligned=int(hist['misaligned']))
+               missing_hist=max(0, expected - aligned - known), bybit_gaps=known,
+               misaligned=int(hist['misaligned']))
 
     try:
         remote = await bybit_closed(client, symbol, interval, n, last_closed)
@@ -132,15 +144,18 @@ async def validate(n_recent: int = 300, only: set | None = None, log=None) -> di
                 await asyncio.sleep(0.15)   # cortesía con Bybit
     finally:
         await conn.close()
-    total = lambda key: sum(int(s.get(key) or 0) for s in out)  # noqa: E731
-    summary = dict(series=len(out), ok=sum(1 for s in out if s['ok']),
-                   identical=sum(1 for s in out if s.get('identical')),
-                   diff_recent=total('diff_recent'), missing_recent=total('missing_recent'),
-                   extra_recent=total('extra_recent'), missing_hist=total('missing_hist'),
-                   misaligned=total('misaligned'), stale=sum(1 for s in out if s.get('stale')),
-                   errors=sum(1 for s in out if s.get('error')))
     return dict(version=1, at=now.isoformat(), duration_s=round(time.monotonic() - t0, 1), n_recent=n_recent,
-                summary=summary, series=out)
+                summary=summarize(out), series=out)
+
+
+def summarize(out: list) -> dict:
+    total = lambda key: sum(int(s.get(key) or 0) for s in out)  # noqa: E731
+    return dict(series=len(out), ok=sum(1 for s in out if s['ok']),
+                identical=sum(1 for s in out if s.get('identical')),
+                diff_recent=total('diff_recent'), missing_recent=total('missing_recent'),
+                extra_recent=total('extra_recent'), missing_hist=total('missing_hist'),
+                misaligned=total('misaligned'), stale=sum(1 for s in out if s.get('stale')),
+                errors=sum(1 for s in out if s.get('error')), bybit_gaps=total('bybit_gaps'))
 
 
 def print_row(_k, _n, s):
