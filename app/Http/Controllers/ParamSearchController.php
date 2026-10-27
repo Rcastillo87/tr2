@@ -25,7 +25,7 @@ class ParamSearchController extends Controller
         $history = ParamSearchRun::where('strategy_id', $run->strategy_id)->orderByDesc('id')
             ->limit(ParamSearchService::KEEP_PER_STRATEGY)
             ->select(['id', 'status', 'intervals', 'created_at', 'strategy_code_md5'])
-            ->selectRaw("results->>'tested' AS tested, results->>'robust' AS robust, coalesce(results->>'survivors', results->>'validated') AS validated")
+            ->selectRaw("results->>'tested' AS tested, coalesce(results->>'robust', results->>'survivors') AS robust, coalesce(results->>'survivors', results->>'validated') AS validated")
             ->get();
 
         return view('param-search.show', [
@@ -54,7 +54,9 @@ class ParamSearchController extends Controller
             'intervals'         => ParamSearchService::INTERVALS,
             'symbols'           => $byInterval,
             'minutes'           => ParamSearchService::MINUTES_PER_INTERVAL,
-            'limits'            => ['max_symbols_symbol_mode' => ParamSearchService::MAX_SYMBOLS_SYMBOL_MODE,
+            // min_symbols/max_symbols: compatibilidad con la ventana actual (hasta las pantallas del paso 4)
+            'limits'            => ['min_symbols' => 1, 'max_symbols' => max(1, ...array_values(array_map('count', $byInterval))),
+                                    'max_symbols_symbol_mode' => ParamSearchService::MAX_SYMBOLS_SYMBOL_MODE,
                                     'months' => ParamSearchService::MONTHS, 'samples' => ParamSearchService::SAMPLES,
                                     'min_trades' => 30],
             'queued'            => $queued,
@@ -134,8 +136,9 @@ class ParamSearchController extends Controller
                 'survivors'  => $row['survivors'] ?? array_keys($row['symbols'] ?? []),
                 'discarded'  => $row['discarded'] ?? [],
                 'oos_ok'     => $row['oos_ok'] ?? (($row['oos']['ret'] ?? 0) > 0),
-                'robusta'    => $row['robusta'] ?? null,
-                'validada'   => $row['validada'] ?? null,
+                // v2: toda fila guardada sobrevivió (compatibilidad con la pantalla actual)
+                'robusta'    => $row['robusta'] ?? ! empty($row['survivors']),
+                'validada'   => $row['validada'] ?? ! empty($row['survivors']),
                 'creatable'  => $this->service->creatable($run, $row),
                 'is'         => $row['is'],
                 'oos'        => $row['oos'],
@@ -162,8 +165,11 @@ class ParamSearchController extends Controller
         $data = $request->validate([
             'rows'    => ['required', 'array', 'min:1', 'max:5'],
             'rows.*'  => ['string', 'max:20'],
-            'symbols' => ['required', 'in:survivors,all'],
+            'symbols' => ['required', 'in:survivors,all,search,winners'],
         ]);
+        if (in_array($data['symbols'], ['search', 'winners'], true)) {   // valores de la ventana actual
+            $data['symbols'] = 'survivors';
+        }
         if ($run->status !== 'done') {
             return response()->json(['success' => false, 'error' => 'La búsqueda no ha terminado.'], 422);
         }
@@ -203,9 +209,11 @@ class ParamSearchController extends Controller
             'finished_at'    => $run->finished_at?->toIso8601String(),
             'period'         => $r['period'] ?? null,
             'tested'         => $r['tested'] ?? null,
-            'candidates'     => $r['candidates'] ?? null,
-            'robust'         => $r['robust'] ?? null,
-            'validated'      => $r['validated'] ?? null,
+            'candidates'     => $r['candidates'] ?? $r['survivors'] ?? null,
+            'robust'         => $r['robust'] ?? $r['survivors'] ?? null,
+            'validated'      => $r['validated'] ?? $r['survivors'] ?? null,
+            'survivors'      => $r['survivors'] ?? null,
+            'oos_ok'         => $r['oos_ok'] ?? null,
             'elapsed_s'      => $r['elapsed_s'] ?? null,
             'outdated'       => $run->isOutdated(),
             'error'          => $run->error,
