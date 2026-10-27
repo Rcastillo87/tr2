@@ -36,6 +36,7 @@ from collectors.ohlcv_collector import BYBIT_BASE_URL, DB_DSN  # noqa: E402
 
 FIELDS = ('open', 'high', 'low', 'close', 'volume')
 REL_TOL = 1e-9
+SETTLE = timedelta(minutes=2)   # una vela recién cerrada se compara solo tras ≥ 1 corrida del collector
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
@@ -67,6 +68,8 @@ async def check_series(conn, client, symbol: str, interval: str, n: int, now: da
     step = interval_delta(interval)
     step_s = int(step.total_seconds())
     last_closed = current_bar(now, step) - step
+    if now - (last_closed + step) < SETTLE:   # cerró hace < 2 min: el collector aún puede estar actualizándola
+        last_closed -= step
     res = dict(symbol=symbol, interval=interval, ok=False, error=None)
 
     hist = await conn.fetchrow(
