@@ -22,3 +22,11 @@ Schedule::job(new RealTradingTickJob)->everyMinute();
 Schedule::job(new RealTradingReconcileJob)->everyFiveMinutes();
 Schedule::job(new CircuitBreakerMaxLossJob)->everyMinute();
 
+// Collector: vigilante por cron (no depende de Horizon), validación diaria contra Bybit y limpieza de avisos (30 días)
+Schedule::command('collector:watchdog')->everyFiveMinutes()->withoutOverlapping(15)->runInBackground();
+Schedule::job(new \App\Jobs\ValidateCollectorDataJob, \App\Services\ParamSearchService::QUEUE,
+    \App\Services\ParamSearchService::QUEUE_CONNECTION)
+    ->dailyAt('04:00')->timezone('America/Bogota')->name('collector-validate-daily');
+Schedule::call(fn () => app(\App\Services\SystemAlerts::class)->prune())
+    ->dailyAt('04:30')->timezone('America/Bogota')->name('alerts-prune');
+

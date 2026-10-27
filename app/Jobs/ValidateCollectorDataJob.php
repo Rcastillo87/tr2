@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\SystemAlerts;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -41,9 +42,12 @@ class ValidateCollectorDataJob implements ShouldQueue, ShouldBeUnique
             }
             Cache::put(self::RESULT_KEY, $data, now()->addDays(30));
             Cache::forget(self::ERROR_KEY);
+            app(SystemAlerts::class)->validationResult($data);
         } catch (Throwable $e) {
             Log::warning('[COLLECTOR-VALIDATE] ' . $e->getMessage());
             Cache::put(self::ERROR_KEY, mb_substr($e->getMessage(), -500), now()->addDays(1));
+            app(SystemAlerts::class)->notify('error', 'validation', 'La validación del collector no pudo correr',
+                mb_substr($e->getMessage(), -300), '/collector');
         } finally {
             @unlink($out);
             Cache::forget(self::RUNNING_KEY);
