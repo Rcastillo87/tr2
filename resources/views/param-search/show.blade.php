@@ -12,6 +12,7 @@
             Búsqueda · {{ $run->strategy?->name ?? 'Estrategia eliminada' }} · <span id="sbIvs"></span>
         </h2>
         <p id="sbMeta" class="sb-muted" style="margin:3px 0 0;font-size:12px"></p>
+        <p id="sbSyms" style="margin:4px 0 0;font-size:12px;color:var(--color-text-secondary)"></p>
     </div>
     <a href="{{ route('strategies.index') }}" class="sb-btn gray">← Volver a Estrategias</a>
 </div>
@@ -112,7 +113,7 @@
     const URL_CREATE = @json(route('strategies.search.create', $run->id));
     const URL_HISTORY = @json($run->strategy ? route('backtesting.history', $run->strategy_id) : null);
     const $ = id => document.getElementById(id);
-    let state = null, data = null, onlyRobust = true, selected = new Set(), pending = new Set(), timer = null;
+    let state = null, data = null, onlyRobust = true, selected = new Set(), pending = new Set(), timer = null, wasActive = false;
 
     const fmtDate = iso => iso ? new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
     const ivs = s => (s.intervals || []).map(i => SB.LABEL[i] || i).join(', ');
@@ -125,6 +126,9 @@
         if (p) meta += ` · 24 meses (${p.start} → ${p.end}) · en muestra hasta ${p.split}`;
         if (s.elapsed_s) meta += ` · duró ${Math.floor(s.elapsed_s / 60)} min ${Math.round(s.elapsed_s % 60)} s`;
         $('sbMeta').textContent = meta;
+        const short = a => (a || []).map(x => SB.esc(x.replace('USDT', ''))).join(' · ');
+        $('sbSyms').innerHTML = '<b>Búsqueda:</b> ' + short(s.search_symbols)
+            + ((s.validation_symbols || []).length ? ' &nbsp;—&nbsp; <b>Validación:</b> ' + short(s.validation_symbols) : ' &nbsp;—&nbsp; sin validación');
         $('sbOutdated').style.display = s.outdated ? 'block' : 'none';
     }
 
@@ -156,7 +160,8 @@
     async function poll() {
         try { state = await SB.api(URL_STATUS); } catch (e) { timer = setTimeout(poll, 8000); return; }
         header(state);
-        if (state.status === 'queued' || state.status === 'running') { showRunning(state); timer = setTimeout(poll, 4000); return; }
+        if (state.status === 'queued' || state.status === 'running') { wasActive = true; showRunning(state); timer = setTimeout(poll, 4000); return; }
+        if (wasActive) { window.location.reload(); return; }   // refresca también "Búsquedas anteriores"
         $('sbRunning').style.display = 'none';
         if (state.status === 'done') return loadResults();
         $('sbFailed').style.display = 'block';
@@ -213,6 +218,8 @@
 
         const list = onlyRobust ? robust : rows;
         $('sbEmpty').style.display = list.length ? 'none' : 'block';
+        document.querySelector('.sb-table').style.display = list.length ? '' : 'none';
+        document.querySelector('.sb-foot').style.display = robust.length ? '' : 'none';
         $('sbEmpty').innerHTML = rows.length
             ? 'Ninguna candidata aguantó fuera de muestra. Mira "Todas las candidatas" para ver cuáles ganaban en el pasado y por qué se descartaron.'
             : `Ninguna de las ${s.tested ?? 0} combinaciones ganó en muestra en al menos 3/4 de las monedas con PF ≥ 1.15. Es un resultado válido: con esta
