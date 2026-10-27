@@ -46,6 +46,7 @@
                     'consultor' => 'Consultor',
                     'inversionista' => 'Inversionista',
                 ];
+                $unreadAlerts = auth()->check() ? auth()->user()->unreadNotifications()->count() : 0;
             @endphp
 
             {{-- Top bar — mobile/tablet only --}}
@@ -58,6 +59,7 @@
 
                 @auth
                     <div class="flex items-center gap-2 shrink-0">
+                        @include('layouts.bell')
                         <div class="text-right min-w-0">
                             <p class="text-[11px] font-medium truncate max-w-[110px]" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
                             <p class="text-[10px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
@@ -75,6 +77,7 @@
 
                 @auth
                     <div class="flex items-center gap-3">
+                        @include('layouts.bell')
                         <div class="text-right">
                             <p class="text-sm font-medium" style="color:var(--color-text-primary);">{{ auth()->user()->name }}</p>
                             <p class="text-[11px]" style="color:var(--color-text-muted);">{{ $roleLabels[auth()->user()->role] ?? auth()->user()->role }}</p>
@@ -126,6 +129,10 @@
         <form id="logout-form" method="POST" action="{{ route('logout') }}" class="hidden">
             @csrf
         </form>
+    @endauth
+
+    @auth
+        @include('layouts.bell-panel')
     @endauth
 
     @stack('scripts')

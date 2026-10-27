@@ -16,6 +16,10 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Avisos en la plataforma (campana): cada usuario ve solo los suyos
+    Route::get('/avisos', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/avisos/recientes', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('notifications.recent');
+    Route::post('/avisos/leidos', [\App\Http\Controllers\NotificationController::class, 'markRead'])->name('notifications.read');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/dashboard/live-prices', [DashboardController::class, 'livePrices'])->name('dashboard.live-prices');

@@ -19,7 +19,8 @@ use Throwable;
 class SystemAlerts
 {
     public const RETENTION_DAYS = 30;
-    public const RECIPIENT_ROLES = ['admin', 'consultor'];
+    /** Avisos del sistema (collector, validación, reparación, búsquedas): solo el admin. Los de broker van al dueño. */
+    public const RECIPIENT_ROLES = ['admin'];
     private const INCIDENT = 'alert:incident:';
 
     public function notify(string $level, string $category, string $title, string $body = '',
@@ -35,6 +36,51 @@ class SystemAlerts
         } catch (Throwable $e) {
             Log::error('[ALERTA] no se pudo guardar el aviso: ' . $e->getMessage());
         }
+    }
+
+    /** Aviso de broker para el dueño de la cuenta (cada usuario ve solo los suyos). */
+    public function notifyUser(int $userId, string $level, string $title, string $body = '', ?string $url = null,
+                               ?string $incident = null): void
+    {
+        Log::log(match ($level) { 'error' => 'error', 'warning' => 'warning', default => 'info' },
+            "[ALERTA u{$userId}] {$title}" . ($body !== '' ? " — {$body}" : ''));
+        try {
+            User::find($userId)?->notify(new SystemAlert($level, 'broker', $title, $body, $url, $incident));
+        } catch (Throwable $e) {
+            Log::error('[ALERTA] no se pudo guardar el aviso: ' . $e->getMessage());
+        }
+    }
+
+    /** Incidente de broker de un usuario: un aviso al abrir y uno al cerrar, sin spam. */
+    public function openUserIncident(int $userId, string $key, string $level, string $title, string $body = '',
+                                     ?string $url = null): bool
+    {
+        try {
+            $added = Cache::add(self::INCIDENT . "u{$userId}:{$key}", ['since' => now()->toIso8601String(), 'title' => $title],
+                now()->addDays(self::RETENTION_DAYS));
+        } catch (Throwable) {
+            $added = true;
+        }
+        if ($added) {
+            $this->notifyUser($userId, $level, $title, $body, $url, $key);
+        }
+
+        return $added;
+    }
+
+    public function resolveUserIncident(int $userId, string $key, string $title, string $body = '', ?string $url = null): bool
+    {
+        try {
+            $open = Cache::pull(self::INCIDENT . "u{$userId}:{$key}");
+        } catch (Throwable) {
+            return false;
+        }
+        if (! is_array($open)) {
+            return false;
+        }
+        $this->notifyUser($userId, 'success', $title, trim($body . ' Duró ' . self::duration(Carbon::parse($open['since'])) . '.'), $url, $key);
+
+        return true;
     }
 
     /** Abre el incidente y avisa solo si no estaba abierto. Devuelve true si avisó. */
