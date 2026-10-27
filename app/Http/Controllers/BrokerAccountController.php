@@ -94,13 +94,18 @@ class BrokerAccountController extends Controller
         $account->status = $account->status === 'active' ? 'paused' : 'active';
         $account->save();
 
+        if ($account->status === 'active') {
+            // cierra el aviso del circuit breaker si la cuenta había sido pausada automáticamente
+            app(\App\Services\BrokerEvents::class)->accountReactivated($account->user_id, $account->id, $account->label);
+        }
+
         if ($account->status === 'paused') {
             $account->subscriptions()->where('status', 'active')->update(['status' => 'paused']);
         }
 
         return back()->with('status', $account->status === 'active'
             ? "Cuenta {$account->label} activada."
-            : "Cuenta {$account->label} pausada. Sus suscripciones fueron pausadas.");
+            : "Cuenta {$account->label} pausada. Sus suscripciones fueron pausadas; las posiciones abiertas se siguen gestionando hasta cerrarse.");
     }
 
     public function destroy(BrokerAccount $account)

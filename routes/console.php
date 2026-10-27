@@ -30,3 +30,8 @@ Schedule::job(new \App\Jobs\ValidateCollectorDataJob(repair: true), \App\Service
 Schedule::call(fn () => app(\App\Services\SystemAlerts::class)->prune())
     ->dailyAt('04:30')->timezone('America/Bogota')->name('alerts-prune');
 
+// Avisos de broker: el motor registra eventos (broker_events) y aquí se convierten en avisos al dueño de la cuenta.
+// Por cron (no depende de Horizon). Retención de eventos: 90 días.
+Schedule::command('broker:events')->everyMinute()->withoutOverlapping(5)->runInBackground();
+Schedule::command('broker:events --prune')->dailyAt('04:35')->timezone('America/Bogota')->name('broker-events-prune');
+

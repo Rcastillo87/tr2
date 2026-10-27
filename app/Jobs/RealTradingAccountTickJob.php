@@ -17,6 +17,8 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
     public int $timeout = 75;
     /** Vencimiento de seguridad del bloqueo (s): nunca dos ticks de la MISMA cuenta a la vez. */
     public int $uniqueFor = 120;
+    /** Último tick que gestionó las posiciones de la cuenta (lo mira el vigilante). */
+    public const LAST_OK_KEY = 'real_tick:ok:';
 
     public function __construct(public int $accountId)
     {
@@ -32,8 +34,7 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
         // La cuenta se busca ACA ADENTRO, no en el constructor — asi las
         // credenciales desencriptadas nunca quedan serializadas en el
         // payload del job dentro de la cola de Redis (solo viaja el id).
-        $account = BrokerAccount::where('status', 'active')
-            ->where('id', $this->accountId)
+        $account = BrokerAccount::where('id', $this->accountId)
             ->with(['subscriptions' => fn ($q) => $q->where('status', 'active')
                 ->with('paperStrategyConfig')])
             ->first();
@@ -41,10 +42,12 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
         if (!$account) {
             return;
         }
-        // Sin suscripciones activas solo se gestionan las posiciones abiertas (Python omite las señales).
-        if ($account->subscriptions->isEmpty()
-            && !\App\Models\RealTrade::where('broker_account_id', $account->id)
-                ->whereIn('status', ['open', 'pending_close'])->exists()) {
+        // Cuenta pausada (a mano o por el circuit breaker) o sin suscripciones activas: sus posiciones abiertas
+        // se siguen gestionando (SL/TP, break-even, trailing, tiempo) pero no se abre nada.
+        $entriesAllowed = $account->status === 'active';
+        $hasOpen = \App\Models\RealTrade::where('broker_account_id', $account->id)
+            ->whereIn('status', ['open', 'pending_close'])->exists();
+        if (!$hasOpen && (!$entriesAllowed || $account->subscriptions->isEmpty())) {
             return;
         }
 
@@ -57,6 +60,7 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
                 'account_type' => $account->account_type,
                 'api_key'      => $account->api_key,
                 'api_secret'   => $account->api_secret,
+                'entries_allowed' => $entriesAllowed,
                 'subscriptions' => $account->subscriptions->map(function ($sub) {
                     $config = $sub->paperStrategyConfig;
                     return [
@@ -92,6 +96,11 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
 
             $data = $response->json();
             RealTradingTickJob::logAccountResults($data['results'] ?? []);
+            // Solo cuenta como gestionada si el monitor de posiciones corrió (no si se omitió o falló)
+            if (collect($data['results'] ?? [])->contains(fn ($r) => is_array($r) && isset($r['monitor']))) {
+                \Illuminate\Support\Facades\Cache::put(self::LAST_OK_KEY . $this->accountId,
+                    now()->toIso8601String(), now()->addDay());
+            }
 
             $secs = round(microtime(true) - $started, 1);
             if ($secs > 40) {

@@ -28,9 +28,11 @@ class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
     {
         // Cuentas con suscripciones activas O con posiciones abiertas (estas se gestionan hasta cerrarse,
         // aunque se haya pausado la última suscripción).
-        $accountIds = BrokerAccount::where('status', 'active')
+        // Y cualquier cuenta PAUSADA con posiciones abiertas: se gestionan, pero no se abre nada.
+        $accountIds = BrokerAccount::query()
             ->where(fn ($q) => $q
-                ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active'))
+                ->where(fn ($a) => $a->where('status', 'active')
+                    ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active')))
                 ->orWhereExists(fn ($e) => self::openRealTrades($e)))
             ->pluck('id');
 

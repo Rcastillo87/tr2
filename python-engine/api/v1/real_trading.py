@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 from trading.real_trader import RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError
 from trading.risk_manager import RiskManager
+from trading.broker_events import emit_event
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -46,6 +47,8 @@ class AccountPayload(BaseModel):
     api_key:      str
     api_secret:   str
     subscriptions: list[SubscriptionPayload]
+    # False: cuenta pausada con posiciones abiertas -> se gestionan (BE, trailing, tiempo) pero no se abre nada
+    entries_allowed: bool = True
 
 
 def _build_broker_client(account) -> BybitClient:
@@ -76,11 +79,35 @@ def instantiate_strategy(sub: SubscriptionPayload):
     return instance
 
 
+# Estado de las claves por cuenta (en memoria del motor): solo se emite evento en los cambios.
+_auth_state: dict[int, bool] = {}
+
+
+async def _track_auth(pool, account_id: int, ok: bool | None, reason: str) -> None:
+    """Emite api_auth_failed / api_auth_ok solo al cambiar el estado (y el primer OK tras arrancar el motor,
+    que cierra un aviso que hubiera quedado abierto). ok=None (no se pudo saber) no cambia nada."""
+    if ok is None:
+        return
+    prev = _auth_state.get(account_id)
+    _auth_state[account_id] = ok
+    if ok is False and prev is not False:
+        await emit_event(pool, account_id, 'api_auth_failed', reason=reason)
+    elif ok is True and prev is not True:
+        await emit_event(pool, account_id, 'api_auth_ok')
+
+
 async def _process_account(trader, account):
     account_key     = f"account_{account.id}_{account.broker}"
     account_results = {}
     try:
-        error_count = await trader.get_circuit_breaker_errors(account.id)
+        client = _build_broker_client(account)
+        auth_ok, auth_reason = await client.check_auth()
+        await _track_auth(trader.pool, account.id, auth_ok, auth_reason)
+        if auth_ok is False:
+            return account_key, {"error": f"Bybit rechaza las claves API: {auth_reason}"}
+
+        entries_allowed = account.entries_allowed
+        error_count = await trader.get_circuit_breaker_errors(account.id) if entries_allowed else 0
         if error_count >= CIRCUIT_BREAKER_THRESHOLD:
             last_errors = await trader.get_last_error_messages(account.id)
             non_critical_patterns = [
@@ -98,17 +125,17 @@ async def _process_account(trader, account):
                     f"{error_count} errores criticos en las ultimas 2h"
                 )
                 logger.error(f"[CIRCUIT] Cuenta {account.id} pausada por {error_count} errores criticos")
-                return account_key, {
-                    "error": f"Circuit breaker activado ({error_count} errores criticos) - cuenta pausada"
-                }
+                entries_allowed = False  # las posiciones abiertas se siguen gestionando en este mismo tick
             else:
                 await trader.clear_non_critical_errors(account.id)
                 logger.warning(f"[CIRCUIT] {error_count} errores no criticos ignorados para cuenta {account.id}")
 
-        client = _build_broker_client(account)
-
         monitor_result = await trader.monitor_open_trades(account.id, client)
         account_results["monitor"] = monitor_result
+
+        if not entries_allowed:
+            account_results["signals"] = "Cuenta pausada — solo se gestionan las posiciones abiertas"
+            return account_key, account_results
 
         # Kill switch manual: sin entradas nuevas (las abiertas ya se gestionaron arriba)
         if await RiskManager(trader.pool).is_kill_switch_active():
@@ -276,6 +303,8 @@ async def reconcile(
                     results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'no_exit_price_found'})
                 else:
                     results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'closed_on_exchange'})
+                    if settled:
+                        await emit_event(pool, account.id, 'reconcile_closed', trade['id'], symbol=symbol)
 
             # 2. Trades 'orphaned'
             async with pool.acquire() as conn:
@@ -305,6 +334,8 @@ async def reconcile(
                         results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
                     else:
                         results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_pnl_recovered'})
+                        if settled:
+                            await emit_event(pool, account.id, 'reconcile_closed', trade['id'], symbol=symbol)
                     continue
 
                 # 2b. Orphaned de APERTURA (confirmación perdida): ¿hay posición real?
@@ -317,6 +348,8 @@ async def reconcile(
                 if position and float(position.get('size', 0) or 0) > 0:
                     avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
                     adopted = await _adopt_position(trader, client, trade, avg_price, trade['side'], trade['symbol'])
+                    await emit_event(pool, account.id, 'reconcile_adopted', trade['id'], symbol=symbol,
+                                     side=trade['side'], kind='orphaned', protected=adopted)
                     if adopted:
                         results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted'})
                     else:
@@ -330,6 +363,7 @@ async def reconcile(
                             trade['id']
                         )
                     logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} → failed (sin posicion en Bybit)")
+                    await emit_event(pool, account.id, 'reconcile_discarded', trade['id'], symbol=symbol)
 
             # 3. Posiciones en Bybit sin registro en DB
             symbols_checked = set()
@@ -380,6 +414,8 @@ async def reconcile(
                         )
                     trade = {'id': trade_id, 'symbol': sub.symbol, 'interval': sub.interval, 'config_snapshot': snapshot}
                     adopted = await _adopt_position(trader, client, trade, avg_price, db_side, sub.symbol)
+                    await emit_event(pool, account.id, 'reconcile_adopted', trade_id, symbol=sub.symbol,
+                                     side=db_side, kind='untracked', protected=adopted)
                     results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side,
                                                 'reason': 'registrada en DB' if adopted else 'registrada sin config'})
                 except Exception as e:

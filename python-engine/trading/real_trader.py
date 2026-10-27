@@ -37,6 +37,7 @@ from trading.bybit_client import bybit_sign
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
+from trading.broker_events import emit_event
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -86,6 +87,8 @@ ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
 # Rechazos de /v5/order/create con tratamiento propio (confirmados en Bybit Demo)
 ORDER_LINK_DUPLICATE = 110072    # el orderLinkId ya existe: la orden se creó antes, se devuelve esa
 ORDER_FINAL_REJECTS = {110017}   # reduceOnly con la posición en cero: reintentar no cambia nada
+# Claves rechazadas: inválida, firma, sin permisos, IP no permitida, expirada
+BYBIT_AUTH_FAIL_CODES = {10003, 10004, 10005, 10010, 33004}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -104,6 +107,7 @@ class BybitClient:
         self.api_key    = api_key
         self.api_secret = api_secret
         self.base_url   = BYBIT_DEMO_URL if account_type == 'demo' else BYBIT_MAINNET
+        self.last_order_error: str | None = None   # motivo del último rechazo (para el aviso)
 
     async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20):
         """
@@ -226,6 +230,27 @@ class BybitClient:
             logger.error(f"[BYBIT] get_balance exception: {e}")
             return None
 
+    async def check_auth(self) -> tuple[bool | None, str]:
+        """
+        ¿Bybit acepta las claves? (True, '') | (False, motivo) | (None, motivo) si no se pudo saber
+        (red, Bybit caído): None nunca cambia el estado de las claves.
+        """
+        try:
+            r = await self._signed_get('/v5/account/wallet-balance', {'accountType': 'UNIFIED', 'coin': 'USDT'})
+        except Exception as e:
+            return None, f'sin respuesta de Bybit: {e!r}'[:200]
+        if r.status_code in (401, 403):
+            return False, f'HTTP {r.status_code}'
+        try:
+            data = r.json()
+        except ValueError:
+            return None, f'respuesta no válida de Bybit (HTTP {r.status_code})'
+        code = data.get('retCode')
+        if code == 0:
+            return True, ''
+        reason = f"{data.get('retMsg')} (code {code})"
+        return (False, reason) if code in BYBIT_AUTH_FAIL_CODES else (None, reason)
+
     async def get_min_qty(self, symbol: str) -> tuple[float, float]:
         """Obtiene el lot size minimo y qty step para un simbolo."""
         try:
@@ -315,6 +340,7 @@ class BybitClient:
           None                                             -> rechazada por Bybit (no existe)
         """
         link_id = link_id or self.new_order_link_id()
+        self.last_order_error = None
         body = {
             'category':    'linear',
             'symbol':      symbol,
@@ -377,11 +403,13 @@ class BybitClient:
                 data = (await self._signed_post('/v5/order/create', body)).json()
             except Exception as e:
                 ambiguous = True
+                self.last_order_error = f'sin respuesta de Bybit: {e!r}'[:200]
                 logger.error(f"[BYBIT] place_order respuesta ambigua (attempt {attempt+1}) {link_id}: {e!r}")
                 continue
             if data.get('retCode') == 0:
                 return created((data.get('result') or {}).get('orderId'))
             code = data.get('retCode')
+            self.last_order_error = f"{data.get('retMsg')} (code {code})"
             logger.error(f"[BYBIT] place_order error (attempt {attempt+1}) {link_id}: "
                          f"{data.get('retMsg')} code={code}")
             if code == ORDER_LINK_DUPLICATE:
@@ -655,6 +683,9 @@ class RealTrader:
                 closed = await self.close_trade(trade, "circuit_breaker_max_loss", client, account_id)
                 if closed:
                     results["closed"] += 1
+                    await emit_event(self.pool, account_id, 'max_loss_close', trade['id'], symbol=symbol,
+                                     loss_pct=round(current_loss_pct * 100, 3),
+                                     limit_pct=round(max_allowed_loss_pct * 100, 3))
                 else:
                     results["errors"] += 1
         return results
@@ -813,6 +844,7 @@ class RealTrader:
                 account_id
             )
         logger.warning(f"[REAL] Circuit breaker activado — cuenta {account_id} pausada: {reason}")
+        await emit_event(self.pool, account_id, 'account_paused', reason=reason)
 
     @staticmethod
     def _audit_list(raw) -> list:
@@ -1015,6 +1047,9 @@ class RealTrader:
                     trade_id
                 )
             await self.log_audit(trade_id, 'open_failed', {'reason': 'bybit_rejected'})
+            await emit_event(self.pool, sub['broker_account_id'], 'open_rejected', trade_id, symbol=symbol,
+                             side=side, strategy=sub['strategy'],
+                             reason=getattr(client, 'last_order_error', None))
             return False
 
         order_id = result.get('orderId')
@@ -1061,6 +1096,9 @@ class RealTrader:
                             "UPDATE real_trades SET status='failed', error_message=$1, updated_at=now() WHERE id=$2",
                             f'Orden {status} en Bybit', trade_id
                         )
+                    await emit_event(self.pool, sub['broker_account_id'], 'open_rejected', trade_id,
+                                     symbol=symbol, side=side, strategy=sub['strategy'],
+                                     reason=f'la orden terminó en {status}')
                     return False
 
         # Si despues de 3 reintentos sigue sin confirmar → orphaned
@@ -1071,6 +1109,8 @@ class RealTrader:
                     trade_id
                 )
             logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 verificaciones")
+            await emit_event(self.pool, sub['broker_account_id'], 'open_unconfirmed', trade_id,
+                             symbol=symbol, side=side, strategy=sub['strategy'])
             return False
 
         # orderId que no llegó en la respuesta (envío ambiguo): recuperarlo por orderLinkId
@@ -1252,18 +1292,12 @@ class RealTrader:
         result      = await client.place_market_order(symbol, close_side, size, reduce_only=True)
 
         if result is None:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE real_trades SET status = 'error',
-                        error_message = 'Orden de cierre rechazada por Bybit',
-                        updated_at = now()
-                    WHERE id = $1
-                    """,
-                    trade['id']
-                )
-            await self.log_audit(trade['id'], 'close_failed', {'reason': 'bybit_rejected'})
-            return False
+            # Rechazada: se decide por la posición REAL. Con reduceOnly un rechazo puede significar que ya
+            # estaba en cero (110017) -> se liquida con Bybit; si sigue viva vuelve a 'open' y se reintenta.
+            reason = getattr(client, 'last_order_error', None) or 'rechazada por Bybit'
+            await self.log_audit(trade['id'], 'close_rejected', {'reason': reason})
+            return await self._settle_unconfirmed_close(trade, exit_reason, client, account_id, None, since_ms,
+                                                        reason=reason)
 
         close_order_id = result.get('orderId')
         close_link_id  = result.get('orderLinkId')
@@ -1333,7 +1367,8 @@ class RealTrader:
         return True
 
     async def _settle_unconfirmed_close(self, trade: dict, exit_reason: str, client: BybitClient,
-                                        account_id: int, link_id: str | None, since_ms: int) -> bool:
+                                        account_id: int, link_id: str | None, since_ms: int,
+                                        reason: str | None = None) -> bool:
         """
         Bybit no confirmó el Filled del cierre. Se decide por el estado REAL de la posición, nunca con el
         precio de mercado:
@@ -1347,6 +1382,8 @@ class RealTrader:
         except BybitAPIError as e:
             logger.error(f"[REAL] CLOSE #{trade_id} {symbol} sin confirmar y Bybit no responde ({e}): queda pending_close")
             await self.log_audit(trade_id, 'close_unconfirmed', {'order_link_id': link_id, 'state': 'unknown'})
+            await emit_event(self.pool, account_id, 'close_unconfirmed', trade_id, symbol=symbol,
+                             exit_reason=exit_reason, reason=reason)
             return False
         live_size = float(position.get('size', 0) or 0) if position else 0.0
         if live_size > 0:
@@ -1357,6 +1394,8 @@ class RealTrader:
                 )
             logger.error(f"[REAL] CLOSE #{trade_id} {symbol} NO ejecutado (posición viva {live_size}): vuelve a open")
             await self.log_audit(trade_id, 'close_not_filled', {'order_link_id': link_id, 'live_size': live_size})
+            await emit_event(self.pool, account_id, 'close_failed', trade_id, symbol=symbol, exit_reason=exit_reason,
+                             reason=reason or 'Bybit no confirmó la orden de cierre', live_size=live_size)
             return False
         settled = await self.settle_exchange_close(trade, client, account_id, since_ms, exit_reason=exit_reason)
         if settled is None:

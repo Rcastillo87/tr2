@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\CollectOhlcvDataJob;
+use App\Jobs\RealTradingAccountTickJob;
 use App\Services\SystemAlerts;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -49,6 +50,7 @@ class CollectorWatchdog extends Command
             return self::FAILURE;
         }
         $this->engineOk();
+        $this->checkRealTrading();
 
         $stale = $this->staleSeries();
         $runAge = $this->lastRunAge();
@@ -163,6 +165,34 @@ class CollectorWatchdog extends Command
             return $r->successful() ? (array) $r->json() : ['status' => 'error', 'error' => 'HTTP ' . $r->status()];
         } catch (Throwable $e) {
             return ['status' => 'error', 'error' => mb_substr($e->getMessage(), 0, 150)];
+        }
+    }
+
+    // ── trading real ─────────────────────────────────────────────────────────
+
+    /** Cuentas con posiciones abiertas cuyo tick no corrió hace más de real_tick_stale_s (aviso al admin). */
+    private function checkRealTrading(): void
+    {
+        $limit = (int) ($this->cfg['real_tick_stale_s'] ?? 180);
+        $late = [];
+        $accounts = DB::table('real_trades')->whereIn('status', ['open', 'pending_close'])
+            ->distinct()->pluck('broker_account_id');
+        foreach ($accounts as $id) {
+            $at = Cache::get(RealTradingAccountTickJob::LAST_OK_KEY . $id);
+            $age = $at ? max(0, now()->getTimestamp() - Carbon::parse($at)->getTimestamp()) : PHP_INT_MAX;
+            if ($age > $limit) {
+                $late[] = "#{$id} (" . ($at ? 'hace ' . intdiv($age, 60) . ' min' : 'sin tick registrado') . ')';
+            }
+        }
+        $this->line('trading real: ' . count($accounts) . ' cuenta(s) con posiciones · sin gestionar ' . count($late));
+        if ($late) {
+            $this->alerts->openIncident('real_tick_stalled', 'error', 'broker', 'Trading real sin gestionar posiciones',
+                count($late) . ' cuenta(s) con posiciones abiertas sin tick reciente: ' . implode(', ', $late)
+                . '. Solo las protege el SL/TP en Bybit: sin break-even, trailing del bot ni cierre por tiempo. '
+                . 'Revisa el motor y Horizon.', '/trading');
+        } else {
+            $this->alerts->resolveIncident('real_tick_stalled', 'broker', 'Trading real gestionando posiciones de nuevo',
+                'Todas las cuentas con posiciones tienen tick reciente.', '/trading');
         }
     }
 

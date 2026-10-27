@@ -19,8 +19,14 @@ class RealTradingReconcileJob implements ShouldQueue
     {
         $url = config('trading.python_engine_url') . '/v1/real/reconcile';
 
-        $accounts = BrokerAccount::where('status', 'active')
-            ->whereHas('subscriptions', fn ($q) => $q->where('status', 'active'))
+        // Activas con suscripciones, y cualquier cuenta con trades abiertos o huérfanos (también pausada)
+        $accounts = BrokerAccount::query()
+            ->where(fn ($q) => $q
+                ->where(fn ($a) => $a->where('status', 'active')
+                    ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active')))
+                ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('real_trades')
+                    ->whereColumn('real_trades.broker_account_id', 'broker_accounts.id')
+                    ->whereIn('real_trades.status', ['open', 'pending_close', 'orphaned'])))
             ->with(['subscriptions' => fn ($q) => $q->where('status', 'active')
                 ->with('paperStrategyConfig')])
             ->get();

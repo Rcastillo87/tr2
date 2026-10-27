@@ -33,9 +33,9 @@ class CircuitBreakerMaxLossJob implements ShouldQueue
 
     public function handle(): void
     {
-        $accounts = BrokerAccount::where('status', 'active')
-            ->whereHas('subscriptions', fn ($q) => $q->where('status', 'active'))
-            ->get();
+        // Toda cuenta con posiciones abiertas, activa o pausada y con o sin suscripciones: es la red de
+        // seguridad de las posiciones, no de las entradas.
+        $accounts = BrokerAccount::whereExists(fn ($e) => RealTradingTickJob::openRealTrades($e))->get();
 
         if ($accounts->isEmpty()) {
             return;
