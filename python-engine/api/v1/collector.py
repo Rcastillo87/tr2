@@ -1,7 +1,9 @@
 """
 Endpoint Data Collector V2
 """
+import asyncio
 import asyncpg
+import time
 from db import get_pool as shared_get_pool
 import logging
 import os
@@ -20,22 +22,37 @@ async def get_pool():
     return await shared_get_pool('live')  # pool compartido por proceso (db.py)
 
 
+_run_lock = asyncio.Lock()
+
+
 @router.post("/collector/run")
 async def run_collector():
-    """Ejecuta una actualización de todos los símbolos e intervalos activos en collector_configs."""
-    try:
-        pool      = await get_pool()
-        collector = OhlcvCollector(pool)
-        results   = await collector.run_all()
-        await pool.close()
-        return {
-            "status":      "ok",
-            "results":     results,
-            "total_saved": sum(v for v in results.values() if v >= 0),
-        }
-    except Exception as e:
-        logger.error(f"Collector error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """
+    Actualiza todas las series activas. Nunca dos corridas a la vez: si la anterior sigue viva responde
+    status=busy sin hacer nada (antes se solapaban cuando una corrida pasaba de 60 s).
+    """
+    if _run_lock.locked():
+        return {"status": "busy", "results": {}, "total_saved": 0, "errors": {}, "duration_s": 0}
+    async with _run_lock:
+        t0 = time.monotonic()
+        try:
+            pool      = await get_pool()
+            collector = OhlcvCollector(pool)
+            errors: dict = {}
+            results   = await collector.run_all(errors)
+            await pool.close()
+            return {
+                "status":      "ok",
+                "results":     results,
+                "total_saved": sum(v for v in results.values() if v >= 0),
+                "series":      len(results),
+                "failed":      sum(1 for v in results.values() if v < 0),
+                "errors":      errors,
+                "duration_s":  round(time.monotonic() - t0, 2),
+            }
+        except Exception as e:
+            logger.error(f"Collector error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/collector/initial-load")

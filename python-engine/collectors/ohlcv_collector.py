@@ -27,6 +27,7 @@ FALLBACK_SYMBOLS   = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
 FALLBACK_INTERVALS = os.getenv('INTERVALS', '1,5,15,60,120').split(',')
 
 BYBIT_LIMIT  = 1000  # máximo permitido por /v5/market/kline
+COLLECT_CONCURRENCY = 4  # series en paralelo (pool "live" = 10 conexiones compartidas con los ticks; Bybit sobra)
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
 
 
@@ -71,13 +72,16 @@ class OhlcvCollector:
         interval: str,
         start_ts: int,
         end_ts: int,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> list[dict]:
-        """Obtiene velas OHLCV de Bybit entre start_ts y end_ts (unix segundos)."""
+        """Obtiene velas OHLCV de Bybit entre start_ts y end_ts (unix segundos). client: reutilizar conexiones."""
         all_bars = []
         end_ms   = end_ts * 1000
         start_ms = start_ts * 1000
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        owns_client = client is None
+        client = client or httpx.AsyncClient(timeout=30)
+        try:
             while True:
                 r = await client.get(
                     f'{BYBIT_BASE_URL}/v5/market/kline',
@@ -90,7 +94,10 @@ class OhlcvCollector:
                     }
                 )
                 r.raise_for_status()
-                bars = r.json().get('result', {}).get('list', [])
+                payload = r.json()
+                if payload.get('retCode', 0) != 0:   # error de Bybit: no confundir con "sin velas"
+                    raise RuntimeError(f"Bybit retCode={payload.get('retCode')} {payload.get('retMsg')}")
+                bars = payload.get('result', {}).get('list', [])
 
                 if not bars:
                     break
@@ -121,6 +128,9 @@ class OhlcvCollector:
                 end_ms = new_end
 
                 await asyncio.sleep(0.1)
+        finally:
+            if owns_client:
+                await client.aclose()
 
         all_bars.reverse()
         return all_bars
@@ -211,7 +221,8 @@ class OhlcvCollector:
     # Actualización continua
     # ─────────────────────────────────────────────
 
-    async def update(self, symbol: str, interval: str, broker: str = 'bybit') -> int:
+    async def update(self, symbol: str, interval: str, broker: str = 'bybit',
+                     client: Optional[httpx.AsyncClient] = None) -> int:
         if broker != 'bybit':
             raise ValueError(f"Broker no soportado por el collector: {broker}")
         last = await self.get_last_timestamp(symbol, interval, broker)
@@ -223,7 +234,7 @@ class OhlcvCollector:
         if end_ts - start_ts < 60:
             return 0
 
-        bars = await self.fetch_from_bybit(symbol, interval, start_ts, end_ts)
+        bars = await self.fetch_from_bybit(symbol, interval, start_ts, end_ts, client=client)
         saved = await self.save_bars(bars, broker=broker)
         if saved > 0:
             logger.debug(f"[{symbol}/{interval}] {saved} velas escritas (nuevas o actualizadas)")
@@ -233,17 +244,28 @@ class OhlcvCollector:
     # Correr todos los simbolos e intervalos activos
     # ─────────────────────────────────────────────
 
-    async def run_all(self) -> dict:
-        """Actualiza todas las combinaciones activas en collector_configs."""
+    async def run_all(self, errors: Optional[dict] = None) -> dict:
+        """
+        Actualiza todas las combinaciones activas en collector_configs: un cliente HTTP compartido y
+        COLLECT_CONCURRENCY series a la vez. Resultado por serie: velas escritas, o -1 si falló
+        (el detalle va a `errors` si se pasa un dict).
+        """
         active_configs = await self.get_active_configs()
-        results = {}
+        results: dict = {}
+        sem = asyncio.Semaphore(COLLECT_CONCURRENCY)
 
-        for symbol, interval, broker in active_configs:
-            try:
-                saved = await self.update(symbol, interval, broker)
-                results[f"{symbol}/{interval}"] = saved
-            except Exception as e:
-                logger.error(f"[{symbol}/{interval}] Error: {e}")
-                results[f"{symbol}/{interval}"] = -1
+        async with httpx.AsyncClient(timeout=30) as client:
+            async def one(symbol: str, interval: str, broker: str) -> None:
+                key = f"{symbol}/{interval}"
+                async with sem:
+                    try:
+                        results[key] = await self.update(symbol, interval, broker, client=client)
+                    except Exception as e:
+                        logger.error(f"[{key}] Error: {e}")
+                        results[key] = -1
+                        if errors is not None:
+                            errors[key] = str(e)[:300]
 
-        return results
+            await asyncio.gather(*(one(s, i, b) for s, i, b in active_configs))
+
+        return dict(sorted(results.items()))
