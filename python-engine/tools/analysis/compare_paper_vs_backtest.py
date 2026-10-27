@@ -17,7 +17,9 @@ load_dotenv()
 
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 API_URL = "http://localhost:8002/v1/backtest/run"
-API_KEY = "trading2_internal_key_2026"
+API_KEY = os.getenv("INTERNAL_API_KEY")
+if not API_KEY:
+    raise SystemExit("INTERNAL_API_KEY no definida en python-engine/.env")
 
 # Config a comparar (editable)
 DISPLAY_NAME = sys.argv[1] if len(sys.argv) > 1 else "VWAP Tendencia — BTCUSDT H2"

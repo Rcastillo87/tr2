@@ -954,7 +954,7 @@ A: Yes, as long as their `params` JSON differ in at least one value. See GOTCHA 
 ### Production environment — current state
 ```
 systemd service:   trading2-engine (running ~23h continuous, port 8002)
-internal API key:  trading2_internal_key_2026
+internal API key:  xxxxx
 engine path:       /home/tr2/htdocs/tr2.srv685835.hstgr.cloud/python-engine
 DB name:           trading2
 DB user:           trading2_user

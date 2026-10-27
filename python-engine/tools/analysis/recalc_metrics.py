@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 # Cargar el .env de la carpeta actual (python-engine)
 load_dotenv()
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+API_KEY = os.getenv("INTERNAL_API_KEY")
+if not API_KEY:
+    raise SystemExit("INTERNAL_API_KEY no definida en python-engine/.env")
 
 async def main():
     print("Conectando a la base de datos...")
@@ -45,7 +48,7 @@ async def main():
         payload.setdefault('max_leverage', 1.0)
         
         try:
-            r = httpx.post("http://localhost:8002/v1/backtest/run", headers={"X-Internal-API-Key": "trading2_internal_key_2026"}, json=payload, timeout=300)
+            r = httpx.post("http://localhost:8002/v1/backtest/run", headers={"X-Internal-API-Key": API_KEY}, json=payload, timeout=300)
             r.raise_for_status()
         except Exception as e:
             print(f"  ❌ Error en petición HTTP: {e}\\n")

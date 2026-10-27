@@ -9,9 +9,15 @@ Uso: python3 strategy_matrix.py
 
 import httpx
 import json
+import os
+
+from dotenv import load_dotenv
 
 BASE_URL = "http://localhost:8002/v1/backtest/run"
-API_KEY  = "trading2_internal_key_2026"
+load_dotenv()
+API_KEY = os.getenv("INTERNAL_API_KEY")
+if not API_KEY:
+    raise SystemExit("INTERNAL_API_KEY no definida en python-engine/.env")
 
 SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 INTERVALS  = ["60", "120"]
