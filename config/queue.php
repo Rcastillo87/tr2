@@ -73,6 +73,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Búsqueda de configuraciones (Estrategias → Buscar): trabajos largos. retry_after > timeout del job (3900 s)
+        // para que Redis nunca re-entregue una búsqueda que sigue corriendo.
+        'redis-research' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'research',
+            'retry_after' => 4200,
+            'block_for' => null,
+            'after_commit' => true,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

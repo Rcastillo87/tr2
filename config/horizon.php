@@ -210,6 +210,20 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        // Búsqueda de configuraciones: 1 solo proceso, nunca compite con los ticks (el script corre con nice 19).
+        'supervisor-research' => [
+            'connection' => 'redis-research',
+            'queue' => ['research'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 512,
+            'tries' => 1,
+            'timeout' => 3900,
+            'nice' => 10,
+        ],
     ],
 
     'environments' => [
@@ -219,12 +233,14 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-research' => [],
         ],
 
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
             ],
+            'supervisor-research' => [],
         ],
     ],
 

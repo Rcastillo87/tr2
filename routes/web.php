@@ -50,6 +50,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('/{strategy}', [\App\Http\Controllers\StrategyController::class, 'update'])->name('update');
         Route::patch('/{strategy}/toggle', [\App\Http\Controllers\StrategyController::class, 'toggle'])->name('toggle');
         Route::delete('/{strategy}', [\App\Http\Controllers\StrategyController::class, 'destroy'])->name('destroy');
+        // Buscar configuración (búsqueda en segundo plano + crear en historial)
+        Route::get('/{strategy}/buscar', [\App\Http\Controllers\ParamSearchController::class, 'options'])->name('search.options');
+        Route::post('/{strategy}/buscar', [\App\Http\Controllers\ParamSearchController::class, 'start'])->name('search.start');
+        Route::get('/busquedas/{run}/estado', [\App\Http\Controllers\ParamSearchController::class, 'status'])->name('search.status');
+        Route::post('/busquedas/{run}/cancelar', [\App\Http\Controllers\ParamSearchController::class, 'cancel'])->name('search.cancel');
+        Route::get('/busquedas/{run}/resultados', [\App\Http\Controllers\ParamSearchController::class, 'results'])->name('search.results');
+        Route::post('/busquedas/{run}/crear', [\App\Http\Controllers\ParamSearchController::class, 'create'])->name('search.create');
     });
 
     // Usuarios
