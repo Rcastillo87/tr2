@@ -19,7 +19,7 @@ class RunParamSearchJob implements ShouldQueue
     use Queueable;
 
     public int $tries = 1;
-    public int $timeout = 3900;   // < retry_after (4200) de la conexión redis-research
+    public int $timeout = 11100;  // 185 min > tope de la búsqueda (180) y < retry_after (11400) de redis-research
 
     public function __construct(public int $runId)
     {

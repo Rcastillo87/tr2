@@ -25,7 +25,7 @@ class ParamSearchController extends Controller
         $history = ParamSearchRun::where('strategy_id', $run->strategy_id)->orderByDesc('id')
             ->limit(ParamSearchService::KEEP_PER_STRATEGY)
             ->select(['id', 'status', 'intervals', 'created_at', 'strategy_code_md5'])
-            ->selectRaw("results->>'tested' AS tested, results->>'robust' AS robust, results->>'validated' AS validated")
+            ->selectRaw("results->>'tested' AS tested, results->>'robust' AS robust, coalesce(results->>'survivors', results->>'validated') AS validated")
             ->get();
 
         return view('param-search.show', [
@@ -45,15 +45,19 @@ class ParamSearchController extends Controller
         foreach (ParamSearchService::INTERVALS as $iv) {
             $byInterval[$iv] = $this->service->availableSymbols([$iv]);
         }
-        $active = ParamSearchRun::with('strategy:id,name')->whereIn('status', ParamSearchRun::ACTIVE)->first();
+        $active = ParamSearchRun::with('strategy:id,name')->where('strategy_id', $strategy->id)
+            ->whereIn('status', ParamSearchRun::ACTIVE)->first();
+        $queued = ParamSearchRun::whereIn('status', ParamSearchRun::ACTIVE)->count();
 
         return response()->json([
             'strategy'          => ['id' => $strategy->id, 'name' => $strategy->name],
             'intervals'         => ParamSearchService::INTERVALS,
             'symbols'           => $byInterval,
             'minutes'           => ParamSearchService::MINUTES_PER_INTERVAL,
-            'limits'            => ['min_symbols' => ParamSearchService::MIN_SYMBOLS, 'max_symbols' => ParamSearchService::MAX_SYMBOLS,
-                                    'months' => ParamSearchService::MONTHS, 'samples' => ParamSearchService::SAMPLES],
+            'limits'            => ['max_symbols_symbol_mode' => ParamSearchService::MAX_SYMBOLS_SYMBOL_MODE,
+                                    'months' => ParamSearchService::MONTHS, 'samples' => ParamSearchService::SAMPLES,
+                                    'min_trades' => 30],
+            'queued'            => $queued,
             'fixed'             => ['commission_pct' => 0.055, 'slippage_pct' => 0.05, 'risk_pct' => 1.0],
             'active'            => $active ? $this->state($active) : null,
         ]);
@@ -61,21 +65,42 @@ class ParamSearchController extends Controller
 
     public function start(Request $request, Strategy $strategy): JsonResponse
     {
-        $data = $request->validate([
-            'intervals'   => ['required', 'array', 'min:1', 'max:5'],
-            'intervals.*' => ['string'],
-            'symbols'     => ['required', 'array'],
-            'symbols.*'   => ['string', 'max:30'],
-            'validate'    => ['sometimes', 'boolean'],
-        ]);
+        $data = $this->validateStart($request);
         try {
-            $run = $this->service->start($strategy, $data['intervals'], $data['symbols'],
-                (bool) ($data['validate'] ?? true), $request->user()?->id);
+            $run = $this->service->start($strategy, $data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id);
         } catch (DomainException $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 422);
         }
 
         return response()->json(['success' => true, 'run' => $this->state($run->fresh('strategy'))]);
+    }
+
+    /** "Buscar en todas las estrategias": una búsqueda en cola por estrategia activa; corren una tras otra. */
+    public function startAll(Request $request): JsonResponse
+    {
+        $data = $this->validateStart($request);
+        $out = $this->service->startAll($data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id);
+
+        return response()->json(['success' => $out['created'] !== [], 'created' => $out['created'], 'skipped' => $out['skipped'],
+                                 'error' => $out['created'] === [] ? 'No se encoló ninguna búsqueda.' : null]);
+    }
+
+    /**
+     * mode: interval (una temporalidad, 1..N monedas) | symbol (1..3 monedas, todas las temporalidades).
+     * Compatibilidad: sin "mode" se deduce (1 temporalidad = interval; varias = symbol).
+     */
+    private function validateStart(Request $request): array
+    {
+        $data = $request->validate([
+            'mode'        => ['sometimes', 'in:interval,symbol'],
+            'intervals'   => ['sometimes', 'array', 'max:5'],
+            'intervals.*' => ['string'],
+            'symbols'     => ['required', 'array', 'min:1', 'max:50'],
+            'symbols.*'   => ['string', 'max:30'],
+        ]);
+        $data['mode'] ??= count($data['intervals'] ?? []) === 1 ? 'interval' : 'symbol';
+
+        return $data;
     }
 
     /** Estado para la barra de progreso (consulta liviana: sin los resultados). */
@@ -93,31 +118,33 @@ class ParamSearchController extends Controller
         return response()->json(['success' => true, 'run' => $this->state($run->fresh('strategy'))]);
     }
 
-    /** Resultados resumidos para un conjunto de monedas (all | search | winners), con las mismas métricas que el historial. */
+    /**
+     * Resultados con las mismas métricas que el historial. symbols=survivors (por defecto: las monedas que
+     * sobrevivieron) | all (todas las probadas, incluidas las descartadas).
+     */
     public function results(Request $request, ParamSearchRun $run): JsonResponse
     {
-        $mode = (string) $request->query('symbols', 'all');
+        $mode = $request->query('symbols') === 'all' ? 'all' : 'survivors';
         $rows = [];
         foreach ($run->results['rows'] ?? [] as $row) {
-            $symbols = match ($mode) {
-                'search'  => array_values(array_intersect($run->search_symbols, array_keys($row['symbols']))),
-                'winners' => $this->service->summarize($row)['winners'],
-                default   => null,
-            };
             $rows[] = [
-                'id'        => $row['id'],
-                'interval'  => $row['interval'],
-                'cfg'       => $row['cfg'],
-                'robusta'   => $row['robusta'],
-                'validada'  => $row['validada'],
-                'creatable' => $this->service->creatable($run, $row),
-                'is'        => $row['is'],
-                'oos'       => $row['oos'],
-                'val'       => $row['val'],
-                'summary'   => $this->service->summarize($row, $symbols),
-                'detail'    => array_map(fn ($s) => ['role' => $s['role'] ?? 'search', 'ret' => $s['ret'] ?? null, 'pf' => $s['pf'] ?? null,
-                                                     'n' => $s['n'] ?? 0, 'dd' => $s['dd'] ?? null, 'm1' => $s['m1'] ?? null], $row['symbols']),
-                'created'   => $run->results['created'][$row['id']] ?? null,
+                'id'         => $row['id'],
+                'interval'   => $row['interval'],
+                'cfg'        => $row['cfg'],
+                'survivors'  => $row['survivors'] ?? array_keys($row['symbols'] ?? []),
+                'discarded'  => $row['discarded'] ?? [],
+                'oos_ok'     => $row['oos_ok'] ?? (($row['oos']['ret'] ?? 0) > 0),
+                'robusta'    => $row['robusta'] ?? null,
+                'validada'   => $row['validada'] ?? null,
+                'creatable'  => $this->service->creatable($run, $row),
+                'is'         => $row['is'],
+                'oos'        => $row['oos'],
+                'val'        => $row['val'] ?? null,
+                'summary'    => $this->service->summarize($row, $this->service->symbolsFor($run, $row, $mode)),
+                'detail'     => array_map(fn ($s) => ['role' => $s['role'] ?? 'search', 'why' => $s['why'] ?? null, 'ret' => $s['ret'] ?? null,
+                                                      'pf' => $s['pf'] ?? null, 'n' => $s['n'] ?? 0, 'dd' => $s['dd'] ?? null,
+                                                      'm1' => $s['m1'] ?? null], $row['symbols']),
+                'created'    => $run->results['created'][$row['id']] ?? null,
             ];
         }
         // Orden pedido: retorno total ↓, luego estrellas, luego consistencia
@@ -125,7 +152,9 @@ class ParamSearchController extends Controller
             <=> [$a['summary']['total_return_pct'], $a['summary']['rating'], $a['summary']['consist_pct']]);
 
         return response()->json(['run' => $this->state($run->fresh('strategy')), 'symbols_mode' => $mode,
-                                 'months' => count($run->results['months'] ?? []), 'rows' => $rows]);
+                                 'version' => (int) ($run->results['version'] ?? 1), 'min_trades' => $run->results['min_trades'] ?? null,
+                                 'months' => count($run->results['months'] ?? []), 'rows' => $rows,
+                                 'near' => $run->results['near'] ?? []]);
     }
 
     public function create(Request $request, ParamSearchRun $run): JsonResponse
@@ -133,7 +162,7 @@ class ParamSearchController extends Controller
         $data = $request->validate([
             'rows'    => ['required', 'array', 'min:1', 'max:5'],
             'rows.*'  => ['string', 'max:20'],
-            'symbols' => ['required', 'in:all,search,winners'],
+            'symbols' => ['required', 'in:survivors,all'],
         ]);
         if ($run->status !== 'done') {
             return response()->json(['success' => false, 'error' => 'La búsqueda no ha terminado.'], 422);
@@ -144,7 +173,7 @@ class ParamSearchController extends Controller
         $rows = collect($run->results['rows'] ?? [])->keyBy('id');
         foreach ($data['rows'] as $id) {
             if (! $rows->has($id) || ! $this->service->creatable($run, $rows[$id])) {
-                return response()->json(['success' => false, 'error' => "La configuración {$id} no es robusta validada."], 422);
+                return response()->json(['success' => false, 'error' => "La configuración {$id} no se puede crear."], 422);
             }
         }
         CreateBacktestsFromSearchJob::dispatch($run->id, array_values($data['rows']), $data['symbols'], $request->user()->id)

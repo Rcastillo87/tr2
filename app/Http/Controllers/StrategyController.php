@@ -33,7 +33,7 @@ class StrategyController extends Controller
         $latestRuns = \App\Models\ParamSearchRun::whereIn('id',
                 \App\Models\ParamSearchRun::selectRaw('max(id)')->groupBy('strategy_id'))
             ->select(['id', 'strategy_id', 'status', 'intervals', 'progress_done', 'progress_total', 'finished_at'])
-            ->selectRaw("results->>'validated' AS validated")
+            ->selectRaw("coalesce(results->>'survivors', results->>'validated') AS validated")
             ->get()->keyBy('strategy_id');
         $searchActive = $latestRuns->contains(fn ($r) => in_array($r->status, \App\Models\ParamSearchRun::ACTIVE, true));
         $sbLabels = ['15' => '15m', '60' => '1h', '120' => '2h', '240' => '4h', 'D' => '1D'];

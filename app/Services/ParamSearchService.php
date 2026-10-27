@@ -20,10 +20,12 @@ class ParamSearchService
     public const INTERVALS = ['15', '60', '120', '240', 'D'];
     public const MONTHS = 24;
     public const SAMPLES = 40;
-    public const MIN_SYMBOLS = 3;
-    public const MAX_SYMBOLS = 6;
+    public const MODES = ['interval', 'symbol'];
+    /** Modo "por moneda": de 1 a MAX_SYMBOLS_SYMBOL_MODE monedas × todas las temporalidades con datos. */
+    public const MAX_SYMBOLS_SYMBOL_MODE = 3;
     public const KEEP_PER_STRATEGY = 10;
-    public const MAX_MINUTES = 60;
+    /** Tope técnico (no visible): una búsqueda nunca queda colgada. Job y cola tienen márgenes mayores. */
+    public const MAX_MINUTES = 180;
     public const QUEUE_CONNECTION = 'redis-research';
     public const QUEUE = 'research';
     /** Minutos medidos/estimados por intervalo (4 monedas + validación). 4h medido: ~3 min. */
@@ -47,33 +49,46 @@ class ParamSearchService
     }
 
     /**
-     * Crea la búsqueda y la encola. La base garantiza una sola activa en todo el sistema
-     * (índice único param_search_runs_one_active).
+     * Crea la búsqueda y la encola (cola research: corren de a una, en orden de llegada).
+     *  - mode "interval": UNA temporalidad y de 1 a todas las monedas con datos en ella.
+     *  - mode "symbol":   de 1 a 3 monedas y TODAS las temporalidades con datos para ellas.
+     * Una sola búsqueda en cola o corriendo por estrategia (índice único en la base).
      *
      * @throws DomainException con un mensaje para el usuario
      */
-    public function start(Strategy $strategy, array $intervals, array $symbols, bool $validate, ?int $userId): ParamSearchRun
+    public function start(Strategy $strategy, string $mode, array $intervals, array $symbols, ?int $userId): ParamSearchRun
     {
-        $intervals = array_values(array_unique(array_map('strval', $intervals)));
         $symbols = array_values(array_unique(array_map('strval', $symbols)));
-
-        if ($intervals === [] || array_diff($intervals, self::INTERVALS)) {
-            throw new DomainException('Temporalidad no permitida (solo 15m, 1h, 2h, 4h o 1D).');
+        $intervals = array_values(array_unique(array_map('strval', $intervals)));
+        if (! in_array($mode, self::MODES, true)) {
+            throw new DomainException('Modo de búsqueda no válido.');
         }
-        if (count($symbols) < self::MIN_SYMBOLS || count($symbols) > self::MAX_SYMBOLS) {
-            throw new DomainException('Elige entre ' . self::MIN_SYMBOLS . ' y ' . self::MAX_SYMBOLS . ' monedas para buscar.');
+        if ($symbols === []) {
+            throw new DomainException('Elige al menos una moneda.');
         }
-        $available = $this->availableSymbols($intervals);
-        if ($missing = array_diff($symbols, $available)) {
-            throw new DomainException('Sin datos para esa temporalidad: ' . implode(', ', $missing) . '.');
+        if ($mode === 'interval') {
+            if (count($intervals) !== 1 || array_diff($intervals, self::INTERVALS)) {
+                throw new DomainException('Elige una temporalidad (15m, 1h, 2h, 4h o 1D).');
+            }
+            if ($missing = array_diff($symbols, $this->availableSymbols($intervals))) {
+                throw new DomainException('Sin datos en esa temporalidad: ' . implode(', ', $missing) . '.');
+            }
+        } else {
+            if (count($symbols) > self::MAX_SYMBOLS_SYMBOL_MODE) {
+                throw new DomainException('En el modo por moneda puedes elegir hasta ' . self::MAX_SYMBOLS_SYMBOL_MODE . ' monedas.');
+            }
+            // todas las temporalidades donde TODAS las monedas elegidas tienen datos
+            $intervals = array_values(array_filter(self::INTERVALS,
+                fn ($iv) => ! array_diff($symbols, $this->availableSymbols([$iv]))));
+            if ($intervals === []) {
+                throw new DomainException('Esas monedas no tienen datos en ninguna temporalidad común.');
+            }
         }
         if (! trim((string) $strategy->code)) {
             throw new DomainException('La estrategia no tiene código.');
         }
 
         $this->reapStale();
-        $validation = $validate ? array_values(array_diff($available, $symbols)) : [];
-
         try {
             $run = ParamSearchRun::create([
                 'strategy_id'        => $strategy->id,
@@ -81,14 +96,14 @@ class ParamSearchService
                 'status'             => 'queued',
                 'intervals'          => $intervals,
                 'search_symbols'     => $symbols,
-                'validation_symbols' => $validation,
+                'validation_symbols' => [],
                 'months'             => self::MONTHS,
                 'samples'            => self::SAMPLES,
                 'seed'               => random_int(1, 1_000_000),   // cada búsqueda prueba combinaciones distintas
             ]);
         } catch (QueryException $e) {
             if (($e->errorInfo[0] ?? null) === '23505') {
-                throw new DomainException('Ya hay una búsqueda en curso (solo una a la vez para no afectar la operación).');
+                throw new DomainException("«{$strategy->name}» ya tiene una búsqueda en cola o en curso.");
             }
             throw $e;
         }
@@ -97,6 +112,25 @@ class ParamSearchService
         $this->prune($strategy->id);
 
         return $run;
+    }
+
+    /**
+     * "Buscar en todas las estrategias": una búsqueda en cola por estrategia activa con código; corren una tras otra.
+     *
+     * @return array{created: array<int, string>, skipped: array<string, string>}
+     */
+    public function startAll(string $mode, array $intervals, array $symbols, ?int $userId): array
+    {
+        $created = $skipped = [];
+        foreach (Strategy::where('active', true)->orderBy('name')->get() as $s) {
+            try {
+                $created[$this->start($s, $mode, $intervals, $symbols, $userId)->id] = $s->name;
+            } catch (DomainException $e) {
+                $skipped[$s->name] = $e->getMessage();
+            }
+        }
+
+        return ['created' => $created, 'skipped' => $skipped];
     }
 
     /** En cola: se cancela al instante. Corriendo: el proceso lo lee en su próximo latido (≤ 3 s) y se detiene. */
@@ -119,9 +153,9 @@ class ParamSearchService
             "UPDATE param_search_runs SET status = 'failed', finished_at = now(), updated_at = now(),
                     error = CASE WHEN status = 'running'
                                  THEN 'Sin señal de vida del proceso (reinicio del servidor, del motor o de Horizon).'
-                                 ELSE 'No arrancó: la cola de búsquedas no la tomó a tiempo.' END
+                                 ELSE 'No arrancó en 24 h: la cola de búsquedas no la tomó.' END
              WHERE (status = 'running' AND coalesce(heartbeat_at, started_at, created_at) < now() - interval '3 minutes')
-                OR (status = 'queued' AND created_at < now() - interval '30 minutes')"
+                OR (status = 'queued' AND created_at < now() - interval '24 hours')"
         );
     }
 
@@ -142,7 +176,8 @@ class ParamSearchService
     public function summarize(array $row, ?array $symbols = null): array
     {
         $bySymbol = $row['symbols'] ?? [];
-        $symbols = $symbols === null ? array_keys($bySymbol) : array_values(array_intersect($symbols, array_keys($bySymbol)));
+        $symbols ??= $row['survivors'] ?? array_keys($bySymbol);   // por defecto: las monedas que sobrevivieron
+        $symbols = array_values(array_intersect($symbols, array_keys($bySymbol)));
 
         $ratings = $sharpes = [];
         $trades = $wins = 0;
@@ -184,9 +219,27 @@ class ParamSearchService
         ];
     }
 
-    /** Una fila se puede crear en el historial solo si es robusta y pasó la validación (o no se pidió validar). */
+    /**
+     * Se puede crear en el historial: búsquedas nuevas (v2) = la configuración sobrevivió en al menos una moneda;
+     * búsquedas anteriores (v1) = robusta y validada (la regla con la que se hicieron).
+     */
     public function creatable(ParamSearchRun $run, array $row): bool
     {
+        if (($run->results['version'] ?? 1) >= 2) {
+            return ! empty($row['survivors']);
+        }
+
         return ! empty($row['robusta']) && ($row['validada'] === true || $run->validation_symbols === []);
+    }
+
+    /** Monedas con las que se crea una fila: sobrevivientes (v2) o todas las probadas. */
+    public function symbolsFor(ParamSearchRun $run, array $row, string $mode): array
+    {
+        $all = array_keys($row['symbols'] ?? []);
+        if ($mode === 'all') {
+            return $all;
+        }
+
+        return $row['survivors'] ?? $this->summarize($row)['winners'];
     }
 }

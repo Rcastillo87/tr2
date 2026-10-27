@@ -53,6 +53,8 @@ COSTS = dict(commission_pct=0.055, slippage_pct=0.05)  # costos honestos, los mi
 UI_FIXED = dict(volatility_protection_mode=None, volatility_atr_multiplier=2.5, volatility_widen_pct=1.0)
 ALLOWED_INTERVALS = ('15', '60', '120', '240', 'D')
 MAX_VALIDATE = 5          # robustas que se validan en otras monedas (las de mayor retorno)
+MIN_TRADES = 30           # operaciones mínimas (24 meses) para que una moneda cuente como sobreviviente
+NEAR_MAX = 5              # si nada sobrevive: cuántas "más cercanas" se muestran
 HEARTBEAT_EVERY = 3.0     # segundos entre escrituras de progreso / lectura de cancelación
 
 # Espacio de búsqueda (todos son campos de la UI de Backtesting)
@@ -345,6 +347,54 @@ class RunReporter:
         self.set(done=self.done + 1, note=note)
 
 
+def survivor_row(iv: str, i: int, cfg: dict, by_sym: dict) -> dict:
+    """
+    Regla del usuario: con las monedas de la búsqueda se mira el retorno de cada una (periodo completo);
+    se descartan las que pierden o tienen menos de MIN_TRADES operaciones; si no queda ninguna, la configuración
+    se descarta. Los tramos en/fuera de muestra se informan (solo las sobrevivientes), no filtran.
+    """
+    symbols, survivors = {}, []
+    for s, (is_, oos, full) in by_sym.items():
+        why = None
+        if full['n'] == 0:
+            why = 'sin operaciones'
+        elif (full['ret'] or 0) <= 0:
+            why = f"pierde ({full['ret']}%)"
+        elif full['n'] < MIN_TRADES:
+            why = f"solo {full['n']} operaciones (< {MIN_TRADES})"
+        symbols[s] = dict(role='survivor' if why is None else 'discarded', why=why, **full)
+        if why is None:
+            survivors.append(s)
+    seg = {}
+    for part, k in (('is', 0), ('oos', 1)):
+        st = [by_sym[s][k] for s in survivors]
+        gp, gl = sum(x['gp'] for x in st), sum(x['gl'] for x in st)
+        seg[part] = dict(n=sum(x['n'] for x in st), pf=pf(gp, gl),
+                         ret=round(sum(x['pnl'] for x in st) / (INITIAL * max(1, len(st))) * 100, 2),
+                         pos=int(sum(x['pnl'] > 0 for x in st)))
+    row = dict(id=f"{iv}-{i}", interval=iv, cfg={k: cfg[k] for k in BASE_KEYS}, survivors=sorted(survivors),
+               discarded=sorted(s for s in symbols if s not in survivors), symbols=symbols,
+               **{'is': seg['is'], 'oos': seg['oos']}, oos_ok=seg['oos']['ret'] > 0)
+    row['ret_total'], row['consist'] = totals({s: symbols[s] for s in survivors})
+    return row
+
+
+def near_misses(per_cfg: dict, configs: dict, k: int = NEAR_MAX) -> list:
+    """Si nada sobrevive: las k configuraciones que más se acercaron y por qué quedaron fuera."""
+    out = []
+    for (iv, i), by_sym in per_cfg.items():
+        best_s, best = max(by_sym.items(), key=lambda kv: kv[1][2]['ret'] or -1e9)
+        full = best[2]
+        if (full['ret'] or 0) > 0:
+            why = f"{best_s} gana {full['ret']}% pero con solo {full['n']} operaciones (< {MIN_TRADES})"
+        else:
+            why = f"pierde en todas las monedas (la mejor: {best_s} {full['ret']}%)"
+        out.append(dict(id=f"{iv}-{i}", interval=iv, cfg={kk: configs[iv][i][kk] for kk in BASE_KEYS},
+                        best_symbol=best_s, best_ret=full['ret'], best_n=full['n'], why=why,
+                        rets={s: v[2]['ret'] for s, v in by_sym.items()}))
+    return sorted(out, key=lambda r: -(r['best_ret'] or -1e9))[:k]
+
+
 def run_mode(run_id: int, max_minutes: float) -> int:
     import asyncpg
     low_priority()
@@ -368,7 +418,6 @@ def run_mode(run_id: int, max_minutes: float) -> int:
     try:
         intervals = [str(x) for x in json.loads(row['intervals'])]
         search = [str(x) for x in json.loads(row['search_symbols'])]
-        validation = [str(x) for x in json.loads(row['validation_symbols']) if str(x) not in search]
         bad = [iv for iv in intervals if iv not in ALLOWED_INTERVALS]
         if bad or not intervals or not search:
             raise ValueError(f"Parámetros inválidos (intervalos {intervals}, monedas {search}).")
@@ -385,78 +434,51 @@ def run_mode(run_id: int, max_minutes: float) -> int:
               run_id, hashlib.md5((code or '').encode()).hexdigest(), start_n.date(), split.date(), end_n.date())
 
         deadline = t0 + max_minutes * 60
-        search_total = len(intervals) * len(search) * samples
-        rep.set(force=True, phase='datos', done=0, total=search_total + len(validation) * MAX_VALIDATE,
-                note='Cargando velas (24 meses, 1 minuto)')
-        loop.run_until_complete(load_data(search, intervals, start, end, log=lambda *_: None, close=False))
-
         configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000)
                    for iv in intervals}
         per_cfg: dict = {}          # (iv, i) -> {símbolo: (is, oos, full)}
-        rep.set(force=True, phase='busqueda', note='Probando combinaciones')
+        rep.set(force=True, phase='busqueda', done=0, total=len(intervals) * len(search) * samples,
+                note='Probando combinaciones')
 
         def tick(note):
             if time.time() > deadline:
                 raise TimeoutError(f"superó el tiempo máximo ({max_minutes:.0f} min)")
             rep.tick(note)
 
-        for iv in intervals:
-            for sym in search:
+        # Una moneda a la vez en memoria (velas de 1m de 24 meses ≈ 300 MB por moneda): sin importar cuántas se elijan
+        for sym in search:
+            rep.set(force=True, note=f"{sym}: cargando velas")
+            loop.run_until_complete(load_data([sym], intervals, start, end, log=lambda *_: None, close=False))
+            for iv in intervals:
                 out = evaluate(name, code, scfg, sym, iv, configs[iv], start, split, end_n, tick=tick)
                 if out is None:
                     rep.set(done=rep.done + samples, note=f"{sym} · {iv}: sin datos")
                     continue
                 for i, is_, oos, full in out:
                     per_cfg.setdefault((iv, i), {})[sym] = (is_, oos, full)
-        drop_data(search)
+            drop_data([sym])
 
         rows = []
         for (iv, i), by_sym in per_cfg.items():
-            agg = aggregate({s: v[:2] for s, v in by_sym.items()}, search)
-            if agg is None or not agg['candidata']:
-                continue
-            syms = {s: dict(role='search', **v[2]) for s, v in by_sym.items()}
-            rows.append(dict(id=f"{iv}-{i}", interval=iv, cfg={k: configs[iv][i][k] for k in BASE_KEYS},
-                             candidata=True, robusta=agg['robusta'], validada=None,
-                             **{'is': agg['is'], 'oos': agg['oos']}, val=None, symbols=syms))
-
-        robust = sorted([r for r in rows if r['robusta']], key=lambda r: -totals(r['symbols'])[0])[:MAX_VALIDATE]
-        if robust and validation:
-            rep.set(force=True, phase='validacion', total=rep.done + len(robust) * len(validation),
-                    note='Validando en monedas nuevas')
-            for sym in validation:              # una moneda a la vez: memoria acotada
-                need_iv = sorted({r['interval'] for r in robust})
-                loop.run_until_complete(load_data([sym], need_iv, start, end, log=lambda *_: None, close=False))
-                for r in robust:
-                    out = evaluate(name, code, scfg, sym, r['interval'], [r['cfg']], start, split, end_n, tick=tick)
-                    if out:
-                        _, is_, oos, full = out[0]
-                        r['symbols'][sym] = dict(role='validation', **full)
-                drop_data([sym])
-            for r in robust:
-                vals = [f for f in r['symbols'].values() if f['role'] == 'validation']
-                gp = sum(f['gp'] or 0 for f in vals)
-                gl = sum(f['gl'] or 0 for f in vals)
-                pos = sum((f['ret'] or 0) > 0 for f in vals)
-                r['val'] = dict(pf=pf(gp, gl), pos=int(pos), n=len(vals))
-                r['validada'] = bool(vals) and pf(gp, gl) >= 1.1 and pos >= math.ceil(len(vals) * 0.6)
-        for r in rows:
-            r['ret_total'], r['consist'] = totals(r['symbols'])
+            r = survivor_row(iv, i, configs[iv][i], by_sym)
+            if r['survivors']:
+                rows.append(r)
         rows.sort(key=lambda r: (-r['ret_total'], -r['consist']))
+        near = [] if rows else near_misses(per_cfg, configs)
 
-        results = dict(version=1, strategy=name, months=month_keys(start, end),
+        results = dict(version=2, strategy=name, months=month_keys(start, end),
                        period=dict(start=f"{start_n:%Y-%m-%d}", split=f"{split:%Y-%m-%d}", end=f"{end_n:%Y-%m-%d}"),
-                       intervals=intervals, search_symbols=search, validation_symbols=validation,
-                       tested=len(per_cfg), candidates=len(rows), robust=sum(r['robusta'] for r in rows),
-                       validated=sum(bool(r['validada']) for r in rows), validated_max=MAX_VALIDATE,
+                       intervals=intervals, search_symbols=search, min_trades=MIN_TRADES,
+                       tested=len(per_cfg), candidates=len(rows), survivors=len(rows),
+                       oos_ok=sum(1 for r in rows if r['oos_ok']),
                        costs=dict(**COSTS, risk_pct=RISK_PCT, initial_balance=INITIAL),
                        elapsed_s=round(time.time() - t0, 1),
                        peak_mem_mb=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
-                       rows=rows)
+                       rows=rows, near=near)
         rep.phase, rep.note, rep.done, rep.total = 'fin', 'Terminada', rep.total, rep.total   # 100 %
         finish('done', results)
-        print(f"Búsqueda #{run_id}: {len(per_cfg)} configuraciones · {results['candidates']} candidatas · "
-              f"{results['robust']} robustas · {results['validated']} validadas · {results['elapsed_s']} s · "
+        print(f"Búsqueda #{run_id}: {len(per_cfg)} configuraciones · {len(rows)} sobreviven "
+              f"({results['oos_ok']} también ganan en los últimos meses) · {results['elapsed_s']} s · "
               f"{results['peak_mem_mb']} MB")
         return 0
     except Cancelled:
@@ -584,7 +606,7 @@ def console_search(a) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--run-id', type=int, help='búsqueda del módulo Estrategias (fila de param_search_runs)')
-    ap.add_argument('--max-minutes', type=float, default=60.0, help='tope de duración del modo --run-id')
+    ap.add_argument('--max-minutes', type=float, default=180.0, help='tope técnico de duración del modo --run-id')
     ap.add_argument('--strategies', default='', help='nombres separados por coma (vacío = todas)')
     ap.add_argument('--symbols', default='BTCUSDT,ETHUSDT,SOLUSDT,LINKUSDT')
     ap.add_argument('--intervals', default='15,60,240')

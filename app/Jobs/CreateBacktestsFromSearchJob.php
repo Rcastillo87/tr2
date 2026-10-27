@@ -23,7 +23,7 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
     public int $tries = 1;
     public int $timeout = 3900;
 
-    /** @param string $symbolsMode all | search | winners */
+    /** @param string $symbolsMode survivors (monedas que sobrevivieron) | all (todas las probadas) */
     public function __construct(public int $runId, public array $rowIds, public string $symbolsMode, public int $userId)
     {
     }
@@ -40,14 +40,10 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
         foreach ($this->rowIds as $rowId) {
             $row = $rows->get($rowId);
             if (! $row || ! $service->creatable($run, $row)) {
-                $this->mark($rowId, ['status' => 'error', 'error' => 'Esta configuración no se puede crear (no es robusta validada).']);
+                $this->mark($rowId, ['status' => 'error', 'error' => 'Esta configuración no se puede crear.']);
                 continue;
             }
-            $symbols = match ($this->symbolsMode) {
-                'search'  => array_values(array_intersect($run->search_symbols, array_keys($row['symbols']))),
-                'winners' => $service->summarize($row)['winners'],
-                default   => array_keys($row['symbols']),
-            };
+            $symbols = $service->symbolsFor($run, $row, $this->symbolsMode);
             if ($symbols === []) {
                 $this->mark($rowId, ['status' => 'error', 'error' => 'Ninguna moneda para crear.']);
                 continue;

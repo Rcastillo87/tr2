@@ -58,6 +58,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/busquedas/{run}/resultados', [\App\Http\Controllers\ParamSearchController::class, 'results'])->name('search.results');
         Route::post('/busquedas/{run}/crear', [\App\Http\Controllers\ParamSearchController::class, 'create'])->name('search.create');
         Route::get('/busquedas/{run}', [\App\Http\Controllers\ParamSearchController::class, 'show'])->name('search.show');
+        Route::post('/buscar-todas', [\App\Http\Controllers\ParamSearchController::class, 'startAll'])->name('search.start-all');
     });
 
     // Usuarios
