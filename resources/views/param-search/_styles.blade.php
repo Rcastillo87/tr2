@@ -90,6 +90,26 @@
                       padding: 6px 8px; font-size: 12px; }
     .sb-hrow { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; padding: 9px 12px;
                border-top: 1px solid var(--color-border-soft); font-size: 12px; }
+    /* paso 4: modos, reglas y resultados v2 */
+    .sb-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .sb-mode button { text-align: left; border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: 10px;
+                      padding: 10px 12px; color: var(--color-text-secondary); cursor: pointer; }
+    .sb-mode button b { display: block; color: var(--color-text-primary); font-size: 13px; margin-bottom: 2px; }
+    .sb-mode button small { font-size: 11px; color: var(--color-text-muted); }
+    .sb-mode button.on { border-color: #8B5CF6; background: rgba(139, 92, 246, .14); }
+    .sb-opt.dis { opacity: .35; cursor: not-allowed; }
+    span.sb-opt { cursor: default; }
+    .sb-opt.inc { border-style: dashed; border-color: #5B4A8B; }
+    .sb-coin[disabled] { opacity: .35; cursor: not-allowed; }
+    .sb-rowh { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .sb-link { background: none; border: 0; color: #A78BFA; font-size: 11px; padding: 0; cursor: pointer; }
+    .sb-rule { background: var(--color-surface); border: 1px solid var(--color-border-soft); border-radius: 8px; padding: 10px 12px;
+               font-size: 11.5px; color: var(--color-text-secondary); }
+    .sb-rule b { color: var(--color-text-primary); }
+    .sb-badge.late { background: #16331F; color: var(--color-profit); }
+    .sb-badge.early { background: #2A2213; color: #E8C77A; }
+    .sb-dup { font-size: 10px; color: var(--color-text-muted); margin-top: 4px; }
+    .sb-qd b { color: var(--color-profit); }
     .sb-cards { display: none; }
     @media (max-width: 760px) {
         .sb-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -105,5 +125,6 @@
         .sb-rc-grid span { display: block; font-size: 10px; color: var(--color-text-muted); }
         .sb-foot { position: static; flex-direction: column; align-items: stretch; }
         .sb-foot .sb-btn { justify-content: center; }
+        .sb-mode { grid-template-columns: 1fr; }
     }
 </style>

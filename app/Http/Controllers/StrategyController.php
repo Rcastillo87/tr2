@@ -37,8 +37,11 @@ class StrategyController extends Controller
             ->get()->keyBy('strategy_id');
         $searchActive = $latestRuns->contains(fn ($r) => in_array($r->status, \App\Models\ParamSearchRun::ACTIVE, true));
         $sbLabels = ['15' => '15m', '60' => '1h', '120' => '2h', '240' => '4h', 'D' => '1D'];
+        // puesto en la cola de las búsquedas en espera (corren una a la vez, por orden de llegada)
+        $sbQueue = \App\Models\ParamSearchRun::where('status', 'queued')->orderBy('id')->pluck('id')
+            ->values()->flip()->map(fn ($i) => $i + 1)->all();
 
-        return view('strategies.index', compact('strategies', 'groupedPapers', 'latestRuns', 'searchActive', 'sbLabels'));
+        return view('strategies.index', compact('strategies', 'groupedPapers', 'latestRuns', 'searchActive', 'sbLabels', 'sbQueue'));
     }
 
     public function create()

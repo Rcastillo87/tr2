@@ -68,9 +68,15 @@
     <p class="text-[12px]" style="color:var(--color-text-muted);">
         Crea y prueba tus algoritmos. Selecciona el mejor backtest y llévalo a Paper Trading.
     </p>
+    @php $sbActiveCount = $strategies->where('active', true)->count(); $sbAnyId = $strategies->firstWhere('active', true)?->id; @endphp
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+    @if($sbAnyId)
+        <button type="button" onclick="sbOpenAll({{ $sbActiveCount }}, {{ $sbAnyId }})" class="btn-search px-4 py-2 rounded-lg text-sm font-medium text-white text-center whitespace-nowrap">🔍 Buscar en todas las estrategias</button>
+    @endif
     <a href="{{ route('strategies.create') }}" class="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors text-center whitespace-nowrap" style="background:#3b82f6; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);">
         + Nueva Estrategia
     </a>
+    </div>
 </div>
 
 <div class="rounded-lg border overflow-hidden" style="background:var(--color-surface); border-color:var(--color-border-soft);">
@@ -115,8 +121,9 @@
                     </td>
                     <td class="text-right pr-4">
                         <div class="flex items-center justify-end gap-2">
-                            <button type="button" onclick="sbOpen({{ $s->id }}, @js($s->name))" class="btn-action btn-search px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap"
-                                    @if($searchActive) disabled title="Ya hay una búsqueda en curso (solo una a la vez)" @endif>🔍 Buscar</button>
+                            @php $sbBusy = in_array(($latestRuns[$s->id] ?? null)?->status, ['queued', 'running'], true); @endphp
+                            <button type="button" onclick="sbOpen({{ $s->id }}, @js($s->name))" data-sb-btn="{{ $s->id }}" class="btn-action btn-search px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap"
+                                    @if($sbBusy) disabled title="Esta estrategia ya tiene una búsqueda en cola o en curso" @endif>🔍 Buscar</button>
                             <a href="{{ route('backtesting.run', ['strategy_id' => $s->id]) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#3b82f6;">+ Nuevo Backtest</a>
                             <a href="{{ route('backtesting.history', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap" style="background:#374151; color:#e5e7eb;">Historial</a>
                             <a href="{{ route('strategies.edit', $s->id) }}" class="btn-action px-3 py-1.5 rounded-md text-[11px] font-medium text-white whitespace-nowrap" style="background:#10b981;">Editar</a>
