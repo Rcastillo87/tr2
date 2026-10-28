@@ -98,16 +98,19 @@ async def part2():
     try:
         async with pool.acquire() as c:
             setting = await c.fetchval("SHOW timescaledb.enable_ordered_append")
+            plan_mode = await c.fetchval("SHOW plan_cache_mode")
             partial = await c.fetchval(
                 "SELECT count(*) FROM timescaledb_information.chunks ch "
                 "JOIN _timescaledb_catalog.chunk k ON k.schema_name = ch.chunk_schema AND k.table_name = ch.chunk_name "
                 "WHERE ch.hypertable_name = 'ohlcv_data' AND k.status & 8 = 8")
         check('base: timescaledb.enable_ordered_append = off (conexión nueva)', setting == 'off', setting)
+        check('base: plan_cache_mode = force_custom_plan (el plan genérico desordena fragmentos parciales)',
+              plan_mode == 'force_custom_plan', plan_mode)
         print(f'INFO fragmentos parcialmente comprimidos: {partial} (0 tras la recompresión)')
 
         now = datetime.now(timezone.utc)
         cases = [('BTCUSDT', '60', 760), ('ETHUSDT', '240', 760), ('SOLUSDT', 'D', 760), ('DOGEUSDT', '15', 400),
-                 ('BTCUSDT', '1', 45)]
+                 ('BTCUSDT', '1', 45), ('SOLUSDT', '1', 760)]   # 1m de 2 años: cruza fragmentos parciales
         for sym, iv, days in cases:
             broker = await resolve_live_broker(pool, sym, iv, require_fresh=False)
             if broker is None:
