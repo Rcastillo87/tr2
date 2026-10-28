@@ -21,8 +21,12 @@ class ParamSearchService
     public const MONTHS = 24;
     public const SAMPLES = 40;
     public const MODES = ['interval', 'symbol'];
+    /** Enfoque (v3): qué combinaciones se prueban (cli/param_search.py SPACES) y cómo se ordenan los resultados. */
+    public const FOCUSES = ['gain' => 'Mayor ganancia', 'wr' => 'Win rate alto', 'cons' => 'Consistencia alta'];
+    /** Orden de los resultados por enfoque: métrica principal de summarize() (desempate: retorno total, estrellas). */
+    public const FOCUS_SORT = ['gain' => 'total_return_pct', 'wr' => 'win_rate', 'cons' => 'consist_pct'];
     /** Modo "por moneda": de 1 a MAX_SYMBOLS_SYMBOL_MODE monedas × todas las temporalidades con datos. */
-    public const MAX_SYMBOLS_SYMBOL_MODE = 3;
+    public const MAX_SYMBOLS_SYMBOL_MODE = 5;
     public const KEEP_PER_STRATEGY = 10;
     /** Tope técnico (no visible): una búsqueda nunca queda colgada. Job y cola tienen márgenes mayores. */
     public const MAX_MINUTES = 180;
@@ -51,17 +55,22 @@ class ParamSearchService
     /**
      * Crea la búsqueda y la encola (cola research: corren de a una, en orden de llegada).
      *  - mode "interval": UNA temporalidad y de 1 a todas las monedas con datos en ella.
-     *  - mode "symbol":   de 1 a 3 monedas y TODAS las temporalidades con datos para ellas.
+     *  - mode "symbol":   de 1 a MAX_SYMBOLS_SYMBOL_MODE monedas y TODAS las temporalidades con datos para ellas.
+     *  - focus: gain | wr | cons (FOCUSES).
      * Una sola búsqueda en cola o corriendo por estrategia (índice único en la base).
      *
      * @throws DomainException con un mensaje para el usuario
      */
-    public function start(Strategy $strategy, string $mode, array $intervals, array $symbols, ?int $userId): ParamSearchRun
+    public function start(Strategy $strategy, string $mode, array $intervals, array $symbols, ?int $userId,
+                          string $focus = 'gain'): ParamSearchRun
     {
         $symbols = array_values(array_unique(array_map('strval', $symbols)));
         $intervals = array_values(array_unique(array_map('strval', $intervals)));
         if (! in_array($mode, self::MODES, true)) {
             throw new DomainException('Modo de búsqueda no válido.');
+        }
+        if (! array_key_exists($focus, self::FOCUSES)) {
+            throw new DomainException('Enfoque de búsqueda no válido.');
         }
         if ($symbols === []) {
             throw new DomainException('Elige al menos una moneda.');
@@ -94,6 +103,8 @@ class ParamSearchService
                 'strategy_id'        => $strategy->id,
                 'user_id'            => $userId,
                 'status'             => 'queued',
+                'mode'               => $mode,
+                'focus'              => $focus,
                 'intervals'          => $intervals,
                 'search_symbols'     => $symbols,
                 'validation_symbols' => [],
@@ -119,12 +130,12 @@ class ParamSearchService
      *
      * @return array{created: array<int, string>, skipped: array<string, string>}
      */
-    public function startAll(string $mode, array $intervals, array $symbols, ?int $userId): array
+    public function startAll(string $mode, array $intervals, array $symbols, ?int $userId, string $focus = 'gain'): array
     {
         $created = $skipped = [];
         foreach (Strategy::where('active', true)->orderBy('name')->get() as $s) {
             try {
-                $created[$this->start($s, $mode, $intervals, $symbols, $userId)->id] = $s->name;
+                $created[$this->start($s, $mode, $intervals, $symbols, $userId, $focus)->id] = $s->name;
             } catch (DomainException $e) {
                 $skipped[$s->name] = $e->getMessage();
             }
@@ -143,6 +154,26 @@ class ParamSearchService
             } elseif ($run->status === 'running') {
                 $run->update(['cancel_requested' => true]);
             }
+        });
+    }
+
+    /**
+     * Elimina una búsqueda terminada, fallida o cancelada (y sus resultados). Los backtests que ya se crearon desde
+     * ella en el historial no se tocan. Una en cola o en curso primero se cancela.
+     *
+     * @throws DomainException
+     */
+    public function delete(ParamSearchRun $run): void
+    {
+        DB::transaction(function () use ($run) {
+            $run = ParamSearchRun::whereKey($run->id)->lockForUpdate()->first();
+            if (! $run) {
+                return;
+            }
+            if ($run->isActive()) {
+                throw new DomainException('La búsqueda está en cola o en curso: cancélala antes de eliminarla.');
+            }
+            $run->delete();
         });
     }
 
@@ -232,10 +263,16 @@ class ParamSearchService
         return ! empty($row['robusta']) && ($row['validada'] === true || $run->validation_symbols === []);
     }
 
-    /** Monedas con las que se crea una fila: sobrevivientes (v2) o todas las probadas. */
+    /**
+     * Monedas con las que se resume y se crea una fila. v3: por moneda = su moneda; por temporalidad = TODAS las probadas
+     * (ninguna se descarta después de ver el resultado). v2: sobrevivientes o todas las probadas.
+     */
     public function symbolsFor(ParamSearchRun $run, array $row, string $mode): array
     {
         $all = array_keys($row['symbols'] ?? []);
+        if (($run->results['version'] ?? 1) >= 3) {
+            return isset($row['symbol']) ? [(string) $row['symbol']] : $all;
+        }
         if ($mode === 'all') {
             return $all;
         }

@@ -16,6 +16,9 @@ Modos (desde python-engine/):
   venv/bin/python cli/param_search.py --validar /tmp/x_robustas.json --symbols otros
   venv/bin/python cli/param_search.py --run-id N            # búsqueda del módulo Estrategias (tabla param_search_runs)
 El modo --run-id corre en 1 proceso con prioridad mínima, escribe progreso/latido en la fila y respeta la cancelación.
+Resultados v3 (--run-id): una configuración GANA en una moneda si tiene ≥ MIN_TRADES operaciones y gana en muestra Y fuera
+de muestra (enfoque win rate: además PF ≥ 1,2). Modo por moneda: cada moneda con su propio ranking. Modo por temporalidad:
+se acepta si gana en ≥ 3/4 de las monedas, con métricas de TODAS (ninguna se descarta después de ver el resultado).
 """
 import argparse
 import asyncio
@@ -57,9 +60,26 @@ MIN_TRADES = 30           # operaciones mínimas (24 meses) para que una moneda 
 NEAR_MAX = 5              # si nada sobrevive: cuántas "más cercanas" se muestran
 HEARTBEAT_EVERY = 3.0     # segundos entre escrituras de progreso / lectura de cancelación
 
-# Espacio de búsqueda (todos son campos de la UI de Backtesting)
+# Espacio de búsqueda (todos son campos de la UI de Backtesting). Modos de consola: SLTP/TRAILING de siempre.
 SLTP = [(1.0, 2.0), (1.5, 3.0), (2.0, 4.0), (1.5, 4.5), (2.5, 5.0), (3.0, 6.0)]
 TRAILING = [None, ('atr', 2.0), ('atr', 3.0), ('fixed', 1.5)]
+# Módulo Estrategias (v3): el enfoque elegido decide dónde se busca (y cómo se ordena: lo hace Laravel).
+#   gain: objetivos amplios y trailing (dejar correr) · wr: objetivos cercanos y break-even temprano (cerrar seguido)
+#   cons: objetivos medios con filtros de régimen/macro/volumen más frecuentes (evitar meses malos)
+FOCUSES = ('gain', 'wr', 'cons')
+SPACES = {
+    'gain': dict(sltp=[(1.5, 3.0), (2.0, 4.0), (1.5, 4.5), (2.5, 5.0), (3.0, 6.0), (2.0, 6.0)],
+                 trailing=[None, ('atr', 2.0), ('atr', 3.0), ('fixed', 1.5), ('fixed', 2.5)],
+                 be=(99.0, 0.5), duration=(0, 48, 96), filters=0.4),
+    'wr':   dict(sltp=[(1.5, 1.0), (2.0, 1.5), (2.0, 2.0), (2.5, 1.5), (3.0, 2.0), (1.5, 2.0)],
+                 trailing=[None, None, ('fixed', 1.0)],
+                 be=(0.4, 0.6, 99.0), duration=(0, 24, 48), filters=0.5),
+    'cons': dict(sltp=[(1.0, 2.0), (1.5, 3.0), (2.0, 4.0), (1.5, 2.5), (2.0, 3.0)],
+                 trailing=[None, ('atr', 2.0), ('fixed', 1.5)],
+                 be=(0.5, 99.0), duration=(24, 48), filters=0.65),
+}
+WR_MIN_PF = 1.2           # enfoque win rate: además profit factor ≥ 1,2 (ganar seguido sin perder plata)
+INTERVAL_MODE_SHARE = 0.75  # modo por temporalidad: debe ganar en ≥ 3/4 de las monedas
 BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult', 'trailing_distance_pct',
              'trailing_activation_buffer_pct', 'regime_filter', 'macro_trend_filter', 'volume_filter',
              'volume_filter_period', 'volume_filter_mult', 'max_duration', 'max_duration_profit', 'close_on_opposite',
@@ -73,21 +93,29 @@ class Cancelled(Exception):
     pass
 
 
-def sample_configs(n: int, seed: int) -> list[dict]:
+def sample_configs(n: int, seed: int, focus: str | None = None) -> list[dict]:
+    """n configuraciones distintas. focus=None: espacio de los modos de consola; 'gain'|'wr'|'cons': SPACES."""
     rng = random.Random(seed)
+    sp = SPACES.get(focus) if focus else None
     seen, out = set(), []
     while len(out) < n and len(seen) < 5000:
-        sl, tp = rng.choice(SLTP)
-        tr = rng.choice(TRAILING)
+        sl, tp = rng.choice(sp['sltp'] if sp else SLTP)
+        tr = rng.choice(sp['trailing'] if sp else TRAILING)
+        if sp:   # break-even: 99 = sin BE; si no, fracción del TP
+            be = rng.choice(sp['be'])
+            be_pct = 99.0 if be >= 99 else round(tp * be, 2)
+        else:
+            be_pct = rng.choice([99.0, round(tp * 0.5, 2)])
+        f = sp['filters'] if sp else None
         cfg = dict(sl_pct=sl, tp_pct=tp,
-                   be_pct=rng.choice([99.0, round(tp * 0.5, 2)]),
+                   be_pct=be_pct,
                    trailing_mode=tr[0] if tr else None,
                    trailing_atr_mult=tr[1] if tr and tr[0] == 'atr' else 2.0,
                    trailing_distance_pct=tr[1] if tr and tr[0] == 'fixed' else 1.0,
                    trailing_activation_buffer_pct=rng.choice([0.5, 1.0]) if tr else 0.0,
-                   regime_filter=rng.random() < 0.5, macro_trend_filter=rng.random() < 0.5,
-                   volume_filter=rng.random() < 0.4, volume_filter_period=20, volume_filter_mult=1.2,
-                   max_duration=rng.choice([0, 24, 48]), max_duration_profit=False,
+                   regime_filter=rng.random() < (f if sp else 0.5), macro_trend_filter=rng.random() < (f if sp else 0.5),
+                   volume_filter=rng.random() < (f * 0.8 if sp else 0.4), volume_filter_period=20, volume_filter_mult=1.2,
+                   max_duration=rng.choice(sp['duration'] if sp else [0, 24, 48]), max_duration_profit=False,
                    close_on_opposite=rng.random() < 0.3,
                    regime_adx_trending=25.0, regime_adx_ranging=20.0, regime_ambiguous_as='RANGING')
         key = json.dumps(cfg, sort_keys=True)
@@ -348,52 +376,86 @@ class RunReporter:
         self.set(done=self.done + 1, note=note)
 
 
-def survivor_row(iv: str, i: int, cfg: dict, by_sym: dict) -> dict:
-    """
-    Regla del usuario: con las monedas de la búsqueda se mira el retorno de cada una (periodo completo);
-    se descartan las que pierden o tienen menos de MIN_TRADES operaciones; si no queda ninguna, la configuración
-    se descarta. Los tramos en/fuera de muestra se informan (solo las sobrevivientes), no filtran.
-    """
-    symbols, survivors = {}, []
-    for s, (is_, oos, full) in by_sym.items():
-        why = None
-        if full['n'] == 0:
-            why = 'sin operaciones'
-        elif (full['ret'] or 0) <= 0:
-            why = f"pierde ({full['ret']}%)"
-        elif full['n'] < MIN_TRADES:
-            why = f"solo {full['n']} operaciones (< {MIN_TRADES})"
-        symbols[s] = dict(role='survivor' if why is None else 'discarded', why=why, **full)
-        if why is None:
-            survivors.append(s)
-    seg = {}
-    for part, k in (('is', 0), ('oos', 1)):
-        st = [by_sym[s][k] for s in survivors]
-        gp, gl = sum(x['gp'] for x in st), sum(x['gl'] for x in st)
-        seg[part] = dict(n=sum(x['n'] for x in st), pf=pf(gp, gl),
-                         ret=round(sum(x['pnl'] for x in st) / (INITIAL * max(1, len(st))) * 100, 2),
-                         pos=int(sum(x['pnl'] > 0 for x in st)))
-    row = dict(id=f"{iv}-{i}", interval=iv, cfg={k: cfg[k] for k in BASE_KEYS}, survivors=sorted(survivors),
-               discarded=sorted(s for s in symbols if s not in survivors), symbols=symbols,
-               **{'is': seg['is'], 'oos': seg['oos']}, oos_ok=seg['oos']['ret'] > 0)
-    row['ret_total'], row['consist'] = totals({s: symbols[s] for s in survivors})
-    return row
+def seg_view(st: dict) -> dict:
+    """Tramo (en / fuera de muestra) de una moneda: operaciones, PF, retorno % sobre el capital inicial."""
+    return dict(n=st['n'], pf=pf(st['gp'], st['gl']), ret=round(st['pnl'] / INITIAL * 100, 2), pos=int(st['pnl'] > 0))
 
 
-def near_misses(per_cfg: dict, configs: dict, k: int = NEAR_MAX) -> list:
-    """Si nada sobrevive: las k configuraciones que más se acercaron y por qué quedaron fuera."""
-    out = []
+def seg_sum(parts: list) -> dict:
+    """Tramo sumado de varias monedas: PF global por gp/gl, retorno promedio por moneda."""
+    gp, gl = sum(x['gp'] for x in parts), sum(x['gl'] for x in parts)
+    return dict(n=sum(x['n'] for x in parts), pf=pf(gp, gl),
+                ret=round(sum(x['pnl'] for x in parts) / (INITIAL * max(1, len(parts))) * 100, 2),
+                pos=int(sum(x['pnl'] > 0 for x in parts)))
+
+
+def accept(is_: dict, oos: dict, full: dict, focus: str) -> str | None:
+    """
+    None si la configuración GANA en esa moneda; si no, el motivo. Gana = mínimo de operaciones, ganancia en los
+    primeros 2/3 (donde se elige) Y en el último 1/3 (que nunca se usa para elegir); enfoque win rate: además PF ≥ 1,2.
+    """
+    if full['n'] < MIN_TRADES:
+        return f"solo {full['n']} operaciones (< {MIN_TRADES})"
+    if is_['pnl'] <= 0:
+        return f"pierde en los primeros meses ({seg_view(is_)['ret']:+.1f}%)"
+    if oos['pnl'] <= 0:
+        return f"gana al principio ({seg_view(is_)['ret']:+.1f}%) pero pierde en los últimos meses ({seg_view(oos)['ret']:+.1f}%)"
+    if focus == 'wr' and (full['pf'] or 0) < WR_MIN_PF:
+        return f"profit factor {full['pf']} (< {WR_MIN_PF})"
+    return None
+
+
+def closeness(is_: dict, oos: dict) -> float:
+    """Para "las que más se acercaron": el peor de los dos tramos (cuanto más alto, más cerca de ganar en ambos)."""
+    return min(seg_view(is_)['ret'], seg_view(oos)['ret'])
+
+
+def symbol_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) -> tuple[list, dict]:
+    """Modo por moneda: cada moneda por separado. Una fila por (configuración, moneda) que gana; casi-ganadoras por moneda."""
+    rows, near = [], {s: [] for s in symbols}
     for (iv, i), by_sym in per_cfg.items():
-        best_s, best = max(by_sym.items(), key=lambda kv: kv[1][2]['ret'] or -1e9)
-        full = best[2]
-        if (full['ret'] or 0) > 0:
-            why = f"{best_s} gana {full['ret']}% pero con solo {full['n']} operaciones (< {MIN_TRADES})"
+        cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
+        for sym, (is_, oos, full) in by_sym.items():
+            why = accept(is_, oos, full, focus)
+            base = dict(interval=iv, cfg=cfg, symbol=sym, symbols={sym: dict(role='win' if why is None else 'lose', why=why, **full)},
+                        **{'is': seg_view(is_), 'oos': seg_view(oos)})
+            if why is None:
+                r = dict(id=f"{sym}-{iv}-{i}", survivors=[sym], discarded=[], oos_ok=True, **base)
+                r['ret_total'], r['consist'] = totals({sym: full})
+                rows.append(r)
+            else:
+                near[sym].append(dict(id=f"{sym}-{iv}-{i}", why=why, score=closeness(is_, oos), n=full['n'], **base))
+    near = {s: sorted(v, key=lambda r: -r['score'])[:3] for s, v in near.items()}
+    return rows, near
+
+
+def interval_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) -> tuple[list, list, int]:
+    """
+    Modo por temporalidad: la configuración se acepta si gana (accept) en ≥ 3/4 de las monedas. Ninguna moneda se descarta
+    después de ver el resultado: las métricas (tramos y totales) son de TODAS las monedas probadas.
+    """
+    need = max(1, math.ceil(len(symbols) * INTERVAL_MODE_SHARE))
+    rows, near = [], []
+    for (iv, i), by_sym in per_cfg.items():
+        if len(by_sym) < len(symbols):   # sin datos en alguna moneda: no se puede juzgar
+            continue
+        cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
+        why = {s: accept(is_, oos, full, focus) for s, (is_, oos, full) in by_sym.items()}
+        wins = sorted(s for s, w in why.items() if w is None)
+        r = dict(id=f"{iv}-{i}", interval=iv, cfg=cfg,
+                 symbols={s: dict(role='win' if why[s] is None else 'lose', why=why[s], **full) for s, (_, _, full) in by_sym.items()},
+                 survivors=wins, discarded=sorted(s for s in by_sym if s not in wins),
+                 **{'is': seg_sum([v[0] for v in by_sym.values()]), 'oos': seg_sum([v[1] for v in by_sym.values()])})
+        r['ret_total'], r['consist'] = totals({s: v[2] for s, v in by_sym.items()})
+        if len(wins) >= need:
+            rows.append(dict(r, oos_ok=True))
         else:
-            why = f"pierde en todas las monedas (la mejor: {best_s} {full['ret']}%)"
-        out.append(dict(id=f"{iv}-{i}", interval=iv, cfg={kk: configs[iv][i][kk] for kk in BASE_KEYS},
-                        best_symbol=best_s, best_ret=full['ret'], best_n=full['n'], why=why,
-                        rets={s: v[2]['ret'] for s, v in by_sym.items()}))
-    return sorted(out, key=lambda r: -(r['best_ret'] or -1e9))[:k]
+            near.append(dict(r, why=f"gana en {len(wins)} de {len(symbols)} monedas (necesita {need})",
+                             score=(len(wins), min(r['is']['ret'], r['oos']['ret']))))
+    near = sorted(near, key=lambda r: r['score'], reverse=True)[:NEAR_MAX]
+    for r in near:
+        r['score'] = list(r['score'])
+    return rows, near, need
 
 
 def run_mode(run_id: int, max_minutes: float) -> int:
@@ -419,6 +481,8 @@ def run_mode(run_id: int, max_minutes: float) -> int:
     try:
         intervals = [str(x) for x in json.loads(row['intervals'])]
         search = [str(x) for x in json.loads(row['search_symbols'])]
+        focus = row['focus'] if row['focus'] in FOCUSES else 'gain'
+        mode = row['mode'] if row['mode'] in ('interval', 'symbol') else 'interval'
         bad = [iv for iv in intervals if iv not in ALLOWED_INTERVALS]
         if bad or not intervals or not search:
             raise ValueError(f"Parámetros inválidos (intervalos {intervals}, monedas {search}).")
@@ -435,7 +499,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
               run_id, hashlib.md5((code or '').encode()).hexdigest(), start_n.date(), split.date(), end_n.date())
 
         deadline = t0 + max_minutes * 60
-        configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000)
+        configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000, focus)
                    for iv in intervals}
         per_cfg: dict = {}          # (iv, i) -> {símbolo: (is, oos, full)}
         rep.set(force=True, phase='busqueda', done=0, total=len(intervals) * len(search) * samples,
@@ -459,28 +523,26 @@ def run_mode(run_id: int, max_minutes: float) -> int:
                     per_cfg.setdefault((iv, i), {})[sym] = (is_, oos, full)
             drop_data([sym])
 
-        rows = []
-        for (iv, i), by_sym in per_cfg.items():
-            r = survivor_row(iv, i, configs[iv][i], by_sym)
-            if r['survivors']:
-                rows.append(r)
-        rows.sort(key=lambda r: (-r['ret_total'], -r['consist']))
-        near = [] if rows else near_misses(per_cfg, configs)
+        need = None
+        if mode == 'symbol':
+            rows, near = symbol_mode_rows(per_cfg, configs, focus, search)
+        else:
+            rows, near, need = interval_mode_rows(per_cfg, configs, focus, search)
+        rows.sort(key=lambda r: (-r['ret_total'], -r['consist']))   # Laravel reordena según el enfoque
 
-        results = dict(version=2, strategy=name, months=month_keys(start, end),
+        results = dict(version=3, strategy=name, focus=focus, mode=mode, need=need, months=month_keys(start, end),
                        period=dict(start=f"{start_n:%Y-%m-%d}", split=f"{split:%Y-%m-%d}", end=f"{end_n:%Y-%m-%d}"),
-                       intervals=intervals, search_symbols=search, min_trades=MIN_TRADES,
+                       intervals=intervals, search_symbols=search, min_trades=MIN_TRADES, wr_min_pf=WR_MIN_PF,
                        tested=len(per_cfg), candidates=len(rows), survivors=len(rows),
-                       oos_ok=sum(1 for r in rows if r['oos_ok']),
+                       oos_ok=len(rows),
                        costs=dict(**COSTS, risk_pct=RISK_PCT, initial_balance=INITIAL),
                        elapsed_s=round(time.time() - t0, 1),
                        peak_mem_mb=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
                        rows=rows, near=near)
         rep.phase, rep.note, rep.done, rep.total = 'fin', 'Terminada', rep.total, rep.total   # 100 %
         finish('done', results)
-        print(f"Búsqueda #{run_id}: {len(per_cfg)} configuraciones · {len(rows)} sobreviven "
-              f"({results['oos_ok']} también ganan en los últimos meses) · {results['elapsed_s']} s · "
-              f"{results['peak_mem_mb']} MB")
+        print(f"Búsqueda #{run_id} ({mode}, enfoque {focus}): {len(per_cfg)} configuraciones · {len(rows)} ganan en los "
+              f"dos tramos · {results['elapsed_s']} s · {results['peak_mem_mb']} MB")
         return 0
     except Cancelled:
         finish('cancelled', error='Cancelada por el usuario.')

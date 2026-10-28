@@ -111,7 +111,29 @@
     .sb-dup { font-size: 10px; color: var(--color-text-muted); margin-top: 4px; }
     .sb-qd b { color: var(--color-profit); }
     .sb-cards { display: none; }
+    /* v3: enfoque, pestañas por moneda, tramos, historial */
+    .sb-focus { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .sb-focus button { text-align: left; border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: 10px;
+                       padding: 10px 12px; color: var(--color-text-secondary); cursor: pointer; display: grid; gap: 3px; align-content: start; }
+    .sb-focus button b { color: var(--color-text-primary); font-size: 13px; }
+    .sb-focus button small { font-size: 11px; color: var(--color-text-muted); line-height: 1.35; }
+    .sb-focus button.on { border-color: #8B5CF6; background: rgba(139, 92, 246, .14); }
+    .sb-focus button.on b { color: #DDD6FE; }
+    .sb-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border-soft); }
+    .sb-tab { border: 0; border-bottom: 2px solid transparent; background: none; padding: 10px 14px; font-size: 13px; font-weight: 600;
+              color: var(--color-text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+    .sb-tab.on { border-bottom-color: #8B5CF6; color: var(--color-text-primary); }
+    .sb-tab i { font-style: normal; font-size: 10px; padding: 2px 7px; border-radius: 999px; background: var(--color-surface-raised); color: var(--color-text-muted); }
+    .sb-tab i.ok { background: #16331F; color: var(--color-profit); }
+    table.sb-rs th.key { color: #C4B5FD; }
+    .sb-near { display: grid; gap: 6px; font-size: 12px; }
+    table.sb-hist { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; }
+    table.sb-hist th { background: var(--color-surface-raised); color: var(--color-text-muted); font-weight: 500; padding: 8px 10px; text-align: left; white-space: nowrap; }
+    table.sb-hist td { padding: 9px 10px; border-top: 1px solid var(--color-border-soft); vertical-align: top; }
+    .sb-badge.focus { background: rgba(139, 92, 246, .16); color: #C4B5FD; }
+    .sb-btn.sm { padding: 6px 10px; font-size: 11px; }
     @media (max-width: 760px) {
+        .sb-focus { grid-template-columns: 1fr; }
         .sb-kpis { grid-template-columns: repeat(2, 1fr); }
         .sb-kpis .sb-kpi:last-child { grid-column: span 2; }
         .sb-lock { grid-template-columns: repeat(2, 1fr); }

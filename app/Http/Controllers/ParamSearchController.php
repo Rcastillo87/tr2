@@ -24,8 +24,8 @@ class ParamSearchController extends Controller
         $run->load('strategy');
         $history = ParamSearchRun::where('strategy_id', $run->strategy_id)->orderByDesc('id')
             ->limit(ParamSearchService::KEEP_PER_STRATEGY)
-            ->select(['id', 'status', 'intervals', 'created_at', 'strategy_code_md5'])
-            ->selectRaw("results->>'tested' AS tested, coalesce(results->>'robust', results->>'survivors') AS robust, coalesce(results->>'survivors', results->>'validated') AS validated")
+            ->select(['id', 'status', 'intervals', 'search_symbols', 'focus', 'mode', 'created_at', 'strategy_code_md5', 'progress_done', 'progress_total'])
+            ->selectRaw("results->>'tested' AS tested, coalesce(results->>'robust', results->>'survivors') AS robust, coalesce(results->>'survivors', results->>'validated') AS validated, (results->>'version')::int AS version, (results->>'elapsed_s')::float AS elapsed_s")
             ->get();
 
         return view('param-search.show', [
@@ -33,6 +33,7 @@ class ParamSearchController extends Controller
             'history' => $history,
             'keep'    => ParamSearchService::KEEP_PER_STRATEGY,
             'labels'  => ['15' => '15m', '60' => '1h', '120' => '2h', '240' => '4h', 'D' => '1D'],
+            'focuses' => ParamSearchService::FOCUSES,
             'codeMd5' => $run->strategy?->code !== null ? md5($run->strategy->code) : null,
         ]);
     }
@@ -61,6 +62,7 @@ class ParamSearchController extends Controller
                                     'min_trades' => 30],
             'queued'            => $queued,
             'fixed'             => ['commission_pct' => 0.055, 'slippage_pct' => 0.05, 'risk_pct' => 1.0],
+            'focuses'           => ParamSearchService::FOCUSES,
             'active'            => $active ? $this->state($active) : null,
         ]);
     }
@@ -69,7 +71,8 @@ class ParamSearchController extends Controller
     {
         $data = $this->validateStart($request);
         try {
-            $run = $this->service->start($strategy, $data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id);
+            $run = $this->service->start($strategy, $data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id,
+                $data['focus']);
         } catch (DomainException $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 422);
         }
@@ -81,7 +84,7 @@ class ParamSearchController extends Controller
     public function startAll(Request $request): JsonResponse
     {
         $data = $this->validateStart($request);
-        $out = $this->service->startAll($data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id);
+        $out = $this->service->startAll($data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id, $data['focus']);
 
         return response()->json(['success' => $out['created'] !== [], 'created' => $out['created'], 'skipped' => $out['skipped'],
                                  'error' => $out['created'] === [] ? 'No se encoló ninguna búsqueda.' : null]);
@@ -95,12 +98,14 @@ class ParamSearchController extends Controller
     {
         $data = $request->validate([
             'mode'        => ['sometimes', 'in:interval,symbol'],
+            'focus'       => ['sometimes', 'in:' . implode(',', array_keys(ParamSearchService::FOCUSES))],
             'intervals'   => ['sometimes', 'array', 'max:5'],
             'intervals.*' => ['string'],
             'symbols'     => ['required', 'array', 'min:1', 'max:50'],
             'symbols.*'   => ['string', 'max:30'],
         ]);
         $data['mode'] ??= count($data['intervals'] ?? []) === 1 ? 'interval' : 'symbol';
+        $data['focus'] ??= 'gain';
 
         return $data;
     }
@@ -111,6 +116,18 @@ class ParamSearchController extends Controller
         $this->service->reapStale();
 
         return response()->json($this->state($run->fresh('strategy')));
+    }
+
+    /** Eliminar una búsqueda terminada, fallida o cancelada (solo administración: grupo de rutas can:manageUsers). */
+    public function destroy(ParamSearchRun $run): JsonResponse
+    {
+        try {
+            $this->service->delete($run);
+        } catch (DomainException $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true]);
     }
 
     public function cancel(ParamSearchRun $run): JsonResponse
@@ -131,6 +148,7 @@ class ParamSearchController extends Controller
         foreach ($run->results['rows'] ?? [] as $row) {
             $rows[] = [
                 'id'         => $row['id'],
+                'symbol'     => $row['symbol'] ?? null,
                 'interval'   => $row['interval'],
                 'cfg'        => $row['cfg'],
                 'survivors'  => $row['survivors'] ?? array_keys($row['symbols'] ?? []),
@@ -152,13 +170,16 @@ class ParamSearchController extends Controller
                 'created'    => $run->results['created'][$row['id']] ?? null,
             ];
         }
-        // Orden pedido: retorno total ↓, luego estrellas, luego consistencia
-        usort($rows, fn ($a, $b) => [$b['summary']['total_return_pct'], $b['summary']['rating'], $b['summary']['consist_pct']]
-            <=> [$a['summary']['total_return_pct'], $a['summary']['rating'], $a['summary']['consist_pct']]);
+        // Orden: métrica del enfoque ↓ (v3; antes, retorno total), luego retorno total, estrellas y consistencia
+        $key = ParamSearchService::FOCUS_SORT[$run->results['focus'] ?? 'gain'] ?? 'total_return_pct';
+        usort($rows, fn ($a, $b) => [$b['summary'][$key], $b['summary']['total_return_pct'], $b['summary']['rating'], $b['summary']['consist_pct']]
+            <=> [$a['summary'][$key], $a['summary']['total_return_pct'], $a['summary']['rating'], $a['summary']['consist_pct']]);
 
         return response()->json(['run' => $this->state($run->fresh('strategy')), 'symbols_mode' => $mode,
                                  'version' => (int) ($run->results['version'] ?? 1), 'min_trades' => $run->results['min_trades'] ?? null,
                                  'months' => count($run->results['months'] ?? []), 'rows' => $rows,
+                                 'focus' => $run->results['focus'] ?? 'gain', 'mode' => $run->results['mode'] ?? null,
+                                 'need' => $run->results['need'] ?? null, 'wr_min_pf' => $run->results['wr_min_pf'] ?? null,
                                  'near' => $run->results['near'] ?? []]);
     }
 
@@ -205,6 +226,8 @@ class ParamSearchController extends Controller
             'progress_note'  => $run->progress_note,
             'intervals'      => $run->intervals,
             'search_symbols' => $run->search_symbols,
+            'focus'          => $run->focus,
+            'mode'           => $run->mode,
             'validation_symbols' => $run->validation_symbols,
             'created_at'     => $run->created_at?->toIso8601String(),
             'started_at'     => $run->started_at?->toIso8601String(),

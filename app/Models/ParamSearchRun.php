@@ -17,7 +17,7 @@ class ParamSearchRun extends Model
 
     protected $fillable = [
         'strategy_id', 'user_id', 'status', 'intervals', 'search_symbols', 'validation_symbols',
-        'months', 'samples', 'seed', 'cancel_requested', 'error',
+        'months', 'samples', 'seed', 'cancel_requested', 'error', 'focus', 'mode',
     ];
 
     protected $casts = [
