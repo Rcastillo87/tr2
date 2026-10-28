@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
+from collectors.bars import bars_frame, sorted_records
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
@@ -124,13 +125,7 @@ class PaperTrader:
         if not rows:
             return pd.DataFrame()
 
-        df = pd.DataFrame(rows, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-        df = df.iloc[::-1].reset_index(drop=True)
-
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = df[col].astype(float)
-
-        return df
+        return bars_frame(rows, f"paper {symbol}/{interval} ({broker})")
 
     async def get_current_regime(self, df: pd.DataFrame, trending_threshold: float = 25,
                                   ranging_threshold: float = 20, ambiguous_as: str = "RANGING") -> str:
@@ -416,6 +411,7 @@ class PaperTrader:
                     """,
                     symbol, last_checkpoint, now - timedelta(minutes=1), minute_broker  # solo 1m cerradas
                 ) if minute_broker else []
+            bars = sorted_records(bars, f"paper #{trade['id']} {symbol}/1 ({minute_broker})")
             if minute_broker is None:
                 logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: sin velas de 1m; SL/TP no evaluados este ciclo")
 

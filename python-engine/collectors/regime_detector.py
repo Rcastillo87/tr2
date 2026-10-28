@@ -11,6 +11,7 @@ import json
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from collectors.bars import bars_frame
 from indicators.regime_indicators import (
     calculate_atr,
     calculate_adx,
@@ -78,13 +79,7 @@ class RegimeDetector:
         if not rows:
             return pd.DataFrame()
 
-        df = pd.DataFrame(rows, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-        df = df.iloc[::-1].reset_index(drop=True)  # orden ascendente
-
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = df[col].astype(float)
-
-        return df
+        return bars_frame(rows, f"régimen {symbol}/{REGIME_INTERVAL} ({broker})")
 
     async def detect(self, symbol: str) -> dict | None:
         """Calcula el régimen actual para un símbolo."""

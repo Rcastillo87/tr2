@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from backtesting.metrics import calculate_metrics
 from backtesting.engine import BacktestEngine
+from collectors.bars import bars_frame
 from collectors.funding_collector import FundingData, load_funding
 from backtesting.strategies.loader import build_strategy
 from collectors.broker_resolver import (
@@ -142,11 +143,7 @@ async def load_ohlcv(pool: asyncpg.Pool, symbol: str, interval: str, broker: str
     if not rows:
         raise ValueError(f"No hay datos para {symbol}/{interval} ({broker}) en el rango especificado")
 
-    df = pd.DataFrame(rows, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        df[col] = df[col].astype(float)
-
-    return df
+    return bars_frame(rows, f"{symbol}/{interval} ({broker})")
 
 
 # Campos del request que son del backtest (datos/reporte), no de la estrategia

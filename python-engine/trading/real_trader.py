@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 import pandas as pd
 
 from trading.bybit_client import bybit_sign
+from collectors.bars import bars_frame
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
@@ -932,11 +933,7 @@ class RealTrader:
         if not rows:
             return []
 
-        df = pd.DataFrame(rows, columns=['time','open','high','low','close','volume'])
-        df = df.iloc[::-1].reset_index(drop=True)
-        for col in ['open','high','low','close','volume']:
-            df[col] = df[col].astype(float)
-        return df
+        return bars_frame(rows, f"real {symbol}/{interval} ({broker})")
 
     async def get_current_regime(self, df, trending_threshold: float = 25, ranging_threshold: float = 20,
                                   ambiguous_as: str = "RANGING") -> str:
