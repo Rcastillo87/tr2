@@ -123,5 +123,15 @@ res = ps.evaluate('t', code, {}, 'XAUSDT', '60', pair, start, split, end_n)
 check('caché de señales distingue el nivel de volumen (×0,8 ≠ ×1,5)', res[0][3]['n'] != res[1][3]['n'],
       (res[0][3]['n'], res[1][3]['n']))
 
+# 7. Tendencia de BTC en la búsqueda: solo en los enfoques; sin velas de BTC (sintético) no opera; caché distinta
+cs = ps.sample_configs(80, 3, 'gain')
+check('BTC: se prueba en los enfoques (a veces)', any(c['btc_trend_filter'] for c in cs) and not all(c['btc_trend_filter'] for c in cs))
+check('BTC: nunca en consola', not any(c['btc_trend_filter'] for c in ps.sample_configs(40, 3)))
+pair = [dict(base, volume_filter=False, btc_trend_filter=False), dict(base, volume_filter=False, btc_trend_filter=True)]
+ps.SIGNAL_CACHE.clear()
+res = ps.evaluate('t', code, {}, 'XAUSDT', '60', pair, start, split, end_n)
+check('BTC sin velas de BTC: no opera (pesimista) y la caché no mezcla', res[0][3]['n'] > 0 and res[1][3]['n'] == 0,
+      (res[0][3]['n'], res[1][3]['n']))
+
 print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
 sys.exit(1 if fails else 0)

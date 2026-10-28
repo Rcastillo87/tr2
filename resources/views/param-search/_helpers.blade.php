@@ -19,6 +19,7 @@ window.SB = window.SB || (function () {
         else t.push(['Sin trailing']);
         if (c.regime_filter) t.push(['Régimen', 1]);
         if (c.macro_trend_filter) t.push(['Macro H4', 1]);
+        if (c.btc_trend_filter) t.push(['Tendencia BTC', 1]);
         if (c.volume_filter) t.push(['Volumen ' + c.volume_filter_period + ' ×' + c.volume_filter_mult, 1]);
         if (c.close_on_opposite) t.push(['Señal opuesta', 1]);
         t.push([Number(c.max_duration) > 0 ? 'Máx ' + c.max_duration + ' velas' : 'Sin límite de duración']);

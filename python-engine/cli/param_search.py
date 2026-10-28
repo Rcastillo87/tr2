@@ -85,7 +85,7 @@ INTERVAL_MODE_SHARE = 0.75  # modo por temporalidad: debe ganar en ≥ 3/4 de la
 BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult', 'trailing_distance_pct',
              'trailing_activation_buffer_pct', 'regime_filter', 'macro_trend_filter', 'volume_filter',
              'volume_filter_period', 'volume_filter_mult', 'max_duration', 'max_duration_profit', 'close_on_opposite',
-             'regime_adx_trending', 'regime_adx_ranging', 'regime_ambiguous_as')
+             'regime_adx_trending', 'regime_adx_ranging', 'regime_ambiguous_as', 'btc_trend_filter')
 
 DATA: dict = {}           # (símbolo, intervalo) -> BacktestData | None
 SIGNAL_CACHE: dict = {}
@@ -141,7 +141,9 @@ def sample_configs(n: int, seed: int, focus: str | None = None, regime: bool = T
                    volume_filter=volume_on, volume_filter_period=20, volume_filter_mult=volume_mult,
                    max_duration=rng.choice(sp['duration'] if sp else [0, 24, 48]), max_duration_profit=False,
                    close_on_opposite=rng.random() < 0.3,
-                   regime_adx_trending=25.0, regime_adx_ranging=20.0, regime_ambiguous_as='RANGING')
+                   regime_adx_trending=25.0, regime_adx_ranging=20.0, regime_ambiguous_as='RANGING',
+                   # tendencia de BTC (altcoins): solo en los enfoques y al final del sorteo (consola reproducible)
+                   btc_trend_filter=bool(sp) and rng.random() < f * 0.5)
         key = json.dumps(cfg, sort_keys=True)
         if key not in seen:
             seen.add(key)
@@ -201,7 +203,8 @@ async def _load(pool, symbols, intervals, start, end, log):
         minute_cache: dict = {}   # velas de 1m de la moneda: una carga y un solo DataFrame para todas las temporalidades
         for iv in intervals:
             try:
-                DATA[(sym, iv)] = await load_backtest_data(pool, sym, iv, start, end, macro=True, minute_cache=minute_cache)
+                DATA[(sym, iv)] = await load_backtest_data(pool, sym, iv, start, end, macro=True, minute_cache=minute_cache,
+                                                           btc_macro=True)
                 d = DATA[(sym, iv)]
                 parts.append(f"{iv}={len(d.df)}{'' if d.minute_df is not None or iv == '15' else ' (sin 1m)'}")
             except ValueError:
@@ -320,8 +323,11 @@ def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
         s.slippage_pct = COSTS['slippage_pct']
         if cfg['macro_trend_filter']:
             s.macro_df = data.macro_df
+        if s.btc_filter_applies():
+            s.btc_macro_df = data.btc_macro_df
         key = (name, sym, iv, cfg['macro_trend_filter'], cfg['volume_filter'],
-               (cfg['volume_filter_period'], cfg['volume_filter_mult']) if cfg['volume_filter'] else None)
+               (cfg['volume_filter_period'], cfg['volume_filter_mult']) if cfg['volume_filter'] else None,
+               s.btc_filter_applies())
         if key not in SIGNAL_CACHE:
             SIGNAL_CACHE[key] = s.compute_signals(data.df)
         cached = SIGNAL_CACHE[key]
@@ -607,7 +613,7 @@ def validate(a) -> int:
     print(f"Periodo {start_n:%Y-%m-%d} → {end_n:%Y-%m-%d} ({a.months} meses, igual que la pantalla) · cargando datos…", flush=True)
     asyncio.run(load_data(symbols, intervals, start, end))
     for k, p in enumerate(picks, 1):
-        cfg = {kk: p[kk] for kk in BASE_KEYS}
+        cfg = {kk: p.get(kk, False) if kk == 'btc_trend_filter' else p[kk] for kk in BASE_KEYS}   # json viejos sin BTC
         code, scfg = strategies[p['estrategia']]
         print(f"\n═══ Configuración {k}: {p['estrategia']} · {p['intervalo']} · SL {cfg['sl_pct']} / TP {cfg['tp_pct']} / BE {cfg['be_pct']} "
               f"· trailing {cfg['trailing_mode']} · régimen {cfg['regime_filter']} · macro {cfg['macro_trend_filter']} "

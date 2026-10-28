@@ -57,7 +57,8 @@ class BacktestFromSearch
             'volume_filter_mult'             => (string) $cfg['volume_filter_mult'],
             'volatility_protection_mode'     => 'none',
         ];
-        foreach (['max_duration_profit', 'close_on_opposite', 'regime_filter', 'macro_trend_filter', 'volume_filter'] as $cb) {
+        foreach (['max_duration_profit', 'close_on_opposite', 'regime_filter', 'macro_trend_filter', 'volume_filter',
+                  'btc_trend_filter'] as $cb) {
             if (! empty($cfg[$cb])) {
                 $f[$cb] = 'on';
             }
