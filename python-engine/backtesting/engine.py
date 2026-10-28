@@ -10,7 +10,10 @@ Orden de eventos en cada vela i (todo con información disponible en ese momento
          SL vigente -> TP1 -> break-even -> trailing   (lo adverso primero)
        al cierre: protección por volatilidad y cierre por duración (en velas).
 Costos: comisión en entrada y salida + slippage por lado en TODAS las ejecuciones
-(entradas y salidas a mercado: SL, TP, tiempo, volatilidad, señal opuesta).
+(entradas y salidas a mercado: SL, TP, tiempo, volatilidad, señal opuesta)
++ funding de Bybit en cada liquidación con la posición abierta (pesimista en los bordes:
+  el funding que se paga cuenta si la entrada o la salida coinciden con la liquidación; el que
+  se cobra solo si la posición estuvo abierta antes y después).
 """
 
 import logging
@@ -56,6 +59,7 @@ class BacktestEngine:
         regime_data: dict | None = None,
         minute_df: pd.DataFrame | None = None,
         trade_from=None,
+        funding=None,
     ):
         self.strategy           = strategy
         self.df                 = df.reset_index(drop=True).copy()
@@ -69,6 +73,13 @@ class BacktestEngine:
         self.trade_from         = pd.Timestamp(trade_from) if trade_from is not None else None
         self.trades: list[dict] = []
         self.interval_minutes   = INTERVAL_MINUTES.get(str(getattr(strategy, 'interval', '60')), 60)
+
+        # Funding (collectors.funding_collector.FundingData): liquidaciones UTC sin tz + tasas
+        self._f_time = self._f_rate = None
+        if funding is not None and len(funding.times):
+            self._f_time = np.asarray(funding.times, dtype='datetime64[ns]')
+            self._f_rate = np.asarray(funding.rates, dtype=float)
+        self._bar_t = self._bar_open = None   # velas principales (las fija run) para el precio de liquidación
 
         # Velas de 1m como arrays (búsqueda binaria, sin iterrows)
         self._m_time = self._m_high = self._m_low = self._m_close = None
@@ -94,15 +105,51 @@ class BacktestEngine:
         capd = self.balance * self.max_leverage / entry  # tope de nocional (sin apalancamiento implícito)
         return round(min(raw, capd), 6)
 
+    @staticmethod
+    def _np_time(t) -> np.datetime64:
+        """Instante como datetime64[ns] UTC sin tz (igual que las velas de 1m y el funding)."""
+        ts = pd.Timestamp(t)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert('UTC').tz_localize(None)
+        return ts.to_datetime64().astype('datetime64[ns]')
+
     def _sub_bars(self, start, end):
-        """(highs, lows) de las velas de 1m en [start, end). None si no hay datos de 1m."""
+        """(times, highs, lows) de las velas de 1m en [start, end). None si no hay datos de 1m."""
         if self._m_time is None:
             return None
-        a = np.searchsorted(self._m_time, pd.Timestamp(start).to_datetime64(), side='left')
-        b = np.searchsorted(self._m_time, pd.Timestamp(end).to_datetime64(), side='left')
+        a = np.searchsorted(self._m_time, self._np_time(start), side='left')
+        b = np.searchsorted(self._m_time, self._np_time(end), side='left')
         if a >= b:
             return None
-        return self._m_high[a:b], self._m_low[a:b]
+        return self._m_time[a:b], self._m_high[a:b], self._m_low[a:b]
+
+    def _price_at(self, ft: np.datetime64) -> float:
+        """Precio al momento de la liquidación: cierre del último minuto previo; sin 1m, open de la vela que la contiene."""
+        if self._m_time is not None:
+            k = int(np.searchsorted(self._m_time, ft, side='left')) - 1
+            if k >= 0 and ft - self._m_time[k] <= np.timedelta64(1, 'm'):
+                return float(self._m_close[k])
+        k = max(0, int(np.searchsorted(self._bar_t, ft, side='right')) - 1)
+        return float(self._bar_open[k])
+
+    def _funding(self, pos: dict, exit_lo, exit_hi) -> float:
+        """
+        Funding neto del trade (positivo = costo). La salida ocurrió en algún momento de [exit_lo, exit_hi]:
+        lo que se PAGA cuenta en [entrada, exit_hi]; lo que se COBRA solo en (entrada, exit_lo).
+        """
+        if self._f_time is None:
+            return 0.0
+        t0, lo, hi = self._np_time(pos['entry_time']), self._np_time(exit_lo), self._np_time(exit_hi)
+        a = int(np.searchsorted(self._f_time, t0, side='left'))
+        b = int(np.searchsorted(self._f_time, hi, side='right'))
+        sign = 1.0 if pos['side'] == 'long' else -1.0
+        total = 0.0
+        for k in range(a, b):
+            ft = self._f_time[k]
+            cost = sign * self._f_rate[k] * pos['size'] * self._price_at(ft)
+            if cost > 0 or (t0 < ft < lo):
+                total += cost
+        return total
 
     def _step(self, pos: dict, high: float, low: float, atr: float | None) -> tuple[float | None, str | None]:
         """Una sub-vela: SL vigente -> TP1 -> break-even -> trailing. Devuelve (nivel, motivo) o (None, None)."""
@@ -123,12 +170,13 @@ class BacktestEngine:
                 pos['trailing_applied'] = True
         return None, None
 
-    def _close(self, pos: dict, level: float, reason: str, exit_time, bars_held: int) -> None:
+    def _close(self, pos: dict, level: float, reason: str, exit_time, bars_held: int, exit_span=None) -> None:
         exit_price = self._fill(level, pos['side'], is_entry=False)
         size = pos['size']
         gross = (exit_price - pos['entry_price']) * size if pos['side'] == 'long' else (pos['entry_price'] - exit_price) * size
         commission = (pos['entry_price'] + exit_price) * size * self.commission_rate
-        pnl = gross - commission
+        funding = self._funding(pos, *(exit_span or (exit_time, exit_time)))
+        pnl = gross - commission - funding
         pnl_pct = pnl / self.balance * 100
         self.balance += pnl
         self.trades.append({
@@ -147,6 +195,7 @@ class BacktestEngine:
             "size":         size,
             "gross_pnl":    round(gross, 4),
             "commission":   round(commission, 4),
+            "funding":      round(funding, 4),
             "pnl":          round(pnl, 4),
             "pnl_pct":      round(pnl_pct, 4),
             "exit_reason":  reason,
@@ -169,6 +218,9 @@ class BacktestEngine:
         highs  = df['high'].to_numpy(dtype=float)
         lows   = df['low'].to_numpy(dtype=float)
         closes = df['close'].to_numpy(dtype=float)
+        if self._f_time is not None:
+            self._bar_t = pd.to_datetime(df['time'], utc=True).dt.tz_convert(None).to_numpy(dtype='datetime64[ns]')
+            self._bar_open = opens
         signals = df['signal'].fillna(0).astype(int).to_numpy()
         signal_sl = df['signal_sl_pct'].to_numpy(dtype=float) if 'signal_sl_pct' in df.columns else None
 
@@ -240,10 +292,14 @@ class BacktestEngine:
             bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None  # al cierre de i
             sub = self._sub_bars(bar_time, bar_time + step)
             level = reason = None
+            one_ns = pd.Timedelta(1, 'ns')
+            exit_span = (bar_time, bar_time + step - one_ns)   # salida dentro de la vela: momento exacto desconocido
             if sub is not None:
-                for h, l in zip(*sub):
+                for mt, h, l in zip(*sub):
                     level, reason = self._step(pos, float(h), float(l), trail_atr)
                     if level is not None:
+                        m0 = pd.Timestamp(mt)
+                        exit_span = (m0, m0 + pd.Timedelta(minutes=1) - one_ns)
                         break
             else:
                 level, reason = self._step(pos, highs[i], lows[i], trail_atr)
@@ -267,7 +323,9 @@ class BacktestEngine:
 
             if level is not None:
                 at_close = reason in ('volatility_protection', 'time_exit', 'time_exit_profit')
-                self._close(pos, level, reason, bar_time + step if at_close else bar_time, bars_held)
+                if at_close:
+                    exit_span = (bar_time + step, bar_time + step)
+                self._close(pos, level, reason, bar_time + step if at_close else bar_time, bars_held, exit_span)
                 pos = None
                 equity_curve.append(self.balance)
 

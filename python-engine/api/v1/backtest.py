@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from backtesting.metrics import calculate_metrics
 from backtesting.engine import BacktestEngine
+from collectors.funding_collector import FundingData, load_funding
 from backtesting.strategies.loader import build_strategy
 from collectors.broker_resolver import (
     coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
@@ -254,6 +255,7 @@ class BacktestData:
     minute_df: Optional[pd.DataFrame]      # 1m para simular salidas (None = vela grande, SL primero)
     warnings: list
     coverage: dict
+    funding: Optional[FundingData] = None  # funding de Bybit del rango operado (None = no disponible)
 
 
 async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, start: datetime | None,
@@ -313,7 +315,19 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
                 f"{data_start:%Y-%m-%d} → {data_end:%Y-%m-%d} (disponibles: {available}). "
                 f"Salidas simuladas con vela grande y SL primero (pesimista) en todo el rango."
             )
-    return BacktestData(df=df, macro_df=macro_df, minute_df=minute_df, warnings=warnings, coverage=coverage)
+    # 3. Funding de Bybit del rango operado (se opera en Bybit aunque las velas sean de otra fuente)
+    funding = None
+    f_start = start or df['time'].iloc[0].to_pydatetime()
+    f_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(interval)
+    try:
+        funding, f_warnings = await load_funding(pool, symbol, f_start, f_end)
+        warnings.extend(f_warnings)
+        coverage['funding'] = funding.as_dict()
+    except Exception as e:  # sin funding el backtest corre igual, avisando que es optimista
+        logger.error(f"[FUNDING] {symbol}: {e}")
+        warnings.append(f"Aviso: funding de {symbol} no disponible ({e}): los trades no descuentan funding (optimista).")
+    return BacktestData(df=df, macro_df=macro_df, minute_df=minute_df, warnings=warnings, coverage=coverage,
+                        funding=funding)
 
 
 @router.post("/backtest/run")
@@ -348,6 +362,7 @@ async def run_backtest(request: BacktestRequest):
             risk_per_trade_pct=request.risk_per_trade_pct,
             minute_df=minute_df,
             trade_from=start,
+            funding=data.funding,
         )
         result = engine.run()
         result['aggregate_metrics'] = result['metrics']

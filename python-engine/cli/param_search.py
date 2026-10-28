@@ -273,7 +273,7 @@ def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
         cached = SIGNAL_CACHE[key]
         s.compute_signals = lambda _df, c=cached: c.copy()   # mismas señales: solo cambian SL/TP/gestión
         res = BacktestEngine(strategy=s, df=data.df, initial_balance=INITIAL, risk_per_trade_pct=RISK_PCT,
-                             minute_df=data.minute_df, trade_from=start).run()
+                             minute_df=data.minute_df, trade_from=start, funding=data.funding).run()
         trades, m = res['trades'], res['metrics']
         by_month = {x['month']: x['total_pnl_pct'] for x in build_monthly_breakdown(trades, INITIAL, start, end)}
         full = dict(n=int(m['total_trades']), wins=int(m['winning_trades']), wr=finite(m['win_rate'], 2),

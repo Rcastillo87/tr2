@@ -104,6 +104,7 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
         "sharpe_ratio":      round(float(sharpe_ratio), 2),
         "max_drawdown_pct":  round(float(max_drawdown), 2),
         "total_pnl":         round(float(df['pnl'].sum()), 2),
+        "total_funding":     round(float(df['funding'].sum()), 2) if 'funding' in df.columns else 0.0,  # + = pagado
         "gross_profit":      round(float(gross_profit), 4),   # para el PF combinado de varios símbolos
         "gross_loss":        round(float(gross_loss), 4),
         "total_return_pct":  round(float(total_return_pct), 2),
@@ -128,6 +129,7 @@ def _empty_metrics() -> dict:
         "sharpe_ratio": 0.0,
         "max_drawdown_pct": 0.0,
         "total_pnl": 0.0,
+        "total_funding": 0.0,
         "total_return_pct": 0.0,
         "initial_balance": 0.0,
         "final_balance": 0.0,
