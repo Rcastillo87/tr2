@@ -33,6 +33,8 @@ class FakeConn:
         self.s = store
 
     async def fetch(self, sql, *a):
+        if 'time = ANY(' in sql:  # precio de las liquidaciones: (broker, symbol, '1', [minuto previo])
+            return [{'time': b['time'], 'close': b['close']} for b in self.s.get('minutes', []) if b['time'] in a[3]]
         if "interval = '1'" in sql:  # (symbol, desde, hasta, broker)
             return [b for b in self.s['minutes'] if a[1] < b['time'] <= a[2]]
         if 'FROM paper_trades' in sql:
@@ -72,6 +74,19 @@ async def _price(symbol):
 
 pt_mod.resolve_live_broker = _broker
 pt_mod.get_current_price = _price
+
+FUNDING: list = []   # [(datetime UTC, tasa)] que devuelve el funding simulado
+
+
+async def _funding(pool, symbol, start, end, client=None, now=None):
+    import numpy as np
+    from collectors.funding_collector import FundingData
+    pts = [(t, r) for t, r in FUNDING if start <= t <= end]
+    times = np.array([np.datetime64(t.replace(tzinfo=None), 'ns') for t, _ in pts], dtype='datetime64[ns]')
+    return FundingData(symbol, times, np.array([r for _, r in pts], dtype=float), start, end), []
+
+
+pt_mod.load_funding = _funding
 
 
 def minute(t, high=100.4, low=99.6, close=100.0):
@@ -186,6 +201,57 @@ async def main():
     _, _, st = await run_monitor(PV, [minute(base_t)], vbars=vb, vol_widened=True)
     upd = [a for sql, a in st['exec'] if 'last_monitored_at' in sql]
     check('paper: widen NO se repite', upd and abs(upd[0][0] - 99.0) < 1e-9, upd[0][0] if upd else '')
+
+    # 11. Funding (mismo criterio que el backtest)
+    FUNDING.clear()
+    f1 = NOW.replace(minute=0) - timedelta(hours=1) if NOW.minute >= 30 else NOW.replace(minute=0) - timedelta(hours=2)
+    t_entry = NOW - timedelta(hours=3)                         # entrada hace 3 h
+    hit = NOW - timedelta(minutes=5)                           # el SL se toca hace 5 min
+    FUNDING.extend([(f1, 0.001)])
+    mins = [minute(f1 - timedelta(minutes=1), close=110.0), minute(hit, low=98.0)]
+    store = {'minutes': mins, 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding: long paga tasa·size·precio del minuto previo (110)',
+          len(closes) == 1 and abs(closes[0][9] - 0.11) < 1e-9 and abs(closes[0][1] - (99.0 - 100.0 - 0.11)) < 1e-6,
+          closes[0] if closes else 'sin cierre')
+
+    FUNDING[:] = [(f1, -0.001)]
+    store = {'minutes': mins, 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding: long cobra con tasa negativa (estuvo abierta antes y después)',
+          len(closes) == 1 and abs(closes[0][9] + 0.11) < 1e-9, closes[0][9] if closes else 'sin cierre')
+
+    FUNDING[:] = [(hit + timedelta(minutes=1), 0.001), (NOW - timedelta(hours=4), 0.001)]
+    store = {'minutes': mins, 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding: liquidaciones antes de la entrada o después del minuto de salida no cuentan',
+          len(closes) == 1 and closes[0][9] == 0.0, closes[0][9] if closes else 'sin cierre')
+
+    FUNDING[:] = [(hit, -0.001)]
+    store = {'minutes': [minute(hit, low=98.0)], 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding: cobro en el mismo minuto de la salida NO cuenta (pesimista)',
+          len(closes) == 1 and closes[0][9] == 0.0, closes[0][9] if closes else 'sin cierre')
+    FUNDING[:] = [(hit, 0.001)]
+    store = {'minutes': [minute(hit, low=98.0)], 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding: pago en el mismo minuto de la salida cuenta (sin vela previa: precio de entrada)',
+          len(closes) == 1 and abs(closes[0][9] - 0.1) < 1e-9, closes[0][9] if closes else 'sin cierre')
+
+    async def _broken(*a, **k):
+        raise RuntimeError('DB caída')
+    saved, pt_mod.load_funding = pt_mod.load_funding, _broken
+    store = {'minutes': [minute(hit, low=98.0)], 'trade': trade(P, hours_ago=3.0), 'exec': []}
+    await PaperTrader(FakePool(store), {}, {}).monitor_open_trades()
+    pt_mod.load_funding = saved
+    closes = [a for sql, a in store['exec'] if "status = 'closed'" in sql]
+    check('funding no disponible: el trade se cierra igual (funding 0)', len(closes) == 1 and closes[0][9] == 0.0)
+    FUNDING.clear()
 
     print('\nRESULTADO:' , 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
 

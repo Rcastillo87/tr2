@@ -17,6 +17,7 @@ from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
+from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
 
 load_dotenv()
@@ -252,10 +253,60 @@ class PaperTrader:
         )
 
     # ─────────────────────────────────────────────
+    # Funding (mismo criterio que el motor de backtest)
+    # ─────────────────────────────────────────────
+
+    async def _trade_funding(self, trade: dict, exit_lo: datetime, exit_hi: datetime) -> float:
+        """
+        Funding de Bybit del trade (positivo = costo). La salida ocurrió en [exit_lo, exit_hi]:
+        lo que se PAGA cuenta en [entrada, exit_hi]; lo que se COBRA solo en (entrada, exit_lo).
+        Precio de cada liquidación: cierre del minuto previo (si falta, el precio de entrada).
+        Si no hay funding disponible se cierra igual (0) y queda en el log.
+        """
+        symbol = trade['symbol']
+        t0 = trade['entry_time'] if trade['entry_time'].tzinfo else trade['entry_time'].replace(tzinfo=timezone.utc)
+        try:
+            funding, warnings = await load_funding(self.pool, symbol, t0, exit_hi)
+        except Exception as e:
+            logger.error(f"[PAPER] Trade #{trade['id']} {symbol}: funding no disponible ({e}); se cierra sin funding")
+            return 0.0
+        for w in warnings:
+            logger.warning(f"[PAPER] Trade #{trade['id']}: {w}")
+        if not len(funding.times):
+            return 0.0
+
+        settle = [pd.Timestamp(t).tz_localize('UTC').to_pydatetime() for t in funding.times]
+        prices: dict = {}
+        broker = await resolve_live_broker(self.pool, symbol, '1', require_fresh=False)
+        if broker:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT time, close FROM ohlcv_data WHERE broker = $1 AND symbol = $2 AND interval = $3"
+                    " AND time = ANY($4::timestamptz[])",
+                    broker, symbol, '1', [t - timedelta(minutes=1) for t in settle])
+            prices = {(r['time'] if r['time'].tzinfo else r['time'].replace(tzinfo=timezone.utc)) + timedelta(minutes=1):
+                      float(r['close']) for r in rows}
+        size, sign = float(trade['size']), (1.0 if trade['side'] == 'long' else -1.0)
+        total, missing = 0.0, 0
+        for ft, rate in zip(settle, funding.rates):
+            price = prices.get(ft)
+            if price is None:
+                missing += 1
+                price = float(trade['entry_price'])
+            cost = sign * float(rate) * size * price
+            if (cost > 0 and t0 <= ft <= exit_hi) or (cost < 0 and t0 < ft < exit_lo):
+                total += cost
+        if missing:
+            logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: {missing} liquidación(es) sin vela de 1m; "
+                           f"funding al precio de entrada")
+        return total
+
+    # ─────────────────────────────────────────────
     # Cerrar posicion
     # ─────────────────────────────────────────────
 
-    async def close_trade(self, trade: dict, exit_price: float, exit_reason: str):
+    async def close_trade(self, trade: dict, exit_price: float, exit_reason: str, exit_span: tuple | None = None):
+        """exit_span: (desde, hasta) en que ocurrió la salida (minuto de 1m que la disparó); None = ahora."""
         entry_price  = float(trade['entry_price'])
         size         = float(trade['size'])
         side         = trade['side']
@@ -277,7 +328,10 @@ class PaperTrader:
         # Config sin commission_pct (anterior a 2026-07-09): taker de Bybit, único broker operado
         commission_pct = float(cfg_params.get('commission_pct', 0.055)) / 100
         commission = (entry_price * size + exit_price * size) * commission_pct
-        pnl = gross_pnl - commission
+        now = datetime.now(timezone.utc)
+        exit_lo, exit_hi = exit_span or (now, now)
+        funding = await self._trade_funding(trade, exit_lo, exit_hi)
+        pnl = gross_pnl - commission - funding
 
         pnl_pct = pnl / VIRTUAL_BALANCE * 100
 
@@ -291,18 +345,18 @@ class PaperTrader:
                 SET exit_price = $1, pnl = $2, pnl_pct = $3, exit_reason = $4,
                     exit_time = $5, status = 'closed',
                     max_profit_pct = $6, max_loss_pct = $7, commission = $8,
-                    updated_at = now()
+                    funding = $10, updated_at = now()
                 WHERE id = $9
                 """,
                 exit_price, round(pnl, 4), round(pnl_pct, 4), exit_reason,
-                datetime.now(timezone.utc).replace(tzinfo=None),
+                now.replace(tzinfo=None),
                 round(max_profit_pct, 4), round(max_loss_pct, 4), round(commission, 4),
-                trade['id']
+                trade['id'], round(funding, 8)
             )
 
         logger.info(
             f"[PAPER] CLOSE #{trade['id']} {trade['strategy']} {trade['symbol']} "
-            f"{side.upper()} @ {exit_price} reason={exit_reason} pnl={round(pnl, 2)}"
+            f"{side.upper()} @ {exit_price} reason={exit_reason} pnl={round(pnl, 2)} funding={round(funding, 4)}"
         )
 
     # ─────────────────────────────────────────────
@@ -367,6 +421,7 @@ class PaperTrader:
 
             exit_price    = None
             exit_reason   = None
+            exit_span     = None
             last_bar_time = last_checkpoint
 
             # ATR de la última vela CERRADA del intervalo (trailing ATR y protección por volatilidad)
@@ -413,6 +468,8 @@ class PaperTrader:
                     max_loss_pct = adv_pct
 
                 if exit_price is not None:
+                    bt = bar['time'] if bar['time'].tzinfo else bar['time'].replace(tzinfo=timezone.utc)
+                    exit_span = (bt, bt + timedelta(minutes=1) - timedelta(microseconds=1))  # dentro de ese minuto
                     break
 
             # Protección por volatilidad: una vez por ciclo, con la última vela cerrada del intervalo
@@ -421,12 +478,14 @@ class PaperTrader:
                 vol_check = strategy_instance.check_volatility_protection(sl, side, closed_atr, closed_atr_avg)
                 if vol_check['action'] == 'close':
                     exit_price, exit_reason = float(bars[-1]['close']), 'volatility_protection'
+                    bt = bars[-1]['time'] if bars[-1]['time'].tzinfo else bars[-1]['time'].replace(tzinfo=timezone.utc)
+                    exit_span = (bt + timedelta(minutes=1), bt + timedelta(minutes=1))   # al cierre de ese minuto
                 elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None and not vol_widened:
                     sl = vol_check['new_sl']   # una sola vez por trade
                     vol_widened = True
 
             if exit_price is not None:
-                await self.close_trade(trade, exit_price, exit_reason)
+                await self.close_trade(trade, exit_price, exit_reason, exit_span)
                 results["closed"] += 1
                 continue
 
