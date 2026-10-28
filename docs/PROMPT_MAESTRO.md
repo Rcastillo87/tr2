@@ -176,6 +176,8 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 
 ## 9. Pendientes (orden sugerido)
 
+> **Próxima sesión: empezar por el 1.** Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.1 (si siguen en V6.2, pedirle que las reemplace por este documento).
+
 1. **Revisión automática de lotes solapados** dos veces al día, tras `policy_compression` (detección en `/root/patches/batches/detect.sql`; arreglo = rehacer solo los fragmentos afectados).
 2. Reconciliación paper vs backtest con trades reales (cuando las 3 configs de paper lleven 1–2 semanas cerrando operaciones).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla" listo, pospuesto por el dueño).

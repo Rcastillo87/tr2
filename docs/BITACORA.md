@@ -6,6 +6,16 @@
 
 ---
 
+## ▶ Próxima sesión (empezar aquí)
+1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
+2. Comparar paper contra backtest con trades reales (configs #54, #55, #56) cuando tengan operaciones cerradas.
+3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
+4. Slippage de altcoins en demo (SOL, SUI, LINK).
+5. Reescribir `docs/01`, `02` y `03`.
+- **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
 ## 2026-10-27 (Bogotá) — Integridad de velas, filtros v2, búsqueda v3, funding y riesgo en real
 
 ### Resumen para el dueño
