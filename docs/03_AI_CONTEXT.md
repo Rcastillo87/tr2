@@ -1,5 +1,7 @@
 # CONTEXT.md — tr-bot V2 (machine-readable project context)
 
+> ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
+
 > Documento 3 de 3. Optimizado para que un asistente de IA cargue contexto operativo del proyecto sin re-explorar el código fuente. Prosa mínima, máxima densidad de hechos verificables. Última actualización: exploración completa de 227 archivos del repo `Rcastillo87/tr2`, rama `main`.
 
 ---
@@ -559,6 +561,18 @@ Filters (all no-op if disabled, applied in this exact order in every strategy's 
   ⚠️ weekend_filter, blocked_hours, blocked_days are initialized TWICE (identical) in
     BaseStrategy.__init__ — harmless copy-paste duplication, second assignment just overwrites
     with the same value.
+```
+
+**[V7.1] current filter pipeline** (`BaseStrategy.compute_signals`, single entry for backtest/paper/real):
+```
+prepare → generate_signals → apply_volume_filter → apply_hour_filter → apply_weekend_filter
+  → apply_blocked_hours → apply_blocked_days → apply_macro_trend_filter → apply_btc_trend_filter
+macro/btc: macro_trend_series(times, interval, h4_df) = sign(close_H4 - EMA50) of the last H4 CLOSED at
+  signal-bar close; no data / <50 bars → 0 → signal blocked (pessimistic)
+btc_trend_filter: only when symbol != BTCUSDT; executor sets strategy.btc_macro_df (BTC H4 closed bars)
+allowed_regimes: params['allowed_regimes'] (list) overrides class attr; None = class default
+  (3 regimes unless the strategy code declares fewer); should_operate checked by the engine/paper/real
+bars: every ohlcv read → collectors/bars.py bars_frame()/sorted_records() (sort + dedupe + [BARS] warning)
 ```
 
 ### `classify_regime()` (`indicators/regime_indicators.py`) — used EVERYWHERE regime matters

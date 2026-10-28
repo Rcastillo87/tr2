@@ -1,5 +1,7 @@
 # tr-bot V2 — Documentación Técnica
 
+> ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
+
 > Documento 2 de 3. Referencia exhaustiva: cada ruta HTTP, cada función, cada campo de base de datos, cada job programado. Escrito para desarrolladores que necesitan modificar o depurar el sistema sin tener que leer el código fuente completo primero.
 
 ---
@@ -641,49 +643,40 @@ Modelos Pydantic: `SubscriptionPayload` (espejo de lo que envía `RealTradingTic
 *(Continúa en sección 9 con el núcleo de backtesting)*
 ## 9. Núcleo de backtesting (Python)
 
-### Tabla completa de parámetros — `BacktestRequest` (Pydantic, `api/v1/backtest.py`)
+### Tabla completa de parámetros — `BacktestRequest` (Pydantic, `api/v1/backtest.py`) **[V7.1]**
+
+Solo los campos **enviados** pisan a `strategy_config` (`strategy_params` usa `model_fields_set`).
 
 | Campo | Tipo | Default | Notas |
 |---|---|---|---|
-| `strategy` | str | requerido | Nombre visible: "VWAP Tendencia", etc. |
-| `symbol` | str | "BTCUSDT" | |
-| `interval` | str | "60" | |
-| `initial_balance` | float | 10000.0 | |
-| `risk_per_trade_pct` | float | 1.0 | |
-| `sl_pct` | float | 1.5 | |
-| `tp_pct` | float | 3.0 | TP1 |
-| `tp2_pct`, `tp3_pct`, `tp4_pct` | float opcional | None | Niveles adicionales, todos opcionales |
-| `be_pct` | float | 2.0 | |
-| `max_duration` | int | 24 | Velas |
-| `regime_filter` | bool | True | |
-| `walk_forward` | bool | True | |
-| `n_windows` | int | 5 | |
-| `train_pct` | float | 0.7 | |
-| `mode` | str opcional | None | `trend_follow` \| `reversion` (solo VWAP) |
-| `macro_trend_filter` | bool opcional | None | None = usar default de la estrategia según `mode` |
-| `trend_persistence_filter` | bool | False | Solo VWAP Tendencia |
-| `trend_persistence_bars` | int | 4 | |
-| `trend_adx_threshold` | float | 25 | |
-| `dynamic_sl_filter` | bool | False | Solo VWAP Tendencia |
-| `adx_strong_threshold` | float | 30 | |
-| `sl_pct_weak_zone` | float | 0.7 | |
-| `start_date`, `end_date` | str opcional | None | Formato `YYYY-MM-DD` |
-| `trailing_mode` | str opcional | None | None \| `fixed` \| `stepped` |
-| `trailing_distance_pct` | float | 1.0 | |
-| `trailing_steps` | list opcional | None | `[[gain_pct, new_sl_pct], ...]` |
-| `volatility_protection_mode` | str opcional | None | None \| `close` \| `widen` |
-| `volatility_atr_multiplier` | float | 2.5 | |
-| `volatility_widen_pct` | float | 1.0 | |
-| `volume_filter` | bool | False | |
-| `volume_filter_period` | int | 20 | |
-| `volume_filter_mult` | float | 1.2 | |
-| `hour_filter` | bool | False | Filtro legado de rango horario |
-| `hour_filter_start` | int | 7 | UTC |
-| `hour_filter_end` | int | 21 | UTC |
-| `weekend_filter` | bool | False | |
-| `blocked_hours` | list[int] | [] | Horas UTC 0-23 a bloquear |
-| `blocked_days` | list[int] | [] | 0=Lunes...6=Domingo |
-| `monthly_breakdown` | bool | False | |
+| `strategy` | str | requerido | Nombre visible |
+| `strategy_code`, `strategy_config` | str / dict opcional | None | Código de la clase y sus parámetros propios |
+| `symbol`, `interval` | str | "BTCUSDT", "60" | |
+| `initial_balance`, `risk_per_trade_pct` | float | 10000.0, 1.0 | |
+| `sl_pct`, `tp_pct` | float | 1.5, 3.0 | TP1 |
+| `tp2_pct`, `tp3_pct`, `tp4_pct` | float opcional | None | |
+| `be_pct` | float | 2.0 | 99 = sin break-even en la búsqueda |
+| `max_duration`, `max_duration_profit` | int, bool | 24, False | Velas; 0 = sin límite |
+| `regime_filter` | bool | True | La UI lo manda explícito |
+| `regime_adx_trending`, `regime_adx_ranging` | float | 25, 20 | |
+| `regime_ambiguous_as` | str | "RANGING" | RANGING · TRENDING · NO_OPERAR |
+| `allowed_regimes` | list[str] opcional | None | **V7.1.** None = los de la estrategia; lista = elección de la UI; [] = no opera (la UI lo impide con el filtro activo) |
+| `macro_trend_filter` | bool | False | EMA 50 de H4 cerradas |
+| `btc_trend_filter` | bool | False | **V7.1.** EMA 50 H4 de BTC, solo altcoins; sin velas de BTC no opera |
+| `volume_filter`, `volume_filter_period`, `volume_filter_mult` | bool, int, float | False, 20, 1.2 | |
+| `hour_filter`, `hour_filter_start`, `hour_filter_end` | bool, int, int | False, 7, 21 | Sin UI |
+| `weekend_filter`, `blocked_hours`, `blocked_days` | bool, list, list | False, [], [] | Sin UI |
+| `trailing_mode` | str opcional | None | None · fixed · stepped · atr |
+| `trailing_distance_pct`, `trailing_activation_buffer_pct`, `trailing_atr_mult`, `trailing_steps` | | 1.0, 0.0, 2.0, [] | Fijo: mínimo 1,0 % |
+| `close_on_opposite`, `exit_on_opposite`, `allow_short` | bool | False, False, True | |
+| `commission_pct`, `slippage_pct` | float | 0.055, 0.0 | La UI manda 0.055 / 0.05 por lado |
+| `max_leverage` | float | 1.0 | |
+| `volatility_protection_mode`, `volatility_atr_multiplier`, `volatility_widen_pct` | | None, 2.5, 1.0 | close · widen |
+| `data_broker` | str opcional | None | None = el de mayor cobertura |
+| `start_date`, `end_date` | str opcional | None | `YYYY-MM-DD`, rango semiabierto |
+| `walk_forward`, `n_windows`, `monthly_breakdown` | bool, int, bool | True, 5, False | Solo reporte |
+
+Datos (`load_backtest_data`): velas principales con 500 de calentamiento, H4 para macro, H4 de BTC si `btc_trend_filter` y la moneda no es BTC, 1m si cubre todo el rango, funding de Bybit del rango. Toda lectura pasa por `collectors/bars.py`.
 
 ### `BacktestEngine` (`backtesting/engine.py`)
 
@@ -759,6 +752,8 @@ Todas las estrategias heredan de aquí. Define el contrato `generate_signals(df)
 - `apply_blocked_days(df)` — anula señales cuyo día de semana esté en la lista `blocked_days`.
 
 Todas estas funciones devuelven el DataFrame sin cambios si su filtro correspondiente está desactivado (`False` o lista vacía) — son no-ops seguros por defecto.
+
+**[V7.1]** `compute_signals(df)` es la única entrada (backtest, paper y real): `prepare` → `generate_signals` → volumen, horario, fin de semana, horas y días bloqueados, **macro H4** (`apply_macro_trend_filter`) y **tendencia de BTC** (`apply_btc_trend_filter`, solo si `btc_filter_applies()`: filtro activo y símbolo distinto de BTCUSDT). Ambos usan `macro_trend_series`: la última H4 ya cerrada al cierre de la vela de la señal; sin datos → no opera. `allowed_regimes` puede venir en `params` y pisa el atributo de la clase.
 
 **`should_operate(regime)`** — si `regime_filter` es False, siempre devuelve True (sin restricción). Si está activo, devuelve `regime in self.allowed_regimes`.
 

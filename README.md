@@ -28,7 +28,7 @@ Plataforma de trading algorítmico sobre **Bybit (perpetuos USDT)**: backtesting
 | **Backtest pesimista** | Peor escenario siempre: cero look-ahead, comisión 0.055 % por lado, slippage 0.05 % por lado, SL primero si en la misma vela se tocan SL y TP. |
 | **Cero parámetros quemados** | Todo valor de la UI viaja intacto al motor; los umbrales operativos viven en `config/` y `.env`. |
 | **Integridad de datos** | Si no hay velas de 1m que cubran el rango, no se usan. El collector **nunca borra** datos para "reparar". |
-| **Misma lógica en todos lados** | Backtest, paper y real usan el mismo constructor de estrategia y el mismo `compute_signals`. |
+| **Misma lógica en todos lados** | Backtest, paper y real usan el mismo constructor de estrategia y el mismo `compute_signals`. Toda lectura de velas pasa por `collectors/bars.py` (orden garantizado, aviso `[BARS]` si la base entregó algo desordenado). |
 | **No romper el diseño** | Cambios de vistas solo con maqueta aprobada. |
 
 ---
@@ -40,7 +40,7 @@ Plataforma de trading algorítmico sobre **Bybit (perpetuos USDT)**: backtesting
 | Web / UI | Laravel 13 · PHP 8.4 · Blade + Tailwind · SweetAlert2 | CloudPanel (Nginx + PHP-FPM) |
 | Colas | Laravel Horizon · Redis | systemd `trading2-horizon` |
 | Motor | FastAPI · Python 3.12 · Pandas/NumPy · asyncpg | systemd `trading2-engine` (`127.0.0.1:8002`, 1 worker) |
-| Datos | PostgreSQL 16 + TimescaleDB 2.27 (`ohlcv_data` comprimida) | local |
+| Datos | PostgreSQL 16 + TimescaleDB 2.27 (`ohlcv_data` comprimida; `enable_ordered_append=off` y `plan_cache_mode=force_custom_plan` a nivel de base) | local |
 | Exchange | Bybit v5 (`api.bybit.com`; demo en `api-demo.bybit.com`) | — |
 
 ```mermaid
@@ -81,16 +81,20 @@ python-engine/
   api/v1/                                  backtest, paper_trading, real_trading, collector, broker, prices, regime
   backtesting/                             motor de backtest y estrategias base
   trading/                                 paper, real, risk_manager (kill switch)
-  collectors/                              ohlcv_collector (Bybit), broker_resolver
+  collectors/                              ohlcv_collector (Bybit), broker_resolver, bars (velas en orden), funding_collector
+  tools/analysis/                          filter_audit (auditoría de filtros) y análisis manuales
   cli/                                     param_search, collector_validate, collector_repair, backfill_bybit
   db.py                                    pools asyncpg compartidos (backtest / live / json)
 resources/views/                           Blade (param-search/, notifications/, layouts/bell*)
 routes/web.php · routes/console.php        rutas y tareas programadas
 tests/Forensic/                            pruebas forenses (ver §7)
-docs/                                      documentación histórica (julio 2026; parte puede estar desactualizada)
+docs/PROMPT_MAESTRO.md                     instrucciones para quien retome el proyecto (V7.1)
+docs/BITACORA.md                           bitácora de cambios (incluye base de datos y servidor)
+docs/01–03_*.md                            documentación de julio 2026 (secciones clave actualizadas en V7.1)
+docs/archive/                              documentos y resultados viejos
 ```
 
-Los archivos `*.bak_NN` son respaldos que dejan los parches (`NN` = número de parche). No se usan; pueden borrarse cuando el cambio lleve tiempo estable.
+Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/root/patches/<parche>/orig/`.
 
 ---
 
@@ -106,27 +110,32 @@ Los archivos `*.bak_NN` son respaldos que dejan los parches (`NN` = número de p
 
 ### Backtesting (`/backtesting`)
 - 24 meses de calendario completos hasta el último mes cerrado. Velas de 1m para las salidas cuando cubren todo el rango; si no, se descartan (regla de integridad).
+- **Funding de Bybit** descontado en cada trade (pesimista: paga si la liquidación coincide con la entrada o la salida; cobra solo si cae estrictamente dentro).
+- **Filtros de apertura:** régimen con **regímenes permitidos** (por defecto los de la estrategia; aviso si con la elección el filtro no bloquea nada), volumen mínimo, tendencia macro H4 (EMA 50) y **tendencia de BTC** (EMA 50 H4 de BTC; solo altcoins; sin velas de BTC no opera). Todos sin mirar al futuro.
 - Estrellas = `RatingHelper::calculate(win rate, Sharpe, PF, retorno mensual, consistencia)` por moneda, promediadas.
 - **Guardar** guarda en el historial. **Implementar en Paper** es la aprobación. Editar un backtest implementado sincroniza su config en Paper y Real (`StrategyConfigSync`); las posiciones abiertas conservan su `config_snapshot` hasta cerrar.
 
-### Búsqueda de configuración (`/strategies` → 🔍 Buscar)
-- Prueba 40 combinaciones por temporalidad (SL, TP, BE, trailing, filtros, duración) con el mismo cargador de datos que el backtest (`load_backtest_data`): **búsqueda = backtest**.
-- **Regla de monedas que quedan:** por cada configuración se descartan las monedas con retorno ≤ 0 o con menos de **30 operaciones**; si no queda ninguna, la configuración se descarta.
-- Modos: **por temporalidad** (1 temporalidad, 1 a todas las monedas) y **por moneda** (1 a 3 monedas, todas las temporalidades con datos). **Buscar en todas las estrategias** deja una búsqueda en cola por estrategia.
-- Corre en la cola `research` (1 proceso, `nice 19` + `ionice`), una moneda a la vez en memoria, tope técnico de 3 h. La base garantiza **una búsqueda corriendo** y **una por estrategia** (índices de la migración 07).
-- Resultados: solo configuraciones rentables, orden retorno total → estrellas → consistencia; las que dan exactamente lo mismo se juntan. **"Al final"** = también ganó en los últimos 8 meses.
-- ⚠️ El retorno de cada fila suma **solo las monedas que quedaron**: quitar las perdedoras infla el resultado. La señal honesta es "Al final" y, después, el backtest y el paper.
+### Búsqueda de configuración (`/strategies` → 🔍 Buscar) — v3
+- Prueba combinaciones de SL, TP, BE, trailing, filtros y duración con el mismo cargador de datos que el backtest (`load_backtest_data`): **búsqueda = backtest**.
+- **Enfoque:** mayor ganancia, win rate alto (además PF ≥ 1,2) o consistencia alta. Decide dónde se busca y cómo se ordena.
+- **"Gana"** = ≥ 30 operaciones y gana en los primeros 2/3 del periodo **y** en el último 1/3 (que no se usa para elegir).
+- **Por moneda:** hasta 5 monedas, todas las temporalidades (1D incluido), cada moneda con su propio ranking. **Por temporalidad:** se acepta si gana en ≥ 3/4 de las monedas y las métricas incluyen **todas** (ninguna se descarta después).
+- Prueba el filtro de volumen en ×0,8 / 1,0 / 1,2 / 1,5 y la tendencia de BTC; no prueba el régimen en estrategias que permiten los 3 regímenes (no tendría efecto).
+- Corre en la cola `research` (1 proceso, `nice 19` + `ionice`), una moneda a la vez en memoria, tope técnico de 3 h. Una búsqueda corriendo en todo el sistema y una por estrategia.
+- Historial con enfoque, modo y monedas probadas; **Eliminar** (solo admin).
 
 ### Paper trading (`/paper-trading`)
-Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión y slippage que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela).
+Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela).
 
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
 - Tick cada minuto por cuenta (`RealTradingTickJob`), conciliación cada 5 min (`RealTradingReconcileJob`), circuit breaker por pérdida máxima cada minuto.
 - SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick.
+- Órdenes idempotentes (`orderLinkId` guardado antes de enviar; un `pending_open` se recupera preguntando por esa orden). Chequeo de liquidación al abrir.
+- **Límites de riesgo por cuenta** (pérdida máxima del mes y trades abiertos), editables por el dueño en `/trading/accounts`. **Avisos de broker** (`broker_events`) en la campana del dueño.
 
 ### Data Collector (`/collector`)
-- 10 monedas (BNB, BTC, ETH, HYPE, LINK, NEAR, SOL, SUI, XRP, ZEC) × 1m, 5m, 15m, 1h, 2h, 4h, 1D = **65 series**, 2 años de historia.
+- 12 monedas (BTC, ETH, SOL, XRP, ZEC, HYPE, ENA, DOGE, SUI, NEAR, 1000PEPE, LINK) × 1m, 5m, 15m, 1h, 2h, 4h, 1D = **84 series**, historia desde 2024-06-01 (BNB desactivado; sus velas se conservan).
 - Cada minuto: `CollectOhlcvDataJob` → `/v1/collector/run` (4 series en paralelo, UPSERT; nunca dos corridas a la vez).
 - **Vigilante** (`collector:watchdog`, cron cada 5 min, no depende de Horizon): revisa el motor, el atraso real de cada serie y si la cola corre el collector. Si algo se atrasa, corre el collector directo. Reinicia el motor o Horizon tras 3 revisiones seguidas con falla (máximo 1 vez cada 30 min por servicio) si está habilitado en `.env`.
 - **Validación diaria 04:00 (America/Bogota)**: compara las últimas 300 velas cerradas de cada serie con Bybit y el historial completo (velas esperadas vs guardadas, sin `lag()`). Luego **repara** lo que falle: vuelve a descargar de Bybit y guarda con UPSERT, **nunca borra**, máximo 7 días por serie por pasada. Los días que Bybit tampoco tiene completos se registran en `storage/app/collector_bybit_gaps.json` y dejan de contar como huecos.
@@ -163,7 +172,10 @@ cd python-engine && python3.12 -m venv venv && venv/bin/pip install -r requireme
 
 # 4. Base de datos: restaurar un respaldo (pg_dump) o crear desde cero
 php artisan migrate --force
-for f in database/sql-migrations/*.up.sql; do bash ops/dbsql.sh -v ON_ERROR_STOP=1 -1 -f "$f"; done   # en orden: 01 → 08
+for f in database/sql-migrations/*.up.sql; do bash ops/dbsql.sh -v ON_ERROR_STOP=1 -1 -f "$f"; done   # en orden (por nombre)
+# Ajustes de la base (como postgres; ver docs/BITACORA.md):
+runuser -u postgres -- psql -c "ALTER DATABASE trading2 SET timescaledb.enable_ordered_append = off" -c "ALTER DATABASE trading2 SET plan_cache_mode = force_custom_plan"
+runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'" -c "ALTER SYSTEM SET autovacuum_work_mem = '128MB'" -c "SELECT pg_reload_conf()"
 ```
 
 **Migraciones SQL** (`database/sql-migrations/`, cada una con su `.down.sql`):
@@ -178,6 +190,12 @@ for f in database/sql-migrations/*.up.sql; do bash ops/dbsql.sh -v ON_ERROR_STOP
 | 06 | `param_search_runs` (búsquedas) |
 | 07 | Una búsqueda corriendo en todo el sistema y una por estrategia |
 | 08 | `notifications` (avisos) |
+| 10-27 01 | `broker_events` (avisos de broker) |
+| 10-27 02 | `real_trades.order_link_id` (órdenes idempotentes) |
+| 10-27 03 | Límites de riesgo por cuenta |
+| 10-27 04 | `funding_rates`, `funding_coverage` |
+| 10-27 05 | `paper_trades.funding` |
+| 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)
@@ -201,7 +219,7 @@ cp ops/logrotate-tr2.conf /etc/logrotate.d/tr2
 ```bash
 systemctl is-active trading2-engine trading2-horizon redis-server postgresql
 curl -s http://127.0.0.1:8002/health
-php artisan schedule:list            # 9 tareas (ver §6)
+php artisan schedule:list            # 11 tareas (ver §6)
 php artisan collector:watchdog --dry # "motor OK · series atrasadas 0"
 ```
 
@@ -213,11 +231,12 @@ php artisan collector:watchdog --dry # "motor OK · series atrasadas 0"
 
 | Frecuencia | Tarea |
 |---|---|
-| cada minuto | `CollectOhlcvDataJob`, `PaperTradingTickJob`, `RealTradingTickJob`, `CircuitBreakerMaxLossJob` |
+| cada minuto | `CollectOhlcvDataJob`, `PaperTradingTickJob`, `RealTradingTickJob`, `CircuitBreakerMaxLossJob`, `broker:events` (avisos de broker, en segundo plano) |
 | cada 5 min | `RealTradingReconcileJob`, `collector:watchdog` (en segundo plano, sin Horizon) |
 | cada 15 min | `DetectMarketRegimeJob` |
 | 09:00 UTC (04:00 Bogotá) | `collector-validate-daily` (valida y repara) |
 | 09:30 UTC | `alerts-prune` (borra avisos de más de 30 días) |
+| 04:35 Bogotá | `broker-events-prune` |
 
 ### Colas (Horizon)
 
@@ -272,6 +291,14 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `bybit_sign_test.py`, `real_demo_roundtrip.py` | Firma de Bybit; ida y vuelta real en **demo** (solo `api-demo.bybit.com`) |
 | `collector_upsert_test.py`, `collector_integrity_test.py` | Collector: UPSERT y datos idénticos a Bybit |
 | `param_search_summary_test.php` | Métricas de la búsqueda = historial de backtest |
+| `param_search_v3_test.py`, `param_search_v3_laravel_test.php`, `param_search_cache_test.py` | Búsqueda v3: enfoques, regla de aceptación, modos, caché de 1m |
+| `engine_speed_parity_test.py [--real]` | Motor optimizado = motor de referencia (`reference/engine_v3_ref.py`) |
+| `bars_order_test.py [--db]` | Velas en orden: la base las entrega ordenadas (sin avisos `[BARS]`) en backtest, vivo y collector |
+| `filters_v2_test.py` | Regímenes permitidos y tendencia de BTC: exactos, sin mirar al futuro, sin datos no opera |
+| `funding_test.py` | Funding pesimista en los bordes |
+| `risk_limits_test.py`, `risk_limits_laravel_test.php` | Límites de riesgo por cuenta |
+| `broker_events_test.py`, `broker_events_drain_test.php`, `broker_event_messages_test.php` | Avisos de broker |
+| `bybit_order_idempotency_test.py`, `real_recovery_test.py` | Órdenes idempotentes y recuperación de `pending_open` |
 
 ---
 
@@ -292,14 +319,16 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 **Backtest vs paper/real**
 - El backtest entra al open de la vela siguiente; paper/real al precio del tick (≤ 1–2 min después).
 - BE, trailing ATR y cierre por tiempo: por vela de 1m en el backtest, por tick (1 min) en vivo.
-- El **funding** de Bybit (cada 8 h) no está en el backtest (importa en 4h/1D).
 - Real: slippage real de Bybit y cantidad redondeada al paso del símbolo.
 
-**Pendientes**
-- Avisos de broker por usuario (orden rechazada, circuit breaker, claves API inválidas, descuadre de conciliación).
-- Funding en el backtest.
-- Medir slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
-- `place_market_order`: el reintento puede duplicar una orden si la primera llegó a Bybit → usar `orderLinkId` idempotente.
-- Documentos históricos en la raíz (`BRANCHES.md`, `COMPARACION_PAPER_VS_BT.md`, `MIGRACION_FASE1_2026-10-20.md`, `ROADMAP_PERFORMANCE.md`) y `docs/` (julio 2026): revisar y archivar.
+**Mantenimiento de la base**
+- La compresión automática de TimescaleDB (cada 12 h) puede dejar **lotes solapados** en fragmentos donde el collector reparó huecos; la lectura ordenada sale desordenada. Detectar: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`. Arreglar: `decompress_chunk` + `compress_chunk` del fragmento. El escudo `bars_frame` protege los resultados mientras tanto (aviso `[BARS]` en el log).
 
-Bitácora detallada de decisiones y commits: proyecto "Ruben Castillo" → `claude/bitacora-tr2-2026-10.md`.
+**Pendientes**
+- Revisión automática de lotes solapados tras cada compresión.
+- Reconciliación paper vs backtest con trades reales.
+- Funding en pantalla (diseño listo).
+- Medir slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
+- Reescribir `docs/01–03` (julio 2026).
+
+Bitácora de decisiones, commits y cambios de base/servidor: `docs/BITACORA.md`.

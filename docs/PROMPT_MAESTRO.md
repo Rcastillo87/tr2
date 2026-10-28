@@ -1,8 +1,8 @@
-# PROMPT MAESTRO V7 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.1 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.0 · 2026-10-26 · Reemplaza al Prompt Maestro V6.2.
-> Complementos: `README.md` (cómo funciona y cómo se opera) y la bitácora `claude/bitacora-tr2-2026-10.md` del proyecto "Ruben Castillo" (decisiones, commits y verificaciones).
+> Versión 7.1 · 2026-10-27 · Reemplaza a la V7.0 y al Prompt Maestro V6.2.
+> Complementos: `README.md` (cómo funciona y cómo se opera) y `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**).
 
 ---
 
@@ -20,7 +20,7 @@
 Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, PostgreSQL, APIs de exchanges, dominio financiero):
 
 - Soluciones listas para producción, no demos. Rendimiento, escalabilidad y mantenibilidad primero; SOLID y DRY.
-- Piensa en concurrencia, memoria (el servidor tiene 2 núcleos y ~3 GB libres compartidos con otros bots) y volumen de datos.
+- Piensa en concurrencia, memoria (VPS de 2 núcleos y 7,8 GB; ~2,5–3 GB disponibles: lo comparte con otros proyectos del dueño — Freqtrade, MySQL — que **no se tocan**) y volumen de datos (1m de 24 meses ≈ 1,1 M velas ≈ 300 MB por moneda en memoria).
 - Optimiza consultas (índices, sin N+1, cuidado con funciones de ventana sobre chunks comprimidos).
 - Integraciones robustas: timeouts, reintentos **idempotentes**, manejo de errores.
 - Si la idea del dueño es incorrecta o mejorable, **díselo** con argumentos. Si falta contexto crítico, **pregunta**. Sugiere mejoras aunque no las pida, pero no las apliques sin su visto bueno.
@@ -47,7 +47,9 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 | Web | Laravel 13 · PHP 8.4 · Blade + Tailwind (ya compilado) · SweetAlert2 |
 | Colas | Horizon + Redis. `supervisor-1` (`high`, `default`) y `supervisor-research` (`research`, 1 proceso) |
 | Motor | FastAPI · Python 3.12 · `python-engine/` · `127.0.0.1:8002`, 1 worker |
-| Base | PostgreSQL 16 + TimescaleDB 2.27 (`ohlcv_data` comprimida). Cache de Laravel: `database` |
+| Base | PostgreSQL 16 + TimescaleDB 2.27 (`ohlcv_data` comprimida: fragmentos de 7 días, segmentby broker/symbol/interval, política `compress_after` 14 días cada 12 h). Cache de Laravel: `database` |
+| Ajustes de la base (fuera de git) | `ALTER DATABASE trading2 SET timescaledb.enable_ordered_append = off` y `SET plan_cache_mode = force_custom_plan`; `maintenance_work_mem = 256MB`, `autovacuum_work_mem = 128MB` (`ALTER SYSTEM`). Ver `docs/BITACORA.md` |
+| Universo | 12 monedas × 7 temporalidades (1m, 5m, 15m, 1h, 2h, 4h, 1D): BTC, ETH, SOL, XRP, ZEC, HYPE, ENA, DOGE, SUI, NEAR, 1000PEPE, LINK. BNB fuera del collector |
 | Servicios | systemd `trading2-engine` y `trading2-horizon` (`Restart=always`) |
 | Programador | crontab de root: `php artisan schedule:run` cada minuto |
 | Repositorio | `github.com/Rcastillo87/tr2` (rama `main`) |
@@ -58,7 +60,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Horizon: `systemctl restart trading2-horizon` — ⚠️ **mata la búsqueda que esté corriendo**. Antes, comprobar:
   `bash ops/dbsql.sh -c "SELECT id, status FROM param_search_runs WHERE status IN ('queued','running');"`
 
-**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`.
+**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`.
 
 ---
 
@@ -68,7 +70,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 2. **Simulación pesimista.** Peor escenario: cero look-ahead, comisión 0.055 % por lado, slippage 0.05 % por lado, SL primero si SL y TP se tocan en la misma vela.
 3. **Cero parámetros quemados.** Todo valor de la UI viaja intacto al motor; umbrales operativos en `config/` + `.env`.
 4. **Integridad de datos.** Si el 1m no cubre el rango, se descarta. El collector **nunca borra** para reparar: re-descarga de Bybit y UPSERT.
-5. **Misma lógica en backtest, paper y real** (`strategy_params` + `build_strategy` + `compute_signals`).
+5. **Misma lógica en backtest, paper y real** (`strategy_params` + `build_strategy` + `compute_signals`). Toda lectura de velas pasa por `collectors/bars.py` (`bars_frame` / `sorted_records`): ordena por tiempo y **avisa** `[BARS]` si la base entregó algo desordenado; nunca corrige en silencio.
 6. **No romper el diseño.** Prohibido modificar Blade/HTML sin autorización explícita y maqueta aprobada.
 7. **Flujo git:** `git status` antes; tras un cambio probado, `git add -A && git commit`; si falla, `git checkout -- <archivo>` o el `.bak_NN`.
 8. **Lectura previa:** antes de proponer un cambio, pedir comandos de lectura y ver el estado real del archivo.
@@ -92,13 +94,18 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Si no puede adjuntar: partes de 300 líneas con `sed -n '1,300p' $O`.
 - Pedir el `md5sum` de los archivos que se reemplazarán completos.
 
+### 6.1b Entregar
+- Bloques largos **como archivo** (SendUserFile), no pegados en el chat: el copiado manual metió números de línea en un base64.
+- **Todo script que el dueño pegue va envuelto en `( … )`**: un `set -euo pipefail` o un `exit` pegados directo en la terminal cierran su sesión SSH (pasó el 2026-10-27). Dentro de la subshell sí se usa `set -euo pipefail`.
+- Instalaciones largas: con `rollback()` que restaura los originales si una prueba falla después de aplicar.
+
 ### 6.2 Parchar
-- Script Python `patch_NN.py` dentro de un `.tgz` en **base64** con su **md5** (el dueño lo pega en `/root/patches/pNN/`).
+- Script dentro de un `.tgz` en **base64** con su **md5** (se extrae en `/root/patches/pNN/`). Para reemplazos de archivo completo: manifiesto `archivo md5_origen md5_nuevo` (aborta si el origen no coincide; "YA APLICADO" si ya está; originales a `/root/patches/pNN/orig/`, **no** `.bak` dentro del proyecto).
 - El script:
   - **verifica md5** de los archivos que reemplaza completos y **aborta sin escribir** si no coinciden;
   - edita con **anclas exactas** (`replace()` de bloques únicos; aborta si el ancla aparece 0 o más de 1 vez);
   - es **idempotente** (si ya se aplicó, dice "YA APLICADO" y no escribe);
-  - deja respaldo `archivo.bak_NN`.
+  - deja respaldo fuera del proyecto (`/root/patches/pNN/orig/`).
 - **Nunca** `sed` con regex complejos ni scripts con problemas de comillas o indentación (rompieron el HTML en el pasado).
 - Correcciones de una línea: `python3 - <<'EOF' … EOF` con el mismo patrón ancla/abortar.
 
@@ -117,21 +124,24 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 
 ---
 
-## 7. Estado actual (2026-10-26)
+## 7. Estado actual (2026-10-27)
 
 ### Módulos
 | Módulo | Estado |
 |---|---|
-| Backtesting | Motor V3 honesto; 24 meses calendario; 1m si cubre; estrellas `RatingHelper`. Auto-Sync de configs implementadas a Paper/Real (`StrategyConfigSync`). |
-| Búsqueda de configuración | `cli/param_search.py` + `ParamSearchService`. **Regla del dueño:** se quedan las monedas con retorno > 0 y ≥ 30 operaciones; sin ninguna, se descarta. Modos por temporalidad / por moneda; "buscar en todas" en cola; tope 3 h; pantallas nuevas. |
-| Paper | Tick cada minuto, mismo motor. Sistema en cero de configs (decisión del dueño). |
-| Real | Bybit, demo validada (comisión al centavo, SL/TP exactos). Conciliación cada 5 min, circuit breaker, kill switch manual. |
-| Data Collector | 10 monedas × 7 temporalidades = 65 series, idénticas a Bybit. Vigilante cada 5 min (sin Horizon), validación + reparación diaria 04:00 Bogotá. |
+| Backtesting | Motor V3 honesto y 4–5× más rápido (resultados idénticos a la referencia `tests/Forensic/reference/engine_v3_ref.py`); 24 meses calendario; 1m si cubre; **funding de Bybit** por trade (pesimista en bordes); estrellas `RatingHelper`. Auto-Sync a Paper/Real (`StrategyConfigSync`). |
+| Filtros de apertura (v2) | Régimen con **regímenes permitidos** elegibles (`allowed_regimes`; sin enviar = los de la estrategia) y aviso si no bloquea nada; volumen; macro H4 (EMA 50); **tendencia de BTC** (EMA 50 H4 de BTC, solo altcoins). Horario/fin de semana existen en el motor pero no en la UI (la auditoría no los justificó). |
+| Búsqueda de configuración (v3) | `cli/param_search.py` + `ParamSearchService`. Enfoque ganancia / win rate (PF ≥ 1,2) / consistencia. **Gana** = ≥ 30 operaciones y gana en los primeros 2/3 **y** en el último 1/3. Por moneda (hasta 5, ranking propio) o por temporalidad (≥ 3/4 de las monedas, métricas de todas). Prueba volumen ×0,8/1,0/1,2/1,5 y tendencia de BTC; no prueba régimen si la estrategia permite los 3. Historial con monedas; eliminar (admin). |
+| Paper | Tick cada minuto, mismo motor, funding al cerrar. 3 configs activas (VWAP Tendencia H4: SUI #54, ZEC #55, SOL #56; backtest #86). |
+| Real | Bybit, demo validada. `orderLinkId` idempotente, `pending_open` recuperable, avisos de broker al dueño, límites de riesgo por cuenta (pérdida del mes, trades abiertos), conciliación cada 5 min, circuit breaker, kill switch manual. |
+| Data Collector | 12 monedas × 7 temporalidades = 84 series, idénticas a Bybit. Vigilante cada 5 min (sin Horizon), validación + reparación diaria 04:00 Bogotá. |
 | Avisos | Campana 🔔 + `/avisos`. Sistema → admin; broker → dueño de la cuenta (eventos pendientes de definir). |
 
 ### Archivos clave
 - `python-engine/api/v1/backtest.py` (`load_backtest_data`: camino único de datos para backtest y búsqueda).
 - `python-engine/backtesting/` (motor y estrategias), `python-engine/trading/` (paper, real, risk_manager).
+- `python-engine/collectors/bars.py` (velas en orden), `funding_collector.py` (funding), `broker_resolver.py`.
+- `python-engine/tools/analysis/filter_audit.py` (auditoría de filtros: qué quita cada uno, en muestra y fuera de muestra).
 - `python-engine/cli/` (`param_search`, `collector_validate`, `collector_repair`, `backfill_bybit`).
 - `app/Services/` (`ParamSearchService`, `BacktestFromSearch`, `StrategyConfigSync`, `SystemAlerts`).
 - `app/Console/Commands/CollectorWatchdog.php`, `routes/console.php` (tareas programadas).
@@ -154,20 +164,25 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 | Salidas largas perdidas | Guardar en archivo y adjuntar. |
 | Parche "instalado" que no estaba | Verificar con `grep -c` / md5 al final de cada instalación. |
 | `get_order` de Bybit fallaba siempre | Firmar los GET con los parámetros en el mismo orden en que se envían. |
+| TimescaleDB devolvía `ORDER BY time` desordenado | Plan genérico + fragmentos parciales, y lotes comprimidos solapados tras recomprimir. Base: `enable_ordered_append=off`, `plan_cache_mode=force_custom_plan`; datos: `decompress_chunk` + `compress_chunk` de los fragmentos con solape; código: `bars_frame`. |
+| La prueba pasaba con la base mal | Si el código corrige algo, la prueba debe medir la fuente (sin avisos `[BARS]`), no el resultado ya corregido. |
+| Filtro "activo" que no hacía nada | Medir cada filtro con la auditoría (`filter_audit.py`): sin efecto / no aporta / sirve. Un filtro solo sirve si quita más perdedoras que ganadoras **y** no baja la ganancia, en los dos tramos. |
+| Caché de señales mezclaba niveles de volumen | La clave de caché debe incluir **todo** parámetro que cambie las señales. |
+| `hash()` de Python cambia entre procesos | Usar `zlib.crc32` para semillas reproducibles. |
+| Script pegado cerró la sesión SSH | Envolver en `( … )` todo lo que se pegue. |
+| `postgres` sin permiso en `/root/` | `psql < archivo` en vez de `-f`. |
 
 ---
 
 ## 9. Pendientes (orden sugerido)
 
-1. Prueba de punta a punta de la búsqueda en el navegador (ventana → aviso en la campana → crear en historial).
-2. Avisos de broker por usuario: orden rechazada, circuit breaker, claves API inválidas, descuadre de conciliación, (opcional) aperturas/cierres — el dueño elige.
-3. `place_market_order`: reintento que puede duplicar órdenes → `orderLinkId` idempotente.
-4. Funding de Bybit en el backtest.
-5. Slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
-6. Reconciliación paper vs backtest tras 2–4 semanas de paper.
-7. Etiqueta "código desactualizado" en paper (requiere maqueta).
-8. Vectorizar el motor (`engine.py`, de ~7 s a ~1 s por backtest).
-9. Limpieza: `.bak_NN` antiguos, documentos de la raíz y `docs/` de julio, `QUEUE_CONNECTION` duplicado en `.env`.
+1. **Revisión automática de lotes solapados** dos veces al día, tras `policy_compression` (detección en `/root/patches/batches/detect.sql`; arreglo = rehacer solo los fragmentos afectados).
+2. Reconciliación paper vs backtest con trades reales (cuando las 3 configs de paper lleven 1–2 semanas cerrando operaciones).
+3. Funding en pantalla (diseño "TR2 — Funding en pantalla" listo, pospuesto por el dueño).
+4. Slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
+5. Etiqueta "código desactualizado" en paper (requiere maqueta).
+6. Reescribir `docs/01_GENERAL.md`, `02_TECHNICAL.md`, `03_AI_CONTEXT.md` (de julio; en V7.1 solo se actualizaron las secciones afectadas).
+7. El dueño rehace las búsquedas desde cero con los cambios (las anteriores se borraron).
 
 ---
 
@@ -179,4 +194,4 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 4. **Construir y probar en local** (§6.3).
 5. **Entregar:** parche + instalación + salida esperada + prueba.
 6. **Verificar** con la salida real del dueño.
-7. **Commit** y actualizar la bitácora del proyecto.
+7. **Commit** y actualizar `docs/BITACORA.md` (incluidos los cambios de base/servidor que no quedan en git).

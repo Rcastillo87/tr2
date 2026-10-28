@@ -1,5 +1,7 @@
 # tr-bot V2 — Documentación General
 
+> ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
+
 > Documento 1 de 3. Visión completa del proyecto: qué es, cómo está construido, cómo fluye la información entre sus partes, y qué hace cada módulo de negocio. Escrito para que cualquier persona (técnica o no) entienda el sistema completo sin tener que leer código.
 
 ---
@@ -175,7 +177,7 @@ En resumen: Paper Trading se protege contra pérdidas excesivas de la estrategia
 
 ---
 
-## 8. Régimen de mercado
+## 8. Régimen de mercado **[V7.1]**
 
 Tanto el backtesting como Paper Trading y Trading Real consultan el "régimen de mercado" actual antes de decidir si una estrategia puede operar. Se calcula con tres indicadores técnicos clásicos sobre velas H1 (`indicators/regime_indicators.py`):
 
@@ -189,13 +191,15 @@ La clasificación resultante es una de tres etiquetas:
 - **TRENDING** — si el ADX es mayor a 25.
 - **RANGING** — en cualquier otro caso (mercado lateral, sin tendencia clara).
 
-Cada estrategia declara en qué régimen(es) le permiten operar (`allowed_regimes`). Por ejemplo, las estrategias de tendencia (VWAP Tendencia, EMA/Donchian) suelen restringirse a TRENDING, mientras que Reversión a la Media está pensada para RANGING. Este filtro puede activarse o desactivarse por configuración individual (`regime_filter: true/false`) — en la práctica, varias de las configuraciones actualmente activas en producción lo tienen desactivado porque los backtests mostraron mejor desempeño sin él en los pares operados.
+Cada estrategia declara en su código en qué régimen(es) opera (`allowed_regimes`; sin declararlo, los 3). Hoy: Reversión a la Media → solo RANGING; Tendencia EMA/Donchian → solo TRENDING; VWAP Tendencia, VWAP Reversión, Cruce de Medias y FSupertrend → los 3. Desde V7.1 la pantalla de Backtesting permite **elegir los regímenes permitidos** (por defecto, los de la estrategia) y avisa cuando, con los 3 permitidos y el caso ambiguo como lateral o tendencia, el filtro no bloquea ninguna operación (la auditoría del 2026-10-27 lo confirmó en 48 de 48 combinaciones). El caso ambiguo puede tratarse como lateral, como tendencia o "no operar".
 
 Para Paper Trading y Backtesting el régimen se calcula al vuelo sobre los datos disponibles en cada evaluación. Adicionalmente existe un job independiente (`DetectMarketRegimeJob`, cada 15 minutos) que calcula y cachea en Redis el régimen actual de cada símbolo, accesible desde el dashboard para que el usuario vea de un vistazo en qué condición está el mercado en cada par — este caché es solo informativo para la interfaz, no es lo que consultan los motores de ejecución (que recalculan en cada tick sobre los datos más recientes de cada estrategia específica).
 
 ---
 
-## 9. Las cuatro estrategias disponibles
+## 9. Estrategias disponibles **[V7.1]**
+
+> Desde octubre de 2026 las estrategias viven en la tabla `strategies` (columna `code`: clase Python que hereda de `BaseStrategy`, compilada por `backtesting/strategies/loader.py`). Activas: **VWAP Tendencia, VWAP Reversión, Reversión a la Media, Tendencia EMA/Donchian, Cruce de Medias Móviles y FSupertrend 72h**. Filtros de entrada comunes de la UI: régimen (regímenes permitidos), volumen mínimo, tendencia macro H4 y tendencia de BTC (altcoins). Lo que sigue en esta sección es la descripción de julio.
 
 Todas heredan de una clase base común (`backtesting/strategies/base_strategy.py`) que centraliza el cálculo de Stop Loss, hasta 4 niveles de Take Profit (con prioridad TP4 > TP3 > TP2 > TP1 — el motor cierra en el nivel más favorable que se haya alcanzado), Break-even, trailing stop (fijo o escalonado), protección por volatilidad, y un conjunto de filtros opcionales de entrada (volumen mínimo, rango horario permitido, fin de semana bloqueado, horas específicas bloqueadas, días específicos bloqueados).
 
