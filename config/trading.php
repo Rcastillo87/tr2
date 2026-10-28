@@ -19,5 +19,15 @@ return [
         'retention_days'   => (int) env('BROKER_EVENTS_RETENTION_DAYS', 90),  // rastro forense
         'throttle_minutes' => (int) env('BROKER_EVENTS_THROTTLE_MINUTES', 60), // mismo problema repetido
     ],
+    // Límites de riesgo por cuenta de broker: valores al crear la cuenta y rangos editables (la DB tiene un
+    // CHECK de 1–30 % y 1–20 como red de seguridad: los rangos de aquí deben quedar dentro).
+    'risk_limits' => [
+        'max_monthly_loss_pct' => (float) env('RISK_MAX_MONTHLY_LOSS_PCT', 5),
+        'max_open_trades'      => (int) env('RISK_MAX_OPEN_TRADES', 3),
+        'monthly_loss_min'     => 1,
+        'monthly_loss_max'     => 30,
+        'open_trades_min'      => 1,
+        'open_trades_max'      => 20,
+    ],
     'allow_investor_demo_accounts' => env('ALLOW_INVESTOR_DEMO_ACCOUNTS', false),
 ];

@@ -85,6 +85,19 @@ final class BrokerEventMessages
                     . (($data['closed'] ?? false) ? '; se cerró de inmediato.' : ' y no se pudo cerrar: ciérrala en Bybit.')
                     . " Baja el apalancamiento de {$sym} en Bybit antes de volver a operarlo.",
             ],
+            'monthly_limit_reached' => [
+                'level' => 'error', 'mode' => 'open', 'key' => "monthly_limit:{$accountId}",
+                'title' => 'Pérdida máxima del mes alcanzada',
+                'body'  => "{$account}: pérdida neta del mes "
+                    . (isset($data['pct']) ? self::pct($data['pct']) : 'por encima del máximo')
+                    . (isset($data['limit']) ? ' (máximo −' . self::num($data['limit']) . ' %)' : '')
+                    . '. No se abren posiciones hasta el día 1 (00:00 Bogotá); las abiertas se siguen gestionando.',
+            ],
+            'monthly_limit_reset' => [
+                'level' => 'success', 'mode' => 'resolve', 'key' => "monthly_limit:{$accountId}",
+                'title' => 'Nuevo mes: límite de pérdida reiniciado',
+                'body'  => "{$account}: vuelve a abrir posiciones.",
+            ],
             'api_auth_failed' => [
                 'level' => 'error', 'mode' => 'open', 'key' => "api_auth:{$accountId}",
                 'title' => 'Claves API rechazadas por Bybit',

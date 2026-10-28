@@ -77,6 +77,8 @@ class BrokerAccountController extends Controller
             'api_key'           => $validated['api_key'],
             'api_secret'        => $validated['api_secret'],
             'status'            => 'active',
+            'max_monthly_loss_pct' => config('trading.risk_limits.max_monthly_loss_pct'),
+            'max_open_trades'      => config('trading.risk_limits.max_open_trades'),
         ]);
 
         return redirect()->route('trading.accounts')
@@ -106,6 +108,30 @@ class BrokerAccountController extends Controller
         return back()->with('status', $account->status === 'active'
             ? "Cuenta {$account->label} activada."
             : "Cuenta {$account->label} pausada. Sus suscripciones fueron pausadas; las posiciones abiertas se siguen gestionando hasta cerrarse.");
+    }
+
+    /** Límites de riesgo de la cuenta: solo el usuario que la conectó. */
+    public function updateLimits(Request $request, BrokerAccount $account)
+    {
+        Gate::authorize('viewRealTrading');
+
+        if ($account->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        $rl = config('trading.risk_limits');
+        $validated = $request->validate([
+            'max_monthly_loss_pct' => ['required', 'numeric', "min:{$rl['monthly_loss_min']}", "max:{$rl['monthly_loss_max']}", 'multiple_of:0.5'],
+            'max_open_trades'      => ['required', 'integer', "min:{$rl['open_trades_min']}", "max:{$rl['open_trades_max']}"],
+        ], [], [
+            'max_monthly_loss_pct' => 'pérdida máxima del mes',
+            'max_open_trades'      => 'trades abiertos máximos',
+        ]);
+
+        $account->update($validated);
+
+        return back()->with('status', "Límites de {$account->label}: pérdida del mes −" . ($validated['max_monthly_loss_pct'] + 0)
+            . " %, {$validated['max_open_trades']} trades abiertos como máximo. Valen desde la próxima orden.");
     }
 
     public function destroy(BrokerAccount $account)

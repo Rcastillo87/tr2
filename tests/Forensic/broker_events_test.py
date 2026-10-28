@@ -197,6 +197,9 @@ class FakeTrader:
     async def pause_account(self, account_id, reason):
         self.calls.append('pause')
 
+    async def ensure_month_baseline(self, account_id, client):
+        return None
+
     async def clear_non_critical_errors(self, account_id):
         self.calls.append('clear')
 

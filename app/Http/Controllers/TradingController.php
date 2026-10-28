@@ -336,6 +336,7 @@ class TradingController extends Controller
             'availableConfigsByAccount' => $availableConfigsByAccount,
             'accountInfos' => $accountInfos,
             'canCreateDemo' => $user->canCreateDemoAccounts(),
+            'risk' => app(\App\Services\RiskLimits::class)->summary($accounts),
         ]);
     }
 

@@ -29,6 +29,7 @@ import math
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 import pandas as pd
@@ -76,6 +77,10 @@ def compute_native_trailing_params(entry_price, side, trailing_distance_pct, buf
 
 # Circuit breaker: pausar cuenta tras N errores consecutivos de API
 CIRCUIT_BREAKER_THRESHOLD = 3
+
+# Límites de riesgo: el mes se cuenta en hora de Bogotá
+RISK_TZ = ZoneInfo('America/Bogota')
+_MONTHLY_NOTIFIED: set = set()
 
 # Comisión taker de Bybit por lado (cierres hechos por el bot). Los cierres detectados
 # en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
@@ -254,6 +259,29 @@ class BybitClient:
             return True, ''
         reason = f"{data.get('retMsg')} (code {code})"
         return (False, reason) if code in BYBIT_AUTH_FAIL_CODES else (None, reason)
+
+    async def get_equity(self) -> float | None:
+        """Patrimonio de la cuenta UNIFIED (totalEquity; si no, el equity de USDT). Base del límite mensual."""
+        try:
+            r = await self._signed_get('/v5/account/wallet-balance', {'accountType': 'UNIFIED', 'coin': 'USDT'})
+            data = r.json()
+        except Exception as e:
+            logger.error(f"[BYBIT] get_equity exception: {e}")
+            return None
+        if data.get('retCode') != 0:
+            logger.error(f"[BYBIT] get_equity error: {data.get('retMsg')}")
+            return None
+        accounts = (data.get('result') or {}).get('list') or []
+        if not accounts:
+            return None
+        for value in (accounts[0].get('totalEquity'),
+                      next((c.get('equity') for c in accounts[0].get('coin', []) if c.get('coin') == 'USDT'), None)):
+            try:
+                if value not in (None, '') and float(value) > 0:
+                    return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
 
     async def get_min_qty(self, symbol: str) -> tuple[float, float]:
         """Obtiene el lot size minimo y qty step para un simbolo."""
@@ -934,6 +962,70 @@ class RealTrader:
     # ─────────────────────────────────────────────
     # Abrir posicion real
     # ─────────────────────────────────────────────
+
+    # ─────────────────────────────────────────────
+    # Límites de riesgo por cuenta (los define el dueño en /trading/accounts)
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def _month_start(now: datetime | None = None) -> tuple:
+        """(primer día del mes en Bogotá como date, ese instante en UTC sin tz — como se guarda exit_time)."""
+        local = (now or datetime.now(timezone.utc)).astimezone(RISK_TZ)
+        first = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return first.date(), first.astimezone(timezone.utc).replace(tzinfo=None)
+
+    async def ensure_month_baseline(self, account_id: int, client: BybitClient) -> None:
+        """Al empezar el mes (o al conectar la cuenta) guarda el patrimonio como saldo inicial del mes."""
+        month, _ = self._month_start()
+        async with self.pool.acquire() as conn:
+            current = await conn.fetchval("SELECT month_start_at FROM broker_accounts WHERE id = $1", account_id)
+        if current == month:
+            return
+        equity = await client.get_equity()
+        if not equity:
+            logger.warning(f"[RISK] cuenta {account_id}: sin patrimonio de Bybit para el saldo inicial del mes; próximo ciclo")
+            return
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE broker_accounts SET month_start_balance = $1, month_start_at = $2"
+                " WHERE id = $3 AND month_start_at IS DISTINCT FROM $2",
+                round(equity, 8), month, account_id
+            )
+        if result != "UPDATE 0":
+            logger.info(f"[RISK] cuenta {account_id}: saldo inicial de {month:%Y-%m} = {equity}")
+            if current is not None:  # cambio de mes: cierra el aviso de límite mensual, si lo hubo
+                await emit_event(self.pool, account_id, 'monthly_limit_reset', month=f"{month:%Y-%m}")
+
+    async def entry_limit_reason(self, account_id: int) -> str | None:
+        """Motivo por el que la cuenta NO puede abrir otra posición (None = puede). Solo bloquea entradas."""
+        month, since = self._month_start()
+        async with self.pool.acquire() as conn:
+            acc = await conn.fetchrow(
+                "SELECT max_monthly_loss_pct, max_open_trades, month_start_balance, month_start_at"
+                " FROM broker_accounts WHERE id = $1", account_id)
+            if acc is None:
+                return None
+            open_count = await conn.fetchval(
+                "SELECT count(*) FROM real_trades WHERE broker_account_id = $1"
+                " AND status IN ('pending_open', 'open', 'pending_close')", account_id)
+            month_pnl = None
+            if acc['month_start_at'] == month and acc['month_start_balance']:
+                month_pnl = await conn.fetchval(
+                    "SELECT COALESCE(SUM(COALESCE(net_pnl, pnl, 0)), 0) FROM real_trades"
+                    " WHERE broker_account_id = $1 AND status = 'closed' AND exit_time >= $2", account_id, since)
+
+        if month_pnl is not None:
+            base, limit = float(acc['month_start_balance']), float(acc['max_monthly_loss_pct'])
+            pct = float(month_pnl) / base * 100
+            if pct <= -limit:
+                key = (account_id, month)
+                if key not in _MONTHLY_NOTIFIED:  # un evento por cuenta y mes (Laravel deduplica tras reinicios)
+                    _MONTHLY_NOTIFIED.add(key)
+                    await emit_event(self.pool, account_id, 'monthly_limit_reached', pct=round(pct, 2), limit=limit)
+                return f"pérdida del mes {pct:.2f} % alcanzó el máximo −{limit:g} %"
+        if int(open_count or 0) >= int(acc['max_open_trades']):
+            return f"máximo de trades abiertos ({open_count}/{acc['max_open_trades']})"
+        return None
 
     async def open_trade(self, sub: dict, strategy_instance, side: str,
                           entry_signal_price: float, regime: str, client: BybitClient,
@@ -1719,6 +1811,10 @@ class RealTrader:
             )
         if already_traded:
             return f"{symbol}: señal ya operada en esta vela (trade #{already_traded['id']})"
+
+        limit = await self.entry_limit_reason(sub['broker_account_id'])
+        if limit:
+            return f"{symbol}: límite de riesgo — {limit} (sin entrada)"
 
         side        = 'long' if signal == 1 else 'short'
         entry_price = await client.get_market_price(symbol)

@@ -22,6 +22,7 @@ $expect = [   // evento => [nivel, modo]
     'account_paused' => ['error', 'open'], 'max_loss_close' => ['error', 'notify'],
     'api_auth_failed' => ['error', 'open'], 'api_auth_ok' => ['success', 'resolve'],
     'liquidation_risk' => ['error', 'notify'],
+    'monthly_limit_reached' => ['error', 'open'], 'monthly_limit_reset' => ['success', 'resolve'],
     'reconcile_closed' => ['warning', 'notify'], 'reconcile_adopted' => ['warning', 'notify'],
     'reconcile_discarded' => ['info', 'notify'],
 ];
@@ -50,5 +51,8 @@ $r = $m('liquidation_risk', ['symbol' => 'BTCUSDT', 'closed' => false], 8);
 $check('liquidación sin cerrar: pide cerrarla en Bybit', str_contains($r['title'], 'ciérrala'), $r['title']);
 $r = $m('reconcile_adopted', ['symbol' => 'BTCUSDT', 'kind' => 'pending', 'protected' => true], 9);
 $check('adoptada tras apertura interrumpida', str_contains($r['body'], 'se interrumpió'), $r['body']);
+$r = $m('monthly_limit_reached', ['pct' => -5.2, 'limit' => 5.0]);
+$check('límite mensual: porcentaje y máximo', str_contains($r['body'], '-5,20 %') && str_contains($r['body'], 'máximo −5 %'), $r['body']);
+$check('límite mensual: mismo incidente para abrir y cerrar', $r['key'] === $m('monthly_limit_reset')['key']);
 echo "\nRESULTADO: " . ($fails ? "{$fails} FALLO(S)" : 'TODO OK') . "\n";
 exit($fails ? 1 : 0);

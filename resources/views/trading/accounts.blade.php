@@ -22,6 +22,8 @@
     </div>
 @endif
 
+@include('trading.partials.risk_limits', ['accounts' => $accounts, 'risk' => $risk])
+
 {{-- Formulario crear cuenta --}}
 <div class="rounded-lg border p-4 mb-6" style="background:var(--color-surface); border-color:var(--color-border-soft);">
     <h3 class="text-sm font-medium mb-4" style="color:var(--color-text-secondary);">Agregar cuenta de broker</h3>

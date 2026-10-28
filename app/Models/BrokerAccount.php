@@ -20,12 +20,18 @@ class BrokerAccount extends Model
         'api_secret',
         'status',
         'single_position_per_symbol',
+        'max_monthly_loss_pct',
+        'max_open_trades',
     ];
 
     protected $casts = [
         'api_key' => 'encrypted',
         'api_secret' => 'encrypted',
         'single_position_per_symbol' => 'boolean',
+        'max_monthly_loss_pct' => 'float',
+        'max_open_trades' => 'integer',
+        'month_start_balance' => 'float',
+        'month_start_at' => 'date',
     ];
 
     /**

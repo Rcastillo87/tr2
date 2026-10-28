@@ -79,6 +79,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/accounts',                                                 [TradingController::class, 'accounts'])->name('accounts');
         Route::post('/accounts',                                                [BrokerAccountController::class, 'store'])->name('accounts.store');
         Route::patch('/accounts/{account}/toggle-status',                       [BrokerAccountController::class, 'toggleStatus'])->name('accounts.toggle-status');
+        Route::patch('/accounts/{account}/limits',                              [BrokerAccountController::class, 'updateLimits'])->name('accounts.limits');
         Route::delete('/accounts/{account}',                                    [BrokerAccountController::class, 'destroy'])->name('accounts.destroy');
 
         Route::post('/accounts/{account}/subscriptions',                        [RealStrategySubscriptionController::class, 'store'])->name('subscriptions.store');
