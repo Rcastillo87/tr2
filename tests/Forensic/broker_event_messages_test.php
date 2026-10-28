@@ -21,6 +21,7 @@ $expect = [   // evento => [nivel, modo]
     'close_failed' => ['error', 'throttle'], 'close_unconfirmed' => ['error', 'throttle'],
     'account_paused' => ['error', 'open'], 'max_loss_close' => ['error', 'notify'],
     'api_auth_failed' => ['error', 'open'], 'api_auth_ok' => ['success', 'resolve'],
+    'liquidation_risk' => ['error', 'notify'],
     'reconcile_closed' => ['warning', 'notify'], 'reconcile_adopted' => ['warning', 'notify'],
     'reconcile_discarded' => ['info', 'notify'],
 ];
@@ -42,5 +43,12 @@ $check('motivo de cierre traducido y referencia del trade', str_contains($r['bod
 $r = $m('max_loss_close', ['symbol' => 'BTCUSDT', 'loss_pct' => 2.4567, 'limit_pct' => 1.8], 4);
 $check('pérdida máxima con porcentajes', str_contains($r['body'], '2,46 %') && str_contains($r['body'], 'límite 1,80 %'), $r['body']);
 $check('reactivación', M::reactivated('Bybit Real')['title'] === 'Cuenta reactivada');
+$r = $m('liquidation_risk', ['symbol' => 'BTCUSDT', 'side' => 'long', 'sl' => 98.5, 'liq_price' => 99.1, 'leverage' => 50, 'closed' => true], 8);
+$check('liquidación: cerrada, con SL, liquidación y apalancamiento', $r['title'] === 'Posición cerrada: riesgo de liquidación'
+    && str_contains($r['body'], '(98,5)') && str_contains($r['body'], '(99,1)') && str_contains($r['body'], '50x'), $r['body']);
+$r = $m('liquidation_risk', ['symbol' => 'BTCUSDT', 'closed' => false], 8);
+$check('liquidación sin cerrar: pide cerrarla en Bybit', str_contains($r['title'], 'ciérrala'), $r['title']);
+$r = $m('reconcile_adopted', ['symbol' => 'BTCUSDT', 'kind' => 'pending', 'protected' => true], 9);
+$check('adoptada tras apertura interrumpida', str_contains($r['body'], 'se interrumpió'), $r['body']);
 echo "\nRESULTADO: " . ($fails ? "{$fails} FALLO(S)" : 'TODO OK') . "\n";
 exit($fails ? 1 : 0);

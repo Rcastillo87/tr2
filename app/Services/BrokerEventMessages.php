@@ -74,6 +74,17 @@ final class BrokerEventMessages
                     . (isset($data['limit_pct']) ? ' (límite ' . self::pct($data['limit_pct']) . ')' : '')
                     . ' desde el nivel de referencia y se cerró a mercado como red de seguridad.',
             ],
+            'liquidation_risk' => [
+                'level' => 'error', 'mode' => 'notify', 'key' => null,
+                'title' => ($data['closed'] ?? false) ? 'Posición cerrada: riesgo de liquidación' : 'Riesgo de liquidación: ciérrala en Bybit',
+                'body'  => "{$account} · {$ref}{$side}: el stop loss"
+                    . (isset($data['sl']) ? ' (' . self::num($data['sl']) . ')' : '')
+                    . ' quedaba más allá del precio de liquidación'
+                    . (isset($data['liq_price']) ? ' (' . self::num($data['liq_price']) . ')' : '')
+                    . (isset($data['leverage']) ? ' con apalancamiento ' . self::num($data['leverage']) . 'x' : '')
+                    . (($data['closed'] ?? false) ? '; se cerró de inmediato.' : ' y no se pudo cerrar: ciérrala en Bybit.')
+                    . " Baja el apalancamiento de {$sym} en Bybit antes de volver a operarlo.",
+            ],
             'api_auth_failed' => [
                 'level' => 'error', 'mode' => 'open', 'key' => "api_auth:{$accountId}",
                 'title' => 'Claves API rechazadas por Bybit',
@@ -94,7 +105,11 @@ final class BrokerEventMessages
                 'level' => 'warning', 'mode' => 'notify', 'key' => null,
                 'title' => 'Posición adoptada por conciliación',
                 'body'  => "{$account} · {$ref}{$side}: "
-                    . (($data['kind'] ?? '') === 'untracked' ? 'existía en Bybit sin registro en TR2' : 'la apertura no se había confirmado')
+                    . match ($data['kind'] ?? '') {
+                        'untracked' => 'existía en Bybit sin registro en TR2',
+                        'pending'   => 'la apertura se interrumpió (reinicio del motor) pero la orden sí se ejecutó',
+                        default     => 'la apertura no se había confirmado',
+                    }
                     . '. Ahora se gestiona con el SL/TP de su estrategia.',
             ] : [
                 'level' => 'error', 'mode' => 'notify', 'key' => null,
@@ -115,6 +130,11 @@ final class BrokerEventMessages
     public static function reactivated(string $account): array
     {
         return ['title' => 'Cuenta reactivada', 'body' => "{$account}: vuelve a abrir posiciones."];
+    }
+
+    private static function num(mixed $v): string
+    {
+        return rtrim(rtrim(number_format((float) $v, 8, ',', '.'), '0'), ',');
     }
 
     private static function pct(mixed $v): string

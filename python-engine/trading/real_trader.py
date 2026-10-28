@@ -81,6 +81,10 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 # en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
 BYBIT_TAKER_FEE = 0.00055  # 0.055%
 
+# El SL debe quedar al menos este margen ANTES del precio de liquidación (la liquidación usa el precio
+# de marca; el SL, el último precio: con el SL pegado a la liquidación, la liquidación puede ganar).
+LIQ_BUFFER = 0.005
+
 # Estados finales de una orden sin ejecución
 ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
 
@@ -690,6 +694,14 @@ class RealTrader:
                     results["errors"] += 1
         return results
 
+    @staticmethod
+    def _sl_beyond_liquidation(side: str, sl: float, liq_price: float, buffer: float = LIQ_BUFFER) -> bool:
+        """True si el SL queda en o más allá del precio de liquidación (con margen): Bybit liquidaría antes
+        de que el SL se ejecute. liq_price 0/vacío = sin liquidación calculable (no hay riesgo que medir)."""
+        if not liq_price or liq_price <= 0 or not sl:
+            return False
+        return sl <= liq_price * (1 + buffer) if side == 'long' else sl >= liq_price * (1 - buffer)
+
     async def get_open_trades(self, account_id: int) -> list[dict]:
         """Trades vivos con sus parámetros congelados (snapshot; config de la suscripción si es anterior)."""
         async with self.pool.acquire() as conn:
@@ -987,7 +999,9 @@ class RealTrader:
 
         # 4b. Obtener balance actualizado justo antes de insertar
         balance = await client.get_balance() or balance
-        # 5. Crear registro en pending_open ANTES de enviar a Bybit
+        # 5. Crear registro en pending_open ANTES de enviar a Bybit, con el orderLinkId que llevará la orden:
+        #    si el motor se cae a mitad, la conciliación puede preguntarle a Bybit por ESA orden.
+        link_id = BybitClient.new_order_link_id()
         async with self.pool.acquire() as conn:
             trade_id = await conn.fetchval(
                 """
@@ -996,13 +1010,13 @@ class RealTrader:
                      strategy, symbol, broker, interval, side,
                      entry_price, entry_price_signal, sl, tp, tp2, tp3, tp4,
                      be_level, be_activated, size, original_size, leverage,
-                     balance_before, regime, entry_time, config_snapshot,
+                     balance_before, regime, entry_time, order_link_id, config_snapshot,
                      status, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                      $10, $11, $12, $13, $14, $15, $16,
                      $17, false, $18, $18, 1,
-                     $19, $20, $21, $22,
+                     $19, $20, $21, $22, $23,
                      'pending_open', now(), now())
                 RETURNING id
                 """,
@@ -1012,6 +1026,7 @@ class RealTrader:
                 entry_signal_price, entry_signal_price, sl, tp1, tp2, tp3, tp4,
                 be, size, balance, regime,
                 datetime.now(timezone.utc).replace(tzinfo=None),
+                link_id,
                 # Parámetros congelados de ESTA posición (el pool codifica jsonb desde dict)
                 {**_cfg, 'symbol': symbol, 'interval': interval, 'risk_per_trade_pct': risk_pct,
                  'signal_sl_pct': signal_sl_pct},
@@ -1032,7 +1047,7 @@ class RealTrader:
                 sl, tp1, entry_signal_price, trade_id
             )
         logger.info(f"[REAL] Abriendo {side} {symbol} entry={entry_signal_price} sl={sl} tp1={tp1} size={size}")
-        result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1)
+        result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1, link_id=link_id)
 
         if result is None:
             # Marcar como error
@@ -1121,6 +1136,9 @@ class RealTrader:
         avg_price = filled_price
         sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, avg_price, side, sl_pct)
         logger.info(f"[REAL] SL/TP reales calculados: sl={sl} tp={tp1} be={be} avg={avg_price}")
+        liq_price = float((position or {}).get('liqPrice') or 0)
+        leverage = float((position or {}).get('leverage') or 0) or None
+        liq_risk = self._sl_beyond_liquidation(side, sl, liq_price)
 
         # 7c. Actualizar SL/TP reales en Bybit via trading-stop.
         # Si trailing_mode='fixed', se arma ADEMAS el trailing NATIVO de
@@ -1173,11 +1191,12 @@ class RealTrader:
                         SET status = 'open', order_id = $1,
                             entry_price = $2, slippage_pct = $3,
                             sl = $4, tp = $5, tp2 = $6, tp3 = $7, tp4 = $8,
-                            be_level = $9, original_sl = $4, updated_at = now()
+                            be_level = $9, original_sl = $4, leverage = COALESCE($11, leverage),
+                            updated_at = now()
                         WHERE id = $10
                         """,
                         order_id, filled_price, round(slippage_pct, 6),
-                        sl, tp1, tp2, tp3, tp4, be, trade_id
+                        sl, tp1, tp2, tp3, tp4, be, trade_id, leverage
                     )
                 update_ok = True
                 break
@@ -1199,7 +1218,20 @@ class RealTrader:
             'signal_price': entry_signal_price,
             'slippage_pct': slippage_pct,
             'balance_before': balance,
+            'leverage': leverage,
+            'liq_price': liq_price or None,
         })
+
+        if liq_risk:
+            # El SL nunca se ejecutaría: Bybit liquidaría antes (más pérdida + comisión de liquidación).
+            logger.error(f"[REAL] #{trade_id} {symbol} {side}: SL {sl} más allá de la liquidación {liq_price} "
+                         f"(apalancamiento {leverage}x) — cierre inmediato")
+            await self.log_audit(trade_id, 'liquidation_risk', {'sl': sl, 'liq_price': liq_price, 'leverage': leverage})
+            row = next((t for t in await self.get_open_trades(sub['broker_account_id']) if t['id'] == trade_id), None)
+            closed = bool(row) and await self.close_trade(row, 'liquidation_risk', client, sub['broker_account_id'])
+            await emit_event(self.pool, sub['broker_account_id'], 'liquidation_risk', trade_id, symbol=symbol,
+                             side=side, sl=sl, liq_price=liq_price, leverage=leverage, closed=bool(closed))
+            return False
 
         logger.info(
             f"[REAL] OPEN #{trade_id} {sub['strategy']} {symbol} {side.upper()} "

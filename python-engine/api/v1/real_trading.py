@@ -16,7 +16,8 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 
-from trading.real_trader import RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError
+from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError,
+                                 ORDER_DEAD_STATUSES)
 from trading.risk_manager import RiskManager
 from trading.broker_events import emit_event
 
@@ -253,6 +254,92 @@ async def circuit_breaker_max_loss(
     return {'status': 'ok', 'results': results}
 
 
+# Aperturas interrumpidas: open_trade tarda < 1 min; una fila en 'pending_open' más vieja que esto quedó
+# a medias (reinicio o caída del motor entre el registro y la confirmación).
+PENDING_OPEN_STALE = '3 minutes'
+
+
+async def _recover_pending_opens(trader, client, account, pool, results) -> None:
+    """Resuelve cada 'pending_open' viejo preguntándole a Bybit por SU orden (order_link_id):
+    ejecutada y viva -> se adopta; ejecutada y ya cerrada -> se liquida con Bybit; nunca ejecutada -> failed.
+    Si Bybit no responde, no se toca (próximo ciclo)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT rt.*, COALESCE(rt.config_snapshot, psc.params) AS snapshot
+                FROM real_trades rt
+                LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
+                LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
+                WHERE rt.broker_account_id = $1 AND rt.status = 'pending_open'
+                  AND rt.created_at < now() - interval '{PENDING_OPEN_STALE}'
+                ORDER BY rt.id""",
+            account.id
+        )
+    for row in rows:
+        trade = {**dict(row), 'config_snapshot': row['snapshot']}
+        tid, symbol, link = trade['id'], trade['symbol'], trade.get('order_link_id')
+        order = None
+        try:
+            if link:
+                order = await client.get_order_by_link_id(symbol, link)   # None = no existe; lanza si no se sabe
+            executed = (order is not None and order.get('orderStatus') not in ORDER_DEAD_STATUSES) if link else None
+            position = await client.get_open_position(symbol) if executed is not False else None
+        except BybitAPIError as e:
+            logger.error(f"[RECONCILE] pending_open #{tid} {symbol}: Bybit no responde ({e}) — próximo ciclo")
+            results['ok'].append({'trade_id': tid, 'symbol': symbol, 'note': 'pending_open_api_error'})
+            continue
+
+        live = bool(position) and float(position.get('size', 0) or 0) > 0
+        if live:
+            async with pool.acquire() as conn:
+                other = await conn.fetchval(
+                    "SELECT id FROM real_trades WHERE broker_account_id=$1 AND symbol=$2"
+                    " AND status IN ('open','pending_close') AND id<>$3 LIMIT 1",
+                    account.id, symbol, tid
+                )
+            if other and not link:
+                # fila antigua sin orderLinkId y la posición ya la gestiona otro trade: esta no se ejecutó
+                live = False
+        if live:
+            avg = float(position.get('avgPrice', 0) or trade['entry_price'])
+            adopted = await _adopt_position(trader, client, trade, avg, trade['side'], symbol)
+            if order and order.get('orderId'):
+                async with pool.acquire() as conn:
+                    await conn.execute("UPDATE real_trades SET order_id=$1 WHERE id=$2", order['orderId'], tid)
+            await emit_event(pool, account.id, 'reconcile_adopted', tid, symbol=symbol, side=trade['side'],
+                             kind='pending', protected=adopted)
+            results['reconciled'].append({'trade_id': tid, 'symbol': symbol, 'reason': 'pending_open_adopted'})
+            continue
+
+        if executed:
+            # La orden se ejecutó pero la posición ya no existe (p. ej. tocó el SL): se liquida con Bybit
+            avg = float(order.get('avgPrice') or 0) or float(trade['entry_price'])
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE real_trades SET status='open', entry_price=$1, order_id=$2, updated_at=now()"
+                    " WHERE id=$3 AND status='pending_open'", avg, order.get('orderId'), tid)
+            trade.update(status='open', entry_price=avg)
+            ref = trade['entry_time'] if trade['entry_time'].tzinfo else trade['entry_time'].replace(tzinfo=timezone.utc)
+            settled = await trader.settle_exchange_close(trade, client, account.id, int(ref.timestamp() * 1000))
+            if settled is None:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE real_trades SET status='orphaned', error_message="
+                        "'Posicion cerrada en Bybit, no se pudo obtener pnl real (apertura interrumpida)',"
+                        " updated_at=now() WHERE id=$1", tid)
+            else:
+                await emit_event(pool, account.id, 'reconcile_closed', tid, symbol=symbol)
+                results['reconciled'].append({'trade_id': tid, 'symbol': symbol, 'reason': 'pending_open_closed'})
+            continue
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE real_trades SET status='failed', error_message=$1, updated_at=now()"
+                " WHERE id=$2 AND status='pending_open'",
+                'Apertura interrumpida: la orden no llegó a ejecutarse en Bybit', tid)
+        logger.warning(f"[RECONCILE] pending_open #{tid} {symbol} → failed (la orden no se ejecutó)")
+        await emit_event(pool, account.id, 'reconcile_discarded', tid, symbol=symbol)
+
+
 @router.post('/real/reconcile')
 async def reconcile(
     request: RealTickRequest,
@@ -273,6 +360,9 @@ async def reconcile(
     try:
         for account in request.accounts:
             client = _build_broker_client(account)
+
+            # 0. Aperturas interrumpidas ('pending_open' viejos)
+            await _recover_pending_opens(trader, client, account, pool, results)
 
             # 1. Trades abiertos en DB cuya posición ya no existe en Bybit
             for trade in await trader.get_open_trades(account.id):
