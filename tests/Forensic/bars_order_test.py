@@ -117,6 +117,7 @@ async def part2():
                 print(f'SKIP {sym}/{iv}: sin datos')
                 continue
             bad, sizes, ms = 0, set(), []
+            cap.msgs.clear()
             for _ in range(RUNS):
                 t = time.perf_counter()
                 df = await load_ohlcv(pool, sym, iv, broker, now - timedelta(days=days), now)
@@ -125,6 +126,9 @@ async def part2():
                 sizes.add(len(df))
             check(f'backtest {sym}/{iv}: {RUNS} lecturas en orden y del mismo tamaño', bad == 0 and len(sizes) == 1,
                   dict(bad=bad, sizes=sizes))
+            # bars_frame ordena siempre: lo que prueba que la BASE entrega en orden es que no haya avisado nunca
+            check(f'base {sym}/{iv}: la DB entregó las velas en orden (sin avisos [BARS])', cap.msgs == [],
+                  cap.msgs[:1])
             print(f'INFO   {sym}/{iv}: {sizes.pop()} velas, mediana {statistics.median(ms):.0f} ms')
 
             # Lecturas en vivo (DESC LIMIT): las crudas deben venir en orden inverso exacto y ser las ÚLTIMAS 500
