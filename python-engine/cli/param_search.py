@@ -78,6 +78,8 @@ SPACES = {
                  trailing=[None, ('atr', 2.0), ('fixed', 1.5)],
                  be=(0.5, 99.0), duration=(24, 48), filters=0.65),
 }
+VOLUME_MULTS = (0.8, 1.0, 1.2, 1.5)   # filtro de volumen: el mejor nivel cambia por moneda (auditoría de filtros)
+ALL_REGIMES = frozenset({'TRENDING', 'RANGING', 'VOLATILE'})
 WR_MIN_PF = 1.2           # enfoque win rate: además profit factor ≥ 1,2 (ganar seguido sin perder plata)
 INTERVAL_MODE_SHARE = 0.75  # modo por temporalidad: debe ganar en ≥ 3/4 de las monedas
 BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult', 'trailing_distance_pct',
@@ -93,8 +95,24 @@ class Cancelled(Exception):
     pass
 
 
-def sample_configs(n: int, seed: int, focus: str | None = None) -> list[dict]:
-    """n configuraciones distintas. focus=None: espacio de los modos de consola; 'gain'|'wr'|'cons': SPACES."""
+def regime_useful(code: str) -> bool:
+    """
+    El filtro de régimen solo bloquea si la estrategia limita sus regímenes (allowed_regimes). Con los 3 permitidos y
+    ambiguo = lateral no cambia ninguna operación (auditoría de filtros): probarlo es gastar la mitad de la búsqueda.
+    """
+    from backtesting.strategies.loader import _compile_strategy_class
+    try:
+        return frozenset(_compile_strategy_class(code).allowed_regimes) != ALL_REGIMES
+    except Exception:
+        return True   # si no compila aquí, fallará igual en evaluate(); no se decide nada
+
+
+def sample_configs(n: int, seed: int, focus: str | None = None, regime: bool = True) -> list[dict]:
+    """
+    n configuraciones distintas. focus=None: espacio de los modos de consola; 'gain'|'wr'|'cons': SPACES.
+    regime=False: la estrategia no limita regímenes -> filtro de régimen siempre apagado (no tendría efecto).
+    En los enfoques se prueba además el nivel del filtro de volumen (VOLUME_MULTS).
+    """
     rng = random.Random(seed)
     sp = SPACES.get(focus) if focus else None
     seen, out = set(), []
@@ -107,14 +125,20 @@ def sample_configs(n: int, seed: int, focus: str | None = None) -> list[dict]:
         else:
             be_pct = rng.choice([99.0, round(tp * 0.5, 2)])
         f = sp['filters'] if sp else None
+        buffer = rng.choice([0.5, 1.0]) if tr else 0.0      # mismo orden de sorteo que antes (consola reproducible)
+        regime_on = (rng.random() < (f if sp else 0.5)) and regime
+        macro_on = rng.random() < (f if sp else 0.5)
+        volume_on = rng.random() < (f * 0.8 if sp else 0.4)
+        # nivel de volumen solo si el filtro está encendido (apagado, el nivel no cambia nada: evita duplicados)
+        volume_mult = rng.choice(VOLUME_MULTS) if sp and volume_on else 1.2
         cfg = dict(sl_pct=sl, tp_pct=tp,
                    be_pct=be_pct,
                    trailing_mode=tr[0] if tr else None,
                    trailing_atr_mult=tr[1] if tr and tr[0] == 'atr' else 2.0,
                    trailing_distance_pct=tr[1] if tr and tr[0] == 'fixed' else 1.0,
-                   trailing_activation_buffer_pct=rng.choice([0.5, 1.0]) if tr else 0.0,
-                   regime_filter=rng.random() < (f if sp else 0.5), macro_trend_filter=rng.random() < (f if sp else 0.5),
-                   volume_filter=rng.random() < (f * 0.8 if sp else 0.4), volume_filter_period=20, volume_filter_mult=1.2,
+                   trailing_activation_buffer_pct=buffer,
+                   regime_filter=regime_on, macro_trend_filter=macro_on,
+                   volume_filter=volume_on, volume_filter_period=20, volume_filter_mult=volume_mult,
                    max_duration=rng.choice(sp['duration'] if sp else [0, 24, 48]), max_duration_profit=False,
                    close_on_opposite=rng.random() < 0.3,
                    regime_adx_trending=25.0, regime_adx_ranging=20.0, regime_ambiguous_as='RANGING')
@@ -296,7 +320,8 @@ def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
         s.slippage_pct = COSTS['slippage_pct']
         if cfg['macro_trend_filter']:
             s.macro_df = data.macro_df
-        key = (name, sym, iv, cfg['volume_filter'], cfg['macro_trend_filter'])
+        key = (name, sym, iv, cfg['macro_trend_filter'], cfg['volume_filter'],
+               (cfg['volume_filter_period'], cfg['volume_filter_mult']) if cfg['volume_filter'] else None)
         if key not in SIGNAL_CACHE:
             SIGNAL_CACHE[key] = s.compute_signals(data.df)
         cached = SIGNAL_CACHE[key]
@@ -499,8 +524,9 @@ def run_mode(run_id: int, max_minutes: float) -> int:
               run_id, hashlib.md5((code or '').encode()).hexdigest(), start_n.date(), split.date(), end_n.date())
 
         deadline = t0 + max_minutes * 60
-        configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000, focus)
-                   for iv in intervals}
+        use_regime = regime_useful(code)
+        configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000, focus,
+                                      regime=use_regime) for iv in intervals}
         per_cfg: dict = {}          # (iv, i) -> {símbolo: (is, oos, full)}
         rep.set(force=True, phase='busqueda', done=0, total=len(intervals) * len(search) * samples,
                 note='Probando combinaciones')

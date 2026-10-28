@@ -107,5 +107,21 @@ check('cada fila trae lo que usa Laravel (summarize, notificación)', all(
 check('métricas por moneda con las claves de summarize', all(
     {'n', 'wins', 'wr', 'sharpe', 'pf', 'ret', 'dd', 'gp', 'gl', 'm'} <= set(v) for r in r1 + r2 for v in r['symbols'].values()))
 
+# 6. Filtros en la búsqueda (auditoría de filtros): régimen solo si la estrategia limita regímenes; nivel de volumen
+check('régimen útil: estrategia con los 3 regímenes -> no', ps.regime_useful(code) is False)
+code_rng = code.replace("    def generate_signals", "    allowed_regimes = ['RANGING']\n    def generate_signals")
+check('régimen útil: estrategia solo lateral -> sí', ps.regime_useful(code_rng) is True)
+cs = ps.sample_configs(60, 9, 'cons', regime=False)
+check('sin régimen útil: nunca se prueba el filtro de régimen', not any(c['regime_filter'] for c in cs))
+check('volumen: se prueban los 4 niveles', {c['volume_filter_mult'] for c in cs if c['volume_filter']} == set(ps.VOLUME_MULTS))
+check('volumen apagado: nivel fijo (sin duplicados que no cambian nada)',
+      all(c['volume_filter_mult'] == 1.2 for c in cs if not c['volume_filter']))
+base = dict(ps.sample_configs(1, 5, 'gain')[0], volume_filter=True, macro_trend_filter=False, trailing_mode=None)
+pair = [dict(base, volume_filter_mult=0.8), dict(base, volume_filter_mult=1.5)]
+ps.SIGNAL_CACHE.clear()
+res = ps.evaluate('t', code, {}, 'XAUSDT', '60', pair, start, split, end_n)
+check('caché de señales distingue el nivel de volumen (×0,8 ≠ ×1,5)', res[0][3]['n'] != res[1][3]['n'],
+      (res[0][3]['n'], res[1][3]['n']))
+
 print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
 sys.exit(1 if fails else 0)
