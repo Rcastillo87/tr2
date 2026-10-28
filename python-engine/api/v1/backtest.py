@@ -259,10 +259,13 @@ class BacktestData:
 
 
 async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, start: datetime | None,
-                             end: datetime | None, macro: bool, data_broker: str | None = None) -> BacktestData:
+                             end: datetime | None, macro: bool, data_broker: str | None = None,
+                             minute_cache: dict | None = None) -> BacktestData:
     """
     Velas de un backtest. ÚNICO camino de datos para /backtest/run y cli/param_search (la búsqueda de
     configuraciones debe dar exactamente lo mismo que un backtest de la pantalla). Sin velas -> ValueError.
+    minute_cache: dict del llamador (búsqueda de configuraciones) para compartir, entre temporalidades de la misma
+    moneda, la cobertura y las velas de 1m del mismo rango: se consultan una vez y es el mismo DataFrame (sin copias).
     """
     warnings: list = []
     coverage: dict = {}
@@ -301,11 +304,18 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
     if interval_delta(interval) >= timedelta(hours=1):
         data_start = max(df['time'].iloc[0].to_pydatetime(), start) if start else df['time'].iloc[0].to_pydatetime()
         data_end = df['time'].iloc[-1].to_pydatetime() + interval_delta(interval)
-        minute_src = await resolve_backtest_source(pool, symbol, '1', data_start, data_end)
+        cache_key = (symbol, data_start, data_end)
+        cached = minute_cache.get(cache_key) if minute_cache is not None else None
+        if cached is None:
+            minute_src = await resolve_backtest_source(pool, symbol, '1', data_start, data_end)
+            if minute_src is not None and minute_src.covers(data_start, data_end):
+                minute_df = await load_ohlcv(pool, symbol, '1', minute_src.broker, data_start, data_end)
+            cached = (minute_src, minute_df)
+            if minute_cache is not None:
+                minute_cache[cache_key] = cached
+        minute_src, minute_df = cached
         coverage['minute'] = minute_src.as_dict() if minute_src else None
-        if minute_src is not None and minute_src.covers(data_start, data_end):
-            minute_df = await load_ohlcv(pool, symbol, '1', minute_src.broker, data_start, data_end)
-        else:
+        if minute_df is None:
             available = (
                 f"{minute_src.first_bar:%Y-%m-%d} → {minute_src.last_bar:%Y-%m-%d}, "
                 f"{minute_src.completeness * 100:.0f}% completo" if minute_src else "ninguna"

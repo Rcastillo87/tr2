@@ -146,9 +146,10 @@ async def load_data(symbols, intervals, start, end, log=print, close=True):
 async def _load(pool, symbols, intervals, start, end, log):
     for sym in symbols:
         parts = []
+        minute_cache: dict = {}   # velas de 1m de la moneda: una carga y un solo DataFrame para todas las temporalidades
         for iv in intervals:
             try:
-                DATA[(sym, iv)] = await load_backtest_data(pool, sym, iv, start, end, macro=True)
+                DATA[(sym, iv)] = await load_backtest_data(pool, sym, iv, start, end, macro=True, minute_cache=minute_cache)
                 d = DATA[(sym, iv)]
                 parts.append(f"{iv}={len(d.df)}{'' if d.minute_df is not None or iv == '15' else ' (sin 1m)'}")
             except ValueError:

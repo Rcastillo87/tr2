@@ -14,19 +14,46 @@ Costos: comisión en entrada y salida + slippage por lado en TODAS las ejecucion
 + funding de Bybit en cada liquidación con la posición abierta (pesimista en los bordes:
   el funding que se paga cuenta si la entrada o la salida coinciden con la liquidación; el que
   se cobra solo si la posición estuvo abierta antes y después).
+Rendimiento (mismos resultados, bit a bit, que la referencia tests/Forensic/reference/engine_v3_ref.py):
+velas sin posición ni señal sin trabajo, índices de 1m precalculados, _scan salta en bloque (numpy) los minutos
+donde no puede pasar nada y aplica la regla de _step minuto a minuto desde cada evento.
 """
 
 import logging
+import weakref
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
 
 from backtesting.metrics import calculate_metrics
-from backtesting.strategies.base_strategy import BaseStrategy
+from backtesting.strategies.base_strategy import NATIVE_TRAILING_MIN_BUFFER_PCT, BaseStrategy
 from indicators.regime_indicators import calculate_adx, calculate_atr, calculate_bb_width
 
 logger = logging.getLogger(__name__)
+
+_MINUTE_ARRAYS: dict = {}   # id(DataFrame de 1m) -> (weakref, arrays, filas)
+
+
+def _minute_arrays(minute_df: pd.DataFrame) -> tuple:
+    """(time UTC sin tz, high, low, close) ordenados por tiempo, de solo lectura. Se preparan una vez por DataFrame
+    (mientras exista) en lugar de ordenar y convertir el millón de velas de 1m en cada backtest."""
+    key = id(minute_df)
+    hit = _MINUTE_ARRAYS.get(key)
+    if hit is not None and hit[0]() is minute_df and hit[2] == len(minute_df):
+        return hit[1]
+    m = minute_df.sort_values('time')
+    arrays = (pd.to_datetime(m['time'], utc=True).dt.tz_convert(None).to_numpy(),   # UTC naive
+              m['high'].to_numpy(dtype=float), m['low'].to_numpy(dtype=float), m['close'].to_numpy(dtype=float))
+    for a in arrays:
+        a.flags.writeable = False
+    for k in [k for k, v in _MINUTE_ARRAYS.items() if v[0]() is None]:   # DataFrames ya liberados
+        del _MINUTE_ARRAYS[k]
+    _MINUTE_ARRAYS[key] = (weakref.ref(minute_df), arrays, len(minute_df))
+    return arrays
+
+
+BLOCK_MIN = 8   # _scan: tramos de más sub-velas se recorren con saltos en bloque (numpy); los cortos, minuto a minuto
 
 INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 'D': 1440}
 
@@ -81,14 +108,20 @@ class BacktestEngine:
             self._f_rate = np.asarray(funding.rates, dtype=float)
         self._bar_t = self._bar_open = None   # velas principales (las fija run) para el precio de liquidación
 
+        # Trailing en línea (_scan): mismo cálculo que BaseStrategy.calculate_trailing_sl. Si la estrategia lo
+        # redefine, o el modo no es uno de los conocidos, se usa su método minuto a minuto (_step).
+        self._trail_mode = getattr(strategy, 'trailing_mode', None) or None
+        self._fast_trailing = (type(strategy).calculate_trailing_sl is BaseStrategy.calculate_trailing_sl
+                               and self._trail_mode in (None, 'fixed', 'stepped', 'atr'))
+        buf = getattr(strategy, 'trailing_activation_buffer_pct', 0.0)
+        if self._trail_mode == 'fixed' and not (buf and buf > 0):
+            buf = NATIVE_TRAILING_MIN_BUFFER_PCT   # igual que calculate_trailing_sl_standalone
+        self._trail_buf = buf
+
         # Velas de 1m como arrays (búsqueda binaria, sin iterrows)
         self._m_time = self._m_high = self._m_low = self._m_close = None
         if minute_df is not None and not minute_df.empty and self.interval_minutes > 1:
-            m = minute_df.sort_values('time')
-            self._m_time  = pd.to_datetime(m['time'], utc=True).dt.tz_convert(None).to_numpy()  # UTC naive
-            self._m_high  = m['high'].to_numpy(dtype=float)
-            self._m_low   = m['low'].to_numpy(dtype=float)
-            self._m_close = m['close'].to_numpy(dtype=float)
+            self._m_time, self._m_high, self._m_low, self._m_close = _minute_arrays(minute_df)
 
     # ─────────────────────────────── helpers ───────────────────────────────
 
@@ -112,16 +145,6 @@ class BacktestEngine:
         if ts.tzinfo is not None:
             ts = ts.tz_convert('UTC').tz_localize(None)
         return ts.to_datetime64().astype('datetime64[ns]')
-
-    def _sub_bars(self, start, end):
-        """(times, highs, lows) de las velas de 1m en [start, end). None si no hay datos de 1m."""
-        if self._m_time is None:
-            return None
-        a = np.searchsorted(self._m_time, self._np_time(start), side='left')
-        b = np.searchsorted(self._m_time, self._np_time(end), side='left')
-        if a >= b:
-            return None
-        return self._m_time[a:b], self._m_high[a:b], self._m_low[a:b]
 
     def _price_at(self, ft: np.datetime64) -> float:
         """Precio al momento de la liquidación: cierre del último minuto previo; sin 1m, open de la vela que la contiene."""
@@ -169,6 +192,124 @@ class BacktestEngine:
                 pos['sl'] = new_sl
                 pos['trailing_applied'] = True
         return None, None
+
+    def _scan(self, pos: dict, highs: np.ndarray, lows: np.ndarray, atr: float | None, raw: bool = False) -> tuple:
+        """
+        Las sub-velas de una vela, en orden, con EXACTAMENTE la regla de _step (SL vigente -> TP1 -> break-even ->
+        trailing). Los tramos donde no puede ocurrir nada (sin SL, TP, break-even ni activación del trailing) se saltan
+        en bloque con numpy; desde el primer evento, minuto a minuto. Devuelve (índice, nivel, motivo) o (None, None, None).
+        raw=True: vela completa (sin 1m): los precios pasan como numpy.float64, igual que a _step en ese caso (el
+        redondeo de numpy y el de Python pueden diferir en el último decimal: se conserva el mismo tipo).
+        """
+        n = len(highs)
+        if not self._fast_trailing:   # trailing propio de la estrategia: la regla original, minuto a minuto
+            for k in range(n):
+                level, reason = (self._step(pos, highs[k], lows[k], atr) if raw
+                                 else self._step(pos, float(highs[k]), float(lows[k]), atr))
+                if level is not None:
+                    return k, level, reason
+            return None, None, None
+
+        s = self.strategy
+        long = pos['side'] == 'long'
+        entry, tp, be_level = pos['entry_price'], pos['tp1'], pos['be_level']
+        mode = self._trail_mode
+        buf = self._trail_buf
+        block = n > BLOCK_MIN   # tramos cortos: más rápido minuto a minuto que preparar numpy
+        k = 0
+        while k < n:
+            if not block:
+                j = 0
+            else:
+                j = self._next_event(pos, highs[k:], lows[k:], long, entry, tp, be_level, mode, buf, atr)
+                if j is None:
+                    return None, None, None
+            k += j
+            # 2. Desde ahí, la regla de _step minuto a minuto (trailing en línea, igual que calculate_trailing_sl)
+            while k < n:
+                high, low = (highs[k], lows[k]) if raw else (float(highs[k]), float(lows[k]))
+                sl = pos['sl']
+                if (long and low <= sl) or (not long and high >= sl):
+                    return k, sl, ('trailing_stop' if pos['trailing_applied'] else 'stop_loss')
+                if tp is not None and ((long and high >= tp) or (not long and low <= tp)):
+                    return k, tp, 'take_profit_1'
+                if not pos['be_activated'] and ((long and high >= be_level) or (not long and low <= be_level)):
+                    pos['sl'] = sl = max(sl, entry) if long else min(sl, entry)
+                    pos['be_activated'] = True
+                if mode is None:
+                    k += 1
+                    break          # sin trailing: vuelve al salto en bloque
+                price = high if long else low
+                gain_pct = (price - entry) / entry * 100 if long else (entry - price) / entry * 100
+                if gain_pct <= buf:
+                    k += 1
+                    break          # sin trailing en este minuto: vuelve al salto en bloque
+                new_sl = sl
+                if mode == 'fixed':
+                    distance = entry * s.trailing_distance_pct / 100
+                    new_sl = max(sl, price - distance) if long else min(sl, price + distance)
+                elif mode == 'stepped':
+                    applicable = [st for st in (s.trailing_steps or []) if gain_pct >= st[0]]
+                    if applicable:
+                        step_pct = max(applicable, key=lambda st: st[0])[1]
+                        new_sl = max(sl, entry * (1 + step_pct / 100)) if long else min(sl, entry * (1 - step_pct / 100))
+                elif mode == 'atr' and atr and atr > 0:
+                    new_sl = max(sl, price - atr * s.trailing_atr_mult) if long else min(sl, price + atr * s.trailing_atr_mult)
+                new_sl = round(new_sl, 8)
+                if new_sl != sl:
+                    pos['sl'] = new_sl
+                    pos['trailing_applied'] = True
+                k += 1
+                break              # vuelve al salto en bloque con el SL actualizado
+        return None, None, None
+
+    def _next_event(self, pos: dict, hs: np.ndarray, ls: np.ndarray, long: bool, entry: float, tp, be_level: float,
+                    mode, buf: float, atr: float | None) -> int | None:
+        """Primer minuto del tramo donde puede pasar algo (SL, TP, break-even o un movimiento del trailing). None = ninguno."""
+        sl = pos['sl']
+        ev = (ls <= sl) if long else (hs >= sl)
+        if tp is not None:
+            ev = ev | ((hs >= tp) if long else (ls <= tp))
+        if not pos['be_activated']:
+            ev = ev | ((hs >= be_level) if long else (ls <= be_level))
+        if mode is not None:
+            # Trailing activo (ganancia > colchón): solo es evento si puede mover el SL — el candidato lo supera,
+            # o el SL vigente aún no está redondeado (calculate_trailing_sl redondea a 8 decimales).
+            gain = ((hs - entry) / entry * 100) if long else ((entry - ls) / entry * 100)
+            active = gain > buf
+            if round(sl, 8) != sl:
+                ev = ev | active
+            else:
+                cand = self._trail_candidates(long, entry, hs if long else ls, gain, atr)
+                if cand is not None:
+                    ev = ev | (active & ((cand > sl) if long else (cand < sl)))
+        j = int(ev.argmax())
+        return j if ev[j] else None
+
+    def _trail_candidates(self, long: bool, entry: float, prices: np.ndarray, gain: np.ndarray,
+                          atr: float | None) -> np.ndarray | None:
+        """SL candidato del trailing en cada sub-vela (mismo cálculo que calculate_trailing_sl, sin redondear).
+        None = el trailing no propone nada (solo redondea el SL vigente)."""
+        s, mode = self.strategy, self._trail_mode
+        if mode == 'fixed':
+            d = entry * s.trailing_distance_pct / 100
+            return prices - d if long else prices + d
+        if mode == 'atr':
+            if not (atr and atr > 0):
+                return None
+            return prices - atr * s.trailing_atr_mult if long else prices + atr * s.trailing_atr_mult
+        if mode == 'stepped':
+            steps = s.trailing_steps or []
+            if not steps:
+                return None
+            cand = np.full(len(prices), -np.inf if long else np.inf)
+            best = np.full(len(prices), -np.inf)
+            for st in steps:   # el escalón aplicable de mayor umbral (empates: el primero, como max())
+                take = (gain >= st[0]) & (st[0] > best)
+                best = np.where(take, st[0], best)
+                cand = np.where(take, entry * (1 + st[1] / 100) if long else entry * (1 - st[1] / 100), cand)
+            return cand
+        return None
 
     def _close(self, pos: dict, level: float, reason: str, exit_time, bars_held: int, exit_span=None) -> None:
         exit_price = self._fill(level, pos['side'], is_entry=False)
@@ -218,9 +359,13 @@ class BacktestEngine:
         highs  = df['high'].to_numpy(dtype=float)
         lows   = df['low'].to_numpy(dtype=float)
         closes = df['close'].to_numpy(dtype=float)
-        if self._f_time is not None:
-            self._bar_t = pd.to_datetime(df['time'], utc=True).dt.tz_convert(None).to_numpy(dtype='datetime64[ns]')
-            self._bar_open = opens
+        self._bar_t = pd.to_datetime(df['time'], utc=True).dt.tz_convert(None).to_numpy(dtype='datetime64[ns]')
+        self._bar_open = opens
+        bar_times = list(times)   # Timestamps (lo mismo que times.iloc[i], sin el costo de pandas por vela)
+        m_lo = m_hi = None        # velas de 1m de cada vela grande: [m_lo[i], m_hi[i]) en _m_time
+        if self._m_time is not None:
+            m_lo = np.searchsorted(self._m_time, self._bar_t, side='left')
+            m_hi = np.searchsorted(self._m_time, self._bar_t + np.timedelta64(int(self.interval_minutes), 'm'), side='left')
         signals = df['signal'].fillna(0).astype(int).to_numpy()
         signal_sl = df['signal_sl_pct'].to_numpy(dtype=float) if 'signal_sl_pct' in df.columns else None
 
@@ -250,10 +395,13 @@ class BacktestEngine:
         max_duration = int(getattr(s, 'max_duration', 0) or 0)
         equity_curve = [self.initial_balance]
         pos = None
+        one_ns, one_min = pd.Timedelta(1, 'ns'), pd.Timedelta(minutes=1)
 
         for i in range(max(1, first_trade_idx), n):
-            bar_time = times.iloc[i]
             prev_signal = signals[i - 1]
+            if pos is None and prev_signal == 0:   # sin posición ni señal: la vela no cambia nada
+                continue
+            bar_time = bar_times[i]
 
             # 1. Señal opuesta (vela i-1 cerrada) -> salida al open de la vela i
             if pos is not None and exit_on_opposite and prev_signal != 0:
@@ -290,19 +438,15 @@ class BacktestEngine:
             # Trailing durante la vela i: ATR de la vela i-1 (cerrada). El de i incluye su high/low.
             trail_atr = float(atr[i - 1]) if needs_atr and not np.isnan(atr[i - 1]) else None
             bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None  # al cierre de i
-            sub = self._sub_bars(bar_time, bar_time + step)
-            level = reason = None
-            one_ns = pd.Timedelta(1, 'ns')
-            exit_span = (bar_time, bar_time + step - one_ns)   # salida dentro de la vela: momento exacto desconocido
-            if sub is not None:
-                for mt, h, l in zip(*sub):
-                    level, reason = self._step(pos, float(h), float(l), trail_atr)
-                    if level is not None:
-                        m0 = pd.Timestamp(mt)
-                        exit_span = (m0, m0 + pd.Timedelta(minutes=1) - one_ns)
-                        break
+            level = reason = exit_span = None
+            a, b = (int(m_lo[i]), int(m_hi[i])) if m_lo is not None else (0, 0)
+            if a < b:
+                k, level, reason = self._scan(pos, self._m_high[a:b], self._m_low[a:b], trail_atr)
+                if level is not None:
+                    m0 = pd.Timestamp(self._m_time[a + k])
+                    exit_span = (m0, m0 + one_min - one_ns)
             else:
-                level, reason = self._step(pos, highs[i], lows[i], trail_atr)
+                _, level, reason = self._scan(pos, highs[i:i + 1], lows[i:i + 1], trail_atr, raw=True)
 
             bars_held = i - pos['entry_bar'] + 1
             if level is None and needs_atr and getattr(s, 'volatility_protection_mode', None):
@@ -325,6 +469,8 @@ class BacktestEngine:
                 at_close = reason in ('volatility_protection', 'time_exit', 'time_exit_profit')
                 if at_close:
                     exit_span = (bar_time + step, bar_time + step)
+                elif exit_span is None:   # salida dentro de la vela sin 1m: momento exacto desconocido
+                    exit_span = (bar_time, bar_time + step - one_ns)
                 self._close(pos, level, reason, bar_time + step if at_close else bar_time, bars_held, exit_span)
                 pos = None
                 equity_curve.append(self.balance)
