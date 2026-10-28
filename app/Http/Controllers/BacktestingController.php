@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\CollectorConfig;
 use App\Models\PaperStrategyConfig;
 use App\Models\Backtest;
+use App\Models\Strategy;
 use App\Services\StrategyConfigSync;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -74,6 +75,16 @@ class BacktestingController extends Controller
             $finalConfig = $decoded;
         }
 
+        // Regímenes permitidos: el formulario marca la presencia del bloque (allowed_regimes_present) para que
+        // "ninguno marcado" no se confunda con "no enviado" (= los de la estrategia).
+        $allowedRegimes = null;
+        if ($request->has('allowed_regimes_present')) {
+            $allowedRegimes = array_values(array_intersect(Strategy::REGIMES, (array) $request->input('allowed_regimes', [])));
+            if ($request->has('regime_filter') && $allowedRegimes === []) {
+                return response()->json(['success' => false, 'error' => 'Filtro de régimen: elige al menos un régimen permitido (sin ninguno no se abriría ninguna operación).']);
+            }
+        }
+
         $resultsData = [];
         $warnings = [];
         $totalTrades = 0;
@@ -119,6 +130,7 @@ class BacktestingController extends Controller
                 
                 // FIX: Filtros
                 'macro_trend_filter' => $request->has('macro_trend_filter'),
+                'btc_trend_filter' => $request->has('btc_trend_filter'),
                 'volume_filter' => $request->has('volume_filter'),
                 'volume_filter_period' => (int) $request->input('volume_filter_period', 20),
                 'volume_filter_mult' => (float) $request->input('volume_filter_mult', 1.2),
@@ -138,6 +150,9 @@ class BacktestingController extends Controller
                 $payloads[$sym]['volume_filter_mult'] = (float) $request->input('volume_filter_mult', 1.2);
             }
             $payloads[$sym]['regime_filter'] = $request->has('regime_filter');
+            if ($allowedRegimes !== null) {   // sin el formulario nuevo (p. ej. desde la búsqueda): los de la estrategia
+                $payloads[$sym]['allowed_regimes'] = $allowedRegimes;
+            }
         }
 
         // 2. EJECUCIÓN SECUENCIAL (UNA A UNA) PARA EVITAR RACE CONDITIONS

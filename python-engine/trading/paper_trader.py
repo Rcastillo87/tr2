@@ -604,6 +604,8 @@ class PaperTrader:
 
             if strategy.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
                 strategy.macro_df = self._closed_bars(await self.get_bars(symbol, '240'), '240', now)
+            if strategy.btc_filter_applies():  # velas H4 cerradas de BTC para la tendencia de BTC
+                strategy.btc_macro_df = self._closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
             df = strategy.compute_signals(df)
 
             last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas

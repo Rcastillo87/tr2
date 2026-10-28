@@ -154,6 +154,8 @@ class BacktestMonthlyExport
             'risk_per_trade_pct'         => 'Riesgo por trade %',
             'regime_filter'              => 'Filtro de régimen',
             'macro_trend_filter'         => 'Filtro de tendencia macro H4',
+            'btc_trend_filter'           => 'Filtro de tendencia de BTC',
+            'allowed_regimes'            => 'Regímenes permitidos',
             'mode'                       => 'Modo (VWAP)',
             'trailing_mode'              => 'Modo de trailing stop',
             'trailing_distance_pct'      => 'Distancia trailing %',

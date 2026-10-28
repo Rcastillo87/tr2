@@ -1786,6 +1786,8 @@ class RealTrader:
 
         if strategy_instance.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
             strategy_instance.macro_df = closed_bars(await self.get_bars(symbol, '240'), '240', now)
+        if strategy_instance.btc_filter_applies():  # velas H4 cerradas de BTC para la tendencia de BTC
+            strategy_instance.btc_macro_df = closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
         df = strategy_instance.compute_signals(df)
 
         last_closed = df.iloc[-1]  # df solo contiene velas cerradas

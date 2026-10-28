@@ -22,6 +22,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 $candidate = $argv[1] ?? '';
+// Campos NUEVOS que la candidata agrega a propósito (coma-separados): se informan, no fallan. Lo demás debe ser idéntico.
+$allowNew = array_filter(explode(',', $argv[2] ?? ''));
 if (! is_file($candidate)) {
     fwrite(STDERR, "Uso: php tests/Forensic/backtest_form_payload_test.php /ruta/candidata.blade.php\n");
     exit(2);
@@ -151,7 +153,12 @@ foreach ($scenarios as $label => $data) {
     sort($newMap);
     $missing = array_values(array_diff($oldMap, $newMap));
     $extra   = array_values(array_diff($newMap, $oldMap));
-    $ok = $oldMap === $newMap;
+    $expectedNew = array_values(array_filter($extra, fn ($e) => in_array(explode('=', $e, 2)[0], $allowNew, true)));
+    $extra = array_values(array_diff($extra, $expectedNew));
+    $ok = $missing === [] && $extra === [];
+    foreach ($expectedNew as $e) {
+        echo "        nuevo (esperado):     $e\n";
+    }
     $fails += $ok ? 0 : 1;
     printf("%s  %-32s %d campos%s\n", $ok ? 'PASS' : 'FAIL', $label, count($new), $ok ? '' : '');
     foreach ($missing as $m) {

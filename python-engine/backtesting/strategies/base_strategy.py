@@ -9,6 +9,8 @@ from abc import ABC, abstractmethod
 MACRO_INTERVAL = '240'      # tendencia macro: velas H4
 MACRO_EMA_SPAN = 50         # EMA 50 de los cierres H4
 MACRO_WARMUP_BARS = 300     # velas H4 de calentamiento (EMA50 converge: peso residual < 1e-5)
+REGIMES = ("TRENDING", "RANGING", "VOLATILE")
+BTC_SYMBOL = 'BTCUSDT'      # filtro 'Tendencia de BTC': la tendencia macro H4 de BTC decide en las altcoins
 class BaseStrategy(ABC):
     """
     Clase base para todas las estrategias de trading.
@@ -50,12 +52,19 @@ class BaseStrategy(ABC):
         self.regime_adx_trending = params.get('regime_adx_trending', 25)
         self.regime_adx_ranging  = params.get('regime_adx_ranging', 20)
         self.regime_ambiguous_as = params.get('regime_ambiguous_as', 'RANGING')
+        # Regímenes permitidos elegidos en la UI: pisan los de la clase. None (no enviado) = los de la estrategia.
+        chosen = params.get('allowed_regimes')
+        if chosen is not None:
+            self.allowed_regimes = [r for r in REGIMES if r in set(chosen)]
         # Filtro de volumen — solo opera si el volumen actual > promedio * multiplicador
         self.volume_filter          = params.get('volume_filter', False)
         self.volume_filter_period   = params.get('volume_filter_period', 20)
         self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
         self.macro_trend_filter = params.get('macro_trend_filter', False)
         self.macro_df = None  # velas H4 cerradas; las asigna quien ejecuta (backtest/paper/real)
+        # Tendencia de BTC (EMA 50 H4 de BTC) para altcoins; en BTC no aplica (sería el filtro macro)
+        self.btc_trend_filter = bool(params.get('btc_trend_filter', False))
+        self.btc_macro_df = None  # velas H4 cerradas de BTC; las asigna quien ejecuta
         # Filtro horario — solo opera en horas de alta liquidez
         self.hour_filter            = params.get('hour_filter', False)
         self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
@@ -135,7 +144,8 @@ class BaseStrategy(ABC):
         """
         out = self.generate_signals(self.prepare(df))
         for f in (self.apply_volume_filter, self.apply_hour_filter, self.apply_weekend_filter,
-                  self.apply_blocked_hours, self.apply_blocked_days, self.apply_macro_trend_filter):
+                  self.apply_blocked_hours, self.apply_blocked_days, self.apply_macro_trend_filter,
+                  self.apply_btc_trend_filter):
             out = f(out)
         return out
 
@@ -154,6 +164,25 @@ class BaseStrategy(ABC):
         blocked = ((sig == 1) & (trend != 1)) | ((sig == -1) & (trend != -1))
         df.loc[blocked, 'signal'] = 0
         df['macro_trend'] = np.select([trend == 1, trend == -1], ['BULLISH', 'BEARISH'], default='NEUTRAL')
+        return df
+
+    def btc_filter_applies(self) -> bool:
+        return bool(self.btc_trend_filter) and str(self.symbol).upper() != BTC_SYMBOL
+
+    def apply_btc_trend_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Tendencia de BTC (EMA 50 H4 de BTC), solo altcoins: sin largos con BTC bajista ni cortos con BTC alcista.
+        Mismo criterio sin mirar al futuro que el filtro macro (última H4 de BTC ya cerrada al decidir). Sin velas de
+        BTC o sin historia suficiente, no se opera (pesimista).
+        """
+        if not self.btc_filter_applies() or 'signal' not in df.columns or df.empty:
+            return df
+        df = df.copy()
+        trend = macro_trend_series(df['time'], str(self.interval), self.btc_macro_df)
+        sig = df['signal'].to_numpy()
+        blocked = ((sig == 1) & (trend != 1)) | ((sig == -1) & (trend != -1))
+        df.loc[blocked, 'signal'] = 0
+        df['btc_trend'] = np.select([trend == 1, trend == -1], ['BULLISH', 'BEARISH'], default='NEUTRAL')
         return df
 
     def apply_volume_filter(self, df: pd.DataFrame) -> pd.DataFrame:

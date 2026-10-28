@@ -55,6 +55,8 @@ class BacktestRequest(BaseModel):
     slippage_pct:        float           = 0.0    # % por lado en cada ejecución a mercado
     n_windows:           int             = 5
     macro_trend_filter:  bool            = False
+    btc_trend_filter:    bool            = False   # tendencia de BTC (EMA 50 H4) para altcoins
+    allowed_regimes:     Optional[list[str]] = None   # None = los de la estrategia
 
     # Rango de fechas opcional — si no se especifica, usa todo el historico disponible
     start_date: Optional[str] = None  # formato YYYY-MM-DD
@@ -253,11 +255,12 @@ class BacktestData:
     warnings: list
     coverage: dict
     funding: Optional[FundingData] = None  # funding de Bybit del rango operado (None = no disponible)
+    btc_macro_df: Optional[pd.DataFrame] = None   # H4 de BTC para 'Tendencia de BTC' (None si no se pidió o no hay)
 
 
 async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, start: datetime | None,
                              end: datetime | None, macro: bool, data_broker: str | None = None,
-                             minute_cache: dict | None = None) -> BacktestData:
+                             minute_cache: dict | None = None, btc_macro: bool = False) -> BacktestData:
     """
     Velas de un backtest. ÚNICO camino de datos para /backtest/run y cli/param_search (la búsqueda de
     configuraciones debe dar exactamente lo mismo que un backtest de la pantalla). Sin velas -> ValueError.
@@ -333,8 +336,20 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
     except Exception as e:  # sin funding el backtest corre igual, avisando que es optimista
         logger.error(f"[FUNDING] {symbol}: {e}")
         warnings.append(f"Aviso: funding de {symbol} no disponible ({e}): los trades no descuentan funding (optimista).")
+    # 4. Tendencia de BTC (altcoins): velas H4 de BTC con el mismo calentamiento que la macro
+    btc_macro_df = None
+    if btc_macro and symbol.upper() != 'BTCUSDT':
+        from backtesting.strategies.base_strategy import BTC_SYMBOL, MACRO_INTERVAL, MACRO_WARMUP_BARS
+        b_from = (start or df['time'].iloc[0].to_pydatetime()) - interval_delta(MACRO_INTERVAL) * MACRO_WARMUP_BARS
+        b_src = await resolve_backtest_source(pool, BTC_SYMBOL, MACRO_INTERVAL, b_from, end)
+        if b_src is None:
+            warnings.append("Aviso: sin velas H4 de BTCUSDT: con 'Tendencia de BTC' activa no se opera.")
+        else:
+            warnings.extend(b_src.problems())
+            btc_macro_df = await load_ohlcv(pool, BTC_SYMBOL, MACRO_INTERVAL, b_src.broker, b_from, end)
+            coverage['btc_macro'] = b_src.as_dict()
     return BacktestData(df=df, macro_df=macro_df, minute_df=minute_df, warnings=warnings, coverage=coverage,
-                        funding=funding)
+                        funding=funding, btc_macro_df=btc_macro_df)
 
 
 @router.post("/backtest/run")
@@ -347,7 +362,8 @@ async def run_backtest(request: BacktestRequest):
         pool = await get_pool()
         try:
             data = await load_backtest_data(pool, request.symbol, request.interval, start, end,
-                                            macro=request.macro_trend_filter, data_broker=request.data_broker)
+                                            macro=request.macro_trend_filter, data_broker=request.data_broker,
+                                            btc_macro=request.btc_trend_filter)
         finally:
             await pool.close()
         warnings.extend(data.warnings)
@@ -357,6 +373,8 @@ async def run_backtest(request: BacktestRequest):
         strategy = load_strategy(request)
         if request.macro_trend_filter:
             strategy.macro_df = data.macro_df   # None si no hay H4: con el filtro activo no se opera
+        if strategy.btc_filter_applies():
+            strategy.btc_macro_df = data.btc_macro_df   # None si no hay H4 de BTC: no se opera
 
         strategy.slippage_pct = float(request.slippage_pct)
         if request.slippage_pct <= 0:

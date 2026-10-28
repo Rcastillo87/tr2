@@ -45,7 +45,8 @@ engine = BacktestEngine(strategy=strategy, df=dummy, initial_balance=req.initial
 ui_fields = ['symbol', 'interval', 'sl_pct', 'tp_pct', 'be_pct', 'max_duration', 'regime_filter', 'regime_adx_trending',
              'regime_adx_ranging', 'regime_ambiguous_as', 'volume_filter', 'volume_filter_period', 'volume_filter_mult',
              'macro_trend_filter', 'trailing_mode', 'trailing_distance_pct', 'trailing_atr_mult',
-             'trailing_activation_buffer_pct', 'max_duration_profit', 'close_on_opposite', 'commission_pct', 'slippage_pct']
+             'trailing_activation_buffer_pct', 'max_duration_profit', 'close_on_opposite', 'commission_pct', 'slippage_pct',
+             'btc_trend_filter', 'allowed_regimes']
 for f in ui_fields:
     got, exp = getattr(strategy, f, '<<ausente>>'), payload.get(f)
     same = (abs(float(got) - float(exp)) < 1e-12) if isinstance(exp, float) and not isinstance(exp, bool) else got == exp

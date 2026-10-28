@@ -50,6 +50,22 @@
     .bt-filter-sub { margin-top: .75rem; transition: opacity .15s; }
     .bt-filter.is-off .bt-filter-sub { opacity: .4; }
     .bt-filter-stack > * + * { margin-top: .75rem; }
+    .bt-regimes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+    .bt-chip { display: flex; align-items: center; justify-content: center; gap: .375rem; min-height: 40px; padding: .375rem .75rem; border-radius: 999px;
+               font-size: 12px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text-secondary); cursor: pointer; user-select: none; }
+    .bt-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+    .bt-chip .dot { width: 8px; height: 8px; border-radius: 999px; background: #3A4454; }
+    .bt-chip.on { border-color: var(--color-info); background: rgba(77,143,232,.15); color: var(--color-text-primary); }
+    .bt-chip.on[data-regime=TRENDING] .dot { background: var(--color-profit); }
+    .bt-chip.on[data-regime=RANGING] .dot { background: var(--color-info); }
+    .bt-chip.on[data-regime=VOLATILE] .dot { background: var(--color-neutral); }
+    .bt-chip:focus-within { outline: 2px solid var(--color-info); outline-offset: 2px; }
+    .bt-note { display: flex; gap: .5rem; align-items: flex-start; border-radius: .5rem; padding: .5rem .625rem; font-size: 11px; line-height: 1.45; }
+    .bt-note.warn { background: rgba(232,179,57,.10); border: 1px solid rgba(232,179,57,.35); color: var(--color-neutral); }
+    .bt-note.err { background: rgba(242,84,91,.10); border: 1px solid rgba(242,84,91,.35); color: var(--color-loss); }
+    .bt-badge-new { font-size: 9px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: var(--color-info);
+                    border-radius: 4px; padding: 2px 6px; margin-left: .375rem; vertical-align: middle; }
+    .bt-filter.is-new { border-color: var(--color-info); }
     .bt-check-row { display: flex; align-items: flex-start; gap: .5rem; cursor: pointer; }
     .bt-check { width: 1rem; height: 1rem; accent-color: var(--color-info); margin-top: .125rem; flex-shrink: 0; }
     .bt-check-title { display: block; font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
@@ -245,9 +261,32 @@
                 <label class="bt-check-row">
                     <input type="checkbox" name="regime_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('regime_filter', !empty($backtestToLoad->config_params['regime_filter'])) ? 'checked' : '' }}>
                     <span><span class="bt-check-title">Régimen de mercado (ADX)</span>
-                    <span class="bt-check-desc">Solo opera en los regímenes permitidos por la estrategia.</span></span>
+                    <span class="bt-check-desc">Solo abre si el régimen de la vela está entre los permitidos.</span></span>
                 </label>
-                <div class="bt-filter-sub bt-grid-1 sm-3">
+                @php
+                    $regimeLabels = ['TRENDING' => 'Tendencia', 'RANGING' => 'Lateral', 'VOLATILE' => 'Volátil'];
+                    $strategyRegimes = $activeStrategy ? $activeStrategy->allowedRegimes() : \App\Models\Strategy::REGIMES;
+                    $checkedRegimes = old('allowed_regimes_present')
+                        ? (array) old('allowed_regimes', [])
+                        : (array) ($backtestToLoad->config_params['allowed_regimes'] ?? $strategyRegimes);
+                    $ambiguousSel = strtoupper((string) old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING'));
+                    $ambiguousSel = in_array($ambiguousSel, ['IGNORAR', 'NO_OPERAR'], true) ? 'ignorar' : $ambiguousSel;
+                @endphp
+                <div class="bt-filter-sub" style="display:flex; flex-direction:column; gap:.75rem;">
+                    <div>
+                        <span class="bt-label">Regímenes permitidos</span>
+                        <input type="hidden" name="allowed_regimes_present" value="1">
+                        <div class="bt-regimes">
+                            @foreach($regimeLabels as $code => $label)
+                            <label class="bt-chip{{ in_array($code, $checkedRegimes, true) ? ' on' : '' }}" data-regime="{{ $code }}">
+                                <input type="checkbox" name="allowed_regimes[]" value="{{ $code }}" onchange="toggleRegimeChip(this)" {{ in_array($code, $checkedRegimes, true) ? 'checked' : '' }}>
+                                <span class="dot" aria-hidden="true"></span>{{ $label }}
+                            </label>
+                            @endforeach
+                        </div>
+                        <span class="bt-hint">Por defecto, los de la estrategia{{ $activeStrategy ? ' (' . $activeStrategy->name . ': ' . implode(', ', array_map(fn ($r) => $regimeLabels[$r], $strategyRegimes)) . ')' : '' }}.</span>
+                    </div>
+                <div class="bt-grid-1 sm-3">
                     <div>
                         <label class="bt-label">ADX tendencia (mayor a)</label>
                         <input type="number" name="regime_adx_trending" value="{{ old('regime_adx_trending', $backtestToLoad->config_params['regime_adx_trending'] ?? '25') }}" class="bt-input num">
@@ -258,12 +297,18 @@
                     </div>
                     <div>
                         <label class="bt-label">Caso ambiguo</label>
-                        <select name="regime_ambiguous_as" class="bt-input">
-                            <option value="RANGING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'RANGING' ? 'selected' : '' }}>Lateral (asumir rango)</option>
-                            <option value="TRENDING" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'TRENDING' ? 'selected' : '' }}>Tendencia (asumir tendencia)</option>
-                            <option value="ignorar" {{ old('regime_ambiguous_as', $backtestToLoad->config_params['regime_ambiguous_as'] ?? 'RANGING') == 'ignorar' ? 'selected' : '' }}>No operar (filtrar)</option>
+                        <select name="regime_ambiguous_as" class="bt-input" onchange="updateRegimeNotes()">
+                            <option value="RANGING" {{ $ambiguousSel == 'RANGING' ? 'selected' : '' }}>Lateral (asumir rango)</option>
+                            <option value="TRENDING" {{ $ambiguousSel == 'TRENDING' ? 'selected' : '' }}>Tendencia (asumir tendencia)</option>
+                            <option value="ignorar" {{ $ambiguousSel == 'ignorar' ? 'selected' : '' }}>No operar (filtrar)</option>
                         </select>
                     </div>
+                </div>
+                <div id="regime-note-noeffect" class="bt-note warn" role="status" style="display:none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink:0; margin-top:1px;"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                    <span>Con los 3 regímenes permitidos este filtro no bloquea ninguna operación. Quita alguno o elige "No operar" en el caso ambiguo.</span>
+                </div>
+                <div id="regime-note-none" class="bt-note err" role="alert" style="display:none;">Elige al menos un régimen: sin ninguno no se abriría ninguna operación.</div>
                 </div>
             </div>
 
@@ -290,6 +335,14 @@
                     <input type="checkbox" name="macro_trend_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('macro_trend_filter', !empty($backtestToLoad->config_params['macro_trend_filter'])) ? 'checked' : '' }}>
                     <span><span class="bt-check-title">Tendencia macro H4 (EMA 50)</span>
                     <span class="bt-check-desc">Sin largos con H4 bajista ni cortos con H4 alcista.</span></span>
+                </label>
+            </div>
+
+            <div class="bt-filter is-new" data-filter>
+                <label class="bt-check-row">
+                    <input type="checkbox" name="btc_trend_filter" value="1" class="bt-check" onchange="dimFilter(this)" {{ old('btc_trend_filter', !empty($backtestToLoad->config_params['btc_trend_filter'])) ? 'checked' : '' }}>
+                    <span><span class="bt-check-title">Tendencia de BTC (EMA 50 H4)<span class="bt-badge-new">Nuevo</span></span>
+                    <span class="bt-check-desc">Solo altcoins: sin largos con BTC bajista ni cortos con BTC alcista. En BTC no aplica (usa el macro H4).</span></span>
                 </label>
             </div>
         </div>
@@ -381,10 +434,11 @@
         </dl>
         <h4>2 · Filtros de apertura</h4>
         <dl>
-            <dt>Régimen de mercado (ADX)</dt><dd>Cada vela se clasifica: <b>Volátil</b> si el ATR supera 1.8× su promedio de 50 velas; <b>Tendencia</b> si el ADX supera "ADX tendencia"; <b>Lateral</b> si el ADX está bajo "ADX lateral" y las Bandas de Bollinger están estrechas. Solo se abre en los regímenes que la estrategia permite.</dd>
+            <dt>Régimen de mercado (ADX)</dt><dd>Cada vela se clasifica: <b>Volátil</b> si el ATR supera 1.8× su promedio de 50 velas; <b>Tendencia</b> si el ADX supera "ADX tendencia"; <b>Lateral</b> si el ADX está bajo "ADX lateral" y las Bandas de Bollinger están estrechas. Solo se abre en los <b>regímenes permitidos</b> (por defecto, los de la estrategia). Con los 3 permitidos solo filtra si el caso ambiguo es "No operar".</dd>
             <dt>Caso ambiguo</dt><dd>Qué hacer con las velas que no encajan en ningún régimen: tratarlas como lateral, como tendencia, o no operar.</dd>
             <dt>Volumen mínimo</dt><dd>Solo abre si el volumen de la vela de la señal es ≥ promedio de N velas × multiplicador. Ej.: 20 y 1.2 → al menos 20% sobre el promedio.</dd>
             <dt>Tendencia macro H4 (EMA 50)</dt><dd>No abre largos si el H4 es bajista (cierre H4 bajo su EMA 50) ni cortos si es alcista. Usa la última vela H4 ya cerrada al cerrar la vela de la señal (sin mirar al futuro). Si no hay velas H4 suficientes, no opera.</dd>
+            <dt>Tendencia de BTC (EMA 50 H4)</dt><dd>Solo en altcoins: no abre largos si BTC está bajo su EMA 50 en H4 ni cortos si está sobre ella. Misma regla sin mirar al futuro que la macro H4. En BTC no hace nada. Si no hay velas H4 de BTC, no opera.</dd>
         </dl>
         <h4>3 · Reglas de cierre</h4>
         <dl>
@@ -429,7 +483,20 @@ function nextTab() { const i = tabs.indexOf(currentTab); if (i < tabs.length - 1
 function prevTab() { const i = tabs.indexOf(currentTab); if (i > 0) switchTab(tabs[i - 1]); }
 
 // Filtro apagado: sus campos se atenúan (solo visual; los valores se envían igual que siempre)
-function dimFilter(checkbox) { checkbox.closest('[data-filter]').classList.toggle('is-off', !checkbox.checked); }
+function dimFilter(checkbox) {
+    checkbox.closest('[data-filter]').classList.toggle('is-off', !checkbox.checked);
+    if (checkbox.name === 'regime_filter') updateRegimeNotes();
+}
+
+// Régimen: casillas de regímenes permitidos + avisos (sin efecto / ninguno elegido)
+function toggleRegimeChip(input) { input.closest('.bt-chip').classList.toggle('on', input.checked); updateRegimeNotes(); }
+function updateRegimeNotes() {
+    const on = document.querySelector('input[name=regime_filter]')?.checked;
+    const n = document.querySelectorAll('input[name="allowed_regimes[]"]:checked').length;
+    const amb = document.querySelector('select[name=regime_ambiguous_as]')?.value;
+    document.getElementById('regime-note-noeffect').style.display = on && n === 3 && amb !== 'ignorar' ? 'flex' : 'none';
+    document.getElementById('regime-note-none').style.display = on && n === 0 ? 'flex' : 'none';
+}
 
 function toggleTrailingInputs() {
     const mode = document.getElementById('trailing_mode_select').value;
@@ -521,7 +588,8 @@ document.addEventListener('click', function (e) {
 document.addEventListener('DOMContentLoaded', () => {
     renderSymbols();
     toggleTrailingInputs();
-    document.querySelectorAll('[data-filter] input[type=checkbox]').forEach(dimFilter);
+    document.querySelectorAll('[data-filter] .bt-check').forEach(dimFilter);
+    updateRegimeNotes();
 });
 
 // ═══════════════════════════════════════════════════════════
