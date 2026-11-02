@@ -393,9 +393,24 @@ class BacktestingController extends Controller
         }
         
         // Si está inactivo, borramos también su configuración de Paper huérfana
-        \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)->delete();
+        $configIds = \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)->pluck('id');
 
-        $backtest->delete();
+        // Con una posicion Real abierta NO se borra: la fila perderia su config (FK SET NULL) y su rastro.
+        $openReal = \App\Models\RealTrade::whereIn('paper_strategy_config_id', $configIds)
+            ->whereIn('status', ['open', 'pending_open', 'pending_close'])
+            ->count();
+        if ($openReal > 0) {
+            return back()->withErrors(['error' => "No puedes eliminar este backtest: tiene {$openReal} posición(es) Real abierta(s). Espera a que cierren."]);
+        }
+
+        DB::transaction(function () use ($backtest, $configIds) {
+            // Se PAUSAN las suscripciones Real de esas configs antes de borrarlas; si no, quedarian activas y huerfanas.
+            \App\Models\RealStrategySubscription::whereIn('paper_strategy_config_id', $configIds)
+                ->where('status', 'active')
+                ->update(['status' => 'paused']);
+            \App\Models\PaperStrategyConfig::whereIn('id', $configIds)->delete();
+            $backtest->delete();
+        });
         return back()->with('status', 'Backtest eliminado del historial.');
     }
 

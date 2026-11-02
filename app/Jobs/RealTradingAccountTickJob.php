@@ -35,7 +35,7 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
         // credenciales desencriptadas nunca quedan serializadas en el
         // payload del job dentro de la cola de Redis (solo viaja el id).
         $account = BrokerAccount::where('id', $this->accountId)
-            ->with(['subscriptions' => fn ($q) => $q->where('status', 'active')
+            ->with(['subscriptions' => fn ($q) => $q->runnable()
                 ->with('paperStrategyConfig')])
             ->first();
 

@@ -57,6 +57,17 @@ class RealStrategySubscription extends Model
         return $query->where('status', 'active');
     }
 
+    /**
+     * Suscripciones que pueden ABRIR posiciones: la suscripcion esta activa Y su configuracion
+     * Paper tambien. Asi 'Detener', desactivar o borrar la config corta las entradas Real.
+     * Las posiciones ya abiertas se gestionan aparte y no dependen de este filtro.
+     */
+    public function scopeRunnable($query)
+    {
+        return $query->where('status', 'active')
+            ->whereHas('paperStrategyConfig', fn ($c) => $c->where('active', true));
+    }
+
     public function scopeForUser($query, int $userId)
     {
         return $query->where('user_id', $userId);

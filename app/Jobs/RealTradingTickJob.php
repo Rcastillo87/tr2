@@ -32,7 +32,7 @@ class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
         $accountIds = BrokerAccount::query()
             ->where(fn ($q) => $q
                 ->where(fn ($a) => $a->where('status', 'active')
-                    ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active')))
+                    ->whereHas('subscriptions', fn ($s) => $s->runnable()))
                 ->orWhereExists(fn ($e) => self::openRealTrades($e)))
             ->pluck('id');
 
