@@ -12,7 +12,8 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03), `.env.example` sin correo ni contraseña, cierre por señal opuesta en Paper y Real (BP-02), aviso al dueño si falla `set_trading_stop` (REAL-01).
+6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03), cierre por señal opuesta en Paper y Real (BP-02), aviso al dueño si falla `set_trading_stop` (REAL-01).
+7. **Seguridad:** `python-engine/.env` tiene permisos 664 (legible por todos los usuarios del servidor); revisar con qué usuario corre el motor y dejarlo en 600/640. El dueño pondrá el repo en privado (estuvo público solo para validar).
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
 
 ---
@@ -28,6 +29,7 @@
 | Commit | Qué | Verificación |
 |---|---|---|
 | `5017d2e` | Una suscripción Real solo abre posiciones si ella y su config Paper están activas (`scopeRunnable`, usado por `RealTradingAccountTickJob` y `RealTradingTickJob`); `destroyBacktest` pausa sus suscripciones y no borra si hay posición Real abierta | `tests/Forensic/real_config_gate_test.php`: A1-A5, controles con el filtro viejo, B1, C1, D1-D4 y Z1 en PASS (`TODO OK`) sobre datos reales dentro de una transacción revertida |
+| `3baaadd` | `.env.example` sin bloque PHP, sin contraseña de ejemplo ni correo personal; base `pgsql`, cola `redis` y sección TR2 con las 14 variables de `config/trading.php`; nuevo `python-engine/.env.example` con las 12 del motor | `p02.py` T1-T4 en PASS, Laravel lo parsea (52 variables), `.env` y `python-engine/.env` con md5 idéntico antes y después |
 
 ### Cambios fuera de git
 - Horizon reiniciado (sin búsquedas en curso) para que los jobs carguen el código nuevo.
@@ -43,6 +45,7 @@
 - `Gate::before` sin un parámetro `$user` anulable no se aplica a invitados (falló la prueba, no el código).
 - Para probar el «antes» sin tocar producción: controles que ejecutan el filtro viejo en la misma prueba. No poner código viejo en disco con Horizon corriendo (clases cargadas de forma perezosa).
 - La prueba C restaura todas las configs de la cuenta a activas dentro de su transacción (incluidas las que estaban apagadas); no afecta al resultado y se revierte, pero D4 lista por eso las subs 96 y 98.
+- Un `.env.example` es una plantilla que se versiona: sin código ejecutable, contraseñas ni correos reales. Una prueba estática compara sus claves con las `env()` y `os.getenv()` del código para detectar variables que falten.
 
 ### Pendientes que deja
 - Resto de la lista de fix de la auditoría (ver «Próxima sesión» punto 6).
