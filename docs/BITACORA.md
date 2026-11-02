@@ -12,7 +12,40 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
+6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03), `.env.example` sin correo ni contraseña, cierre por señal opuesta en Paper y Real (BP-02), aviso al dueño si falla `set_trading_stop` (REAL-01).
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-02 (Bogotá) — Auditoría externa y fix REAL-04 (Real seguía operando con la config Paper apagada)
+
+### Resumen para el dueño
+- Se contrastó una auditoría hecha por otra IA (hasta 31-oct) contra el código: casi todo es verdad, pero se ajustaron severidades (BP-03, REAL-01, REAL-02 y REAL-10 no son críticos o no son bug).
+- **REAL-04 corregido:** «Detener», desactivar o borrar la config Paper ya no deja que Real abra posiciones. Antes Real solo miraba el estado de su propia suscripción y la pantalla prometía lo contrario.
+- Se encontraron 2 suscripciones expuestas (96 HYPEUSDT H4 y 98 1000PEPEUSDT H2, cuenta 11 demo, hoy pausada) con la config apagada: habrían abierto posiciones al reanudar la cuenta.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| `5017d2e` | Una suscripción Real solo abre posiciones si ella y su config Paper están activas (`scopeRunnable`, usado por `RealTradingAccountTickJob` y `RealTradingTickJob`); `destroyBacktest` pausa sus suscripciones y no borra si hay posición Real abierta | `tests/Forensic/real_config_gate_test.php`: A1-A5, controles con el filtro viejo, B1, C1, D1-D4 y Z1 en PASS (`TODO OK`) sobre datos reales dentro de una transacción revertida |
+
+### Cambios fuera de git
+- Horizon reiniciado (sin búsquedas en curso) para que los jobs carguen el código nuevo.
+- Originales respaldados en `/root/patches/p01/orig/`.
+
+### Comportamiento a conocer
+- Las posiciones ya abiertas se gestionan igual: ese camino no usa el filtro nuevo.
+- Reactivar una config Paper reactiva sola la entrada Real de su suscripción activa (no se pausan las suscripciones al detener).
+- Borrar un backtest con una posición Real abierta se bloquea con aviso; sin posiciones, pausa sus suscripciones antes de borrar la config.
+
+### Lecciones
+- Una prueba que depende del estado de los datos hace SKIP y no prueba nada: usar un fixture controlado dentro de una transacción que se revierte.
+- `Gate::before` sin un parámetro `$user` anulable no se aplica a invitados (falló la prueba, no el código).
+- Para probar el «antes» sin tocar producción: controles que ejecutan el filtro viejo en la misma prueba. No poner código viejo en disco con Horizon corriendo (clases cargadas de forma perezosa).
+- La prueba C restaura todas las configs de la cuenta a activas dentro de su transacción (incluidas las que estaban apagadas); no afecta al resultado y se revierte, pero D4 lista por eso las subs 96 y 98.
+
+### Pendientes que deja
+- Resto de la lista de fix de la auditoría (ver «Próxima sesión» punto 6).
 
 ---
 
