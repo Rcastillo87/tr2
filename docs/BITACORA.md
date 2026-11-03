@@ -12,10 +12,32 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11); siguen C-02 a C-12, luego formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12); siguen C-03 a C-12, luego formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Collector: reintentos acotados ante fallos transitorios de Bybit (C-02)
+
+### Resumen para el dueño
+- La descarga automática hacía **un solo intento**: un 429, un 5xx o una caída de red marcaba la serie con error en esa corrida (sonda: 1 petición y falla, aunque la siguiente habría respondido bien). No se perdían datos (la corrida siguiente recupera desde la última vela), pero la serie quedaba un minuto atrasada y, si Bybit cortaba, se hacían 84 peticiones fallidas por minuto.
+- Ahora (`collectors/bybit_http.py`): hasta **3 intentos** con espera 1 s / 2 s + azar; respeta `Retry-After` hasta 5 s; reintenta red, 429, 5xx y los códigos de límite de Bybit (10006, 10018); **no** reintenta el 403 (IP bloqueada: insistir lo empeora) ni errores de parámetros.
+- **Corte de corrida:** un 403 o 3 series seguidas limitadas cortan el resto (`omitida: límite de tasa…`, campo `aborted` en `/collector/run`); el minuto siguiente vuelve a intentar.
+- **Ajuste encontrado al revisar el peor caso:** el cliente de la corrida usaba 30 s de timeout; con reintentos, una serie colgada podía tardar ~93 s (> 75 s de la corrida). Ahora 10 s por petición: peor caso ~33,5 s.
+- La reparación diaria (`collector_repair.py`) usa la misma función y hereda los reintentos. El backfill manual conserva su política larga (CLI sin presupuesto).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `collectors/bybit_http.py` (`get_json`, `BybitRateLimited`, `BybitRequestError`); `fetch_from_bybit` lo usa; `run_all` con corte por límite de tasa y timeout de 10 s; `aborted` en `/collector/run` | `tests/Forensic/collector_retry_test.py`: 20 casos en PASS (429, Retry-After, 5xx, red, timeout, 403, parámetros, 10006, corte de corrida, presupuesto, timeout de la corrida); antes: sonda con un 429 → 1 petición y la serie falla; 6 mutaciones detectadas. Regresión en TODO OK |
+
+### Lecciones
+- En pruebas de mutación, al restaurar un archivo hay que **borrar `__pycache__`**: una mutación del mismo tamaño en el mismo segundo deja el bytecode mutado en caché y la prueba sigue viendo la mutación (pasó con `attempts=3` → `1`). No afecta al servidor (git escribe con mtime nuevo).
+
+### Cambios fuera de git
+- Se instala con p12 y reinicio de `trading2-engine` (el collector corre en el motor). Horizon no hace falta.
 
 ---
 
@@ -34,7 +56,7 @@
 | (este) | `OhlcvCollector.get_active_configs` y `RegimeDetector.get_active_symbols` sin respaldo; `collector_validate.py` falla con 0 series; `SystemAlerts::validationResult` abre incidente con 0 series; `/collector/run` cierra el pool en `finally` | `tests/Forensic/collector_configs_test.py`: 11 casos en PASS, antes 7 FALLOS; `collector_validation_alert_test.php` (PHP puro): 4 casos, antes 2 FALLOS; 4 mutaciones detectadas. Regresión: suites Python y PHP en TODO OK |
 
 ### Cambios fuera de git
-- Se instala con p11: reinicio de `trading2-engine` y reinicio ordenado de Horizon (`horizon:terminate`, solo sin búsquedas activas) porque el job de validación carga `SystemAlerts`.
+- Instalado con **p11**: 19 pruebas Python + 2 PHP en TODO OK, `trading2-engine` activo desde **Tue 2026-11-03 19:25:34 UTC**, Horizon reiniciado de forma ordenada (proceso 1410170 → 1569225), `main` subido (`481da82..a006334`).
 
 ---
 

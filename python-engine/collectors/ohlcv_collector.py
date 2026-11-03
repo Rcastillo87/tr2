@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import os
 from dotenv import load_dotenv
+from collectors.bybit_http import get_json, BybitRateLimited
 
 load_dotenv()
 
@@ -23,6 +24,8 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 BYBIT_BASE_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 
 BYBIT_LIMIT  = 1000  # máximo permitido por /v5/market/kline
+RUN_HTTP_TIMEOUT_S = 10.0    # timeout por petición en la corrida automática (antes 30 s, sin reintentos)
+RATE_LIMIT_ABORT_AFTER = 3  # series seguidas limitadas por Bybit que cortan el resto de la corrida (C-02)
 COLLECT_CONCURRENCY = 4  # series en paralelo (pool "live" = 10 conexiones compartidas con los ticks; Bybit sobra)
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
 
@@ -76,20 +79,14 @@ class OhlcvCollector:
         client = client or httpx.AsyncClient(timeout=30)
         try:
             while True:
-                r = await client.get(
-                    f'{BYBIT_BASE_URL}/v5/market/kline',
-                    params={
-                        'category': 'linear',
-                        'symbol':   symbol,
-                        'interval': interval,
-                        'limit':    BYBIT_LIMIT,
-                        'end':      end_ms,
-                    }
-                )
-                r.raise_for_status()
-                payload = r.json()
-                if payload.get('retCode', 0) != 0:   # error de Bybit: no confundir con "sin velas"
-                    raise RuntimeError(f"Bybit retCode={payload.get('retCode')} {payload.get('retMsg')}")
+                # Reintentos acotados (C-02): red, 429, 5xx y límite de tasa; 403 y errores de parámetros no
+                payload = await get_json(client, f'{BYBIT_BASE_URL}/v5/market/kline', params={
+                    'category': 'linear',
+                    'symbol':   symbol,
+                    'interval': interval,
+                    'limit':    BYBIT_LIMIT,
+                    'end':      end_ms,
+                })
                 bars = payload.get('result', {}).get('list', [])
 
                 if not bars:
@@ -246,13 +243,32 @@ class OhlcvCollector:
         active_configs = await self.get_active_configs()
         results: dict = {}
         sem = asyncio.Semaphore(COLLECT_CONCURRENCY)
+        # Corte por límite de tasa (C-02): un 403 o RATE_LIMIT_ABORT_AFTER series seguidas limitadas cortan el resto
+        # de la corrida (el minuto siguiente vuelve a intentar) en vez de seguir golpeando a Bybit.
+        state = {'limited_streak': 0, 'abort': None}
+        self.last_abort_reason = None
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        # Timeout corto: con 3 intentos el peor caso por petición queda en ~33 s, dentro de la corrida de 75 s (C-02)
+        async with httpx.AsyncClient(timeout=RUN_HTTP_TIMEOUT_S) as client:
             async def one(symbol: str, interval: str, broker: str) -> None:
                 key = f"{symbol}/{interval}"
                 async with sem:
+                    if state['abort']:
+                        results[key] = -1
+                        if errors is not None:
+                            errors[key] = f"omitida: {state['abort']} (se reintenta el próximo minuto)"
+                        return
                     try:
                         results[key] = await self.update(symbol, interval, broker, client=client)
+                        state['limited_streak'] = 0
+                    except BybitRateLimited as e:
+                        state['limited_streak'] += 1
+                        if e.blocked or state['limited_streak'] >= RATE_LIMIT_ABORT_AFTER:
+                            state['abort'] = state['abort'] or f'límite de tasa de Bybit ({e})'[:200]
+                        logger.error(f"[{key}] Bybit limita: {e}")
+                        results[key] = -1
+                        if errors is not None:
+                            errors[key] = str(e)[:300]
                     except Exception as e:
                         logger.error(f"[{key}] Error: {e}")
                         results[key] = -1
@@ -261,4 +277,7 @@ class OhlcvCollector:
 
             await asyncio.gather(*(one(s, i, b) for s, i, b in active_configs))
 
+        self.last_abort_reason = state['abort']
+        if state['abort']:
+            logger.error(f"[Collector] corrida cortada: {state['abort']}")
         return dict(sorted(results.items()))

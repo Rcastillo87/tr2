@@ -48,6 +48,7 @@ async def run_collector():
                 "series":      len(results),
                 "failed":      sum(1 for v in results.values() if v < 0),
                 "errors":      errors,
+                "aborted":     collector.last_abort_reason,   # C-02: corrida cortada por límite de tasa de Bybit
                 "duration_s":  round(time.monotonic() - t0, 2),
             }
         except Exception as e:
