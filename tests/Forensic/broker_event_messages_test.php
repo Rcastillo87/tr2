@@ -26,6 +26,7 @@ $expect = [   // evento => [nivel, modo]
     'reconcile_closed' => ['warning', 'notify'], 'reconcile_adopted' => ['warning', 'notify'],
     'reconcile_discarded' => ['info', 'notify'],
     'protection_failed' => ['error', 'open'], 'protection_restored' => ['success', 'resolve'],
+    'api_permissions_bad' => ['error', 'open'], 'api_permissions_ok' => ['success', 'resolve'],
 ];
 foreach ($expect as $e => [$level, $mode]) {
     $r = $m($e, ['symbol' => 'BTCUSDT'], 5);
@@ -33,6 +34,11 @@ foreach ($expect as $e => [$level, $mode]) {
         && $r['title'] !== '' && str_contains($r['body'], 'Bybit Real'), $r);
 }
 $check('evento desconocido -> sin aviso', $m('xyz') === null);
+$pb = $m('api_permissions_bad', ['problems' => ['withdraw', 'missing_position']]);
+$check('permisos: explica cada problema y que la cuenta sigue operando', str_contains($pb['body'] ?? '', 'tiene permiso de retiro, no tiene Contratos → Posiciones')
+    && str_contains($pb['body'] ?? '', 'sigue operando'), $pb['body'] ?? null);
+$check('permisos: mismo incidente por cuenta para abrir y cerrar', ($pb['key'] ?? 1) === ($m('api_permissions_ok')['key'] ?? 2) && ($pb['key'] ?? '') === 'api_perms:7');
+$check('permisos sin detalle: texto genérico', str_contains($m('api_permissions_bad')['body'] ?? '', 'no tiene los permisos que TR2 necesita'));
 $hedge = $m('open_rejected', ['symbol' => 'BTCUSDT', 'side' => 'long', 'reason' => 'position idx not match position mode (code 10001)']);
 $check('rechazo por modo Hedge: explica cómo pasar a One-Way', str_contains($hedge['body'] ?? '', 'modo Hedge')
     && str_contains($hedge['body'] ?? '', 'One-Way') && str_contains($hedge['body'] ?? '', 'No se abrió ninguna posición'), $hedge['body'] ?? null);

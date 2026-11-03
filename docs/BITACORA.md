@@ -12,10 +12,29 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, ambos en p07). Siguen REAL-09 en adelante (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08). Siguen REAL-10 y REAL-11, luego Collector y formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Permisos de la clave API (REAL-09)
+
+### Resumen para el dueño
+- El alta de una cuenta solo comprobaba que la clave **leyera el saldo**: aceptaba claves de **solo lectura** (después cada orden la rechazaba Bybit) y claves **con permiso de retiro** (contra la regla del proyecto: Contratos → Órdenes + Posiciones, nunca retiros). Verificado antes del fix: ambas devolvían `valid = True`.
+- Además, la información de permisos que ya se leía (`/v5/user/query-api`) no se mostraba en ninguna pantalla y su regla de «puede operar» buscaba una clave (`UnifiedTrade`) que Bybit ya no envía.
+- **Ahora el alta rechaza**, con mensaje claro en el formulario, una clave de solo lectura, sin Contratos → Órdenes o Posiciones, o **con retiros**; si no se pueden leer los permisos, no registra («Intenta de nuevo»).
+- **Cuentas ya registradas** (decisión del dueño, opción A): se revisan **una vez al día**; si la clave tiene un problema llega el incidente «Permisos de la clave API a revisar» y **la cuenta sigue operando**. Al reemplazarla llega «Permisos de la clave API correctos».
+- Lectura 03-nov de la cuenta 11: lectura y escritura, Contratos → `Order` y `Position` (correcto); el grupo `Wallet` no se leía todavía (la primera revisión diaria tras instalar dirá si hay retiros). **La clave vence en 85 días** (Bybit las vence a los 90 si no tienen IP fija): candidata a un aviso de vencimiento.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `api_permission_problems()` (regla única en `bybit_client.py`); `validate-credentials` exige permisos; `account-info` con la regla correcta y el grupo `Wallet`; `BybitClient.get_api_key_info()`; revisión diaria `_track_permissions` en el tick Real (reintenta a la hora si Bybit no responde, nunca frena el tick); eventos `api_permissions_bad` / `api_permissions_ok` con textos | `tests/Forensic/real_permissions_test.py`: 26 casos en PASS (regla, alta, información, revisión diaria); antes del cambio el alta aceptaba solo lectura y retiro; 5 mutaciones detectadas. `broker_event_messages_test.php` con los textos nuevos y 18 eventos con aviso. Regresión: 20 suites Python y la PHP en TODO OK |
+
+### Cambios fuera de git
+- Se instala con p08 y reinicio de `trading2-engine`. Horizon no hace falta.
 
 ---
 
@@ -33,7 +52,7 @@
 | (este) | `BrokerEventMessages::open_rejected` agrega la explicación cuando Bybit rechaza por modo de posición; comentario de diseño en `set_trading_stop` | `broker_event_messages_test.php`: rechazo por Hedge explica cómo pasar a One-Way y otros rechazos no; antes del cambio 1 FALLO. Regresión: 19 suites Python y la PHP en TODO OK |
 
 ### Cambios fuera de git
-- Se instala con p07 (junto con REAL-07) y reinicio de `trading2-engine`. Horizon no hace falta (`BrokerEventMessages` solo lo usa `broker:events` por cron).
+- Instalado con **p07** junto con REAL-07: 15 pruebas Python + 2 PHP en TODO OK, `trading2-engine` activo desde **Tue 2026-11-03 17:12:13 UTC**, `main` subido (`30b0a20..45e11ef`).
 
 ---
 
@@ -49,7 +68,7 @@
 | (este) | `RealTrader.open_trade`: tope de nocional con la lectura del motor; comentario de diseño de REAL-07 | `tests/Forensic/real_sizing_test.py`: tamaño Real = motor en 8 casos (riesgo manda, tope 1x / 3x / 0,5x, sin campo, 0, `null`, texto); antes del cambio 2 FALLOS (0 y `null`). Regresión: 19 suites Python en TODO OK |
 
 ### Cambios fuera de git
-- Pendiente: se instala con p07 (junto con REAL-08) y reinicio de `trading2-engine`.
+- Instalado con p07 junto con REAL-08 (motor reiniciado Tue 2026-11-03 17:12:13 UTC).
 
 ---
 

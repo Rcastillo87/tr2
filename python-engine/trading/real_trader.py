@@ -268,6 +268,19 @@ class BybitClient:
         reason = f"{data.get('retMsg')} (code {code})"
         return (False, reason) if code in BYBIT_AUTH_FAIL_CODES else (None, reason)
 
+    async def get_api_key_info(self) -> dict | None:
+        """`result` de GET /v5/user/query-api (permisos y vencimiento de la clave). None si no se pudo saber."""
+        try:
+            r = await self._signed_get('/v5/user/query-api', {})
+            data = r.json()
+        except Exception as e:
+            logger.error(f"[BYBIT] get_api_key_info exception: {e}")
+            return None
+        if data.get('retCode') != 0:
+            logger.error(f"[BYBIT] get_api_key_info error: {data.get('retMsg')} (code {data.get('retCode')})")
+            return None
+        return data.get('result') or None
+
     async def get_equity(self) -> float | None:
         """Patrimonio de la cuenta UNIFIED (totalEquity; si no, el equity de USDT). Base del límite mensual."""
         try:

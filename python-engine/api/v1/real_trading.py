@@ -20,6 +20,7 @@ from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESH
                                  ORDER_DEAD_STATUSES)
 from trading.risk_manager import RiskManager
 from trading.broker_events import emit_event
+from trading.bybit_client import api_permission_problems
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -97,6 +98,38 @@ async def _track_auth(pool, account_id: int, ok: bool | None, reason: str) -> No
         await emit_event(pool, account_id, 'api_auth_ok')
 
 
+# Permisos de la clave por cuenta (REAL-09, opción A del dueño: solo avisa, la cuenta sigue operando).
+# Se revisan una vez al día por cuenta; si Bybit no responde, se reintenta en una hora.
+PERMISSIONS_CHECK_EVERY = timedelta(hours=24)
+PERMISSIONS_RETRY_AFTER = timedelta(hours=1)
+_perm_state: dict[int, bool] = {}
+_perm_next_check: dict[int, datetime] = {}
+
+
+async def _track_permissions(pool, account_id: int, client, now: datetime | None = None) -> None:
+    """Emite api_permissions_bad / api_permissions_ok solo al cambiar (y el primero tras arrancar el motor:
+    Laravel no repite un incidente abierto ni avisa un cierre si no había incidente). Nunca bloquea el tick."""
+    now = now or datetime.now(timezone.utc)
+    if now < _perm_next_check.get(account_id, now - timedelta(seconds=1)):
+        return
+    try:
+        info = await client.get_api_key_info()
+    except Exception as e:  # noqa: BLE001 - un fallo aquí no puede frenar la gestión de posiciones
+        logger.error(f"[REAL] permisos de la clave (cuenta {account_id}): {e}")
+        info = None
+    if info is None:
+        _perm_next_check[account_id] = now + PERMISSIONS_RETRY_AFTER
+        return
+    _perm_next_check[account_id] = now + PERMISSIONS_CHECK_EVERY
+    problems = api_permission_problems(info)
+    prev = _perm_state.get(account_id)
+    _perm_state[account_id] = not problems
+    if problems and prev is not False:
+        await emit_event(pool, account_id, 'api_permissions_bad', problems=problems)
+    elif not problems and prev is not True:
+        await emit_event(pool, account_id, 'api_permissions_ok')
+
+
 async def _process_account(trader, account):
     account_key     = f"account_{account.id}_{account.broker}"
     account_results = {}
@@ -107,6 +140,7 @@ async def _process_account(trader, account):
         if auth_ok is False:
             return account_key, {"error": f"Bybit rechaza las claves API: {auth_reason}"}
         await trader.ensure_month_baseline(account.id, client)
+        await _track_permissions(trader.pool, account.id, client)
 
         entries_allowed = account.entries_allowed
         error_count = await trader.get_circuit_breaker_errors(account.id) if entries_allowed else 0

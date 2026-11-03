@@ -17,6 +17,39 @@ logger = logging.getLogger(__name__)
 BYBIT_BASE_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 
 
+# Permisos de la clave API que TR2 exige (PROMPT_MAESTRO §5: Contratos → Órdenes + Posiciones; nunca retiros).
+REQUIRED_CONTRACT_PERMISSIONS = ('Order', 'Position')
+PERMISSION_TEXTS = {
+    'read_only':        'es de solo lectura',
+    'missing_order':    'no tiene Contratos → Órdenes',
+    'missing_position': 'no tiene Contratos → Posiciones',
+    'withdraw':         'tiene permiso de retiro',
+}
+
+
+def api_permission_problems(info: dict | None) -> list[str]:
+    """
+    Problemas de una clave para operar en TR2 a partir del `result` de GET /v5/user/query-api ([] = apta).
+    Códigos: read_only, missing_order, missing_position, withdraw (ver PERMISSION_TEXTS).
+    """
+    info = info or {}
+    perms = info.get('permissions') or {}
+    contract = perms.get('ContractTrade') or []
+    problems = []
+    if str(info.get('readOnly', 1)) != '0':
+        problems.append('read_only')
+    for perm, code in zip(REQUIRED_CONTRACT_PERMISSIONS, ('missing_order', 'missing_position')):
+        if perm not in contract:
+            problems.append(code)
+    if 'Withdraw' in (perms.get('Wallet') or []):
+        problems.append('withdraw')
+    return problems
+
+
+def describe_permission_problems(problems: list[str]) -> str:
+    return ', '.join(PERMISSION_TEXTS.get(p, p) for p in problems)
+
+
 def bybit_sign(api_key, api_secret, payload_str, recv_window='10000'):
     """
     Firma un pedido a la API V5 de Bybit (HMAC-SHA256). Unico lugar donde

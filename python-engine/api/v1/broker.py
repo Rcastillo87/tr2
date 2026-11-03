@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 import os
 
-from trading.bybit_client import bybit_sign
+from trading.bybit_client import bybit_sign, api_permission_problems, describe_permission_problems
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,6 +23,20 @@ def _sign_bybit_get(api_key: str, api_secret: str, params: dict) -> dict:
     """Firma un GET a Bybit V5 usando la funcion compartida bybit_sign."""
     query_string = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
     return bybit_sign(api_key, api_secret, query_string, recv_window='5000')
+
+
+async def _query_api_key(base_url: str, api_key: str, api_secret: str) -> dict | None:
+    """`result` de GET /v5/user/query-api (permisos de la clave). None si no se pudo leer."""
+    headers = _sign_bybit_get(api_key, api_secret, {})
+    headers['Content-Type'] = 'application/json'
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f'{base_url}/v5/user/query-api', params={}, headers=headers)
+        data = r.json()
+    except Exception as e:
+        logger.error(f'Error leyendo permisos de la clave Bybit: {e}')
+        return None
+    return (data.get('result') or None) if data.get('retCode') == 0 else None
 
 
 class ValidateCredentialsRequest(BaseModel):
@@ -62,6 +76,18 @@ async def validate_credentials(
         ret_code = data.get('retCode', -1)
 
         if ret_code == 0:
+            # REAL-09: además de leer el saldo, la clave debe poder operar contratos y NO tener retiros
+            info = await _query_api_key(base_url, request.api_key, request.api_secret)
+            if info is None:
+                return {'valid': False, 'message': 'No se pudieron leer los permisos de la clave en Bybit. Intenta de nuevo.'}
+            problems = api_permission_problems(info)
+            if problems:
+                hint = (' Por seguridad TR2 no acepta claves con retiros: crea una clave sin ese permiso.'
+                        if 'withdraw' in problems else '')
+                return {'valid': False, 'problems': problems,
+                        'message': f'La clave {describe_permission_problems(problems)}. Necesita Contratos → '
+                                   f'Órdenes y Posiciones, sin retiros.{hint}'}
+
             # Credenciales válidas — extraer balance total si está disponible
             total_equity = None
             try:
@@ -146,8 +172,9 @@ async def account_info(
                 pass
 
         contract_perms = permissions.get('ContractTrade', [])
-        unified_perms  = permissions.get('UnifiedTrade', [])
-        can_trade = 'Order' in contract_perms or 'Order' in unified_perms
+        unified_perms  = permissions.get('UnifiedTrade', [])   # clave antigua de Bybit (ya no viene)
+        problems = api_permission_problems(result)
+        can_trade = not ({'read_only', 'missing_order', 'missing_position'} & set(problems))
 
         return {
             'success':        True,
@@ -155,9 +182,11 @@ async def account_info(
             'days_remaining': days_remaining,
             'read_only':      bool(read_only),
             'can_trade':      can_trade,
+            'problems':       problems,
             'permissions': {
                 'contract': contract_perms,
                 'unified':  unified_perms,
+                'wallet':   permissions.get('Wallet', []),
             },
         }
 

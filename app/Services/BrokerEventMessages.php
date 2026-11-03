@@ -138,6 +138,18 @@ final class BrokerEventMessages
                 'title' => 'Apertura descartada',
                 'body'  => "{$account} · {$ref}: la orden no llegó a abrir posición en Bybit; se marcó como fallida.",
             ],
+            'api_permissions_bad' => [
+                'level' => 'error', 'mode' => 'open', 'key' => "api_perms:{$accountId}",
+                'title' => 'Permisos de la clave API a revisar',
+                'body'  => "{$account}: la clave API " . self::permissionProblems($data['problems'] ?? [])
+                    . '. La cuenta sigue operando; reemplázala en Cuentas por una con Contratos → Órdenes y Posiciones'
+                    . ' y sin retiros.',
+            ],
+            'api_permissions_ok' => [
+                'level' => 'success', 'mode' => 'resolve', 'key' => "api_perms:{$accountId}",
+                'title' => 'Permisos de la clave API correctos',
+                'body'  => "{$account}: la clave tiene Contratos → Órdenes y Posiciones y no tiene retiros.",
+            ],
             'protection_failed' => [
                 'level' => 'error', 'mode' => 'open', 'key' => "protection:{$accountId}:" . ($tradeId ?? $sym),
                 'title' => 'SL/TP de la estrategia no instalado',
@@ -164,7 +176,19 @@ final class BrokerEventMessages
         return ['title' => 'Cuenta reactivada', 'body' => "{$account}: vuelve a abrir posiciones."];
     }
 
-    /** Rechazo de Bybit porque la cuenta está en modo Hedge (TR2 envía órdenes One-Way, positionIdx=0). */
+    /** Problemas de permisos de la clave (códigos del motor: read_only, missing_order, missing_position, withdraw). */
+    private static function permissionProblems(mixed $codes): string
+    {
+        $texts = [
+            'read_only' => 'es de solo lectura', 'missing_order' => 'no tiene Contratos → Órdenes',
+            'missing_position' => 'no tiene Contratos → Posiciones', 'withdraw' => 'tiene permiso de retiro',
+        ];
+        $parts = array_map(fn ($c) => $texts[$c] ?? (string) $c, is_array($codes) ? $codes : []);
+
+        return $parts === [] ? 'no tiene los permisos que TR2 necesita' : implode(', ', $parts);
+    }
+
+        /** Rechazo de Bybit porque la cuenta está en modo Hedge (TR2 envía órdenes One-Way, positionIdx=0). */
     private static function isPositionModeError(string $reason): bool
     {
         $r = mb_strtolower($reason);
