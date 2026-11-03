@@ -3,15 +3,16 @@ Selección de la fuente de velas (broker) dentro de ohlcv_data.
 
 Dos necesidades distintas que NO deben compartir criterio:
 
-- En vivo (paper, real, régimen): la fuente con la vela MÁS RECIENTE del
-  intervalo que se opera. Si esa vela está desactualizada se devuelve None y el
-  llamador no opera: es preferible perder una entrada a operar sobre datos viejos.
+- En vivo (paper, real, régimen): SOLO el mercado que se opera (LIVE_VENUE_BROKER,
+  Bybit perpetuos). Si su vela está desactualizada se devuelve None y el llamador
+  no opera: es preferible perder una entrada a operar sobre datos viejos. Nunca otra
+  fuente (C-11): binance_vision es spot importado a mano y meses atrasado; elegirla
+  dejaba el SL/TP de las posiciones abiertas sin evaluar y sin aviso.
 - Backtest: la fuente con MAYOR COBERTURA del rango pedido. Ante empate se
   prefiere el mercado que se opera en vivo (Bybit, perpetuos) para que backtest
   y vivo vean las mismas velas.
 """
 import logging
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -25,7 +26,7 @@ INTERVAL_MINUTES = {'1': 1, '5': 5, '15': 15, '60': 60, '120': 120, '240': 240, 
 # H1 -> 3 h, 15m -> 45 min, H2 -> 6 h. La vela en formación cuenta como reciente.
 LIVE_MAX_LAG_BARS = 3
 
-# Mercado operado en vivo: desempata la selección de fuente del backtest.
+# Mercado operado en vivo: única fuente en vivo y desempate de la selección de fuente del backtest.
 LIVE_VENUE_BROKER = 'bybit'
 # Dos fuentes con coberturas que difieren menos de esto se consideran empatadas.
 COVERAGE_TIE_RATIO = 0.005
@@ -34,9 +35,6 @@ COVERAGE_TIE_RATIO = 0.005
 SESSION_MARKET_BROKERS: frozenset[str] = frozenset()
 # Completitud mínima (velas presentes / esperadas) para no reportar huecos.
 MIN_COMPLETENESS = 0.98
-
-_BROKER_CACHE_TTL_S = 600
-_broker_cache: tuple[float, list[str]] = (0.0, [])
 
 
 def interval_delta(interval: str) -> timedelta:
@@ -62,64 +60,27 @@ def _utc(dt: datetime | None) -> datetime | None:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-async def list_brokers(pool: asyncpg.Pool) -> list[str]:
-    """Brokers presentes en ohlcv_data (loose index scan, cacheado 10 min)."""
-    global _broker_cache
-    cached_at, brokers = _broker_cache
-    if brokers and time.monotonic() - cached_at < _BROKER_CACHE_TTL_S:
-        return brokers
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            WITH RECURSIVE b(broker) AS (
-                SELECT min(broker) FROM ohlcv_data
-                UNION ALL
-                SELECT (SELECT min(o.broker) FROM ohlcv_data o WHERE o.broker > b.broker)
-                FROM b WHERE b.broker IS NOT NULL
-            )
-            SELECT broker FROM b WHERE broker IS NOT NULL
-            """
-        )
-    brokers = [r['broker'] for r in rows]
-    _broker_cache = (time.monotonic(), brokers)
-    return brokers
-
-
 # ─────────────────────────────── En vivo ───────────────────────────────
 
 async def resolve_live_broker(pool: asyncpg.Pool, symbol: str, interval: str,
                               *, require_fresh: bool = True) -> str | None:
     """
-    Fuente con la vela más reciente de (symbol, interval).
+    Fuente en vivo de (symbol, interval): siempre LIVE_VENUE_BROKER (una sola consulta por el índice único).
 
-    Devuelve None (y registra ERROR) si no hay datos o si, con require_fresh,
+    Devuelve None (y registra ERROR) si ese mercado no tiene velas o si, con require_fresh,
     la última vela supera LIVE_MAX_LAG_BARS intervalos de antigüedad.
     """
     step = interval_delta(interval)
-    brokers = await list_brokers(pool)
-    if not brokers:
-        logger.error("[DATA] ohlcv_data no contiene ningún broker")
-        return None
-
+    broker = LIVE_VENUE_BROKER
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT b.broker,
-                   (SELECT o.time FROM ohlcv_data o
-                     WHERE o.broker = b.broker AND o.symbol = $2 AND o.interval = $3
-                     ORDER BY o.time DESC LIMIT 1) AS last_bar
-            FROM unnest($1::text[]) AS b(broker)
-            """,
-            brokers, symbol, str(interval),
-        )
+        last_bar = _utc(await conn.fetchval(
+            "SELECT time FROM ohlcv_data WHERE broker = $1 AND symbol = $2 AND interval = $3 "
+            "ORDER BY time DESC LIMIT 1",
+            broker, symbol, str(interval)))
 
-    candidates = [(r['broker'], _utc(r['last_bar'])) for r in rows if r['last_bar'] is not None]
-    if not candidates:
-        logger.error(f"[DATA] {symbol} {interval}: sin velas en ninguna fuente")
+    if last_bar is None:
+        logger.error(f"[DATA] {symbol} {interval}: sin velas de {broker} (fuente en vivo)")
         return None
-
-    broker, last_bar = max(candidates, key=lambda c: c[1])
 
     if require_fresh:
         lag = datetime.now(timezone.utc) - last_bar
