@@ -202,21 +202,22 @@ class CollectorConfigController extends Controller
         }
     }
 
+    /** "Recargar completo" (C-10): el motor re-verifica toda la serie en segundo plano, sin vaciarla. */
     public function reload(Request $request)
     {
         Gate::authorize('manageUsers');
 
         $validated = $request->validate([
-            'symbol'   => ['required', 'string'],
-            'interval' => ['required', 'string'],
-            'broker'   => ['required', 'string'],
+            'symbol'   => ['required', 'string', 'regex:/^[A-Z0-9]{2,30}$/'],
+            'interval' => ['required', 'string', 'regex:/^[0-9A-Z]{1,4}$/'],
+            'broker'   => ['required', 'string', 'in:bybit'],
             'confirm'  => ['required', 'in:CONFIRMAR'],
         ]);
 
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(600)->post(
+            ])->timeout(15)->post(
                 config('trading.python_engine_url') . "/v1/collector/reload/{$validated['symbol']}/{$validated['interval']}/{$validated['broker']}?confirm=true"
             );
 
@@ -224,12 +225,31 @@ class CollectorConfigController extends Controller
                 return response()->json([
                     'ok' => false,
                     'error' => $response->json('detail') ?? 'Error del motor',
-                ], 500);
+                ], $response->status() === 409 ? 409 : 500);
             }
 
             return response()->json(['ok' => true] + $response->json());
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function reloadStatus()
+    {
+        Gate::authorize('manageUsers');
+
+        try {
+            $response = Http::withHeaders([
+                'X-Internal-API-Key' => config('trading.python_internal_api_key'),
+            ])->timeout(5)->get(config('trading.python_engine_url') . '/v1/collector/reload-status');
+
+            if (!$response->successful()) {
+                return response()->json(['ok' => false, 'error' => 'El motor no respondió'], 502);
+            }
+
+            return response()->json(['ok' => true] + $response->json());
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 502);
         }
     }
 

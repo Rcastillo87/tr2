@@ -4,6 +4,9 @@ Endpoint Data Collector V2
 import asyncio
 import asyncpg
 import time
+from datetime import datetime, timezone
+
+import httpx
 from db import get_pool as shared_get_pool
 import logging
 import os
@@ -286,43 +289,70 @@ async def collector_invalidate(req: InvalidateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─────────────── Recarga = re-verificación completa sin borrar (C-10) ───────────────
+# Antes: DELETE de toda la serie y descarga desde cero dentro de la petición (un corte la dejaba vacía o a medias,
+# Paper/Real/backtests leían un hueco y Laravel cortaba a los 600 s). Ahora compara toda la serie contra Bybit en
+# segundo plano, corrige con UPSERT y elimina solo sobrantes confirmados al final. Una a la vez.
+_reload_state: dict = {'running': False, 'task': None, 'progress': None, 'result': None, 'error': None,
+                       'started_at': None, 'finished_at': None}
+
+
+def _reload_public() -> dict:
+    return {k: v for k, v in _reload_state.items() if k != 'task'}
+
+
+async def _reload_job(symbol: str, interval: str) -> None:
+    from cli.collector_audit import reverify_series
+    from collectors.ohlcv_collector import HISTORY_DAYS
+    st = _reload_state
+    try:
+        pool = await get_pool()
+        collector = OhlcvCollector(pool)
+        async with httpx.AsyncClient(timeout=30) as client:
+            st['result'] = await reverify_series(
+                pool, collector, client, symbol, interval, HISTORY_DAYS,
+                progress=lambda p: st.__setitem__('progress', p))
+        r = st['result']
+        logger.info(f"[RELOAD] {symbol}/{interval}: {r['compared']} comparadas, {r['repaired']} corregidas, "
+                    f"{r['extra_deleted']} sobrantes eliminadas, completa={r['complete']} {r['stopped'] or ''}")
+    except asyncio.CancelledError:
+        st['error'] = 'interrumpida (el motor se detuvo); no se eliminó nada'
+        raise
+    except Exception as e:   # noqa: BLE001 - se informa en el estado; nada se borró
+        logger.error(f"[RELOAD] {symbol}/{interval} error: {e}")
+        st['error'] = f'{e}'[:300] + ' (no se eliminó nada)'
+    finally:
+        st['running'], st['task'] = False, None
+        st['finished_at'] = datetime.now(timezone.utc).isoformat()
+
+
 @router.post("/collector/reload/{symbol}/{interval}/{broker}")
 async def collector_reload(symbol: str, interval: str, broker: str, confirm: bool = False):
-    """Borra todo + recarga completo. Requiere confirm=True."""
+    """Re-verifica TODA la serie contra Bybit en segundo plano (no la vacía). Requiere confirm=True. 409 si hay otra."""
     if not confirm:
-        raise HTTPException(
-            status_code=400,
-            detail="Debes pasar ?confirm=true para ejecutar esta operación destructiva",
-        )
+        raise HTTPException(status_code=400, detail="Debes pasar ?confirm=true para ejecutar esta operación")
     if broker != 'bybit':
         raise HTTPException(status_code=400, detail=f"Broker no soportado: {broker}")
+    from collectors.broker_resolver import interval_delta
     try:
-        from collectors.ohlcv_collector import OhlcvCollector
-        pool = await get_pool()
+        interval_delta(interval)
+    except Exception:   # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Intervalo no soportado: {interval}")
+    if _reload_state['running']:
+        p = _reload_state['progress'] or {}
+        raise HTTPException(status_code=409, detail=(
+            f"Ya hay una recarga en curso ({_reload_state.get('symbol')}/{_reload_state.get('interval')}); "
+            f"espera a que termine" + (f" (ventana {p.get('windows')} de {p.get('total_windows')})" if p else '')))
+    now = datetime.now(timezone.utc).isoformat()
+    _reload_state.update(running=True, symbol=symbol, interval=interval, progress=None, result=None, error=None,
+                         started_at=now, finished_at=None)
+    _reload_state['task'] = asyncio.create_task(_reload_job(symbol, interval))
+    return {"status": "started", **_reload_public()}
 
-        # 1. Borrar
-        async with pool.acquire() as conn:
-            result = await conn.execute(
-                "DELETE FROM ohlcv_data WHERE broker=$1 AND symbol=$2 AND interval=$3",
-                broker, symbol, interval,
-            )
-            deleted = int(result.split()[-1]) if result else 0
 
-        # 2. Recargar todo el histórico disponible
-        collector = OhlcvCollector(pool)
-        saved = await collector.initial_load(symbol, interval, broker=broker)
-
-        await pool.close()
-        return {
-            "status": "ok",
-            "velas_borradas": deleted,
-            "velas_descargadas": saved,
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"[RELOAD] error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/collector/reload-status")
+async def collector_reload_status():
+    return {"status": "ok", **_reload_public()}
 
 
 @router.post("/collector/add-symbol")

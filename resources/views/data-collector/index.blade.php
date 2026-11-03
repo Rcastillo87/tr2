@@ -267,6 +267,7 @@ const COLORS = { ok:'#3DD68C', atrasado:'#F59E0B', detenido:'#F2545B', vacio:'#6
 const ICONS = { ok:'✓', atrasado:'⚠', detenido:'❄', vacio:'—' };
 const VALIDATE_URL = @json(route('collector.validate'));
 const VALIDATION_STATUS_URL = @json(route('collector.validation-status'));
+const RELOAD_STATUS_URL = @json(route('collector.reload-status'));
 
 function filterState(state) {
     document.querySelectorAll('.filter-btn').forEach(b => {
@@ -405,14 +406,16 @@ function doInvalidate(symbol, interval, broker) {
 
 function doReload(symbol, interval, broker) {
     Swal.fire({
-        title: '⚠️ Recargar completo',
+        title: '🔄 Recargar completo',
         html: `<div style="text-align:left; font-size:12px;">
-            <p style="margin-bottom:8px; color:#FCA5A5;"><b>Borrar TODO + redescargar:</b><br>${symbol} / ${interval} / ${broker}</p>
+            <p style="margin-bottom:8px;"><b>${symbol} / ${interval} / ${broker}</b></p>
+            <p style="margin-bottom:8px;">Re-verificar todo el histórico contra Bybit y corregir diferencias.</p>
+            <p style="margin-bottom:8px; color:#9CA3AF;">La serie no se borra; solo se eliminan velas que Bybit no tiene, y solo si la verificación termina completa.</p>
             <label style="display:block; margin-bottom:4px; font-size:11px;">Escribe <b style="color:#FCA5A5;">CONFIRMAR</b>:</label>
             <input id="rl-confirm" type="text" class="swal2-input" style="width:100%; margin:0; font-size:12px;">
         </div>`,
-        showCancelButton: true, confirmButtonText: 'Recargar', cancelButtonText: 'Cancelar',
-        background: '#11161F', color: '#E5E9F0', width: 380,
+        showCancelButton: true, confirmButtonText: 'Re-verificar', cancelButtonText: 'Cancelar',
+        background: '#11161F', color: '#E5E9F0', width: 400,
         confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
         preConfirm: () => {
             const c = document.getElementById('rl-confirm').value;
@@ -421,16 +424,54 @@ function doReload(symbol, interval, broker) {
         }
     }).then(r => {
         if (!r.isConfirmed) return;
-        Swal.fire({title:'Recargando... (puede tardar)', didOpen:()=>Swal.showLoading(), allowOutsideClick:false, background:'#11161F', color:'#E5E9F0'});
         fetch(`${BASE}/collector/reload`, {
             method:'POST',
             headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json'},
             body: JSON.stringify(r.value)
         }).then(res=>res.json()).then(d=>{
-            if(d.ok) Swal.fire({title:'✅ Recarga completa', html:`<b>${(d.velas_borradas||0).toLocaleString()}</b> borradas<br><b>${(d.velas_descargadas||0).toLocaleString()}</b> descargadas`, icon:'success', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
-            else Swal.fire({title:'Error', text:d.error||d.detail||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
+            if (d.ok) return showReloadProgress(d);
+            Swal.fire({title:'No se pudo iniciar', text:d.error||d.detail||d.message||'Error', icon:'error', background:'#11161F', color:'#E5E9F0'});
         });
     });
+}
+
+function reloadProgressHtml(d) {
+    const p = d.progress || {};
+    const n = v => (v||0).toLocaleString();
+    return `<div style="font-size:12px;"><b>${d.symbol} / ${d.interval}</b><br>
+        Ventana ${n(p.windows)} de ${n(p.total_windows)} · ${n(p.compared)} velas comparadas · ${n(p.repaired)} corregidas</div>`;
+}
+
+function showReloadProgress(d) {
+    Swal.fire({title:'Re-verificando contra Bybit…', html: reloadProgressHtml(d), didOpen:()=>Swal.showLoading(),
+               allowOutsideClick:false, showConfirmButton:false, background:'#11161F', color:'#E5E9F0'});
+    pollReload();
+}
+
+function pollReload() {
+    fetch(RELOAD_STATUS_URL, { headers:{'Accept':'application/json'} }).then(r => r.json()).then(d => {
+        if (!d.ok) return setTimeout(pollReload, 10000);
+        if (d.running) {
+            const box = Swal.getHtmlContainer();
+            if (box) box.innerHTML = reloadProgressHtml(d);
+            return setTimeout(pollReload, 5000);
+        }
+        showReloadResult(d);
+    }).catch(() => setTimeout(pollReload, 10000));
+}
+
+function showReloadResult(d) {
+    const r = d.result, n = v => (v||0).toLocaleString();
+    if (!r) {
+        return Swal.fire({title:'Recarga no terminada', text: d.error || 'No hay resultado (el motor se reinició). No se eliminó nada.',
+                          icon:'warning', background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
+    }
+    const ok = r.complete && !r.stopped;
+    let html = `<b>${r.symbol} / ${r.interval}</b><br>${n(r.compared)} velas comparadas · ${n(r.repaired)} corregidas · ${n(r.extra_deleted)} sobrantes eliminadas`;
+    if (r.extra_kept) html += `<br><span style="color:#F59E0B;">${n(r.extra_kept)} sobrantes sin eliminar (no confirmadas por Bybit)</span>`;
+    if (r.stopped) html += `<br><span style="color:#F59E0B;">Se detuvo: ${r.stopped}. Lo corregido hasta ese punto quedó guardado; no se eliminó nada.</span>`;
+    Swal.fire({title: ok ? '✅ Re-verificación completa' : '⚠️ Re-verificación incompleta', html, icon: ok ? 'success' : 'warning',
+               background:'#11161F', color:'#E5E9F0'}).then(()=>location.reload());
 }
 
 function validateNow() {
@@ -453,6 +494,11 @@ function pollValidation(since) {
 @if ($validating)
 document.addEventListener('DOMContentLoaded', () => pollValidation(null));
 @endif
+// Si hay una recarga en curso (se abrió la página después de iniciarla), mostrar su avance
+document.addEventListener('DOMContentLoaded', () => {
+    fetch(RELOAD_STATUS_URL, { headers:{'Accept':'application/json'} }).then(r => r.json())
+        .then(d => { if (d.ok && d.running) showReloadProgress(d); }).catch(() => {});
+});
 
 function openAddSymbol() {
     Swal.fire({

@@ -70,6 +70,7 @@ async def audit_window(conn, collector, client, symbol: str, interval: str, star
     missing = [t for t in remote if t not in local]
     diff = [t for t, rb in remote.items() if t in local and any(differs(float(local[t][f]), rb[f]) for f in FIELDS)]
     extra = [t for t in local if t not in remote]
+    extra.sort()
     to_fix = sorted(missing + diff)
     written = 0
     if repair and to_fix:
@@ -80,7 +81,7 @@ async def audit_window(conn, collector, client, symbol: str, interval: str, star
         t = min(diff)
         example = dict(time=t.isoformat(), db={f: float(local[t][f]) for f in FIELDS}, bybit=remote[t])
     return dict(compared=len(remote), missing=len(missing), diff=len(diff), extra=len(extra), repaired=written,
-                unrepaired=max(0, len(to_fix) - written), diff_example=example)
+                unrepaired=max(0, len(to_fix) - written), diff_example=example, extra_times=extra)
 
 
 async def run_audit(conn, collector, client, series: list[tuple[str, str]], now: datetime, n_recent: int,
@@ -157,3 +158,90 @@ async def run_audit(conn, collector, client, series: list[tuple[str, str]], now:
                 windows=tot('windows'), compared=tot('compared'), missing=tot('missing'), diff=tot('diff'),
                 extra=tot('extra'), repaired=tot('repaired'), unrepaired=tot('unrepaired'),
                 errors=sum(1 for p in per.values() if p['error']), series=per)
+
+
+# ─────────────── Re-verificación completa de UNA serie (botón «Recargar», C-10) ───────────────
+RELOAD_DELETE_BATCH = 1000
+
+
+async def reverify_series(pool, collector, client, symbol: str, interval: str, history_days: int,
+                          now: datetime | None = None, pace=None, progress=None) -> dict:
+    """
+    Compara TODA la serie contra Bybit (desde la vela más vieja guardada o el inicio del histórico, hasta la última
+    vela cerrada) y corrige con el UPSERT del collector. NUNCA vacía la serie: lo demás del sistema sigue leyendo
+    datos válidos mientras corre. Velas sobrantes (en la base y no en Bybit): se eliminan esas fechas exactas, solo al
+    final y solo si todas las ventanas se compararon sin error; una ventana en la que Bybit no devolvió nada no
+    elimina nada (se reporta). `progress(dict)` recibe el avance tras cada ventana.
+    """
+    import asyncio
+    pace = pace or (lambda: asyncio.sleep(AUDIT_PACE_S))
+    now = now or datetime.now(timezone.utc)
+    step = interval_delta(interval)
+    last_closed = current_bar(now, step) - step
+    since = current_bar(now - timedelta(days=history_days), step)
+    async with pool.acquire() as conn:
+        db_first = await conn.fetchval(
+            "SELECT min(time) FROM ohlcv_data WHERE broker = 'bybit' AND symbol = $1 AND interval = $2",
+            symbol, interval)
+    out = dict(symbol=symbol, interval=interval, windows=0, total_windows=0, compared=0, missing=0, diff=0,
+               repaired=0, unrepaired=0, extra=0, extra_deleted=0, extra_kept=0, diff_example=None,
+               complete=False, stopped=None)
+    try:
+        listed = await collector._first_listed(client, symbol, since, last_closed)
+    except BybitRateLimited as e:
+        out['stopped'] = f'Bybit limita las consultas: {e}'[:200]
+        return out
+    except Exception as e:   # noqa: BLE001 - no se tocó nada
+        out['stopped'] = f'no se pudo consultar el inicio de la serie en Bybit: {e}'[:200]
+        return out
+    starts = [t for t in (db_first, max(since, listed) if listed else None) if t is not None]
+    if not starts:
+        out.update(complete=True, stopped='Bybit no tiene velas de esta serie en el rango')
+        return out
+    start = min(starts)   # incluye lo guardado antes del inicio del histórico, si lo hay
+    span = step * BYBIT_LIMIT
+    out['total_windows'] = max(1, -(-((last_closed - start) + step) // span))
+    to_delete: list[datetime] = []
+    t = start
+    while t <= last_closed:
+        end = min(t + step * (BYBIT_LIMIT - 1), last_closed)
+        try:
+            async with pool.acquire() as conn:
+                r = await audit_window(conn, collector, client, symbol, interval, t, end, repair=True)
+        except BybitRateLimited as e:
+            out['stopped'] = f'Bybit limita las consultas: {e}'[:200]
+            break
+        except Exception as e:   # noqa: BLE001 - se detiene sin borrar nada; lo corregido ya quedó guardado
+            out['stopped'] = f'error en la ventana {t:%Y-%m-%d %H:%M}: {e}'[:200]
+            break
+        out['windows'] += 1
+        for k in ('compared', 'missing', 'diff', 'repaired', 'unrepaired', 'extra'):
+            out[k] += r[k]
+        out['diff_example'] = out['diff_example'] or r['diff_example']
+        if r['extra_times']:
+            if r['compared']:   # Bybit respondió esta ventana: lo que no tiene, sobra
+                to_delete.extend(r['extra_times'])
+            else:               # ventana vacía en Bybit: no se borra con una respuesta vacía
+                out['extra_kept'] += len(r['extra_times'])
+        if progress:
+            progress(dict(out))
+        t = end + step
+        if t <= last_closed:
+            await pace()
+    else:
+        out['complete'] = True
+
+    if out['complete'] and out['unrepaired'] == 0 and to_delete:
+        async with pool.acquire() as conn:
+            for i in range(0, len(to_delete), RELOAD_DELETE_BATCH):
+                res = await conn.execute(
+                    "DELETE FROM ohlcv_data WHERE broker = 'bybit' AND symbol = $1 AND interval = $2 "
+                    "AND time = ANY($3::timestamptz[])", symbol, interval, to_delete[i:i + RELOAD_DELETE_BATCH])
+                out['extra_deleted'] += int(str(res).split()[-1]) if res else 0
+    elif to_delete:
+        out['extra_kept'] += len(to_delete)
+    if out['complete'] and out['unrepaired']:
+        out['stopped'] = f"{out['unrepaired']} vela(s) no se pudieron corregir: no se eliminó ningún sobrante"
+    if progress:
+        progress(dict(out))
+    return out
