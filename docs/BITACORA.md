@@ -12,10 +12,38 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, cierre por señal opuesta en **Real** (BP-02; Paper hecho; no reanudar la cuenta 11 antes), aviso al dueño si falla `set_trading_stop` (REAL-01).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (la cuenta 11 se puede reanudar tras reiniciar el motor), aviso al dueño si falla `set_trading_stop` (REAL-01).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Real cierra por señal opuesta (BP-02)
+
+### Resumen para el dueño
+- Real no tenía salida por señal opuesta: con `close_on_opposite` / `exit_on_opposite` mantenía posiciones que el backtest y Paper ya habían cerrado o invertido. Verificado antes del fix: estático (cero referencias a la regla en Real) y dinámico (Long abierto + señal Short → «ya tiene posicion abierta», el monitor no cierra).
+- Ahora Real sigue la misma regla que el motor y Paper: cierra por señal opuesta y, con `close_on_opposite`, invierte.
+- **Reversa solo con el cierre confirmado en Bybit y la posición en cero**: si Bybit no confirma, no abre la contraria y reintenta en el tick siguiente. Nunca dos posiciones a la vez.
+- Con la cuenta pausada, el kill switch, un límite de riesgo, `exit_on_opposite`, régimen no permitido o `allow_short` apagado: **cierra sin reversa**.
+- Decisión del dueño (03-nov): con la suscripción pausada o la config Paper apagada **no** se aplica (igual que Paper); la posición sigue con SL/TP/BE.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `RealTrader.check_new_signals` con salida por señal opuesta (señal con la estrategia viva, banderas del snapshot, la vela de la señal debe cerrar después de la entrada, el régimen no se mira para salir, señal consumida no reabre); `get_open_trade_for_subscription`; `_process_account` evalúa las suscripciones aunque la cuenta esté pausada o con kill switch, con `entries_allowed=False`; `opposite_exit_rule()` compartida por Paper y Real; `close_on_opposite` / `exit_on_opposite` leídos con `as_flag` | `tests/Forensic/real_opposite_test.py`: paridad Real vs motor vela por vela (16, 10, 10 y 8 operaciones, 3 ticks por vela) y 27 casos en PASS; antes del parche 16 FALLOS; 7 mutaciones detectadas. `broker_events_test.py` C6/C7 actualizados al contrato nuevo (cuenta pausada: monitor + señales sin entradas). Regresión sin base: 16 suites en TODO OK; `backtest_elements_test.py --synthetic` igual a la línea base |
+
+### Cambios fuera de git
+- **Reiniciar `trading2-engine`** (sin búsquedas ni órdenes Real `pending_*`). Horizon no hace falta (no cambió PHP).
+
+### Comportamiento a conocer
+- Desde el reinicio, las cuentas Real con configs que usan la regla (VWAP BTC H4, LINK H4, ENA H4, 1000PEPE H4, XRP H2) tendrán más cierres y operaciones inversas, como Paper desde el 03-nov 08:41 UTC.
+- El tick Real de una cuenta pausada ahora calcula señales de las suscripciones con posición abierta y regla (no abre nada). El resultado del tick lleva el aviso en `entries` en vez de en `signals`.
+- El precio de la reversa es el mercado tras el cierre (dos órdenes: `reduceOnly` y luego entrada); en el motor ambos son el open de la vela.
+
+### Pendientes que deja
+- REAL-01 (aviso si falla `set_trading_stop`).
+- `RealTradingTickJob` filtra los logs con `str_starts_with($r, 'ABIERTA')`, pero los mensajes empiezan con el símbolo (`BTCUSDT: ABIERTA ...`): nunca registra aperturas ni reversas en el log de Laravel. Solo afecta al log; candidato a un fix pequeño.
 
 ---
 

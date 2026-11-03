@@ -207,8 +207,8 @@ class FakeTrader:
         self.calls.append('monitor')
         return {'checked': 1, 'closed': 0, 'be_activated': 0, 'errors': 0}
 
-    async def check_new_signals(self, sub, strategy, client):
-        self.calls.append('signals')
+    async def check_new_signals(self, sub, strategy, client, entries_allowed=True):
+        self.calls.append('signals' if entries_allowed else 'signals_no_entries')
         return 'sin señal'
 
 
@@ -260,12 +260,13 @@ async def part_c():
     check('C5: sigue OK -> sin evento', not ev, ev)
 
     tr, res, ev = await run_account(AuthClient(True), entries=False)
-    check('C6: cuenta pausada -> monitorea, no abre, no evalúa circuit breaker',
-          tr.calls == ['monitor'] and 'pausada' in str(res.get('signals')), (tr.calls, res))
+    check('C6: cuenta pausada -> monitorea, no evalúa circuit breaker; señales solo sin entradas (salida opuesta)',
+          tr.calls == ['monitor', 'signals_no_entries'] and 'pausada' in str(res.get('entries')), (tr.calls, res))
 
     tr, res, ev = await run_account(AuthClient(True), errors=3, last_errors=['error grave desconocido'])
     check('C7: circuit breaker crítico -> pausa y AÚN monitorea, sin entradas',
-          tr.calls == ['cb', 'pause', 'monitor'] and 'pausada' in str(res.get('signals')), (tr.calls, res))
+          tr.calls == ['cb', 'pause', 'monitor', 'signals_no_entries'] and 'pausada' in str(res.get('entries')),
+          (tr.calls, res))
 
     tr, res, ev = await run_account(AuthClient(True), errors=3, last_errors=['Orden rechazada por Bybit (qty)'])
     check('C8: errores no críticos -> limpia y opera normal', tr.calls == ['cb', 'clear', 'monitor', 'signals'], tr.calls)

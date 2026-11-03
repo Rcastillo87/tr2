@@ -39,6 +39,7 @@ from collectors.bars import bars_frame
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
+from backtesting.strategies.base_strategy import opposite_exit_rule
 from trading.broker_events import emit_event
 
 load_dotenv()
@@ -751,6 +752,27 @@ class RealTrader:
                 account_id
             )
         return [dict(r) for r in rows]
+
+    async def get_open_trade_for_subscription(self, subscription_id: int) -> dict | None:
+        """Trade 'open' de la suscripción con sus parámetros congelados (pending_* no: ya hay una orden en curso)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT rt.id, rt.subscription_id, rt.strategy, rt.symbol, rt.interval, rt.side,
+                       rt.entry_price, rt.sl, rt.tp, rt.tp2, rt.tp3, rt.tp4, rt.be_level, rt.be_activated,
+                       rt.size, rt.original_size, rt.realized_pnl_partial,
+                       rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
+                       rt.trailing_applied, rt.original_sl, rt.vol_widened,
+                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot
+                FROM real_trades rt
+                LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
+                LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
+                WHERE rt.subscription_id = $1 AND rt.status = 'open'
+                ORDER BY rt.entry_time DESC LIMIT 1
+                """,
+                subscription_id
+            )
+        return dict(row) if row else None
 
     # ─────────────────────────────────────────────
     # Parámetros y niveles (mismas fórmulas que backtest y paper)
@@ -1752,21 +1774,35 @@ class RealTrader:
     # ─────────────────────────────────────────────
 
     async def check_new_signals(self, sub: dict, strategy_instance,
-                                 client: BybitClient) -> str:
+                                 client: BybitClient, entries_allowed: bool = True) -> str:
+        """
+        Señal de la última vela cerrada para una suscripción ejecutable (ella y su config Paper activas).
+        - Con posición abierta de la suscripción: salida por señal opuesta (misma regla que el motor y Paper) si su
+          snapshot la tiene; con close_on_opposite se invierte, solo si el cierre quedó confirmado en Bybit.
+        - Sin posición: entrada normal. entries_allowed=False (cuenta pausada o kill switch) bloquea entradas y
+          reversas, pero no la salida por señal opuesta.
+        """
         symbol   = sub['symbol']
         interval = sub['interval']
+        account_id = sub['broker_account_id']
 
-        # Verificar duplicado en DB
-        if await self.has_open_trade(sub['subscription_id'], symbol):
+        open_row  = await self.get_open_trade_for_subscription(sub['subscription_id'])
+        exit_rule = opposite_exit_rule(self._snapshot(open_row)) if open_row is not None else None
+        if open_row is not None and exit_rule is None:
             return f"{symbol}: ya tiene posicion abierta"
-
-        # Verificar duplicado en Bybit (doble verificacion)
-        try:
-            bybit_position = await client.get_open_position(symbol)
-        except BybitAPIError as e:
-            return f"{symbol}: error consultando Bybit, se omite apertura por seguridad ({e})"
-        if bybit_position:
-            return f"{symbol}: posicion abierta en Bybit (no registrada en DB)"
+        if open_row is None:
+            if not entries_allowed:
+                return f"{symbol}: entradas bloqueadas (cuenta pausada o kill switch)"
+            # Verificar duplicado en DB (cualquier suscripción de la cuenta en el mismo símbolo)
+            if await self.has_open_trade(sub['subscription_id'], symbol):
+                return f"{symbol}: ya tiene posicion abierta"
+            # Verificar duplicado en Bybit (doble verificacion)
+            try:
+                bybit_position = await client.get_open_position(symbol)
+            except BybitAPIError as e:
+                return f"{symbol}: error consultando Bybit, se omite apertura por seguridad ({e})"
+            if bybit_position:
+                return f"{symbol}: posicion abierta en Bybit (no registrada en DB)"
 
         # Velas CERRADAS (por tiempo): señal y régimen como en backtest y paper
         now = datetime.now(timezone.utc)
@@ -1781,7 +1817,8 @@ class RealTrader:
             ranging_threshold=strategy_instance.regime_adx_ranging,
             ambiguous_as=strategy_instance.regime_ambiguous_as
         )
-        if not strategy_instance.should_operate(regime):
+        regime_ok = strategy_instance.should_operate(regime)
+        if not regime_ok and open_row is None:   # la salida por señal opuesta no mira el régimen (igual que el motor)
             return f"{symbol}: regimen no permitido ({regime})"
 
         if strategy_instance.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
@@ -1792,40 +1829,77 @@ class RealTrader:
 
         last_closed = df.iloc[-1]  # df solo contiene velas cerradas
         signal = int(last_closed['signal'])
+        reversal = False
+        closed_note = ''
+
+        if open_row is not None:
+            # Señal contraria a la posición en una vela que cerró DESPUÉS de la entrada (la que la abrió no cuenta)
+            candle_open = pd.to_datetime(last_closed['time'], utc=True).to_pydatetime()
+            opened_at   = open_row['entry_time']
+            if opened_at.tzinfo is None:
+                opened_at = opened_at.replace(tzinfo=timezone.utc)
+            opposite = (open_row['side'] == 'long' and signal == -1) or (open_row['side'] == 'short' and signal == 1)
+            if not opposite or candle_open + interval_delta(interval) <= opened_at:
+                return f"{symbol}: ya tiene posicion abierta"
+            if not await self.close_trade(open_row, 'opposite_signal', client, account_id):
+                return f"{symbol}: señal opuesta, cierre no confirmado en Bybit; se reintenta el próximo ciclo"
+            closed_note = f"{symbol}: CERRADA {open_row['side']} por señal opuesta"
+            if exit_rule == 'exit':
+                return closed_note
+            if not entries_allowed:
+                return f"{closed_note}; entradas bloqueadas, sin reversa"
+            if not regime_ok:
+                return f"{closed_note}; regimen no permitido ({regime}), sin reversa"
+            reversal = True
 
         if signal == 0:
             return f"{symbol}: sin señal"
         side = 'long' if signal == 1 else 'short'
         if not strategy_instance.allows_side(side):   # allow_short desactivado (misma regla que backtest y paper)
-            return f"{symbol}: señal short ignorada (short no permitido)"
+            return (f"{closed_note}; short no permitido, sin reversa" if reversal
+                    else f"{symbol}: señal short ignorada (short no permitido)")
         raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
         signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
         candle_time = last_closed['time']
         if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
-            candle_time = candle_time.tz_localize(None)
-        async with self.pool.acquire() as conn:
-            already_traded = await conn.fetchrow(
-                """SELECT id FROM real_trades
-                   WHERE subscription_id = $1 AND symbol = $2
-                     AND entry_time >= $3
-                   ORDER BY entry_time DESC LIMIT 1""",
-                sub['subscription_id'], symbol, candle_time
-            )
-        if already_traded:
-            return f"{symbol}: señal ya operada en esta vela (trade #{already_traded['id']})"
+            candle_time = candle_time.tz_convert('UTC').tz_localize(None)
+        if not reversal:
+            async with self.pool.acquire() as conn:
+                # También cuenta como "operada" la señal que ya consumió una salida por señal opuesta (con
+                # exit_on_opposite esa señal solo cierra; sin esto, el tick siguiente abriría una entrada con ella).
+                already_traded = await conn.fetchrow(
+                    """SELECT id FROM real_trades
+                       WHERE subscription_id = $1 AND symbol = $2
+                         AND (entry_time >= $3 OR (exit_reason = 'opposite_signal' AND exit_time >= $4))
+                       ORDER BY entry_time DESC LIMIT 1""",
+                    sub['subscription_id'], symbol, candle_time, candle_time + interval_delta(interval)
+                )
+            if already_traded:
+                return f"{symbol}: señal ya operada en esta vela (trade #{already_traded['id']})"
 
-        limit = await self.entry_limit_reason(sub['broker_account_id'])
+        limit = await self.entry_limit_reason(account_id)
         if limit:
-            return f"{symbol}: límite de riesgo — {limit} (sin entrada)"
+            return (f"{closed_note}; límite de riesgo — {limit}, sin reversa" if reversal
+                    else f"{symbol}: límite de riesgo — {limit} (sin entrada)")
+
+        if reversal:
+            # La reversa solo sale con la posición en cero en Bybit (nunca dos posiciones a la vez)
+            try:
+                live = await client.get_open_position(symbol)
+            except BybitAPIError as e:
+                return f"{closed_note}; Bybit no confirma la posición en cero ({e}), sin reversa"
+            if live:
+                return f"{closed_note}; Bybit aún muestra posición, sin reversa"
 
         entry_price = await client.get_market_price(symbol)
 
         if entry_price is None:
-            return f"{symbol}: error obteniendo precio"
+            return f"{closed_note}; error obteniendo precio, sin reversa" if reversal else f"{symbol}: error obteniendo precio"
+        label = 'REVERSA' if reversal else 'ABIERTA'
         try:
             success = await self.open_trade(sub, strategy_instance, side,
                                             entry_price, regime, client, signal_sl_pct)
-            return f"{symbol}: {'ABIERTA' if success else 'ERROR'} {side} @ {entry_price}"
+            return f"{symbol}: {label if success else 'ERROR'} {side} @ {entry_price}"
         except Exception as e:
             logger.error(f"[REAL] open_trade exception {symbol}: {e}", exc_info=True)
             return f"{symbol}: EXCEPTION {side} @ {entry_price}: {str(e)}"

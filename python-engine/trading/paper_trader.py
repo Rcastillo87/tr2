@@ -20,6 +20,7 @@ from collectors.bars import bars_frame, sorted_records
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
+from backtesting.strategies.base_strategy import opposite_exit_rule
 
 load_dotenv()
 
@@ -183,15 +184,8 @@ class PaperTrader:
         return None
 
     def _opposite_rule(self, trade: dict) -> str | None:
-        """
-        Regla de salida por señal opuesta, leída de los parámetros CONGELADOS del trade (igual que el motor):
-        'reverse' = close_on_opposite (cierra y abre la contraria), 'exit' = exit_on_opposite (solo cierra),
-        None = el trade no usa la regla.
-        """
-        p = self._trade_params(trade) or {}
-        if not (p.get('close_on_opposite') or p.get('exit_on_opposite')):
-            return None
-        return 'exit' if p.get('exit_on_opposite') else 'reverse'
+        """Regla de salida por señal opuesta del trade (parámetros congelados): 'reverse', 'exit' o None."""
+        return opposite_exit_rule(self._trade_params(trade))
 
     # ─────────────────────────────────────────────
     # Calculo de PnL flotante

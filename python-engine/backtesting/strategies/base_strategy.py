@@ -23,6 +23,18 @@ def as_flag(value, default: bool) -> bool:
     return bool(value)
 
 
+def opposite_exit_rule(params: dict | None) -> str | None:
+    """
+    Salida por señal opuesta según los parámetros CONGELADOS del trade (misma lectura en paper y real):
+    'reverse' = close_on_opposite (cierra y abre la contraria), 'exit' = exit_on_opposite (solo cierra; manda si
+    ambas están activas), None = el trade no usa la regla.
+    """
+    p = params or {}
+    if as_flag(p.get('exit_on_opposite'), False):
+        return 'exit'
+    return 'reverse' if as_flag(p.get('close_on_opposite'), False) else None
+
+
 class BaseStrategy(ABC):
     """
     Clase base para todas las estrategias de trading.
@@ -119,8 +131,8 @@ class BaseStrategy(ABC):
             self.trailing_distance_pct = raw_trailing
         self.trailing_steps        = params.get('trailing_steps', [])  # [[gain_pct, new_sl_pct], ...]
         self.trailing_atr_mult     = params.get('trailing_atr_mult', 2.0)  # Multiplicador para trailing ATR
-        self.close_on_opposite     = params.get('close_on_opposite', False) # Cerrar si aparece señal contraria
-        self.exit_on_opposite      = params.get('exit_on_opposite', False)  # Cerrar si aparece señal contraria (pero NO abrir la opuesta)
+        self.close_on_opposite     = as_flag(params.get('close_on_opposite'), False)  # Cerrar si aparece señal contraria
+        self.exit_on_opposite      = as_flag(params.get('exit_on_opposite'), False)   # Cerrar si aparece señal contraria (pero NO abrir la opuesta)
         self.allow_short           = as_flag(params.get('allow_short'), True)  # Permite o no abrir posiciones Short
         self.max_duration_profit   = params.get('max_duration_profit', False) # Cerrar por tiempo solo si está en positivo
 

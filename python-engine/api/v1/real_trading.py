@@ -135,14 +135,14 @@ async def _process_account(trader, account):
         monitor_result = await trader.monitor_open_trades(account.id, client)
         account_results["monitor"] = monitor_result
 
+        # Cuenta pausada o kill switch: sin entradas ni reversas, pero las posiciones abiertas con salida por señal
+        # opuesta se siguen gestionando (igual que Paper). check_new_signals sale enseguida si no hay posición.
+        kill = await RiskManager(trader.pool).is_kill_switch_active()
+        entries_ok = entries_allowed and not kill
         if not entries_allowed:
-            account_results["signals"] = "Cuenta pausada — solo se gestionan las posiciones abiertas"
-            return account_key, account_results
-
-        # Kill switch manual: sin entradas nuevas (las abiertas ya se gestionaron arriba)
-        if await RiskManager(trader.pool).is_kill_switch_active():
-            account_results["signals"] = "KILL SWITCH activo — sin nuevas entradas"
-            return account_key, account_results
+            account_results["entries"] = "Cuenta pausada — solo se gestionan las posiciones abiertas"
+        elif kill:
+            account_results["entries"] = "KILL SWITCH activo — sin nuevas entradas"
 
         signal_results = {}
         for sub in account.subscriptions:
@@ -150,7 +150,7 @@ async def _process_account(trader, account):
             try:
                 strategy = instantiate_strategy(sub)
                 sub_dict["broker"] = account.broker
-                result   = await trader.check_new_signals(sub_dict, strategy, client)
+                result   = await trader.check_new_signals(sub_dict, strategy, client, entries_allowed=entries_ok)
                 signal_results[sub.strategy] = result
             except Exception as e:
                 logger.error(f"[REAL] Error procesando {sub.strategy}: {e}")
