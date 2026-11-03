@@ -12,10 +12,30 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12); siguen C-03 a C-12, luego formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13); siguen C-04 a C-12, luego formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Collector: auditoría histórica rotativa vela por vela contra Bybit (C-03)
+
+### Resumen para el dueño
+- La validación diaria comparaba con Bybit **solo las últimas 300 velas**; del resto del histórico solo contaba velas y horario. Verificado antes del fix: con una vela vieja corrupta (close 999) la validación devuelve **ok = True** (300 comparadas de 3.500). El backtest usa todo el histórico (sobre todo el 1m, que decide SL/TP dentro de cada vela).
+- Histórico real (validación del 03-nov): **~18,2 M velas** en 84 series (1m 13,97 M · 5m 2,84 M · 15m 0,96 M · 1h 241 k · 2h 122 k · 4h 62 k · 1D 10 k) = ~18.220 consultas por vuelta completa.
+- Ahora la reparación diaria (04:00) termina con una **auditoría rotativa**: ventanas de 1.000 velas, de la más vieja hacia adelante, comparando los 5 campos; cursor por serie entre noches (`storage/app/collector_audit_cursor.json`); por turnos entre series; **1.500 consultas por noche** (~5 min; todo el histórico cada **~12 días**), configurable con `COLLECTOR_AUDIT_BUDGET` en `python-engine/.env`. Decisión del dueño: la opción más liviana.
+- **Repara sola** lo distinto o faltante con el UPSERT del collector (nunca borra; decisión del dueño); **sobrantes se reportan, no se borran**. Una serie con diferencias que no se pudieron reparar cuenta como falla (incidente de la campana); si la auditoría encuentra o repara algo llega «Auditoría histórica del collector».
+- Como máximo una vuelta por serie y noche (el presupuesto sobrante pasa a las demás); nunca toca la zona de recientes (la cubre el chequeo de las últimas 300); se detiene por presupuesto, por tiempo (1.000 s del proceso) o si Bybit bloquea (403).
+- `python-engine/.env.example`: quitados `SYMBOLS` / `INTERVALS` (sin efecto desde C-01) y agregado `COLLECTOR_AUDIT_BUDGET=1500`.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `cli/collector_audit.py` (`run_audit`, cursor); `collector_repair.py` la ejecuta (`--audit-budget`, 0 = no auditar) y la integra en el resultado; `SystemAlerts` avisa hallazgos | `tests/Forensic/collector_audit_test.py`: 21 casos en PASS (vela vieja corrupta y faltante reparadas, sobrante no borrado, cursor y vuelta completa, zona de recientes intacta, turnos, simulación, escritura fallida, tiempo, 403, serie corta, cursor en disco, integración); `collector_validation_alert_test.php` con 3 casos nuevos; 6 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- Se instala con p13: reinicio ordenado de Horizon (el job diario carga `SystemAlerts`); el motor no hace falta. El cursor se crea solo en la primera noche (04:00).
 
 ---
 
@@ -37,7 +57,7 @@
 - En pruebas de mutación, al restaurar un archivo hay que **borrar `__pycache__`**: una mutación del mismo tamaño en el mismo segundo deja el bytecode mutado en caché y la prueba sigue viendo la mutación (pasó con `attempts=3` → `1`). No afecta al servidor (git escribe con mtime nuevo).
 
 ### Cambios fuera de git
-- Se instala con p12 y reinicio de `trading2-engine` (el collector corre en el motor). Horizon no hace falta.
+- Instalado con **p12**: 20 pruebas Python + 2 PHP en TODO OK, `trading2-engine` activo desde **Tue 2026-11-03 19:45:05 UTC**, `main` subido (`a006334..23b6b20`).
 
 ---
 

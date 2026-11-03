@@ -138,6 +138,15 @@ class SystemAlerts
                     $r['bybit_gaps_new'], $r['errors'], $r['before']['ok'] ?? 0, $r['before']['series'] ?? 0,
                     $s['ok'] ?? 0, $s['series'] ?? 0), '/collector');
         }
+        $au = $data['audit'] ?? null;   // C-03: auditoría histórica rotativa (vela por vela contra Bybit)
+        if ($au && ((int) ($au['repaired'] ?? 0) + (int) ($au['unrepaired'] ?? 0) + (int) ($au['extra'] ?? 0)) > 0) {
+            $this->notify(($au['unrepaired'] ?? 0) || ($au['extra'] ?? 0) ? 'warning' : 'info', 'repair',
+                'Auditoría histórica del collector',
+                sprintf('%d velas antiguas comparadas con Bybit · distintas %d · faltantes %d · reparadas %d · sin reparar %d'
+                    . ' · sobran en la base %d (no se borran)',
+                    $au['compared'] ?? 0, $au['diff'] ?? 0, $au['missing'] ?? 0, $au['repaired'] ?? 0,
+                    $au['unrepaired'] ?? 0, $au['extra'] ?? 0), '/collector');
+        }
         if ((int) ($s['series'] ?? 0) === 0) {   // C-01: 0 series no es «todo OK»
             $this->openIncident('validation_failed', 'warning', 'validation',
                 'Validación del collector: sin series activas',

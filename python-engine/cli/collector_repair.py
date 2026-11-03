@@ -31,8 +31,10 @@ from cli.collector_validate import (BYBIT_GAPS_FILE, SETTLE, bybit_gaps, current
                                     summarize, validate)
 from collectors.broker_resolver import interval_delta  # noqa: E402
 from collectors.ohlcv_collector import DB_DSN, OhlcvCollector  # noqa: E402
+from cli.collector_audit import AUDIT_BUDGET, load_cursor, run_audit, save_cursor  # noqa: E402
 
 DAY = timedelta(days=1)
+AUDIT_DEADLINE_S = 1000   # la auditoría histórica (C-03) termina antes de los 1.100 s que Laravel le da al proceso
 
 
 def day_floor(t: datetime) -> datetime:
@@ -107,7 +109,8 @@ async def repair_series(conn, collector, client, s: dict, now: datetime, n_recen
     return rep
 
 
-async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log) -> dict:
+async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log,
+              audit_budget: int = AUDIT_BUDGET) -> dict:
     t0 = time.monotonic()
     before = await validate(n_recent, only)
     failing = [s for s in before['series'] if not s.get('ok') and needs_repair(s)]
@@ -136,6 +139,8 @@ async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log) ->
         fresh = {(s['symbol'], s['interval']): s for s in again['series']}
         series = [fresh.get((s['symbol'], s['interval']), s) for s in before['series']]
         result = dict(before, at=again['at'], series=series, summary=summarize(series))
+    if audit_budget > 0:   # C-03: auditoría histórica rotativa contra Bybit (vela por vela, por porciones)
+        result = await _audit(result, n_recent, only, dry, audit_budget, t0 + AUDIT_DEADLINE_S)
     result['duration_s'] = round(time.monotonic() - t0, 1)
     result['repair'] = dict(
         dry_run=dry, max_days=max_days, before=before['summary'], series=repairs,
@@ -143,6 +148,33 @@ async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log) ->
         days_fixed=sum(len(r['days']) for r in repairs), pending_days=sum(r['pending_days'] for r in repairs),
         bybit_gaps_new=sum(r['bybit_gaps_new'] for r in repairs), errors=sum(1 for r in repairs if r['error']))
     return result
+
+
+async def _audit(result: dict, n_recent: int, only: set | None, dry: bool, budget: int, deadline: float) -> dict:
+    """Corre la auditoría histórica y la integra en el resultado: una serie con diferencias que no se pudieron
+    reparar cuenta como falla (aviso en la campana)."""
+    series = [(s['symbol'], s['interval']) for s in result['series'] if not s.get('error') or s.get('bars')]
+    cursor = load_cursor()
+    pool = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=2)
+    try:
+        collector = OhlcvCollector(pool)
+        async with pool.acquire() as conn, httpx.AsyncClient(timeout=30) as client:
+            audit = await run_audit(conn, collector, client, series, datetime.now(timezone.utc), n_recent, cursor,
+                                    budget=budget, deadline=deadline, repair=not dry)
+    finally:
+        await pool.close()
+    if not dry:
+        save_cursor(cursor)
+    per = audit.pop('series')
+    merged = []
+    for s in result['series']:
+        a = per.get(f"{s['symbol']}|{s['interval']}")
+        if a:
+            s = dict(s, audit=a)
+            if a['unrepaired']:
+                s['ok'] = False
+        merged.append(s)
+    return dict(result, series=merged, summary=summarize(merged), audit=audit)
 
 
 def main() -> int:
@@ -153,6 +185,8 @@ def main() -> int:
     ap.add_argument('--dry-run', action='store_true', help='descarga y cuenta, pero no escribe nada')
     ap.add_argument('--json-out')
     ap.add_argument('--quiet', action='store_true')
+    ap.add_argument('--audit-budget', type=int, default=AUDIT_BUDGET,
+                    help='consultas de la auditoría histórica rotativa (0 = no auditar)')
     a = ap.parse_args()
     only = {s.strip() for s in a.solo.split(',') if s.strip()} or None
 
@@ -162,7 +196,7 @@ def main() -> int:
                   f"(+{r['days_written']} velas, pendientes {r['pending_days']}, sin datos en Bybit {r['bybit_gaps_new']})"
                   + (f" · ERROR {r['error']}" if r['error'] else ''))
 
-    result = asyncio.run(run(a.recent, a.max_days, only, a.dry_run, log))
+    result = asyncio.run(run(a.recent, a.max_days, only, a.dry_run, log, a.audit_budget))
     if a.json_out:
         tmp = Path(a.json_out).with_suffix('.tmp')
         tmp.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding='utf-8')
@@ -172,6 +206,12 @@ def main() -> int:
           f"{' (simulación)' if a.dry_run else ''} · {len(r['series'])} serie(s) reparadas · "
           f"{r['recent_written']} velas recientes · {r['days_fixed']} día(s) (+{r['days_written']} velas) · "
           f"pendientes {r['pending_days']} · sin datos en Bybit {r['bybit_gaps_new']} · {result['duration_s']} s")
+    au = result.get('audit')
+    if au:
+        print(f"AUDITORÍA HISTÓRICA: {au['requests']}/{au['budget']} consultas · {au['windows']} ventanas · "
+              f"{au['compared']} velas comparadas · distintas {au['diff']} · faltantes {au['missing']} · "
+              f"reparadas {au['repaired']} · sin reparar {au['unrepaired']} · sobrantes {au['extra']} · "
+              f"fin: {au['stopped']}")
     return 0 if s['ok'] == s['series'] else 1
 
 

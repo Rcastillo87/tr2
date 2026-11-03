@@ -50,6 +50,18 @@ $c = $run(['series' => 84, 'ok' => 80, 'missing_hist' => 3]);
 $check('4 series con fallas: abre incidente con el número', count($c) === 1 && $c[0][0] === 'open' && str_contains($c[0][2], '4 serie(s)'), $c);
 $c = $run([]);
 $check('resultado sin resumen: tratado como 0 series (falla)', count($c) === 1 && $c[0][0] === 'open', $c);
+$runA = function (array $audit): array {
+    $a = new RecordingAlerts();
+    $a->validationResult(['summary' => ['series' => 84, 'ok' => 84], 'audit' => $audit]);
+    return $a->calls;
+};
+$c = $runA(['compared' => 1500000, 'diff' => 3, 'missing' => 2, 'repaired' => 5, 'unrepaired' => 0, 'extra' => 0]);
+$check('auditoría histórica con reparaciones: aviso informativo', count($c) === 2 && $c[0][0] === 'notify' && $c[0][1] === 'info'
+    && $c[0][2] === 'Auditoría histórica del collector', $c);
+$c = $runA(['compared' => 1500000, 'diff' => 1, 'missing' => 0, 'repaired' => 0, 'unrepaired' => 1, 'extra' => 0]);
+$check('auditoría con diferencias sin reparar: aviso de advertencia', $c[0][0] === 'notify' && $c[0][1] === 'warning', $c);
+$c = $runA(['compared' => 1500000, 'diff' => 0, 'missing' => 0, 'repaired' => 0, 'unrepaired' => 0, 'extra' => 0]);
+$check('auditoría sin hallazgos: sin aviso extra (solo el cierre de incidente)', count($c) === 1 && $c[0][0] === 'resolve', $c);
 
 echo "\nRESULTADO: " . ($fails ? "{$fails} FALLO(S)" : 'TODO OK') . "\n";
 exit($fails ? 1 : 0);
