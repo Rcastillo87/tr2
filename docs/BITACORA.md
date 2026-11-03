@@ -12,10 +12,31 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14); siguen C-05 a C-12, luego formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14), ~~C-05~~ carga por ventanas sin bloquear (03-nov, p15; resuelve también buena parte de C-09); siguen C-06 a C-12, luego formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Collector: carga inicial y puesta al día por ventanas, sin bloquear al resto (C-05)
+
+### Resumen para el dueño
+- La carga inicial de una serie nueva descargaba **730 días completos en memoria** y guardaba todo **al final** (1m ≈ 1,05 M velas, ~1.050 páginas). Corría **dentro de la corrida de cada minuto**: al agregar una moneda desde la pantalla, la corrida tardaba varios minutos con el candado tomado y **las 84 series dejaban de actualizarse** (Paper y Real sin velas nuevas de 1m). Si el motor se reiniciaba en medio, se perdía todo. Verificado antes del fix: un corte a mitad de la carga deja **0 velas guardadas**.
+- Ahora una serie nueva o atrasada **avanza hacia adelante por ventanas de 1.000 velas y guarda cada una al llegar**; como máximo **~20 s por corrida** (la siguiente sigue desde la última vela guardada). Si la moneda se listó hace poco, salta el tiempo anterior con **una sola consulta diaria** en vez de ~1.000 ventanas vacías.
+- **Prioridad:** cada corrida actualiza primero las series al día (1 consulta cada una, como siempre) y usa el tiempo que sobra (hasta 60 s de corrida) para las que se ponen al día. **Agregar una moneda ya no detiene al resto.** `/collector/run` informa `catching_up` (series poniéndose al día y cuánto les falta).
+- Una serie de 1m nueva (2 años) queda completa en ~25 min; una interrupción se retoma sola y el histórico queda continuo desde el inicio (resuelve buena parte de C-09).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `OhlcvCollector.fetch_window`, `catch_up`, `_first_listed`; `initial_load` y `update` por ventanas con `deadline`; `run_all` prioriza las series al día y da presupuesto a las atrasadas; `catching_up` en `/collector/run` | `tests/Forensic/collector_catchup_test.py`: 12 casos en PASS (carga por ventanas con presupuesto, salto al listado, completa y continua en varias corridas, memoria acotada, corte y retoma sin huecos, caso normal = 1 consulta, prioridad en la corrida, presupuesto de la corrida); antes del cambio un corte dejaba 0 velas; 5 mutaciones detectadas. Regresión en TODO OK |
+
+### Lecciones
+- Un reloj como valor por defecto de un parámetro (`clock=time.monotonic`) se fija al **definir** la función: no se puede sustituir en las pruebas y compara relojes distintos. Resolverlo en cada llamada (`clock = clock or time.monotonic`).
+
+### Cambios fuera de git
+- Se instala con p15 y reinicio de `trading2-engine`. Incluye una consulta real de solo lectura a Bybit (ventana hacia adelante de BTC 1m: 10 velas continuas).
 
 ---
 
@@ -32,7 +53,7 @@
 | (este) | `bar_problem()` / `valid_bar()` en `ohlcv_collector.py`; `save_bars` descarta y registra las inválidas (`last_rejected`); `backfill_bybit.py` usa la regla compartida | `tests/Forensic/collector_ingest_test.py`: 23 casos en PASS (12 tipos de vela inválida, 6 válidas incluidas volumen 0 / precio plano / 1D / 4h, tanda mezclada, descarga automática, backfill); antes del cambio las 4 inválidas de la sonda se guardaban; 5 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- Se instala con p14 y reinicio de `trading2-engine` (el collector corre en el motor). Incluye una lectura de solo lectura: velas de los últimos 7 días que fallarían la regla (debe ser 0).
+- Instalado con **p14**: 22 pruebas Python + 2 PHP en TODO OK; **lectura real: 0 velas inválidas en los últimos 7 días** (los datos de Bybit no chocan con la barrera); `trading2-engine` activo desde **Tue 2026-11-03 20:42:53 UTC**; `main` subido (`936fdf9..43808e4`).
 
 ---
 

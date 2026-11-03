@@ -6,6 +6,7 @@ no desde variables de entorno. El admin los gestiona desde la UI de Laravel.
 """
 
 import asyncio
+import time
 import asyncpg
 import httpx
 import logging
@@ -15,7 +16,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 from collectors.bybit_http import get_json, BybitRateLimited
-from collectors.broker_resolver import INTERVAL_MINUTES
+from collectors.broker_resolver import INTERVAL_MINUTES, interval_delta
 
 load_dotenv()
 
@@ -30,9 +31,18 @@ RUN_HTTP_TIMEOUT_S = 10.0    # timeout por petición en la corrida automática (
 RATE_LIMIT_ABORT_AFTER = 3  # series seguidas limitadas por Bybit que cortan el resto de la corrida (C-02)
 COLLECT_CONCURRENCY = 4  # series en paralelo (pool "live" = 10 conexiones compartidas con los ticks; Bybit sobra)
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
+# Puesta al día por ventanas (C-05): una serie nueva o atrasada avanza HACIA ADELANTE en ventanas de BYBIT_LIMIT velas,
+# guardando cada una al llegar, con un presupuesto de tiempo por corrida; la corrida siguiente sigue desde la última vela.
+CATCHUP_SERIES_BUDGET_S = 20.0   # tiempo máximo por serie atrasada en una corrida
+RUN_DEADLINE_S = 60.0            # la corrida termina antes de los 75 s que Laravel espera
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _floor(t: datetime, step: timedelta) -> datetime:
+    """Inicio de la vela que contiene t (alineado a UTC)."""
+    return _EPOCH + ((t - _EPOCH) // step) * step
 
 
 def bar_problem(b: dict) -> str | None:
@@ -239,47 +249,118 @@ class OhlcvCollector:
     # Carga histórica inicial
     # ─────────────────────────────────────────────
 
-    async def initial_load(self, symbol: str, interval: str, broker: str = 'bybit') -> int:
+    async def fetch_window(self, client, symbol: str, interval: str, start: datetime, end: datetime) -> list[dict]:
+        """Velas con start <= time <= end (máx. BYBIT_LIMIT), en orden ascendente."""
+        payload = await get_json(client, f'{BYBIT_BASE_URL}/v5/market/kline', params={
+            'category': 'linear', 'symbol': symbol, 'interval': interval, 'limit': BYBIT_LIMIT,
+            'start': int(start.timestamp() * 1000), 'end': int(end.timestamp() * 1000)})
+        bars = [{
+            'time': datetime.fromtimestamp(int(b[0]) / 1000, tz=timezone.utc), 'symbol': symbol, 'interval': interval,
+            'open': float(b[1]), 'high': float(b[2]), 'low': float(b[3]), 'close': float(b[4]), 'volume': float(b[5]),
+        } for b in payload.get('result', {}).get('list', [])]
+        bars.sort(key=lambda b: b['time'])
+        return [b for b in bars if start <= b['time'] <= end]
+
+    async def _first_listed(self, client, symbol: str, since: datetime, until: datetime) -> datetime | None:
+        """Primer día con velas en Bybit entre since y until (una consulta diaria): salta el tiempo antes del listado."""
+        days = await self.fetch_window(client, symbol, 'D', _floor(since, timedelta(days=1)), until)
+        return days[0]['time'] if days else None
+
+    async def catch_up(self, symbol: str, interval: str, broker: str, since: datetime, client,
+                       deadline: float | None = None, clock=None) -> dict:
+        """
+        Avanza la serie desde `since` hasta la vela en curso, ventana a ventana, guardando cada una (C-05).
+        Se detiene al llegar a hoy o a `deadline` (reloj monotónico); la próxima llamada sigue desde la última vela
+        guardada, así una interrupción nunca deja el histórico a medias por el principio.
+        """
+        clock = clock or time.monotonic   # se resuelve en cada llamada (no al definir la función)
+        step = interval_delta(interval)
+        now_bar = _floor(datetime.now(timezone.utc), step)
+        cur, saved, windows, jumped = _floor(since, step), 0, 0, False
+        while cur <= now_bar:
+            if deadline is not None and clock() >= deadline:
+                break
+            end = min(cur + step * (BYBIT_LIMIT - 1), now_bar)
+            bars = await self.fetch_window(client, symbol, interval, cur, end)
+            windows += 1
+            if not bars:
+                if not jumped:   # antes del listado de la moneda: salta al primer día con datos (una sola vez)
+                    jumped = True
+                    first = await self._first_listed(client, symbol, cur, now_bar)
+                    if first is None:
+                        break
+                    cur = max(_floor(first, step), end + step)
+                    continue
+                cur = end + step
+                continue
+            saved += await self.save_bars(bars, broker=broker)
+            cur = bars[-1]['time'] + step
+        done = cur > now_bar
+        behind = None if done else max(0.0, (now_bar - cur).total_seconds() / 3600)
+        return dict(saved=saved, windows=windows, done=done, behind_hours=round(behind, 1) if behind else behind)
+
+    async def initial_load(self, symbol: str, interval: str, broker: str = 'bybit', client=None,
+                           deadline: float | None = None) -> int:
+        """Carga inicial de una serie sin datos: HISTORY_DAYS hacia atrás, avanzando hacia hoy por ventanas (C-05)."""
         if broker != 'bybit':
             raise ValueError(f"Broker no soportado por el collector: {broker}")
         last = await self.get_last_timestamp(symbol, interval, broker)
         if last:
             logger.info(f"[{symbol}/{interval}] Ya tiene datos hasta {last} — saltando carga inicial")
             return 0
+        since = datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)
+        logger.info(f"[{symbol}/{interval}] Carga inicial desde {since:%Y-%m-%d} por ventanas")
+        owns = client is None
+        client = client or httpx.AsyncClient(timeout=30)
+        try:
+            r = await self.catch_up(symbol, interval, broker, since, client, deadline)
+        finally:
+            if owns:
+                await client.aclose()
+        self._note_catch_up(symbol, interval, r)
+        logger.info(f"[{symbol}/{interval}] Carga inicial: {r['saved']} velas en {r['windows']} ventanas"
+                    + ('' if r['done'] else f" (sigue en la próxima corrida; faltan ~{r['behind_hours']} h)"))
+        return r['saved']
 
-        now = int(datetime.now(timezone.utc).timestamp())
-        logger.info(f"[{symbol}/{interval}] Iniciando carga histórica de {HISTORY_DAYS} días...")
-        bars = await self.fetch_from_bybit(symbol, interval, now - HISTORY_DAYS * 24 * 60 * 60, now)
-        saved = await self.save_bars(bars, broker=broker)
-        logger.info(f"[{symbol}/{interval}] Carga inicial: {saved} velas guardadas")
-        return saved
-
-    # ─────────────────────────────────────────────
-    # Actualización continua
-    # ─────────────────────────────────────────────
+    def _note_catch_up(self, symbol: str, interval: str, r: dict) -> None:
+        if not hasattr(self, 'catching_up'):
+            self.catching_up = {}
+        key = f"{symbol}/{interval}"
+        if r['done']:
+            self.catching_up.pop(key, None)
+        else:
+            self.catching_up[key] = dict(behind_hours=r['behind_hours'], saved=r['saved'], windows=r['windows'])
 
     async def update(self, symbol: str, interval: str, broker: str = 'bybit',
-                     client: Optional[httpx.AsyncClient] = None) -> int:
+                     client: Optional[httpx.AsyncClient] = None, deadline: float | None = None,
+                     last: Optional[datetime] = None) -> int:
         if broker != 'bybit':
             raise ValueError(f"Broker no soportado por el collector: {broker}")
-        last = await self.get_last_timestamp(symbol, interval, broker)
+        last = last or await self.get_last_timestamp(symbol, interval, broker)
         if not last:
-            return await self.initial_load(symbol, interval, broker)
+            return await self.initial_load(symbol, interval, broker, client=client, deadline=deadline)
 
-        start_ts = int(last.timestamp())
-        end_ts   = int(datetime.now(timezone.utc).timestamp())
-        if end_ts - start_ts < 60:
+        step = interval_delta(interval)
+        now = datetime.now(timezone.utc)
+        if (now - last).total_seconds() < 60:
             return 0
+        if now - last > step * (BYBIT_LIMIT - 1):   # atrasada: ponerse al día por ventanas, con presupuesto (C-05)
+            owns = client is None
+            client = client or httpx.AsyncClient(timeout=30)
+            try:
+                r = await self.catch_up(symbol, interval, broker, last, client, deadline)
+            finally:
+                if owns:
+                    await client.aclose()
+            self._note_catch_up(symbol, interval, r)
+            return r['saved']
 
-        bars = await self.fetch_from_bybit(symbol, interval, start_ts, end_ts, client=client)
+        # Caso normal (1-2 velas): una sola consulta, como siempre
+        bars = await self.fetch_from_bybit(symbol, interval, int(last.timestamp()), int(now.timestamp()), client=client)
         saved = await self.save_bars(bars, broker=broker)
         if saved > 0:
             logger.debug(f"[{symbol}/{interval}] {saved} velas escritas (nuevas o actualizadas)")
         return saved
-
-    # ─────────────────────────────────────────────
-    # Correr todos los simbolos e intervalos activos
-    # ─────────────────────────────────────────────
 
     async def run_all(self, errors: Optional[dict] = None) -> dict:
         """
@@ -287,9 +368,29 @@ class OhlcvCollector:
         COLLECT_CONCURRENCY series a la vez. Resultado por serie: velas escritas, o -1 si falló
         (el detalle va a `errors` si se pasa un dict).
         """
+        t0 = time.monotonic()
+        run_deadline = t0 + RUN_DEADLINE_S
         active_configs = await self.get_active_configs()
         results: dict = {}
         sem = asyncio.Semaphore(COLLECT_CONCURRENCY)
+        self.catching_up = {}
+        # Prioridad (C-05): primero las series al día (1 consulta cada una); después, con el tiempo que sobra, las
+        # nuevas o atrasadas, que avanzan por ventanas hasta CATCHUP_SERIES_BUDGET_S y siguen en la próxima corrida.
+        lasts: dict = {}
+        for s_, i_, b_ in active_configs:
+            try:
+                lasts[(s_, i_, b_)] = await self.get_last_timestamp(s_, i_, b_)
+            except Exception:   # noqa: BLE001 - sin el dato, la serie va con las normales
+                lasts[(s_, i_, b_)] = 'unknown'
+        now_ = datetime.now(timezone.utc)
+
+        def lagging(cfg) -> bool:
+            last = lasts.get(cfg)
+            if last == 'unknown':
+                return False
+            return last is None or now_ - last > interval_delta(cfg[1]) * (BYBIT_LIMIT - 1)
+        normal = [c for c in active_configs if not lagging(c)]
+        behind = [c for c in active_configs if lagging(c)]
         # Corte por límite de tasa (C-02): un 403 o RATE_LIMIT_ABORT_AFTER series seguidas limitadas cortan el resto
         # de la corrida (el minuto siguiente vuelve a intentar) en vez de seguir golpeando a Bybit.
         state = {'limited_streak': 0, 'abort': None}
@@ -306,7 +407,17 @@ class OhlcvCollector:
                             errors[key] = f"omitida: {state['abort']} (se reintenta el próximo minuto)"
                         return
                     try:
-                        results[key] = await self.update(symbol, interval, broker, client=client)
+                        cfg = (symbol, interval, broker)
+                        last = lasts.get(cfg)
+                        kw = dict(client=client, last=last if isinstance(last, datetime) else None)
+                        if cfg in behind_set:
+                            if time.monotonic() >= run_deadline:
+                                results[key] = 0
+                                self.catching_up.setdefault(key, dict(behind_hours=None, saved=0, windows=0,
+                                                                      note='sin tiempo en esta corrida'))
+                                return
+                            kw['deadline'] = min(time.monotonic() + CATCHUP_SERIES_BUDGET_S, run_deadline)
+                        results[key] = await self.update(symbol, interval, broker, **kw)
                         state['limited_streak'] = 0
                     except BybitRateLimited as e:
                         state['limited_streak'] += 1
@@ -322,7 +433,9 @@ class OhlcvCollector:
                         if errors is not None:
                             errors[key] = str(e)[:300]
 
-            await asyncio.gather(*(one(s, i, b) for s, i, b in active_configs))
+            behind_set = set(behind)
+            await asyncio.gather(*(one(s, i, b) for s, i, b in normal))
+            await asyncio.gather(*(one(s, i, b) for s, i, b in behind))
 
         self.last_abort_reason = state['abort']
         if state['abort']:

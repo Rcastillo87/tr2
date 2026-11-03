@@ -101,7 +101,7 @@ class Coll(oc.OhlcvCollector):
     async def get_active_configs(self):
         return self.configs
 
-    async def update(self, symbol, interval, broker, client=None):
+    async def update(self, symbol, interval, broker, client=None, **kw):
         self.done.append(symbol)
         r = self.behavior(symbol)
         if isinstance(r, Exception):
@@ -116,7 +116,7 @@ async def run_cases():
     seen = {}
 
     class TimeoutColl(Coll):
-        async def update(self, symbol, interval, broker, client=None):
+        async def update(self, symbol, interval, broker, client=None, **kw):
             seen['timeout'] = client.timeout.read
             return 1
     await TimeoutColl(cfg[:1], lambda s: 1).run_all({})
