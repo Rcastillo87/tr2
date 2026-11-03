@@ -1107,11 +1107,15 @@ class RealTrader:
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_price_for_calc - sl)  # mismo precio con el que se calculó el SL
         raw_size    = (risk_amount / sl_distance) if sl_distance > 0 else 0
-        _cfg = sub.get('config_params') or {}
+        _cfg = sub.get('config_params') or {}   # config de la suscripción: va al snapshot congelado del trade
         if isinstance(_cfg, str):
-            import json as _j
-            _cfg = _j.loads(_cfg)
-        max_leverage = float(_cfg.get('max_leverage', 1.0))
+            _cfg = json.loads(_cfg)
+        # Tope de nocional = saldo × max_leverage, con la MISMA lectura que el motor de backtest (engine.py:
+        # 0 / null / ausente = 1x). Decisión de diseño (revisada 2026-11-03, REAL-07): max_leverage limita el TAMAÑO;
+        # el apalancamiento de la cuenta lo configura el dueño en Bybit y el bot no lo cambia. El bot lee el
+        # apalancamiento real de la posición, lo guarda y, si el SL quedaría más allá de la liquidación, cierra y
+        # avisa (liquidation_risk, commit d2d463e).
+        max_leverage = float(getattr(strategy_instance, 'max_leverage', 1.0) or 1.0)
         max_size     = (balance * max_leverage) / entry_price_for_calc
         size         = round(min(raw_size, max_size), 6)
 

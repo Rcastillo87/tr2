@@ -12,10 +12,26 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov. Siguen REAL-07 (leverage) y demás de la lista.
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope (03-nov, pendiente de instalar en p07). Sigue REAL-08 (modo One-Way) y demás de la lista.
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — `max_leverage` en Real (REAL-07): correcto por diseño, con paridad del tope
+
+### Resumen para el dueño
+- La auditoría dice que `max_leverage` no configura el apalancamiento en Bybit: **es cierto y es a propósito**. `max_leverage` limita el **tamaño** (nocional ≤ saldo × `max_leverage`), igual que el backtest; el apalancamiento de la cuenta lo configura el dueño en Bybit. El bot lo lee, lo guarda por trade y, si el SL quedaría más allá de la liquidación, cierra y avisa (decisión del 28-oct, commit `d2d463e`). Llamar a `set-leverage` pisaría la configuración del dueño en Bybit. Motivo escrito en `open_trade`.
+- **Divergencia nueva encontrada por la prueba (no estaba en la auditoría):** con `max_leverage` 0 o `null`, el backtest usa 1x; Real no abría nada (0) o fallaba con excepción al abrir (`null`). Corregido: Real usa la misma lectura que el motor (`getattr(strategy, 'max_leverage', 1.0) or 1.0`). Con las configs actuales (sin el campo → 1x) el tamaño no cambia.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `RealTrader.open_trade`: tope de nocional con la lectura del motor; comentario de diseño de REAL-07 | `tests/Forensic/real_sizing_test.py`: tamaño Real = motor en 8 casos (riesgo manda, tope 1x / 3x / 0,5x, sin campo, 0, `null`, texto); antes del cambio 2 FALLOS (0 y `null`). Regresión: 19 suites Python en TODO OK |
+
+### Cambios fuera de git
+- Pendiente: se instala con p07 (junto con REAL-08) y reinicio de `trading2-engine`.
 
 ---
 
