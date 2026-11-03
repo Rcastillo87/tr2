@@ -12,10 +12,27 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14), ~~C-05~~ carga por ventanas sin bloquear (03-nov, p15; resuelve también buena parte de C-09); siguen C-06 a C-12, luego formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14), ~~C-05~~ carga por ventanas sin bloquear (03-nov, p15; resuelve también buena parte de C-09), ~~C-06~~ vigilante de la validación diaria (03-nov, p16); siguen C-07 a C-12, luego Backtest/Paper (BP-03 a BP-07, sondas A/B) y formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Collector: el vigilante comprueba que la validación diaria corra (C-06)
+
+### Resumen para el dueño
+- C-06 tenía tres partes: (1) corrupción histórica con conteo completo → **resuelta por C-03**; (2) atraso largo que tarda muchas pasadas (máx. 7 días por serie) → **resuelta en la práctica** por C-05 (cola de la serie) y C-03 (huecos intermedios); (3) **el vigilante no comprobaba que la validación diaria corriera** → vigente, corregida aquí.
+- Antes: si el job de las 04:00 dejaba de correr (cola `research` trabada, programador detenido), nadie se enteraba; la pantalla seguía mostrando el último resultado (se guarda 30 días) y tampoco corrían la reparación ni la auditoría. Solo había aviso si el job arrancaba y fallaba.
+- Ahora el vigilante (cada 5 min, sin costo: lee el resultado guardado) abre el incidente **«La validación diaria del collector no corre»** si la última tiene más de **26 h** o no hay registro, y lo cierra solo cuando vuelve a correr. Umbral en `config/trading.php` (`WATCHDOG_VALIDATION_STALE_H`).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `CollectorWatchdog::checkDailyValidation` y `validationStaleness` (lógica pura); `validation_stale_h` en `config/trading.php` y `.env.example` | `tests/Forensic/collector_watchdog_validation_test.php` (PHP puro): 8 casos en PASS (2 h, 25 h, 27 h, sin registro, fecha ilegible, sin fecha, umbral configurable, formato real del job); antes del cambio 1 FALLO; 4 mutaciones detectadas |
+
+### Cambios fuera de git
+- Se instala con p16 (sin reinicios: el vigilante corre por cron). Incluye `config:clear` y una corrida real del vigilante en modo `--dry`.
 
 ---
 
@@ -36,7 +53,7 @@
 - Un reloj como valor por defecto de un parámetro (`clock=time.monotonic`) se fija al **definir** la función: no se puede sustituir en las pruebas y compara relojes distintos. Resolverlo en cada llamada (`clock = clock or time.monotonic`).
 
 ### Cambios fuera de git
-- Se instala con p15 y reinicio de `trading2-engine`. Incluye una consulta real de solo lectura a Bybit (ventana hacia adelante de BTC 1m: 10 velas continuas).
+- Instalado con **p15**: 23 pruebas Python + 2 PHP en TODO OK; **consulta real a Bybit**: ventana hacia adelante de BTCUSDT 1m = 10 velas continuas y en orden (20:54–21:03 UTC); `trading2-engine` activo desde **Tue 2026-11-03 21:04:47 UTC**; `main` subido (`43808e4..e91d946`).
 
 ---
 

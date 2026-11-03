@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\CollectOhlcvDataJob;
 use App\Jobs\RealTradingAccountTickJob;
+use App\Jobs\ValidateCollectorDataJob;
 use App\Services\SystemAlerts;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -21,6 +22,8 @@ use Throwable;
  *  2. Datos: atraso real de cada serie activa en ohlcv_data y edad de la última corrida hecha por la cola.
  *     Si algo está atrasado corre el collector directo en el motor (sin cola) y vuelve a medir.
  *  3. Cola: si Horizon no corre el collector avisa y, si está habilitado, reinicia trading2-horizon.
+ *  4. Validación diaria (C-06): si el job de las 04:00 no corre hace más de `validation_stale_h` horas (cola research
+ *     trabada, programador detenido) avisa; sin ella tampoco corren la reparación ni la auditoría histórica.
  * Avisos sin spam: uno al abrir cada incidente y uno al cerrarlo.
  */
 class CollectorWatchdog extends Command
@@ -51,6 +54,7 @@ class CollectorWatchdog extends Command
         }
         $this->engineOk();
         $this->checkRealTrading();
+        $this->checkDailyValidation();
 
         $stale = $this->staleSeries();
         $runAge = $this->lastRunAge();
@@ -194,6 +198,44 @@ class CollectorWatchdog extends Command
             $this->alerts->resolveIncident('real_tick_stalled', 'broker', 'Trading real gestionando posiciones de nuevo',
                 'Todas las cuentas con posiciones tienen tick reciente.', '/trading');
         }
+    }
+
+    // ── validación diaria (C-06) ─────────────────────────────────────────────
+
+    /** Incidente si la validación diaria no corre hace más de validation_stale_h horas (o nunca corrió). */
+    private function checkDailyValidation(): void
+    {
+        $maxH = (int) ($this->cfg['validation_stale_h'] ?? 26);
+        $why = self::validationStaleness(Cache::get(ValidateCollectorDataJob::RESULT_KEY), now()->getTimestamp(), $maxH);
+        $this->line('validación diaria: ' . ($why ?? 'al día'));
+        if ($why) {
+            $this->alerts->openIncident('validation_stale', 'warning', 'validation',
+                'La validación diaria del collector no corre', ucfirst($why) . '. Sin ella tampoco corren la reparación'
+                . ' automática ni la auditoría histórica. Revisa Horizon (cola research) y el programador (cron).',
+                '/collector');
+        } else {
+            $this->alerts->resolveIncident('validation_stale', 'validation', 'La validación diaria del collector volvió a correr',
+                'El job de las 04:00 terminó y su resultado está al día.', '/collector');
+        }
+    }
+
+    /**
+     * Motivo por el que la validación diaria está atrasada, o null si está al día. Lógica pura (se prueba sin Laravel).
+     * $data: resultado guardado por ValidateCollectorDataJob (con 'at' ISO 8601).
+     */
+    public static function validationStaleness(mixed $data, int $nowTs, int $maxHours): ?string
+    {
+        $at = is_array($data) ? ($data['at'] ?? null) : null;
+        if (! is_string($at) || $at === '') {
+            return 'no hay registro de ninguna validación diaria';
+        }
+        $ts = strtotime($at);
+        if ($ts === false) {
+            return "la fecha de la última validación no se puede leer ({$at})";
+        }
+        $ageH = intdiv(max(0, $nowTs - $ts), 3600);
+
+        return $ageH > $maxHours ? "la última terminó hace {$ageH} h (máximo {$maxHours} h)" : null;
     }
 
     // ── cola (Horizon) ───────────────────────────────────────────────────────

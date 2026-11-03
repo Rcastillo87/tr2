@@ -13,6 +13,7 @@ return [
         'queue_stale_s'      => (int) env('WATCHDOG_QUEUE_STALE_S', 300),       // cola sin correr el collector
         'series_grace_s'     => (int) env('WATCHDOG_SERIES_GRACE_S', 300),      // atraso > 1 vela + margen
         'real_tick_stale_s'  => (int) env('WATCHDOG_REAL_TICK_STALE_S', 180),   // real: posiciones sin tick reciente
+        'validation_stale_h' => (int) env('WATCHDOG_VALIDATION_STALE_H', 26),   // validación diaria (04:00) atrasada
     ],
     // Avisos de broker (php artisan broker:events, cada minuto por cron)
     'broker_events' => [
