@@ -38,7 +38,10 @@ final class BrokerEventMessages
                 'level' => 'warning', 'mode' => 'throttle', 'key' => "open_rejected:{$accountId}:{$sym}",
                 'title' => 'Orden rechazada en Bybit',
                 'body'  => "{$account} · {$sym}{$side}{$strategy}: " . ($reason !== '' ? $reason : 'Bybit no aceptó la orden')
-                    . '. No se abrió ninguna posición.',
+                    . '. No se abrió ninguna posición.'
+                    . (self::isPositionModeError($reason)
+                        ? ' La cuenta está en modo Hedge y TR2 opera en One-Way: cámbiala en Bybit (Derivados → Ajustes → Modo de posición → One-Way). TR2 no cambia ese ajuste por su cuenta.'
+                        : ''),
             ],
             'open_unconfirmed' => [
                 'level' => 'error', 'mode' => 'notify', 'key' => null,
@@ -161,7 +164,15 @@ final class BrokerEventMessages
         return ['title' => 'Cuenta reactivada', 'body' => "{$account}: vuelve a abrir posiciones."];
     }
 
-    private static function num(mixed $v): string
+    /** Rechazo de Bybit porque la cuenta está en modo Hedge (TR2 envía órdenes One-Way, positionIdx=0). */
+    private static function isPositionModeError(string $reason): bool
+    {
+        $r = mb_strtolower($reason);
+
+        return str_contains($r, 'position idx not match position mode') || str_contains($r, 'position mode');
+    }
+
+        private static function num(mixed $v): string
     {
         return rtrim(rtrim(number_format((float) $v, 8, ',', '.'), '0'), ',');
     }

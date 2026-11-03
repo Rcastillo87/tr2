@@ -12,10 +12,28 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope (03-nov, pendiente de instalar en p07). Sigue REAL-08 (modo One-Way) y demás de la lista.
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, ambos en p07). Siguen REAL-09 en adelante (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Modo de posición One-Way (REAL-08): falla segura y aviso claro
+
+### Resumen para el dueño
+- La auditoría dice que el bot asume el modo One-Way sin comprobarlo: **es cierto**. No hay una decisión registrada al respecto; es una suposición del código desde junio.
+- **Falla de forma segura:** si una cuenta estuviera en modo Hedge, Bybit rechaza la **apertura** («position idx not match position mode»), así que nunca queda una posición abierta a medias ni sin protección. El aviso «Orden rechazada en Bybit» ya llegaba (uno por hora y moneda); el circuit breaker trata ese código (`10001`) como no crítico.
+- Ahora el aviso **explica qué hacer**: «La cuenta está en modo Hedge y TR2 opera en One-Way: cámbiala en Bybit (Derivados → Ajustes → Modo de posición → One-Way)».
+- Decisión del dueño (03-nov): el bot **no** cambia el modo de la cuenta (es configuración del dueño en Bybit, igual criterio que el apalancamiento en REAL-07). Motivo escrito en `set_trading_stop`. Sigue en revisión con el dueño.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `BrokerEventMessages::open_rejected` agrega la explicación cuando Bybit rechaza por modo de posición; comentario de diseño en `set_trading_stop` | `broker_event_messages_test.php`: rechazo por Hedge explica cómo pasar a One-Way y otros rechazos no; antes del cambio 1 FALLO. Regresión: 19 suites Python y la PHP en TODO OK |
+
+### Cambios fuera de git
+- Se instala con p07 (junto con REAL-07) y reinicio de `trading2-engine`. Horizon no hace falta (`BrokerEventMessages` solo lo usa `broker:events` por cron).
 
 ---
 

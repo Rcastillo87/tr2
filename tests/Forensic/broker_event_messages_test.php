@@ -33,6 +33,11 @@ foreach ($expect as $e => [$level, $mode]) {
         && $r['title'] !== '' && str_contains($r['body'], 'Bybit Real'), $r);
 }
 $check('evento desconocido -> sin aviso', $m('xyz') === null);
+$hedge = $m('open_rejected', ['symbol' => 'BTCUSDT', 'side' => 'long', 'reason' => 'position idx not match position mode (code 10001)']);
+$check('rechazo por modo Hedge: explica cómo pasar a One-Way', str_contains($hedge['body'] ?? '', 'modo Hedge')
+    && str_contains($hedge['body'] ?? '', 'One-Way') && str_contains($hedge['body'] ?? '', 'No se abrió ninguna posición'), $hedge['body'] ?? null);
+$other = $m('open_rejected', ['symbol' => 'BTCUSDT', 'reason' => 'Insufficient balance (code 110007)']);
+$check('otro rechazo: sin la explicación de Hedge', ! str_contains($other['body'] ?? '', 'Hedge'), $other['body'] ?? null);
 $pf = $m('protection_failed', ['symbol' => 'SOLUSDT', 'side' => 'long', 'strategy' => 'VWAP', 'sl' => 99.198, 'tp' => 104.208, 'stage' => 'open'], 41);
 $pr = $m('protection_restored', ['symbol' => 'SOLUSDT', 'side' => 'long', 'sl' => 99.198, 'tp' => 104.208], 41);
 $check('protección: mismo incidente por trade para abrir y cerrar', ($pf['key'] ?? 1) === ($pr['key'] ?? 2) && ($pf['key'] ?? '') === 'protection:7:41', [$pf['key'] ?? null, $pr['key'] ?? null]);

@@ -513,7 +513,11 @@ class BybitClient:
         ser mas favorable que el precio de ENTRADA de la posicion, no que
         el precio de mercado actual, o Bybit rechaza el pedido.
         """
-        position_idx = 0  # one-way mode
+        # Modo de posición One-Way (positionIdx=0), revisado 2026-11-03 (REAL-08): es el modo por defecto de Bybit en
+        # perpetuos USDT. Una cuenta en Hedge rechaza la APERTURA («position idx not match position mode»), así que
+        # nunca queda una posición a medias; el aviso open_rejected explica cómo pasar a One-Way. El bot no cambia
+        # el modo de la cuenta (es configuración del dueño en Bybit).
+        position_idx = 0
         body = {
             'category':    'linear',
             'symbol':      symbol,
