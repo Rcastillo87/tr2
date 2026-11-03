@@ -175,6 +175,24 @@ class PaperTrader:
             )
         return row is not None
 
+    async def get_open_trade_for_config(self, config_id: int) -> dict | None:
+        """La posición abierta de una config (con todas las columnas que necesita close_trade) o None."""
+        for t in await self.get_open_trades():
+            if t['paper_strategy_config_id'] == config_id:
+                return t
+        return None
+
+    def _opposite_rule(self, trade: dict) -> str | None:
+        """
+        Regla de salida por señal opuesta, leída de los parámetros CONGELADOS del trade (igual que el motor):
+        'reverse' = close_on_opposite (cierra y abre la contraria), 'exit' = exit_on_opposite (solo cierra),
+        None = el trade no usa la regla.
+        """
+        p = self._trade_params(trade) or {}
+        if not (p.get('close_on_opposite') or p.get('exit_on_opposite')):
+            return None
+        return 'exit' if p.get('exit_on_opposite') else 'reverse'
+
     # ─────────────────────────────────────────────
     # Calculo de PnL flotante
     # ─────────────────────────────────────────────
@@ -562,19 +580,25 @@ class PaperTrader:
     async def check_new_signals(self) -> dict:
         results = {}
 
-        if await self.risk_manager.is_kill_switch_active():
-            for cfg in self.config_map.values():
-                results[self._label(cfg)] = "KILL SWITCH activo — sin nuevas entradas"
-            return results
+        kill = await self.risk_manager.is_kill_switch_active()
 
         # Solo el kill switch manual (igual que real); sin pausas automáticas (no las simula el backtest).
+        # Con kill switch no se abren posiciones nuevas, pero las abiertas se siguen gestionando: la salida por
+        # señal opuesta sigue aplicando (sin reversa).
 
         for config_id, cfg in self.config_map.items():
             label    = self._label(cfg)
             symbol   = cfg['symbol']
             interval = cfg['interval']
+            reversal = False   # True si este tick cierra por señal opuesta y abre la contraria
+            px       = None    # precio único de ese cierre y esa reversa (≈ open de la vela siguiente)
 
-            if await self.has_open_trade(config_id):
+            open_row  = await self.get_open_trade_for_config(config_id)
+            exit_rule = self._opposite_rule(open_row) if open_row is not None else None
+            if kill and exit_rule is None:
+                results[label] = "KILL SWITCH activo — sin nuevas entradas"
+                continue
+            if open_row is not None and exit_rule is None:
                 results[label] = f"{symbol}: ya tiene posicion abierta"
                 continue
 
@@ -598,7 +622,8 @@ class PaperTrader:
                 ranging_threshold=strategy.regime_adx_ranging,
                 ambiguous_as=strategy.regime_ambiguous_as
             )
-            if not strategy.should_operate(regime):
+            regime_ok = strategy.should_operate(regime)
+            if not regime_ok and open_row is None:   # la salida por señal opuesta no mira el régimen (igual que el motor)
                 results[label] = f"{symbol}: regimen no permitido ({regime})"
                 continue
 
@@ -610,6 +635,34 @@ class PaperTrader:
 
             last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas
             signal = int(last_closed['signal'])
+
+            if open_row is not None:
+                # Salida por señal opuesta (misma regla que el motor): la señal de la última vela cerrada es contraria
+                # a la posición y esa vela cerró DESPUÉS de la entrada (la señal que abrió el trade no cuenta).
+                # Se cierra al precio actual (≈ open de la vela siguiente); con close_on_opposite se invierte.
+                # La señal se calcula con la estrategia viva de la config, como las entradas.
+                candle_open = pd.to_datetime(last_closed['time'], utc=True).to_pydatetime()
+                opened_at   = open_row['entry_time']
+                if opened_at.tzinfo is None:
+                    opened_at = opened_at.replace(tzinfo=timezone.utc)
+                opposite = (open_row['side'] == 'long' and signal == -1) or (open_row['side'] == 'short' and signal == 1)
+                if not opposite or candle_open + interval_delta(interval) <= opened_at:
+                    results[label] = f"{symbol}: ya tiene posicion abierta"
+                    continue
+                px = await get_current_price(symbol)
+                if px is None:
+                    results[label] = f"{symbol}: señal opuesta pero sin precio; se reintenta el próximo ciclo"
+                    continue
+                await self.close_trade(open_row, px, 'opposite_signal')
+                if exit_rule == 'exit' or kill:
+                    results[label] = f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}"
+                    continue
+                if not regime_ok:
+                    results[label] = (f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; "
+                                      f"regimen no permitido ({regime}), sin reversa")
+                    continue
+                reversal = True
+
             if signal == 0:
                 results[label] = f"{symbol}: sin senal"
                 continue
@@ -618,18 +671,21 @@ class PaperTrader:
             if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
                 candle_time = candle_time.tz_convert('UTC').tz_localize(None)
             async with self.pool.acquire() as conn:
+                # También cuenta como "operada" la señal que ya consumió una salida por señal opuesta (con
+                # exit_on_opposite esa señal solo cierra; sin esto, el tick siguiente abriría una entrada con ella).
                 already_traded = await conn.fetchrow(
                     """SELECT id FROM paper_trades
-                       WHERE paper_strategy_config_id = $1 AND entry_time >= $2
+                       WHERE paper_strategy_config_id = $1
+                         AND (entry_time >= $2 OR (exit_reason = 'opposite_signal' AND exit_time >= $3))
                        ORDER BY entry_time DESC LIMIT 1""",
-                    config_id, candle_time
+                    config_id, candle_time, candle_time + interval_delta(interval)
                 )
-            if already_traded:
+            if already_traded and not reversal:
                 results[label] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
                 continue
 
             side        = 'long' if signal == 1 else 'short'
-            entry_price = await get_current_price(symbol)
+            entry_price = px if reversal else await get_current_price(symbol)
             if entry_price is None:
                 results[label] = f"{symbol}: error obteniendo precio"
                 continue
@@ -637,6 +693,6 @@ class PaperTrader:
             raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
             signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
             await self.open_trade(config_id, strategy, side, entry_price, regime, signal_sl_pct)
-            results[label] = f"{symbol}: ABIERTA {side} @ {entry_price} (regime={regime})"
+            results[label] = f"{symbol}: {'REVERSA' if reversal else 'ABIERTA'} {side} @ {entry_price} (regime={regime})"
 
         return results
