@@ -199,6 +199,9 @@ def main() -> int:
         tmp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
         tmp.replace(a.json_out)   # escritura atómica
     s = result['summary']
+    if s['series'] == 0:   # C-01: sin series activas no hay nada validado, no es «TODO OK»
+        print("\nRESULTADO: sin series activas en collector_configs (no se validó nada)")
+        return 1
     print(f"\nRESULTADO: {'TODO OK' if s['ok'] == s['series'] else f'{s['series'] - s['ok']} serie(s) con fallas'} "
           f"({s['series']} series · {s['identical']} idénticas a Bybit · huecos {s['missing_hist']} · "
           f"desalineadas {s['misaligned']} · {result['duration_s']} s)")

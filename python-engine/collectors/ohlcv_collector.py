@@ -22,10 +22,6 @@ logger = logging.getLogger(__name__)
 DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 BYBIT_BASE_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 
-# Fallback si la DB no responde (no debería ocurrir en producción)
-FALLBACK_SYMBOLS   = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
-FALLBACK_INTERVALS = os.getenv('INTERVALS', '1,5,15,60,120').split(',')
-
 BYBIT_LIMIT  = 1000  # máximo permitido por /v5/market/kline
 COLLECT_CONCURRENCY = 4  # series en paralelo (pool "live" = 10 conexiones compartidas con los ticks; Bybit sobra)
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
@@ -42,25 +38,22 @@ class OhlcvCollector:
 
     async def get_active_configs(self) -> list[tuple[str, str, str]]:
         """
-        (symbol, interval, broker) activos en collector_configs. Si la tabla falla,
-        usa el fallback del .env (broker='bybit').
+        (symbol, interval, broker) activos en collector_configs: la ÚNICA fuente de verdad (C-01). Sin series activas
+        devuelve [] (no se descarga nada); si la base falla, la excepción sube y ese ciclo no corre (el vigilante avisa
+        si los datos se atrasan). Antes caía a una lista fija del .env (SYMBOLS/INTERVALS) que nadie supervisaba.
         """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT symbol, interval, broker
-                    FROM collector_configs
-                    WHERE active = true
-                    ORDER BY symbol, interval
-                    """
-                )
-            if rows:
-                return [(r['symbol'], r['interval'], r['broker']) for r in rows]
-        except Exception as e:
-            logger.warning(f"[Collector] Error leyendo collector_configs, usando fallback: {e}")
-
-        return [(symbol, interval, 'bybit') for symbol in FALLBACK_SYMBOLS for interval in FALLBACK_INTERVALS]
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT symbol, interval, broker
+                FROM collector_configs
+                WHERE active = true
+                ORDER BY symbol, interval
+                """
+            )
+        if not rows:
+            logger.warning("[Collector] collector_configs sin series activas: no se descarga nada")
+        return [(r['symbol'], r['interval'], r['broker']) for r in rows]
 
     # ─────────────────────────────────────────────
     # Fetch desde Bybit

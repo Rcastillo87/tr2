@@ -138,7 +138,11 @@ class SystemAlerts
                     $r['bybit_gaps_new'], $r['errors'], $r['before']['ok'] ?? 0, $r['before']['series'] ?? 0,
                     $s['ok'] ?? 0, $s['series'] ?? 0), '/collector');
         }
-        if ($bad > 0) {
+        if ((int) ($s['series'] ?? 0) === 0) {   // C-01: 0 series no es «todo OK»
+            $this->openIncident('validation_failed', 'warning', 'validation',
+                'Validación del collector: sin series activas',
+                'collector_configs no tiene series activas: no se descarga ni se valida nada.', '/collector');
+        } elseif ($bad > 0) {
             $this->openIncident('validation_failed', 'warning', 'validation',
                 "Validación del collector: {$bad} serie(s) con fallas",
                 sprintf('huecos %d · distintas a Bybit %d · faltan %d · sobran %d · desactualizadas %d · errores %d',

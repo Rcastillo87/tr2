@@ -35,12 +35,12 @@ async def run_collector():
         return {"status": "busy", "results": {}, "total_saved": 0, "errors": {}, "duration_s": 0}
     async with _run_lock:
         t0 = time.monotonic()
+        pool = None
         try:
             pool      = await get_pool()
             collector = OhlcvCollector(pool)
             errors: dict = {}
             results   = await collector.run_all(errors)
-            await pool.close()
             return {
                 "status":      "ok",
                 "results":     results,
@@ -53,6 +53,9 @@ async def run_collector():
         except Exception as e:
             logger.error(f"Collector error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            if pool is not None:   # también si falla (antes el pool quedaba abierto)
+                await pool.close()
 
 
 @router.post("/collector/initial-load")

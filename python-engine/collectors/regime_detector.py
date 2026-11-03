@@ -23,10 +23,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Fallback si collector_configs no existe o falla — mismo patron que
-# ohlcv_collector.py, para no depender de una lista fija desincronizada.
-FALLBACK_SYMBOLS = os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT').split(',')
-
 REGIME_INTERVAL = '60'   # H1
 LOOKBACK_BARS   = 100    # velas necesarias para indicadores estables
 ATR_AVG_WINDOW  = 50      # ventana para promedio histórico de ATR
@@ -45,17 +41,13 @@ class RegimeDetector:
         usa el collector de OHLCV) en vez de una lista fija en variable de
         entorno, que quedaba desincronizada cada vez que se activaba o
         desactivaba un simbolo desde la UI (ej. BNBUSDT, XRPUSDT).
+        Sin lista de respaldo (C-01): sin series activas devuelve []; si la base falla, la excepción sube.
         """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT DISTINCT symbol FROM collector_configs WHERE active = true ORDER BY symbol"
-                )
-            if rows:
-                return [r['symbol'] for r in rows]
-        except Exception as e:
-            logger.warning(f"[RegimeDetector] Error leyendo collector_configs, usando fallback: {e}")
-        return FALLBACK_SYMBOLS
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT DISTINCT symbol FROM collector_configs WHERE active = true ORDER BY symbol"
+            )
+        return [r['symbol'] for r in rows]
 
     async def get_bars(self, symbol: str, broker: str | None = None) -> pd.DataFrame:
         """Obtiene las últimas N velas H1 para el broker activo del símbolo."""
