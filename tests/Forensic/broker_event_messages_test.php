@@ -25,6 +25,7 @@ $expect = [   // evento => [nivel, modo]
     'monthly_limit_reached' => ['error', 'open'], 'monthly_limit_reset' => ['success', 'resolve'],
     'reconcile_closed' => ['warning', 'notify'], 'reconcile_adopted' => ['warning', 'notify'],
     'reconcile_discarded' => ['info', 'notify'],
+    'protection_failed' => ['error', 'open'], 'protection_restored' => ['success', 'resolve'],
 ];
 foreach ($expect as $e => [$level, $mode]) {
     $r = $m($e, ['symbol' => 'BTCUSDT'], 5);
@@ -32,6 +33,22 @@ foreach ($expect as $e => [$level, $mode]) {
         && $r['title'] !== '' && str_contains($r['body'], 'Bybit Real'), $r);
 }
 $check('evento desconocido -> sin aviso', $m('xyz') === null);
+$pf = $m('protection_failed', ['symbol' => 'SOLUSDT', 'side' => 'long', 'strategy' => 'VWAP', 'sl' => 99.198, 'tp' => 104.208, 'stage' => 'open'], 41);
+$pr = $m('protection_restored', ['symbol' => 'SOLUSDT', 'side' => 'long', 'sl' => 99.198, 'tp' => 104.208], 41);
+$check('protección: mismo incidente por trade para abrir y cerrar', ($pf['key'] ?? 1) === ($pr['key'] ?? 2) && ($pf['key'] ?? '') === 'protection:7:41', [$pf['key'] ?? null, $pr['key'] ?? null]);
+$check('protección: incidentes distintos por trade', ($pf['key'] ?? 1) !== ($m('protection_failed', ['symbol' => 'SOLUSDT'], 42)['key'] ?? 1));
+$check('protección: el aviso dice SL/TP de la estrategia y el stop provisional',
+    str_contains($pf['body'] ?? '', 'SL 99,198 / TP 104,208') && str_contains($pf['body'] ?? '', 'stop provisional de la orden (2 % / 4 %)')
+    && str_contains($pf['body'] ?? '', 'SOLUSDT #41 long · VWAP'), $pf['body'] ?? null);
+$r = $m('protection_failed', ['symbol' => 'SOLUSDT', 'sl' => 99.2, 'exchange_sl' => 98.0, 'stage' => 'monitor'], 41);
+$check('protección (monitor): muestra el SL que sigue en Bybit', str_contains($r['body'] ?? '', 'SL 98 en Bybit'), $r['body'] ?? null);
+$check('protección restaurada: texto con el SL/TP', str_contains($pr['body'] ?? '', 'ya está en Bybit (SL 99,198 / TP 104,208)'), $pr['body'] ?? null);
+// Todo evento que emite el motor tiene texto (broker_events.EVENTS ↔ BrokerEventMessages)
+$py = file_get_contents(getcwd() . '/python-engine/trading/broker_events.py');
+preg_match('/EVENTS = frozenset\(\{(.*?)\}\)/s', $py, $mm);
+preg_match_all("/^\s*'([a-z_]+)',/m", $mm[1] ?? '', $ev);
+$missing = array_values(array_filter($ev[1], fn ($e) => $m($e, ['symbol' => 'BTCUSDT'], 1) === null));
+$check('cada evento del motor tiene aviso (' . count($ev[1]) . ' eventos)', count($ev[1]) >= 16 && $missing === [], $missing);
 $check('pausa y claves: mismo incidente para abrir y cerrar', $m('api_auth_failed')['key'] === $m('api_auth_ok')['key']
     && $m('account_paused')['key'] === 'account_paused:7');
 $check('límite de repetición por cuenta y símbolo', $m('open_rejected', ['symbol' => 'BTCUSDT'])['key'] !== $m('open_rejected', ['symbol' => 'ETHUSDT'])['key']);

@@ -135,6 +135,22 @@ final class BrokerEventMessages
                 'title' => 'Apertura descartada',
                 'body'  => "{$account} · {$ref}: la orden no llegó a abrir posición en Bybit; se marcó como fallida.",
             ],
+            'protection_failed' => [
+                'level' => 'error', 'mode' => 'open', 'key' => "protection:{$accountId}:" . ($tradeId ?? $sym),
+                'title' => 'SL/TP de la estrategia no instalado',
+                'body'  => "{$account} · {$ref}{$side}{$strategy}: Bybit no aceptó el SL/TP de la estrategia"
+                    . (isset($data['sl']) ? ' (SL ' . self::num($data['sl']) . (isset($data['tp']) ? ' / TP ' . self::num($data['tp']) : '') . ')' : '')
+                    . '. La posición sigue protegida solo por el stop provisional'
+                    . (isset($data['exchange_sl']) ? ' (SL ' . self::num($data['exchange_sl']) . ' en Bybit)' : ' de la orden (2 % / 4 %)')
+                    . '; se reintenta cada minuto. Revísala en Bybit si no se corrige.',
+            ],
+            'protection_restored' => [
+                'level' => 'success', 'mode' => 'resolve', 'key' => "protection:{$accountId}:" . ($tradeId ?? $sym),
+                'title' => 'SL/TP de la estrategia instalado',
+                'body'  => "{$account} · {$ref}{$side}: el SL/TP de la estrategia ya está en Bybit"
+                    . (isset($data['sl']) ? ' (SL ' . self::num($data['sl']) . (isset($data['tp']) ? ' / TP ' . self::num($data['tp']) : '') . ')' : '')
+                    . '.',
+            ],
             default => null,
         };
     }

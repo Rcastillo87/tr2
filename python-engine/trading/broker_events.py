@@ -28,6 +28,8 @@ EVENTS = frozenset({
     'reconcile_closed',     # cerrado en TR2 con los números de Bybit (ya no existía en Bybit)
     'reconcile_adopted',    # posición de Bybit adoptada (sin registro o huérfana)
     'reconcile_discarded',  # apertura huérfana descartada: nunca llegó a Bybit
+    'protection_failed',    # Bybit no aceptó el SL/TP de la estrategia: la posición sigue con el stop provisional
+    'protection_restored',  # el SL/TP de la estrategia quedó instalado en Bybit
 })
 
 

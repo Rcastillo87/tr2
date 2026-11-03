@@ -920,6 +920,21 @@ class RealTrader:
                     return []
         return raw if isinstance(raw, list) else []
 
+    PROTECTION_FAILED = ('sl_tp_final_failed', 'sl_tp_realign_failed')
+    PROTECTION_OK = ('sl_tp_final_set', 'sl_tp_realigned')
+
+    async def _protection_alerted(self, trade_id: int) -> bool:
+        """True si el último registro de protección del trade es un fallo (incidente abierto, ya avisado)."""
+        async with self.pool.acquire() as conn:
+            raw = await conn.fetchval("SELECT audit_log FROM real_trades WHERE id = $1", trade_id)
+        for entry in reversed(self._audit_list(raw)):
+            action = entry.get('action') if isinstance(entry, dict) else None
+            if action in self.PROTECTION_FAILED:
+                return True
+            if action in self.PROTECTION_OK:
+                return False
+        return False
+
     async def log_audit(self, trade_id: int, action: str, data: dict):
         """Agrega una entrada al audit_log del trade."""
         try:
@@ -1279,7 +1294,11 @@ class RealTrader:
             symbol, sl, tp1, trailing_stop=trailing_stop_price, active_price=active_price
         )
         if not ts_ok:
-            logger.error(f"[REAL] trading-stop fallo para {symbol} — posicion con SL provisional")
+            # REAL-01: la posición queda con el SL/TP provisional de la orden; el monitor reintenta cada minuto.
+            logger.error(f"[REAL] trading-stop fallo para {symbol} #{trade_id} — posicion con SL provisional")
+            await self.log_audit(trade_id, 'sl_tp_final_failed', {'sl': sl, 'tp': tp1, 'avg_price': avg_price})
+            await emit_event(self.pool, sub['broker_account_id'], 'protection_failed', trade_id, symbol=symbol,
+                             side=side, strategy=sub['strategy'], sl=sl, tp=tp1, stage='open')
         else:
             await self.log_audit(trade_id, 'sl_tp_final_set', {
                 'sl': sl, 'tp': tp1, 'avg_price': avg_price
@@ -1653,9 +1672,25 @@ class RealTrader:
             if not (strategy.trailing_mode == "fixed" and trade.get("trailing_applied")):
                 ex_sl = float(position.get("stopLoss") or 0)
                 ex_tp = float(position.get("takeProfit") or 0)
-                if sl > 0 and (abs(ex_sl - sl) > entry * 1e-4 or abs(ex_tp - tp) > entry * 1e-4):
-                    if await client.set_trading_stop(symbol, sl, tp):
-                        logger.warning(f"[MONITOR] {symbol} #{trade_id}: SL/TP en Bybit ({ex_sl}/{ex_tp}) alineados a DB ({sl}/{tp})")
+                mismatch = sl > 0 and (abs(ex_sl - sl) > entry * 1e-4 or abs(ex_tp - tp) > entry * 1e-4)
+                aligned = (await client.set_trading_stop(symbol, sl, tp)) if mismatch else True
+                if mismatch and aligned:
+                    logger.warning(f"[MONITOR] {symbol} #{trade_id}: SL/TP en Bybit ({ex_sl}/{ex_tp}) alineados a DB ({sl}/{tp})")
+                alerted = await self._protection_alerted(trade_id)
+                if aligned and alerted:   # cierra el incidente abierto (también si se corrigió a mano en Bybit)
+                    await self.log_audit(trade_id, 'sl_tp_realigned', {'sl': sl, 'tp': tp, 'exchange_sl': ex_sl,
+                                                                       'exchange_tp': ex_tp})
+                    await emit_event(self.pool, account_id, 'protection_restored', trade_id, symbol=symbol,
+                                     side=side, sl=sl, tp=tp)
+                elif not aligned:
+                    logger.error(f"[MONITOR] {symbol} #{trade_id}: Bybit no acepta el SL/TP ({sl}/{tp}); "
+                                 f"sigue con {ex_sl}/{ex_tp}, se reintenta el próximo ciclo")
+                    if not alerted:   # abre el incidente una sola vez (no un registro por minuto)
+                        await self.log_audit(trade_id, 'sl_tp_realign_failed', {'sl': sl, 'tp': tp, 'exchange_sl': ex_sl,
+                                                                                'exchange_tp': ex_tp})
+                        await emit_event(self.pool, account_id, 'protection_failed', trade_id, symbol=symbol,
+                                         side=side, strategy=trade.get('strategy'), sl=sl, tp=tp,
+                                         exchange_sl=ex_sl or None, exchange_tp=ex_tp or None, stage='monitor')
 
             current_price = price_cache.get(symbol)
             if current_price is None:

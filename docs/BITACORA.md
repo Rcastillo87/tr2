@@ -12,10 +12,35 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (la cuenta 11 se puede reanudar tras reiniciar el motor), aviso al dueño si falla `set_trading_stop` (REAL-01).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov. Siguen REAL-02 y demás de la lista.
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Aviso cuando Bybit no acepta el SL/TP de la estrategia (REAL-01)
+
+### Resumen para el dueño
+- Si Bybit rechazaba el SL/TP de la estrategia al abrir, la posición quedaba con el **stop provisional de la orden (2 % / 4 %)** y nadie se enteraba: solo una línea en el log. El monitor ya reintentaba alinearlo cada minuto, pero si seguía fallando lo hacía en silencio.
+- Verificado antes del fix con una sonda: apertura → `open_trade` devuelve éxito, la fila queda `open` con el SL/TP de la estrategia que no está en Bybit, cero avisos y la auditoría solo dice `opened`; monitor → reintenta, falla y no deja log, error ni aviso.
+- Ahora es un **incidente en la campana**: «SL/TP de la estrategia no instalado» (error, uno por trade, no se repite cada minuto) y «SL/TP de la estrategia instalado» cuando el monitor lo logra o si lo corriges a mano en Bybit.
+- Decisión del dueño (03-nov): **solo avisar** (opción A). El bot no cierra la posición por esto; sigue con el stop provisional y reintenta cada minuto.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | Eventos `protection_failed` / `protection_restored` (`broker_events.py` y textos en `BrokerEventMessages.php`, modo incidente `open` / `resolve` por trade); auditoría `sl_tp_final_failed`, `sl_tp_realign_failed` y `sl_tp_realigned`; el estado del incidente se lee de `audit_log` (sobrevive a reinicios); el monitor deja log de error si Bybit rechaza el realineado y ya no llama a Bybit cuando el SL/TP ya coincide | `tests/Forensic/real_protection_test.py`: 15 casos en PASS (apertura, monitor, deduplicación, cierre del incidente, corrección manual, flujo completo); antes del parche 10 FALLOS; 6 mutaciones detectadas. `broker_event_messages_test.php`: textos nuevos y que **todo evento del motor tenga aviso** (16); antes 8 FALLOS. Regresión: 17 suites Python y la PHP en TODO OK |
+
+### Cambios fuera de git
+- Reiniciar `trading2-engine`. Horizon no hace falta: `BrokerEventMessages` solo lo usa `broker:events` (cron, proceso nuevo cada minuto).
+
+### Comportamiento a conocer
+- Mientras el incidente está abierto, la DB muestra el SL/TP de la estrategia aunque en Bybit siga el provisional: el aviso lo dice y el monitor sigue intentando.
+- El monitor consulta `audit_log` de cada posición abierta una vez por minuto (una consulta por trade; despreciable con pocas posiciones).
+
+### Pendientes que deja
+- REAL-02: el SL/TP provisional es genérico (2 % / 4 %), no el de la estrategia; con un SL de estrategia más ajustado, mientras dura el incidente el riesgo es mayor que el configurado.
 
 ---
 
@@ -34,7 +59,7 @@
 | (este) | `RealTrader.check_new_signals` con salida por señal opuesta (señal con la estrategia viva, banderas del snapshot, la vela de la señal debe cerrar después de la entrada, el régimen no se mira para salir, señal consumida no reabre); `get_open_trade_for_subscription`; `_process_account` evalúa las suscripciones aunque la cuenta esté pausada o con kill switch, con `entries_allowed=False`; `opposite_exit_rule()` compartida por Paper y Real; `close_on_opposite` / `exit_on_opposite` leídos con `as_flag` | `tests/Forensic/real_opposite_test.py`: paridad Real vs motor vela por vela (16, 10, 10 y 8 operaciones, 3 ticks por vela) y 27 casos en PASS; antes del parche 16 FALLOS; 7 mutaciones detectadas. `broker_events_test.py` C6/C7 actualizados al contrato nuevo (cuenta pausada: monitor + señales sin entradas). Regresión sin base: 16 suites en TODO OK; `backtest_elements_test.py --synthetic` igual a la línea base |
 
 ### Cambios fuera de git
-- **Reiniciar `trading2-engine`** (sin búsquedas ni órdenes Real `pending_*`). Horizon no hace falta (no cambió PHP).
+- Instalado con el parche **p04** (`/root/patches/p04/`, originales en `orig/`): md5 de origen y destino OK, 13 pruebas forenses en TODO OK en el servidor, `trading2-engine` reiniciado (sin búsquedas ni órdenes Real `pending_*`) y activo desde **Tue 2026-11-03 15:56:17 UTC**; `main` subido (`e96f734..0d512d8`). Incluye también el commit de `allow_short`.
 
 ### Comportamiento a conocer
 - Desde el reinicio, las cuentas Real con configs que usan la regla (VWAP BTC H4, LINK H4, ENA H4, 1000PEPE H4, XRP H2) tendrán más cierres y operaciones inversas, como Paper desde el 03-nov 08:41 UTC.
@@ -61,7 +86,7 @@
 | (este) | `as_flag()` y `allows_side()` en `BaseStrategy`; el motor, `PaperTrader.check_new_signals` y `RealTrader.check_new_signals` deciden la dirección con `allows_side` (Real antes de consultar la base y de pedir precio) | `tests/Forensic/allow_short_test.py`: F1, P1-P8 (paridad Paper vs motor con `close_on_opposite` y `exit_on_opposite`, 8 operaciones cada una) y R1-R5 en PASS; antes del parche 12 FALLOS con los controles (P4, R3-R5) en PASS; 3 mutaciones detectadas (sin chequeo Paper, sin chequeo Real, sin `as_flag`). Regresión sin base: 15 suites Python en TODO OK; `backtest_elements_test.py --synthetic` (3 meses) con salida idéntica antes y después |
 
 ### Cambios fuera de git
-- Ninguno todavía. **Para que aplique hay que reiniciar `trading2-engine`** (sin búsquedas ni órdenes Real pendientes) y Horizon no hace falta (no cambió PHP).
+- Instalado con p04 junto con BP-02 (motor reiniciado Tue 2026-11-03 15:56:17 UTC).
 
 ### Pendientes que deja
 - Cierre por señal opuesta en **Real** (BP-02) y aviso si falla `set_trading_stop` (REAL-01).
