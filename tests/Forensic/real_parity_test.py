@@ -126,6 +126,9 @@ class FakeClient:
     async def get_min_qty(self, symbol):
         return 0.001, 0.001
 
+    async def get_lot_size(self, symbol):   # REAL-11: lote real de la moneda (aquí, el de BTCUSDT)
+        return 0.001, 0.001
+
     async def get_closed_pnl_history(self, symbol, entry, since, limit=20):
         return self.history
 

@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -39,7 +40,7 @@ from collectors.bars import bars_frame
 from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
-from backtesting.strategies.base_strategy import opposite_exit_rule
+from backtesting.strategies.base_strategy import opposite_exit_rule, NATIVE_TRAILING_MIN_BUFFER_PCT
 from trading.broker_events import emit_event
 
 load_dotenv()
@@ -51,7 +52,8 @@ BYBIT_MAINNET = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 BYBIT_DEMO_URL = os.getenv('BYBIT_DEMO_URL', 'https://api-demo.bybit.com')  # Bybit Demo Trading (precios reales)
 
 
-def compute_native_trailing_params(entry_price, side, trailing_distance_pct, buffer_pct=0.003):
+def compute_native_trailing_params(entry_price, side, trailing_distance_pct,
+                                   buffer_pct=NATIVE_TRAILING_MIN_BUFFER_PCT / 100):
     """
     Calcula trailingStop (distancia en precio absoluto, no %) y activePrice
     (nivel donde arma el trailing nativo de Bybit) a partir del
@@ -105,6 +107,20 @@ BYBIT_AUTH_FAIL_CODES = {10003, 10004, 10005, 10010, 33004}
 # ─────────────────────────────────────────────────────────────────
 # Cliente Bybit autenticado
 # ─────────────────────────────────────────────────────────────────
+
+# Tamaño mínimo y paso de cada moneda (REAL-11): casi nunca cambian, se guardan 6 h por entorno y moneda.
+# Si Bybit falla se usa el último dato real; sin ninguno, no se opera (nunca un valor inventado).
+LOT_CACHE_TTL_SECONDS = 6 * 3600
+_LOT_CACHE: dict[tuple[str, str], tuple[float, float, float]] = {}
+
+
+def floor_to_step(qty: float, step: float) -> float:
+    """Redondea hacia abajo al paso de Bybit sin perder un paso por error de coma flotante (0.3 / 0.1 = 2.999…)."""
+    if step <= 0:
+        return qty
+    decimals = max(0, -int(math.floor(math.log10(step))))
+    return round(math.floor(qty / step + 1e-9) * step, decimals)
+
 
 class BybitAPIError(Exception):
     """Error real de comunicacion con la API de Bybit (HTTP/retCode/red).
@@ -304,8 +320,16 @@ class BybitClient:
                 continue
         return None
 
-    async def get_min_qty(self, symbol: str) -> tuple[float, float]:
-        """Obtiene el lot size minimo y qty step para un simbolo."""
+    async def get_lot_size(self, symbol: str) -> tuple[float, float] | None:
+        """
+        (minOrderQty, qtyStep) reales de la moneda (REAL-11). Caché de 6 h; si Bybit falla, el último dato real
+        conocido; si nunca se obtuvo, None (quien abre no envía la orden).
+        """
+        key = (self.base_url, symbol)
+        cached = _LOT_CACHE.get(key)
+        now = time.time()
+        if cached and now - cached[2] < LOT_CACHE_TTL_SECONDS:
+            return cached[0], cached[1]
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(
@@ -313,21 +337,25 @@ class BybitClient:
                     params={'category': 'linear', 'symbol': symbol},
                 )
             data = r.json()
-            if data.get('retCode') != 0:
-                return 0.001, 0.001
+            items = (data.get('result') or {}).get('list') or [] if data.get('retCode') == 0 else []
+            lot = items[0].get('lotSizeFilter', {}) if items else {}
+            min_qty = float(lot.get('minOrderQty') or 0)
+            qty_step = float(lot.get('qtyStep') or min_qty or 0)
+            if min_qty > 0 and qty_step > 0:
+                _LOT_CACHE[key] = (min_qty, qty_step, now)
+                logger.info(f"[BYBIT] {symbol} minQty={min_qty} qtyStep={qty_step}")
+                return min_qty, qty_step
+            logger.error(f"[BYBIT] {symbol}: instruments-info sin lote válido (retCode={data.get('retCode')})")
+        except Exception as e:
+            logger.error(f"[BYBIT] {symbol}: instruments-info falló: {e}")
+        if cached:
+            logger.warning(f"[BYBIT] {symbol}: se usa el último lote conocido minQty={cached[0]} qtyStep={cached[1]}")
+            return cached[0], cached[1]
+        return None
 
-            items = data['result']['list']
-            if not items:
-                return 0.001, 0.001
-
-            lot_filter = items[0].get('lotSizeFilter', {})
-            min_qty  = float(lot_filter.get('minOrderQty', 0.001))
-            qty_step = float(lot_filter.get('qtyStep', min_qty))
-            logger.info(f"[BYBIT] {symbol} minQty={min_qty} qtyStep={qty_step}")
-            return min_qty, qty_step
-
-        except Exception:
-            return 0.001, 0.001
+    async def get_min_qty(self, symbol: str) -> tuple[float, float]:
+        """Solo para los scripts de prueba demo: el lote real o (0.001, 0.001). La operación usa get_lot_size."""
+        return await self.get_lot_size(symbol) or (0.001, 0.001)
 
     @staticmethod
     def new_order_link_id() -> str:
@@ -1140,16 +1168,20 @@ class RealTrader:
             logger.warning(f"[REAL] Tamaño calculado <= 0 para {symbol}")
             return False
 
-        # 4. Verificar lot size minimo y redondear al step size
-        min_qty, qty_step = await client.get_min_qty(symbol)
+        # 4. Lote real de la moneda (REAL-11): sin él no se envía la orden (antes se inventaba 0.001 / 0.001)
+        lot = await client.get_lot_size(symbol)
+        if lot is None:
+            logger.error(f"[REAL] {symbol}: Bybit no entregó el tamaño mínimo / paso de la moneda — no se opera")
+            await emit_event(self.pool, sub['broker_account_id'], 'open_rejected', symbol=symbol, side=side,
+                             strategy=sub['strategy'],
+                             reason='Bybit no entregó el tamaño mínimo / paso de la moneda; no se envió la orden')
+            return False
+        min_qty, qty_step = lot
         if size < min_qty:
             logger.warning(f"[REAL] Tamaño {size} < minimo {min_qty} para {symbol}")
             return False
-        # Redondear al step size (ej. SOLUSDT = 0.1, BTCUSDT = 0.001)
-        if qty_step > 0:
-            decimals = max(0, -int(math.floor(math.log10(qty_step))))
-            size = round(math.floor(size / qty_step) * qty_step, decimals)
-        if size <= 0:
+        size = floor_to_step(size, qty_step)   # ej. BTCUSDT 0.001, NEARUSDT 0.1, DOGEUSDT 1
+        if size <= 0 or size < min_qty:
             logger.warning(f"[REAL] Tamaño tras redondeo <= 0 para {symbol}")
             return False
 
@@ -1314,7 +1346,10 @@ class RealTrader:
             # activePrice == entry_price exacto, Bybit lo rechazo con
             # 'TrailingProfit... should be less than session_average_price',
             # dejando la posicion con SL/TP provisional (5%/10%) sin trailing.
-            buffer_pct = (configured_buffer / 100) if configured_buffer and configured_buffer > 0 else 0.003
+            # REAL-10 (revisado 2026-11-03): el mínimo es la constante compartida con el backtest y Paper
+            # (NATIVE_TRAILING_MIN_BUFFER_PCT): los tres activan el trailing en el mismo punto con buffer 0.
+            buffer_pct = ((configured_buffer if configured_buffer and configured_buffer > 0
+                           else NATIVE_TRAILING_MIN_BUFFER_PCT) / 100)
             trailing_stop_price, active_price = compute_native_trailing_params(
                 avg_price, side, strategy_instance.trailing_distance_pct, buffer_pct=buffer_pct
             )
