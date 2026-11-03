@@ -201,8 +201,25 @@ class BybitClient:
         headers['Content-Type'] = 'application/json'
         return headers
 
+    @staticmethod
+    def _positive(value) -> float | None:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        return v if v > 0 else None
+
     async def get_balance(self) -> float | None:
-        """Obtiene el balance disponible (USDT) de la cuenta UNIFIED."""
+        """
+        Capital base para dimensionar (REAL-06): saldo REALIZADO de la cuenta UNIFIED, la misma base que el backtest
+        (balance × riesgo % / distancia al SL). A propósito NO es el saldo libre (totalAvailableBalance): con
+        posiciones abiertas ese saldo baja y cada entrada nueva saldría más chica que en el backtest; si falta
+        margen, Bybit rechaza la orden y llega el aviso open_rejected.
+          1. walletBalance de USDT (saldo realizado del colateral USDT).
+          2. Si USDT no tiene saldo (colateral en otra moneda): totalWalletBalance de la cuenta (USD, realizado).
+        availableToWithdraw no se usa: Bybit lo devuelve vacío en cuentas unificadas desde 2025-01-09.
+        None = no se pudo saber; 0.0 = la cuenta no tiene saldo.
+        """
         params = {'accountType': 'UNIFIED', 'coin': 'USDT'}
         try:
             r = await self._signed_get('/v5/account/wallet-balance', params)
@@ -213,30 +230,19 @@ class BybitClient:
             if data.get('retCode') != 0:
                 logger.error(f"[BYBIT] get_balance error: {data.get('retMsg')}")
                 return None
-
-            accounts = data['result']['list']
+            accounts = (data.get('result') or {}).get('list') or []
             if not accounts:
                 return None
-
-            coins = accounts[0].get('coin', [])
-            for coin in coins:
-                if coin.get('coin') == 'USDT':
-                    logger.info(f"[BYBIT] USDT coin data: {dict(coin)}")
-                    for field in ['availableToWithdraw', 'walletBalance', 'equity', 'totalOrderIM']:
-                        val = coin.get(field, '')
-                        if val and val != '' and val != '0':
-                            logger.info(f"[BYBIT] Using field {field}={val}")
-                            return float(val)
-                    return 0.0
-
-            # Si no hay USDT en coins, usar totalEquity
-            logger.info(f"[BYBIT] Account data: totalEquity={accounts[0].get('totalEquity')} totalAvailableBalance={accounts[0].get('totalAvailableBalance')}")
-            for field in ['totalAvailableBalance', 'totalEquity']:
-                val = accounts[0].get(field, '')
-                if val and val != '':
-                    return float(val)
+            account = accounts[0]
+            usdt = next((c for c in account.get('coin') or [] if c.get('coin') == 'USDT'), {})
+            balance = self._positive(usdt.get('walletBalance'))
+            if balance is not None:
+                return balance
+            total = self._positive(account.get('totalWalletBalance'))
+            if total is not None:
+                logger.warning(f"[BYBIT] get_balance: USDT sin saldo, se usa totalWalletBalance={total} (otro colateral)")
+                return total
             return 0.0
-
         except Exception as e:
             logger.error(f"[BYBIT] get_balance exception: {e}")
             return None
@@ -364,6 +370,9 @@ class BybitClient:
         """
         Orden MARKET idempotente.
           - Apertura: lleva SL/TP provisionales (2 % / 4 %) hasta fijar los de la estrategia con trading-stop.
+            Decisión de diseño (revisada 2026-11-03, REAL-02): NO usar aquí el SL/TP de la estrategia. Con ellos Bybit
+            rechazaba aperturas (10001 stopLoss/takeProfit) y las posiciones quedaban huérfanas (commit 3170f98,
+            2026-06-28). set_trading_stop los reemplaza tras el fill; si falla, aviso protection_failed (REAL-01).
           - Cierre (reduce_only=True): sin SL/TP y con reduceOnly; si la posición ya no existe, Bybit la
             rechaza en vez de abrir una posición en sentido contrario.
         Todos los intentos usan el mismo orderLinkId. Tras una respuesta ambigua (red, timeout, no-JSON)

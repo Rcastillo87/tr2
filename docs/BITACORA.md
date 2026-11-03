@@ -12,10 +12,31 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov. Siguen REAL-02 y demás de la lista.
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov. Siguen REAL-07 (leverage) y demás de la lista.
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Saldo de Real explícito (REAL-06) y REAL-02 se mantiene por diseño
+
+### Resumen para el dueño
+- **REAL-06 (saldo):** el código buscaba primero `availableToWithdraw`, que Bybit devuelve vacío en cuentas unificadas desde el 09-01-2025, y **por casualidad** caía en `walletBalance` (saldo realizado), que es justo la base correcta. Ahora lo lee explícitamente y deja escrito por qué.
+- **No se siguió la recomendación de la auditoría** (usar el saldo libre `totalAvailableBalance`): con posiciones abiertas bajaría y cada entrada nueva saldría más chica que en el backtest. Si falta margen, Bybit rechaza y llega el aviso «Orden rechazada en Bybit».
+- Bug real que se cierra: con colateral en otra moneda (USDT en 0) tomaba un campo de margen de órdenes como saldo (ej. 5 USDT). Ahora usa el saldo total de la cuenta.
+- **Con la cuenta 11 (USDT) el resultado es idéntico** al de antes.
+- **REAL-02 (SL/TP provisional 2 % / 4 %):** revisado con el dueño y **se mantiene por diseño**. Motivo: en junio, con el SL/TP de la estrategia dentro de la orden, Bybit rechazaba aperturas (`10001` stopLoss/takeProfit) y las posiciones quedaban huérfanas; el provisional se puso «para garantizar aceptación» (commit `3170f98`, 2026-06-28). Dura segundos y, si el definitivo falla, llega el aviso de REAL-01. El motivo quedó escrito en el código (`place_market_order`) y en `docs/02_TECHNICAL.md` para que ninguna auditoría futura lo trate como fallo.
+- Confirmado con el dueño: editar un backtest implementado actualiza Paper y Real en el siguiente minuto (Real lee la misma config); quitarlo de Paper detiene las entradas Real y **la posición Real abierta sigue hasta su SL/TP** (opción A, sin cambios).
+- Lectura de base 03-nov: ninguna config tiene `allow_short` / `close_on_opposite` / `exit_on_opposite` guardados como texto (0 filas): la lectura tolerante de banderas no cambia ninguna config actual. Real sin trades todavía; 8 suscripciones en la cuenta 11 (demo).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `BybitClient.get_balance`: `walletBalance` de USDT, si no `totalWalletBalance`; sin `availableToWithdraw` ni `totalOrderIM`; `None` = no se pudo saber, `0.0` = sin saldo. Comentario de diseño de REAL-02 en `place_market_order`; `docs/02_TECHNICAL.md` actualizado | `tests/Forensic/real_balance_test.py`: 11 casos en PASS; antes del parche 4 FALLOS (B1 y B2, cuenta USDT, pasan antes y después: mismo resultado); 3 mutaciones detectadas. Regresión: 18 suites Python y la PHP en TODO OK |
+
+### Cambios fuera de git
+- Reiniciar `trading2-engine` (sin búsquedas ni órdenes Real `pending_*`).
 
 ---
 
@@ -33,7 +54,7 @@
 | (este) | Eventos `protection_failed` / `protection_restored` (`broker_events.py` y textos en `BrokerEventMessages.php`, modo incidente `open` / `resolve` por trade); auditoría `sl_tp_final_failed`, `sl_tp_realign_failed` y `sl_tp_realigned`; el estado del incidente se lee de `audit_log` (sobrevive a reinicios); el monitor deja log de error si Bybit rechaza el realineado y ya no llama a Bybit cuando el SL/TP ya coincide | `tests/Forensic/real_protection_test.py`: 15 casos en PASS (apertura, monitor, deduplicación, cierre del incidente, corrección manual, flujo completo); antes del parche 10 FALLOS; 6 mutaciones detectadas. `broker_event_messages_test.php`: textos nuevos y que **todo evento del motor tenga aviso** (16); antes 8 FALLOS. Regresión: 17 suites Python y la PHP en TODO OK |
 
 ### Cambios fuera de git
-- Reiniciar `trading2-engine`. Horizon no hace falta: `BrokerEventMessages` solo lo usa `broker:events` (cron, proceso nuevo cada minuto).
+- Instalado con **p05** (`/root/patches/p05/`): md5 OK, 14 pruebas Python + 2 PHP (incluida `broker_events_drain_test.php` con Laravel, transacción revertida) en TODO OK, `trading2-engine` activo desde **Tue 2026-11-03 16:13:30 UTC**, `main` subido (`0d512d8..b8e2b7e`). Horizon no hace falta: `BrokerEventMessages` solo lo usa `broker:events` (cron, proceso nuevo cada minuto).
 
 ### Comportamiento a conocer
 - Mientras el incidente está abierto, la DB muestra el SL/TP de la estrategia aunque en Bybit siga el provisional: el aviso lo dice y el monitor sigue intentando.
