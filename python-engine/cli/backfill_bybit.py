@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
 from collectors.broker_resolver import interval_delta  # noqa: E402
-from collectors.ohlcv_collector import BYBIT_BASE_URL, BYBIT_LIMIT, OhlcvCollector  # noqa: E402
+from collectors.ohlcv_collector import BYBIT_BASE_URL, BYBIT_LIMIT, OhlcvCollector, valid_bar  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger('backfill_bybit')
@@ -78,11 +78,6 @@ def floor_to_interval(dt: datetime, interval: str) -> datetime:
     step = interval_delta(interval)
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     return epoch + ((dt - epoch) // step) * step
-
-
-def valid_bar(b: dict) -> bool:
-    return (b['low'] > 0 and b['low'] <= min(b['open'], b['close'])
-            and b['high'] >= max(b['open'], b['close']) and b['volume'] >= 0)
 
 
 async def fetch_window(client: httpx.AsyncClient, limiter: RateLimiter, symbol: str, interval: str,

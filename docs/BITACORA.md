@@ -12,10 +12,27 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13); siguen C-04 a C-12, luego formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14); siguen C-05 a C-12, luego formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — Collector: barrera única contra velas inválidas (C-04)
+
+### Resumen para el dueño
+- La ingesta guardaba velas sin validarlas: de los 6 caminos que escriben (descarga automática, carga inicial, reparación diaria, auditoría histórica, importación manual y backfill) solo el backfill validaba, y de forma incompleta (sin NaN/infinito ni horario). Verificado antes del fix: `low > high`, volumen negativo, NaN y vela fuera de horario se guardaban.
+- Ahora hay **una sola barrera en `save_bars`** (el único punto de escritura, así cubre los 6 caminos): números finitos, `low > 0`, `low ≤ min(open, close)`, `high ≥ max(open, close)`, `high ≥ low`, `volume ≥ 0` y hora alineada a su intervalo. Volumen 0 y precio plano siguen siendo válidos.
+- Una vela inválida **no se guarda** (log con el ejemplo; nunca se corrige un precio por cuenta propia); si deja un hueco, la validación diaria lo marca. El backfill usa la misma regla (`valid_bar` compartida).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `bar_problem()` / `valid_bar()` en `ohlcv_collector.py`; `save_bars` descarta y registra las inválidas (`last_rejected`); `backfill_bybit.py` usa la regla compartida | `tests/Forensic/collector_ingest_test.py`: 23 casos en PASS (12 tipos de vela inválida, 6 válidas incluidas volumen 0 / precio plano / 1D / 4h, tanda mezclada, descarga automática, backfill); antes del cambio las 4 inválidas de la sonda se guardaban; 5 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- Se instala con p14 y reinicio de `trading2-engine` (el collector corre en el motor). Incluye una lectura de solo lectura: velas de los últimos 7 días que fallarían la regla (debe ser 0).
 
 ---
 
@@ -35,7 +52,7 @@
 | (este) | `cli/collector_audit.py` (`run_audit`, cursor); `collector_repair.py` la ejecuta (`--audit-budget`, 0 = no auditar) y la integra en el resultado; `SystemAlerts` avisa hallazgos | `tests/Forensic/collector_audit_test.py`: 21 casos en PASS (vela vieja corrupta y faltante reparadas, sobrante no borrado, cursor y vuelta completa, zona de recientes intacta, turnos, simulación, escritura fallida, tiempo, 403, serie corta, cursor en disco, integración); `collector_validation_alert_test.php` con 3 casos nuevos; 6 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- Se instala con p13: reinicio ordenado de Horizon (el job diario carga `SystemAlerts`); el motor no hace falta. El cursor se crea solo en la primera noche (04:00).
+- Instalado con **p13**: 21 pruebas Python + 2 PHP en TODO OK; **simulación real de solo lectura** (BTCUSDT, 5 consultas): 7/7 series OK y **5.000 velas antiguas comparadas con Bybit, 0 diferencias**; Horizon reiniciado de forma ordenada (1569225 → 1573050); motor sin reinicio; `main` subido (`23b6b20..936fdf9`). La primera auditoría real corre el 04-nov a las 04:00.
 
 ---
 

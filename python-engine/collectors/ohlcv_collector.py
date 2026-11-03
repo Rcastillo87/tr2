@@ -9,11 +9,13 @@ import asyncio
 import asyncpg
 import httpx
 import logging
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import os
 from dotenv import load_dotenv
 from collectors.bybit_http import get_json, BybitRateLimited
+from collectors.broker_resolver import INTERVAL_MINUTES
 
 load_dotenv()
 
@@ -28,6 +30,39 @@ RUN_HTTP_TIMEOUT_S = 10.0    # timeout por petición en la corrida automática (
 RATE_LIMIT_ABORT_AFTER = 3  # series seguidas limitadas por Bybit que cortan el resto de la corrida (C-02)
 COLLECT_CONCURRENCY = 4  # series en paralelo (pool "live" = 10 conexiones compartidas con los ticks; Bybit sobra)
 HISTORY_DAYS = 730  # 2 años (Bybit, sin limite de cuota)
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def bar_problem(b: dict) -> str | None:
+    """
+    Motivo por el que una vela NO se puede guardar (None = válida). Barrera única de escritura (C-04): la usan
+    save_bars (descarga automática, carga inicial, reparación, auditoría, importación) y el backfill.
+    Nunca se corrige un precio: una vela inválida no se guarda y la validación diaria marca el hueco.
+    """
+    try:
+        o, h, lo, c, v = (float(b[k]) for k in ('open', 'high', 'low', 'close', 'volume'))
+    except (KeyError, TypeError, ValueError):
+        return 'campos faltantes o no numéricos'
+    if not all(math.isfinite(x) for x in (o, h, lo, c, v)):
+        return 'NaN o infinito'
+    if lo <= 0:
+        return 'precio <= 0'
+    if lo > min(o, c) or h < max(o, c) or h < lo:
+        return 'OHLC incoherente (low/high fuera de rango)'
+    if v < 0:
+        return 'volumen negativo'
+    t, minutes = b.get('time'), INTERVAL_MINUTES.get(str(b.get('interval')))
+    if not isinstance(t, datetime) or t.tzinfo is None:
+        return 'hora sin zona horaria'
+    if minutes and (t - _EPOCH) % timedelta(minutes=minutes):   # intervalo desconocido: sin chequeo de horario
+        return 'hora fuera del horario del intervalo'
+    return None
+
+
+def valid_bar(b: dict) -> bool:
+    return bar_problem(b) is None
 
 
 class OhlcvCollector:
@@ -139,8 +174,20 @@ class OhlcvCollector:
         El WHERE evita reescribir filas idénticas (WAL y bloat innecesarios).
         broker debe ser el real de collector_configs (no asumir 'bybit').
         """
+        self.last_rejected = 0
         if not bars:
             return 0
+        bad = [(b, bar_problem(b)) for b in bars]
+        bad = [(b, why) for b, why in bad if why]
+        if bad:   # C-04: ninguna vela inválida llega a ohlcv_data
+            self.last_rejected = len(bad)
+            b0, why0 = bad[0]
+            logger.error(f"[Collector] {len(bad)} vela(s) inválida(s) NO guardadas ({b0.get('symbol')} {b0.get('interval')} "
+                         f"{b0.get('time')}: {why0})")
+            rejected = {id(b) for b, _ in bad}
+            bars = [b for b in bars if id(b) not in rejected]
+            if not bars:
+                return 0
 
         series: dict[tuple[str, str], list[dict]] = {}
         for b in bars:
