@@ -12,10 +12,32 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03; latente: ninguna config lo desactiva ni la interfaz lo ofrece), cierre por señal opuesta en **Real** (BP-02; Paper hecho; no reanudar la cuenta 11 antes), aviso al dueño si falla `set_trading_stop` (REAL-01).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, cierre por señal opuesta en **Real** (BP-02; Paper hecho; no reanudar la cuenta 11 antes), aviso al dueño si falla `set_trading_stop` (REAL-01).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — `allow_short` en Paper y Real (BP-01 / REAL-03)
+
+### Resumen para el dueño
+- Con `allow_short` desactivado, Paper y Real abrían Short igual; solo el backtest lo respetaba. Ahora los tres usan **una sola regla** (`BaseStrategy.allows_side`).
+- Con `close_on_opposite` y sin Short, una señal corta cierra el Long y **no** reversa (igual que el motor).
+- `allow_short` llegado como texto (`"false"`, `"0"`, `"off"`) ya vale falso; antes `bool("false")` era verdadero.
+- Era latente: ninguna config lo desactiva hoy y la interfaz no lo ofrece. Sin cambio de comportamiento para las configs actuales (default sigue siendo permitir Short).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `as_flag()` y `allows_side()` en `BaseStrategy`; el motor, `PaperTrader.check_new_signals` y `RealTrader.check_new_signals` deciden la dirección con `allows_side` (Real antes de consultar la base y de pedir precio) | `tests/Forensic/allow_short_test.py`: F1, P1-P8 (paridad Paper vs motor con `close_on_opposite` y `exit_on_opposite`, 8 operaciones cada una) y R1-R5 en PASS; antes del parche 12 FALLOS con los controles (P4, R3-R5) en PASS; 3 mutaciones detectadas (sin chequeo Paper, sin chequeo Real, sin `as_flag`). Regresión sin base: 15 suites Python en TODO OK; `backtest_elements_test.py --synthetic` (3 meses) con salida idéntica antes y después |
+
+### Cambios fuera de git
+- Ninguno todavía. **Para que aplique hay que reiniciar `trading2-engine`** (sin búsquedas ni órdenes Real pendientes) y Horizon no hace falta (no cambió PHP).
+
+### Pendientes que deja
+- Cierre por señal opuesta en **Real** (BP-02) y aviso si falla `set_trading_stop` (REAL-01).
+- `close_on_opposite`, `exit_on_opposite` y el resto de banderas siguen leyéndose con `params.get(...)` sin `as_flag`: mismo riesgo latente con texto `"false"`. Candidato a unificar en otro commit con su prueba.
 
 ---
 

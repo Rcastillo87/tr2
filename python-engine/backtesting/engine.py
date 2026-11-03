@@ -391,7 +391,6 @@ class BacktestEngine:
         step = timedelta(minutes=self.interval_minutes)
         exit_on_opposite = bool(getattr(s, 'close_on_opposite', False) or getattr(s, 'exit_on_opposite', False))
         reverse_on_opposite = not bool(getattr(s, 'exit_on_opposite', False))
-        allow_short = bool(getattr(s, 'allow_short', True))
         max_duration = int(getattr(s, 'max_duration', 0) or 0)
         equity_curve = [self.initial_balance]
         pos = None
@@ -416,7 +415,7 @@ class BacktestEngine:
             if pos is None and prev_signal != 0:
                 side = 'long' if prev_signal == 1 else 'short'
                 regime = str(regimes[i - 1])
-                if (side == 'long' or allow_short) and s.should_operate(regime):
+                if s.allows_side(side) and s.should_operate(regime):
                     entry = self._fill(opens[i], side, is_entry=True)
                     sl_pct = signal_sl[i - 1] if signal_sl is not None and not np.isnan(signal_sl[i - 1]) else s.sl_pct
                     sl = round(entry * (1 - sl_pct / 100) if side == 'long' else entry * (1 + sl_pct / 100), 8)

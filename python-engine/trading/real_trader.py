@@ -1795,6 +1795,9 @@ class RealTrader:
 
         if signal == 0:
             return f"{symbol}: sin señal"
+        side = 'long' if signal == 1 else 'short'
+        if not strategy_instance.allows_side(side):   # allow_short desactivado (misma regla que backtest y paper)
+            return f"{symbol}: señal short ignorada (short no permitido)"
         raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
         signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
         candle_time = last_closed['time']
@@ -1815,7 +1818,6 @@ class RealTrader:
         if limit:
             return f"{symbol}: límite de riesgo — {limit} (sin entrada)"
 
-        side        = 'long' if signal == 1 else 'short'
         entry_price = await client.get_market_price(symbol)
 
         if entry_price is None:

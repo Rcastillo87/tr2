@@ -666,6 +666,11 @@ class PaperTrader:
             if signal == 0:
                 results[label] = f"{symbol}: sin senal"
                 continue
+            side = 'long' if signal == 1 else 'short'
+            if not strategy.allows_side(side):   # allow_short desactivado: como el motor, ni entrada ni reversa
+                results[label] = (f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; short no permitido, "
+                                  f"sin reversa" if reversal else f"{symbol}: señal short ignorada (short no permitido)")
+                continue
 
             candle_time = last_closed['time']
             if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
@@ -684,7 +689,6 @@ class PaperTrader:
                 results[label] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
                 continue
 
-            side        = 'long' if signal == 1 else 'short'
             entry_price = px if reversal else await get_current_price(symbol)
             if entry_price is None:
                 results[label] = f"{symbol}: error obteniendo precio"

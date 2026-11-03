@@ -11,6 +11,18 @@ MACRO_EMA_SPAN = 50         # EMA 50 de los cierres H4
 MACRO_WARMUP_BARS = 300     # velas H4 de calentamiento (EMA50 converge: peso residual < 1e-5)
 REGIMES = ("TRENDING", "RANGING", "VOLATILE")
 BTC_SYMBOL = 'BTCUSDT'      # filtro 'Tendencia de BTC': la tendencia macro H4 de BTC decide en las altcoins
+_FALSE_STRINGS = frozenset({'false', '0', 'no', 'off', ''})
+
+
+def as_flag(value, default: bool) -> bool:
+    """Booleano tolerante a cómo viaja desde la UI/JSON: 'false', '0', 'off' -> False (bool('false') sería True)."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSE_STRINGS
+    return bool(value)
+
+
 class BaseStrategy(ABC):
     """
     Clase base para todas las estrategias de trading.
@@ -109,13 +121,17 @@ class BaseStrategy(ABC):
         self.trailing_atr_mult     = params.get('trailing_atr_mult', 2.0)  # Multiplicador para trailing ATR
         self.close_on_opposite     = params.get('close_on_opposite', False) # Cerrar si aparece señal contraria
         self.exit_on_opposite      = params.get('exit_on_opposite', False)  # Cerrar si aparece señal contraria (pero NO abrir la opuesta)
-        self.allow_short           = params.get('allow_short', True)        # Permite o no abrir posiciones Short
+        self.allow_short           = as_flag(params.get('allow_short'), True)  # Permite o no abrir posiciones Short
         self.max_duration_profit   = params.get('max_duration_profit', False) # Cerrar por tiempo solo si está en positivo
 
         # Proteccion por volatilidad
         self.volatility_protection_mode = params.get('volatility_protection_mode', None)  # None | "close" | "widen"
         self.volatility_atr_multiplier  = params.get('volatility_atr_multiplier', 2.5)
         self.volatility_widen_pct       = params.get('volatility_widen_pct', 1.0)
+
+    def allows_side(self, side: str) -> bool:
+        """Única regla de dirección de entrada para backtest, paper y real: el Short solo si allow_short."""
+        return side == 'long' or self.allow_short
 
     @abstractmethod
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
