@@ -12,8 +12,9 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03), cierre por señal opuesta en Paper y Real (BP-02), aviso al dueño si falla `set_trading_stop` (REAL-01).
-7. **Seguridad:** `python-engine/.env` tiene permisos 664 (legible por todos los usuarios del servidor); revisar con qué usuario corre el motor y dejarlo en 600/640. El dueño pondrá el repo en privado (estuvo público solo para validar).
+6. **Auditoría externa (31-oct):** seguir la lista de fix desde el punto 2: `allow_short` en Paper y Real (BP-01/REAL-03; latente: ninguna config lo desactiva ni la interfaz lo ofrece), cierre por señal opuesta en **Real** (BP-02; Paper hecho; no reanudar la cuenta 11 antes), aviso al dueño si falla `set_trading_stop` (REAL-01).
+7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
+8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
 
 ---
@@ -30,15 +31,20 @@
 |---|---|---|
 | `5017d2e` | Una suscripción Real solo abre posiciones si ella y su config Paper están activas (`scopeRunnable`, usado por `RealTradingAccountTickJob` y `RealTradingTickJob`); `destroyBacktest` pausa sus suscripciones y no borra si hay posición Real abierta | `tests/Forensic/real_config_gate_test.php`: A1-A5, controles con el filtro viejo, B1, C1, D1-D4 y Z1 en PASS (`TODO OK`) sobre datos reales dentro de una transacción revertida |
 | `3baaadd` | `.env.example` sin bloque PHP, sin contraseña de ejemplo ni correo personal; base `pgsql`, cola `redis` y sección TR2 con las 14 variables de `config/trading.php`; nuevo `python-engine/.env.example` con las 12 del motor | `p02.py` T1-T4 en PASS, Laravel lo parsea (52 variables), `.env` y `python-engine/.env` con md5 idéntico antes y después |
+| `c8d1223` | Paper cierra por señal opuesta (`close_on_opposite` cierra y reversa; `exit_on_opposite` solo cierra), con las reglas congeladas del trade, sin mirar el régimen para salir, con kill switch sin reversa y sin reabrir con la señal ya consumida | `tests/Forensic/paper_opposite_test.py`: paridad Paper vs motor (16 y 10 operaciones, 3 ticks por vela) y 12 casos en PASS; antes del parche 10 FALLOS; 5 mutaciones detectadas; `paper_parity_test.py` sigue en TODO OK |
 
 ### Cambios fuera de git
 - Horizon reiniciado (sin búsquedas en curso) para que los jobs carguen el código nuevo.
 - Originales respaldados en `/root/patches/p01/orig/`.
+- `trading2-engine` reiniciado (sin búsquedas ni órdenes Real pendientes) para cargar la salida por señal opuesta; activo desde Tue 2026-11-03 08:41:46 UTC. Original de `paper_trader.py` en `/root/patches/p03/orig/`.
 
 ### Comportamiento a conocer
 - Las posiciones ya abiertas se gestionan igual: ese camino no usa el filtro nuevo.
 - Reactivar una config Paper reactiva sola la entrada Real de su suscripción activa (no se pausan las suscripciones al detener).
 - Borrar un backtest con una posición Real abierta se bloquea con aviso; sin posiciones, pausa sus suscripciones antes de borrar la config.
+- **Paper cierra por señal opuesta desde el reinicio del motor (Tue 2026-11-03 08:41:46 UTC).** Afecta a las 5 configs activas que usan `close_on_opposite` (VWAP BTC H4, LINK H4, ENA H4, 1000PEPE H4 y XRP H2): más cierres y operaciones inversas. Los trades anteriores no cambian: **cualquier comparación Paper contra backtest debe empezar después de esa fecha.**
+- La salida por señal opuesta solo corre mientras la config está activa. La señal se calcula con la estrategia viva de la config; las banderas `close_on_opposite` / `exit_on_opposite` se leen del snapshot congelado del trade.
+- **Real NO la implementa todavía:** no reanudar la cuenta 11 (demo, pausada; suscripciones 92, 97 y 99 sobre configs con señal opuesta) hasta hacerlo en Real.
 
 ### Lecciones
 - Una prueba que depende del estado de los datos hace SKIP y no prueba nada: usar un fixture controlado dentro de una transacción que se revierte.
@@ -46,6 +52,8 @@
 - Para probar el «antes» sin tocar producción: controles que ejecutan el filtro viejo en la misma prueba. No poner código viejo en disco con Horizon corriendo (clases cargadas de forma perezosa).
 - La prueba C restaura todas las configs de la cuenta a activas dentro de su transacción (incluidas las que estaban apagadas); no afecta al resultado y se revierte, pero D4 lista por eso las subs 96 y 98.
 - Un `.env.example` es una plantilla que se versiona: sin código ejecutable, contraseñas ni correos reales. Una prueba estática compara sus claves con las `env()` y `os.getenv()` del código para detectar variables que falten.
+- Las pruebas de mutación (quitar una pieza del parche y comprobar que la prueba falla) destaparon dos huecos de la propia prueba: una base simulada que no leía el SQL y un caso sin cubrir. Con ticks cada minuto, `exit_on_opposite` exige bloquear la reapertura con la señal ya consumida.
+- La paridad contra el motor (mismas velas y señales, comparando operación por operación) detecta divergencias que los casos sueltos no ven.
 
 ### Pendientes que deja
 - Resto de la lista de fix de la auditoría (ver «Próxima sesión» punto 6).
