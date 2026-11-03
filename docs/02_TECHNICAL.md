@@ -874,6 +874,11 @@ Constructor: `api_key, api_secret, account_type`. Selecciona automáticamente `B
 
 **`get_min_qty(symbol)`** — consulta `instruments-info` para obtener `minOrderQty` y `qtyStep` (el incremento mínimo permitido para el tamaño de orden de ese símbolo específico). Si falla la consulta, devuelve un fallback conservador de `(0.001, 0.001)`.
 
+> **Decisiones vigentes de Real revisadas el 2026-11-03 (auditoría externa):**
+> - **REAL-13, trigger `LastPrice`:** el backtest simula con velas de `/v5/market/kline` (último precio negociado); `LastPrice` dispara SL/TP en los mismos precios. `MarkPrice` separaría Real del backtest.
+> - **REAL-14, herramientas gestionadas por el bot:** break-even, trailing ATR/escalonado, protección por volatilidad y duración máxima corren en el tick de cada minuto porque Bybit no las tiene nativas. Protegen aunque el bot caiga: SL/TP y trailing fijo **nativos** en Bybit. El vigilante (`CollectorWatchdog::checkRealTrading`) avisa si el tick de una cuenta con posiciones lleva más de `real_tick_stale_s` (180 s) sin correr; si el SL/TP definitivo no se instala, aviso `protection_failed` (REAL-01).
+> - **REAL-15, IG:** no soportado en Real (el alta solo acepta `bybit`); `ig_client.py` se retiró por no usarse (queda en el historial de git, commit `ba402fd`).
+
 > **Decisión vigente (revisada 2026-11-03, REAL-02 de la auditoría externa): el SL/TP provisional genérico se mantiene por diseño.** Se introdujo el 2026-06-28 (commit `3170f98`, «para garantizar aceptación») porque con el SL/TP de la estrategia en la orden Bybit rechazaba aperturas (`10001` stopLoss/takeProfit) y las posiciones quedaban huérfanas. Hoy los valores son 2 % / 4 % en demo y real (Demo Trading usa precios reales); `set_trading_stop` los reemplaza segundos después y, si falla, llega el aviso `protection_failed` (REAL-01). No "corregirlo" sin releer este motivo.
 
 **`place_market_order(symbol, side, qty, sl, tp)`** — coloca una orden de mercado **con SL/TP provisionales incluidos en la misma orden** (Bybit permite definir stopLoss/takeProfit junto con la orden de apertura). El cálculo de esos provisionales:
@@ -924,7 +929,7 @@ Si no se pudo obtener el `mark_price` actual (fallo de red puntual), usa los SL/
 1. `client.get_balance()` — aborta si es `None` o ≤0.
 2. `client.get_market_price(symbol)` — si el precio actual difiere más de 2% del precio de la señal original, solo loguea un warning (no aborta todavía en este punto).
 3. Calcula SL/TP1/BE sobre el precio actual de mercado (no sobre el precio de la señal). Calcula TP2 (vía `calculate_tp2` si existe) y TP3/TP4 manualmente desde los atributos `tp3_pct`/`tp4_pct` de la instancia de estrategia (no usa `calculate_tp_levels` aquí, a diferencia del motor de backtesting).
-4. Determina el `risk_pct` efectivo: `risk_override_pct` de la suscripción si está presente y no es una cadena vacía/`'None'`/`'null'`, si no el `risk_per_trade_pct` de los parámetros de la config.
+4. Determina el `risk_pct` efectivo: `risk_override_pct` de la suscripción si está presente y no es una cadena vacía/`'None'`/`'null'`, si no el `risk_per_trade_pct` de los parámetros de la config. *(Decisión vigente, revisada 2026-11-03 — REAL-12: el override existe a propósito desde el 2026-06-27 para operar demo con menos riesgo; el riesgo efectivo queda en el `config_snapshot` de cada trade. Hoy ninguna suscripción lo usa. No hay pantalla para editarlo: se cambia en la base.)*
 5. Calcula tamaño = `(balance * risk_pct/100) / |entry_signal - sl|`. Aborta si es ≤0.
 6. Consulta lote mínimo y step size, aborta si el tamaño es menor al mínimo permitido. Redondea el tamaño al step size hacia abajo (`math.floor`), calculando dinámicamente cuántos decimales de precisión corresponden a ese step (vía `log10`). Aborta de nuevo si el redondeo deja el tamaño en 0.
 7. Vuelve a consultar el balance justo antes de insertar (puede haber cambiado desde el paso 1 por otras operaciones concurrentes).

@@ -12,10 +12,26 @@
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
 4. Slippage de altcoins en demo (SOL, SUI, LINK).
 5. Reescribir `docs/01`, `02` y `03`.
-6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09). Siguen REAL-12 a REAL-15, luego Collector y formulario (en revisión con el dueño).
+6. **Auditoría externa (31-oct):** seguir la lista de fix: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Siguen Collector (C-01 a C-12) y formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
 8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-03 (Bogotá) — REAL-12 a REAL-15: decisiones documentadas e IG retirado
+
+### Resumen para el dueño
+- **REAL-12 (`risk_override_pct`):** por diseño (27-jun, `f4bb1c8`: demo con 0,1 %, mainnet 1 %). El riesgo efectivo ya queda en el snapshot de cada trade. Lectura 03-nov: **ninguna suscripción lo usa**; riesgo efectivo = el de la config (1 %, HYPE 0,5 %), igual que el backtest. No hay pantalla para editarlo.
+- **REAL-13 (trigger `LastPrice`):** correcto para la paridad: el backtest simula con el último precio negociado (velas de `/v5/market/kline`); `MarkPrice` dispararía en otros precios.
+- **REAL-14 (herramientas del bot dependen del tick):** inherente (Bybit no tiene BE, trailing ATR/escalonado, volatilidad ni duración nativos). Mitigado: SL/TP y trailing fijo nativos en Bybit, vigilante del tick real (aviso si una cuenta con posiciones pasa 180 s sin tick) y aviso de REAL-01.
+- **REAL-15 (IG):** el alta solo acepta Bybit y `ig_client.py` (305 líneas, 08-jul) no lo importaba nadie: **retirado** (regla 11). Queda en git (`ba402fd`).
+- Sin cambio de comportamiento: **no hace falta reiniciar el motor**.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | Comentarios de diseño (REAL-13 en `set_trading_stop`), `docs/02_TECHNICAL.md` (REAL-12/13/14/15), `ig_client.py` eliminado | `grep`: ningún archivo lo referenciaba; `compileall` del motor OK; 21 suites Python y la PHP en TODO OK |
 
 ---
 
@@ -33,7 +49,7 @@
 | (este) | `NATIVE_TRAILING_MIN_BUFFER_PCT` en Real; `BybitClient.get_lot_size` (caché 6 h, último dato real, `None` sin dato); `open_trade` no opera sin lote y avisa; `floor_to_step`; `get_min_qty` solo para scripts demo; `rp.FakeClient.get_lot_size` en el arnés de pruebas | `tests/Forensic/real_lot_trailing_test.py`: 19 casos en PASS (activación igual en backtest/Paper/Real con buffer 0 / 0,5 / 1 y por `open_trade`, caché, falla con y sin dato previo, entornos, redondeo, apertura sin lote y con paso 1); antes del cambio el lote caído daba `(0.001, 0.001)` y el redondeo 0,2; 5 mutaciones detectadas. Regresión: 21 suites Python y la PHP en TODO OK |
 
 ### Cambios fuera de git
-- Se instala con p09 y reinicio de `trading2-engine`. Horizon no hace falta (sin PHP).
+- Instalado con **p09**: 18 pruebas Python + 1 PHP en TODO OK, `trading2-engine` activo desde **Tue 2026-11-03 18:42:38 UTC**, `main` subido (`632b2af..3f84fdb`).
 
 ---
 

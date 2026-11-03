@@ -558,6 +558,8 @@ class BybitClient:
         # perpetuos USDT. Una cuenta en Hedge rechaza la APERTURA («position idx not match position mode»), así que
         # nunca queda una posición a medias; el aviso open_rejected explica cómo pasar a One-Way. El bot no cambia
         # el modo de la cuenta (es configuración del dueño en Bybit).
+        # Trigger LastPrice (revisado 2026-11-03, REAL-13): el backtest simula con velas de /v5/market/kline (último
+        # precio negociado), así que LastPrice dispara SL/TP en los mismos precios que el backtest; MarkPrice no.
         position_idx = 0
         body = {
             'category':    'linear',
