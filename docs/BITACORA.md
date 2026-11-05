@@ -14,8 +14,35 @@
 5. Reescribir `docs/01`, `02` y `03`.
 6. **Auditoría externa (31-oct):** **empezar por `docs/PENDIENTES_AUDITORIA.md`** (11 pendientes con prioridad, estado y plan; C-12 diagnosticado y con plan listo). Historial de la lista: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14), ~~C-05~~ carga por ventanas sin bloquear (03-nov, p15; resuelve también buena parte de C-09), ~~C-06~~ vigilante de la validación diaria (03-nov, p16), ~~C-07~~ por diseño, ~~C-08~~ ya resuelto en la pantalla, ~~C-09~~ cerrado con datos reales, ~~C-10~~ recarga sin borrar (03-nov, p17), ~~C-11~~ en vivo solo Bybit (03-nov, p18); sigue C-12, luego Backtest/Paper (BP-03 a BP-07, sondas A/B) y formulario (en revisión con el dueño).
 7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
-8. **Entradas de Paper distintas del motor (sondas A y B de `tests/Forensic/paper_opposite_test.py`):** (A) si un trade se abre y cierra por SL dentro de la misma vela y esa vela cierra con señal nueva, Paper no entra y el motor sí en el open siguiente; (B) con una señal vieja de la misma dirección ignorada y un SL a mitad de la vela siguiente, Paper reabre con la señal vieja y el motor no. Afectan a todas las configs; candidatas a un fix propio con prueba de paridad.
+8. ~~**Entradas de Paper distintas del motor (sondas A y B)**~~ hecho 05-nov (p19, NUEVO-03 / BP-08 / BP-05, también en Real).
 - **Tarea manual del dueño:** las instrucciones del proyecto "Ruben Castillo" en claude.ai siguen en V6.2. Reemplazarlas por el contenido de `docs/PROMPT_MAESTRO.md` (V7.1; copia en el proyecto: `claude/PROMPT_MAESTRO_V7.1.md`). No se puede hacer por script.
+
+---
+
+## 2026-11-05 (Bogotá) — Señal ya operada como el motor y hora de salida del evento (NUEVO-03, BP-08, BP-05)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** Paper y Real decidían si una señal ya se había usado con `entry_time >= apertura de la vela de la señal`. Esa regla venía de BP-02 (`c8d1223`), que solo trataba la salida por señal opuesta; no era un diseño deliberado (bitácora, «Próxima sesión» punto 8: sondas A y B). Dos divergencias con el motor:
+  - **A:** trade abierto y cerrado por SL dentro de la misma vela, y esa vela cierra con señal nueva → el motor entra en el open siguiente; Paper/Real **no entraban**.
+  - **B:** señal vieja de la misma dirección ignorada (había posición) y SL a mitad de la vela siguiente → el motor no la usa; Paper/Real **reabrían con la señal vieja**, a un precio que el backtest nunca usó. En Real era dinero.
+- **Ahora (Paper y Real, mismo SQL):** la señal de la vela que cierra en T abre solo si en T no había posición y nadie entró desde T: `entry_time >= T OR exit_time >= T` bloquea. Las filas `error`/`failed` de Real (sin `exit_time`) solo cuentan por `entry_time`, como antes (una entrada fallida no reintenta la misma señal).
+- **La regla depende de que `exit_time` sea la hora del evento:**
+  - **Paper (BP-05):** antes guardaba la hora de proceso. Ahora guarda el minuto de 1m que tocó el SL/TP/trailing, el cierre de ese minuto en la protección por volatilidad, y **T** (cierre de la vela de la señal, como el motor) en la salida por señal opuesta, también para el funding. `time_exit` sigue con la hora de proceso.
+  - **Real:** el cierre nativo de Bybit (SL/TP/trailing) guardaba la hora de detección del monitor. Ahora guarda el `updatedTime` del closed-pnl (el último tramo); sin hora, `now()` como antes. Las salidas por orden propia y la conciliación no cambian.
+- **Lectura real (05-nov):** 0 de 12 trades de Paper y 0 de 0 de Real con una reentrada en la misma vela de un cierre SL/TP: el defecto existía pero todavía no había ocurrido.
+- **Efecto visible:** en Paper, la hora de salida puede quedar hasta ~2 min antes que con el código anterior; en Real, la hora de Bybit. Solo la usan la pantalla (orden y duración) y `RiskLimits` (pérdida del mes), que queda más exacto.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `trading/paper_trader.py` (regla de señal ya operada; `exit_time` = inicio de `exit_span`; salida por señal opuesta con T); `trading/real_trader.py` (misma regla; `bybit_close_time()`; `close_trade(exit_time=…)` con `COALESCE($9::timestamp, now())`); `tests/Forensic/sqlfake.py` (las pruebas ejecutan el SQL real sobre SQLite en memoria); `paper_opposite_test.py` y `real_opposite_test.py` usan `sqlfake` | `tests/Forensic/signal_reuse_test.py`: 20 casos en PASS (sondas A y B en Paper y Real, bordes en T, 3 ticks por vela, `exit_time` del SL y de la señal opuesta, señal consumida por `exit_on_opposite`, fila `error` de Real, hora de Bybit con 2 tramos y sin hora, **paridad completa Paper vs motor con 1m**: 31/34/33 operaciones con 9–11 entradas justo tras SL/TP, mismas operaciones y `exit_time` del evento). Antes del cambio: **16 FALLOS** (los 4 restantes son guardas que pasan igual). Las pruebas viejas con el arnés de SQL real pasan con el código viejo (arnés fiel). 9 mutaciones detectadas. Regresión en TODO OK |
+
+### Lecciones
+- Las bases simuladas que reconocen una consulta por su texto se quedan viejas cuando cambia el SQL: ahora se ejecuta el SQL real (`sqlfake.py`).
+- Una regla que compara contra `exit_time` exige que `exit_time` sea la hora del evento, no la del proceso.
+
+### Cambios fuera de git
+- (se completa al instalar p19)
 
 ---
 

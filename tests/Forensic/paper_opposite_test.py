@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 sys.path.insert(0, os.getcwd())  # ejecutar desde python-engine/
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # tests/Forensic/ (sqlfake)
+
+import sqlfake  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -87,6 +90,9 @@ BASE = dict(symbol='BTCUSDT', interval='60', sl_pct=50.0, tp_pct=100.0, be_pct=9
             regime_filter=False, commission_pct=0.055, slippage_pct=0.05, strategy_code=CODE)
 
 
+PAPER_COLS = ('paper_strategy_config_id', 'entry_time', 'exit_time', 'exit_reason', 'status')
+
+
 class Store:
     def __init__(self, kill=False):
         self.trades, self.kill, self.nid = [], kill, 1
@@ -107,15 +113,8 @@ class FakeConn:
         if "status = 'open'" in sql and 'paper_strategy_config_id = $1' in sql:   # has_open_trade (código anterior)
             hit = [t for t in self.s.trades if t['paper_strategy_config_id'] == a[0] and t['status'] == 'open']
             return {'id': hit[0]['id']} if hit else None
-        if 'FROM paper_trades' in sql and 'entry_time >=' in sql:
-            cfg, cand = a[0], a[1]
-            uses_consumed = "exit_reason = 'opposite_signal'" in sql and len(a) > 2   # la condición va EN el SQL
-            cand_close = a[2] if uses_consumed else None
-            hit = [t for t in self.s.trades if t['paper_strategy_config_id'] == cfg and (
-                (t['entry_time'] >= cand if 'entry_time >= $2' in sql else False) or
-                (uses_consumed and t.get('exit_reason') == 'opposite_signal'
-                 and t.get('exit_time') is not None and t['exit_time'] >= cand_close))]
-            return {'id': max(hit, key=lambda t: t['entry_time'])['id']} if hit else None
+        if 'FROM paper_trades' in sql and 'entry_time >=' in sql:   # señal ya operada: se ejecuta el SQL real
+            return sqlfake.fetchrow(self.s.trades, 'paper_trades', sql, a, columns=PAPER_COLS)
         return None
 
     async def execute(self, sql, *a):
@@ -355,7 +354,7 @@ async def main():
           len(store.trades) == 2 and [t['status'] for t in store.trades] == ['closed', 'open'],
           [(t['side'], t['status']) for t in store.trades])
 
-    # ───────── Sondas informativas sobre la lógica de entradas (NO se tocan en este parche) ─────────
+    # ───────── Sondas informativas sobre la lógica de entradas (corregidas en p19: signal_reuse_test.py) ─────────
     # A) trade abierto en la vela k y cerrado por SL dentro de la misma vela; señal nueva al cerrar k.
     #    El motor entra en el open de k+1; ¿Paper?
     dfa = candles(n=75, seed=8, p_sig=0.0)

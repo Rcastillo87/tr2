@@ -313,7 +313,9 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def close_trade(self, trade: dict, exit_price: float, exit_reason: str, exit_span: tuple | None = None):
-        """exit_span: (desde, hasta) en que ocurrió la salida (minuto de 1m que la disparó); None = ahora."""
+        """exit_span: (desde, hasta) en que ocurrió la salida (minuto de 1m que la disparó); None = ahora.
+        exit_time = inicio de exit_span: la hora del EVENTO (como el motor), no la del proceso; la regla de
+        señal ya operada (check_new_signals) depende de ella."""
         entry_price  = float(trade['entry_price'])
         size         = float(trade['size'])
         side         = trade['side']
@@ -356,7 +358,7 @@ class PaperTrader:
                 WHERE id = $9
                 """,
                 exit_price, round(pnl, 4), round(pnl_pct, 4), exit_reason,
-                now.replace(tzinfo=None),
+                exit_lo.astimezone(timezone.utc).replace(tzinfo=None) if exit_lo.tzinfo else exit_lo,
                 round(max_profit_pct, 4), round(max_loss_pct, 4), round(commission, 4),
                 trade['id'], round(funding, 8)
             )
@@ -647,7 +649,8 @@ class PaperTrader:
                 if px is None:
                     results[label] = f"{symbol}: señal opuesta pero sin precio; se reintenta el próximo ciclo"
                     continue
-                await self.close_trade(open_row, px, 'opposite_signal')
+                signal_close = candle_open + interval_delta(interval)   # como el motor: sale en el open siguiente
+                await self.close_trade(open_row, px, 'opposite_signal', (signal_close, signal_close))
                 if exit_rule == 'exit' or kill:
                     results[label] = f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}"
                     continue
@@ -670,14 +673,15 @@ class PaperTrader:
             if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
                 candle_time = candle_time.tz_convert('UTC').tz_localize(None)
             async with self.pool.acquire() as conn:
-                # También cuenta como "operada" la señal que ya consumió una salida por señal opuesta (con
-                # exit_on_opposite esa señal solo cierra; sin esto, el tick siguiente abriría una entrada con ella).
+                # Regla del motor: la señal de la vela que cierra en T solo abre si en T no había posición y nadie
+                # entró desde T. exit_time >= T = seguía abierta en T (señal vieja tras un SL a mitad de la vela
+                # siguiente) o la señal ya se consumió en una salida por señal opuesta (exit_time = T).
                 already_traded = await conn.fetchrow(
                     """SELECT id FROM paper_trades
                        WHERE paper_strategy_config_id = $1
-                         AND (entry_time >= $2 OR (exit_reason = 'opposite_signal' AND exit_time >= $3))
+                         AND (entry_time >= $2 OR exit_time >= $2)
                        ORDER BY entry_time DESC LIMIT 1""",
-                    config_id, candle_time, candle_time + interval_delta(interval)
+                    config_id, candle_time + interval_delta(interval)
                 )
             if already_traded and not reversal:
                 results[label] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"

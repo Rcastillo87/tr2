@@ -122,6 +122,22 @@ def floor_to_step(qty: float, step: float) -> float:
     return round(math.floor(qty / step + 1e-9) * step, decimals)
 
 
+def bybit_close_time(history: list[dict]) -> datetime | None:
+    """Hora del cierre según Bybit (UTC sin tz): el último tramo del closed-pnl (updatedTime, o createdTime).
+    None si ningún tramo trae una hora válida (quien llama usa ahora)."""
+    stamps = []
+    for h in history:
+        try:
+            ms = int(h.get('updatedTime') or h.get('createdTime') or 0)
+        except (TypeError, ValueError):
+            continue
+        if ms > 0:
+            stamps.append(ms)
+    if not stamps:
+        return None
+    return datetime.fromtimestamp(max(stamps) / 1000, tz=timezone.utc).replace(tzinfo=None)
+
+
 class BybitAPIError(Exception):
     """Error real de comunicacion con la API de Bybit (HTTP/retCode/red).
     Distinto de 'no hay posicion' — nunca debe interpretarse como cierre."""
@@ -1443,7 +1459,10 @@ class RealTrader:
 
     async def close_trade(self, trade: dict, exit_reason: str, client: BybitClient,
                            account_id: int, exit_price_override: float = None,
-                           bybit_net_pnl: float | None = None, closed_size: float | None = None) -> bool:
+                           bybit_net_pnl: float | None = None, closed_size: float | None = None,
+                           exit_time: datetime | None = None) -> bool:
+        """exit_time (UTC sin tz): hora del cierre en Bybit (closed-pnl) cuando la posición ya cerró allí;
+        None = ahora. La regla de señal ya operada depende de ella."""
         side   = trade['side']
         symbol = trade['symbol']
         # Si viene exit_price_override — posicion ya cerrada en Bybit por SL/TP
@@ -1472,11 +1491,11 @@ class RealTrader:
                 # no encuentra fila que actualizar y no hace nada.
                 result = await conn.execute(
                     "UPDATE real_trades SET status='closed', exit_price=$1, exit_reason=$2,"
-                    " exit_time=now(), pnl=$3, pnl_pct=$4, net_pnl=$5, commission=$6,"
+                    " exit_time=COALESCE($9::timestamp, now()), pnl=$3, pnl_pct=$4, net_pnl=$5, commission=$6,"
                     " balance_after=$7, updated_at=now() WHERE id=$8 AND status IN ('open','pending_close')",
                     exit_price_override, exit_reason,
                     round(pnl,4), round(pnl_pct,4), round(net_pnl,4), round(commission,4),
-                    balance_after, trade["id"]
+                    balance_after, trade["id"], exit_time
                 )
             if result == "UPDATE 0":
                 logger.info(f"[REAL] CLOSE #{trade['id']} {symbol} omitido — ya estaba cerrado (cierre concurrente detectado)")
@@ -1659,7 +1678,8 @@ class RealTrader:
             else:
                 exit_reason = sl_label if exit_price >= sl else 'take_profit_1' if exit_price <= tp else 'closed_other'
         return await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price,
-                                      bybit_net_pnl=net_pnl, closed_size=closed_size)
+                                      bybit_net_pnl=net_pnl, closed_size=closed_size,
+                                      exit_time=bybit_close_time(history))
 
     # ─────────────────────────────────────────────
     # Monitor: revisar posiciones abiertas
@@ -1967,14 +1987,15 @@ class RealTrader:
             candle_time = candle_time.tz_convert('UTC').tz_localize(None)
         if not reversal:
             async with self.pool.acquire() as conn:
-                # También cuenta como "operada" la señal que ya consumió una salida por señal opuesta (con
-                # exit_on_opposite esa señal solo cierra; sin esto, el tick siguiente abriría una entrada con ella).
+                # Regla del motor (igual que Paper): la señal de la vela que cierra en T solo abre si en T no había
+                # posición y nadie entró desde T. exit_time >= T = seguía abierta en T o la señal ya se consumió en
+                # una salida por señal opuesta. Filas sin exit_time (error/failed) solo cuentan por entry_time.
                 already_traded = await conn.fetchrow(
                     """SELECT id FROM real_trades
                        WHERE subscription_id = $1 AND symbol = $2
-                         AND (entry_time >= $3 OR (exit_reason = 'opposite_signal' AND exit_time >= $4))
+                         AND (entry_time >= $3 OR exit_time >= $3)
                        ORDER BY entry_time DESC LIMIT 1""",
-                    sub['subscription_id'], symbol, candle_time, candle_time + interval_delta(interval)
+                    sub['subscription_id'], symbol, candle_time + interval_delta(interval)
                 )
             if already_traded:
                 return f"{symbol}: señal ya operada en esta vela (trade #{already_traded['id']})"

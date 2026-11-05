@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.getcwd())                                   # python-engine/
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # tests/Forensic/
 
+import sqlfake  # noqa: E402
 import paper_opposite_test as po  # noqa: E402  (velas con señal guionada, estrategia Scripted, motor)
 import real_parity_test as rp  # noqa: E402     (anula las esperas de asyncio.sleep, fuente de velas fija)
 import trading.real_trader as rt_mod  # noqa: E402
@@ -44,6 +45,9 @@ BASE = dict(po.BASE, max_duration=0)
 
 
 # ───────────── base de datos y exchange simulados ─────────────
+REAL_COLS = ('subscription_id', 'symbol', 'entry_time', 'exit_time', 'exit_reason', 'status')
+
+
 class Store:
     def __init__(self):
         self.trades, self.nid, self.limit = [], 1, None
@@ -68,13 +72,8 @@ class Conn:
             hit = [x for x in t if x['symbol'] == a[1] and x['status'] in ('pending_open', 'open', 'pending_close',
                                                                             'orphaned')]
             return {'id': hit[0]['id']} if hit else None
-        if 'FROM real_trades' in sql and 'entry_time >= $3' in sql:            # already_traded
-            sub, sym, cand = a[0], a[1], a[2]
-            consumed = "exit_reason = 'opposite_signal'" in sql and len(a) > 3
-            hit = [x for x in t if x['subscription_id'] == sub and x['symbol'] == sym and (
-                x['entry_time'] >= cand or (consumed and x.get('exit_reason') == 'opposite_signal'
-                                            and x.get('exit_time') is not None and x['exit_time'] >= a[3]))]
-            return {'id': max(hit, key=lambda x: x['entry_time'])['id']} if hit else None
+        if 'FROM real_trades' in sql and 'entry_time >= $3' in sql:            # already_traded: SQL real
+            return sqlfake.fetchrow(t, 'real_trades', sql, a, columns=REAL_COLS)
         return None
 
     async def fetch(self, sql, *a):

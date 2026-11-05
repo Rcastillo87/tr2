@@ -1,8 +1,32 @@
 # Pendientes de la auditoría externa (31-oct) — TR2
 
-> Estado al **2026-11-03 16:55 (Bogotá)**. `main` = `ac76228` (p18 instalado y subido).
+> Estado al **2026-11-05 (Bogotá)**. `main` = `bb78810` + p19 (NUEVO-03 / BP-08 / BP-05).
+> **Segunda auditoría (05-nov):** confirmó los 11 pendientes y agregó NUEVO-01 a 05. Orden acordado con el dueño (del más crítico al menos) en la sección 0.
 > Informes de la auditoría: zip `TR2_RESULTADOS_AUDITORIA_HASTA_31-10-2026` (01_INFORMES). Detalle de lo ya hecho: `docs/BITACORA.md`.
 > **Empezar aquí la próxima sesión.** Al cerrar cada fix: tacharlo aquí y en «Próxima sesión» punto 6 de la bitácora.
+
+---
+
+## 0. Orden de la sesión del 05-nov (del más crítico al menos)
+
+Entrega acordada: el dueño solo tiene la interfaz y SSH, **sin subir archivos**. Lecturas con salida corta pegada en el chat; parches como bloque base64 pegable en SSH, envuelto en `( … )`, con md5.
+
+| # | Fix | Estado |
+|---|---|---|
+| 1 | NUEVO-03 + BP-08 + BP-05 (señal ya operada y hora de salida, Paper y Real) | **Hecho en p19** |
+| 2 | BP-03 (Paper sin 1m no evalúa SL/TP) | Pendiente |
+| 3 | NUEVO-01 (1m con minutos faltantes al 98 %) | Pendiente |
+| 4 | BP-04 (posición abierta al final del backtest) | Pendiente (el dueño elige: cerrar con `end_of_data` o reportar aparte) |
+| 5 | F-01 (volatilidad pisada por defaults) | Pendiente |
+| 6 | NUEVO-02 (exit_time del backtest = apertura de la vela grande) | Pendiente |
+| 7 | BP-07 (snapshot sin `strategy_code`) | Pendiente |
+| 8 | C-12 (funding) | Plan listo |
+| 9 | F-03 (validación numérica) | Pendiente |
+| 10 | BP-06 (comparador) | Pendiente |
+| 11 | F-05, F-04, F-02 (formulario; F-04/F-02 con maqueta) | Pendiente |
+| 12 | Fase estadística: NUEVO-04 holdout, NUEVO-05 cartera, walk forward, drawdown flotante, tamaño con costos | Pendiente (decisiones de diseño) |
+
+Hallazgos propios del 05-nov: Paper dimensiona con `VIRTUAL_BALANCE` fijo y el backtest con saldo acumulado (el PnL absoluto no se puede comparar; los eventos sí); `walk_forward`/`n_windows` quemados en `BacktestingController`.
 
 ---
 
@@ -15,7 +39,7 @@
 5. Cada fix: prueba forense nueva en `tests/Forensic/` (sin base ni red), evidencia **antes** (falla con el código viejo) y **después**, **mutaciones** detectadas, regresión completa en TODO OK, entrada en la bitácora.
 6. Entrega: **un solo bloque SSH** (`pNN_instalar.sh`): base64 de un tgz con `install.sh`, `manifest.txt` y `fixes.bundle`; verifica HEAD y md5 de origen, respalda, aplica con `git pull --ff-only` del bundle, verifica md5 final, lint, pruebas (rollback a la base si alguna falla), reinicio del motor solo sin búsquedas ni órdenes Real pendientes, verificación real y `git push origin main`. Plantilla: el instalador de p18.
 7. Commits: autor `Claude <noreply@anthropic.com>`, mensaje en español con las líneas `Co-Authored-By` / `Claude-Session`.
-8. Regresión actual (25 Python + 3 PHP): `live_source_test collector_reload_test collector_catchup_test collector_ingest_test collector_audit_test collector_retry_test collector_configs_test real_lot_trailing_test real_permissions_test real_sizing_test real_balance_test real_protection_test allow_short_test real_opposite_test paper_opposite_test paper_parity_test real_parity_test real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test filters_v2_test bars_order_test` + `broker_event_messages_test.php collector_validation_alert_test.php collector_watchdog_validation_test.php`.
+8. Regresión actual (26 Python + 3 PHP): `signal_reuse_test live_source_test collector_reload_test collector_catchup_test collector_ingest_test collector_audit_test collector_retry_test collector_configs_test real_lot_trailing_test real_permissions_test real_sizing_test real_balance_test real_protection_test allow_short_test real_opposite_test paper_opposite_test paper_parity_test real_parity_test real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test filters_v2_test bars_order_test` + `broker_event_messages_test.php collector_validation_alert_test.php collector_watchdog_validation_test.php`.
 
 ---
 
