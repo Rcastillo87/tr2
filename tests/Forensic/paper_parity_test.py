@@ -36,7 +36,17 @@ class FakeConn:
         if 'time = ANY(' in sql:  # precio de las liquidaciones: (broker, symbol, '1', [minuto previo])
             return [{'time': b['time'], 'close': b['close']} for b in self.s.get('minutes', []) if b['time'] in a[3]]
         if "interval = '1'" in sql:  # (symbol, desde, hasta, broker)
-            return [b for b in self.s['minutes'] if a[1] < b['time'] <= a[2]]
+            # Serie de 1m completa como en producción: los minutos que el caso no define son planos (no tocan nada).
+            # Sin esto cada caso tendría huecos, y desde BP-03 el monitor no salta un hueco.
+            given = {b['time']: b for b in self.s['minutes'] if a[1] < b['time'] <= a[2]}
+            if not given:
+                return []
+            t = a[1].replace(second=0, microsecond=0) + timedelta(minutes=1)
+            out = []
+            while t <= max(given):   # hasta el último minuto del caso (sin cola: el último precio es el del caso)
+                out.append(given.get(t, {'time': t, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}))
+                t += timedelta(minutes=1)
+            return out
         if 'FROM paper_trades' in sql:
             return [self.s['trade']] if self.s.get('trade') else []
         return []

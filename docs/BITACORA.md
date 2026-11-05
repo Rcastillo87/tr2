@@ -19,6 +19,29 @@
 
 ---
 
+## 2026-11-05 (Bogotá) — Paper no salta un hueco dentro del 1m (BP-03)
+
+### Resumen para el dueño
+- **Qué decía la auditoría:** sin velas de 1m, Paper no evalúa SL/TP. **Verificado en el código:** sin 1m (o con el 1m atrasado) Paper **no pierde** los minutos. No avanza su punto de control y los evalúa en orden cuando el collector se pone al día, con el precio del nivel y la hora real (p19). Usar la vela grande en ese caso empeoraría la paridad, porque el backtest del mismo tramo sí tendrá el 1m.
+- **El hueco real:** si al 1m le faltaban minutos **en medio**, la consulta `time > punto de control` traía los minutos siguientes y Paper **saltaba el hueco en silencio**. Un SL dentro del hueco se perdía para siempre, aunque la reparación lo llenara después (el punto de control ya había pasado).
+- **Lectura real (05-nov):** 0 días con 1m incompleto en 30 días en las 11 monedas activas de Paper; 0 avisos «sin velas de 1m» en todos los logs. **Riesgo teórico hoy.** El 1m atrasado ya lo vigila el vigilante del collector (C-06) y los huecos la validación de las 04:00 (C-03/C-04).
+- **Ahora (opción 1, elegida por el dueño):**
+  - Paper evalúa solo los minutos **seguidos** desde su punto de control. Ante un hueco **se detiene antes**, deja `[ERROR]` en `engine.log` con el tramo faltante y espera la reparación; cuando se llena, sigue y evalúa esos minutos.
+  - Si a las **26 h** (`PAPER_MINUTE_GAP_WAIT_HOURS`; ya pasó una reparación de las 04:00) el hueco sigue, lo cubre con las velas del intervalo operado **completas y SL primero**, la misma regla por sub-vela que el motor sin 1m. La salida queda con la hora de inicio de la vela, como el backtest.
+  - Sin vela de respaldo, sigue esperando (nunca salta). Una guarda impide un bucle sin fin si el respaldo no avanzara.
+- **Caso normal sin cambios:** sin hueco no hay consultas extra ni avisos. El hueco se detecta con los minutos que ya trae el monitor.
+- **No cambia:** Real (su SL/TP vive en Bybit), el backtest (su caso es NUEVO-01, fix 3) y la regla de entradas.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `trading/paper_trader.py`: `split_at_minute_gap()`, `_minute_path()`, `_gap_candles()`; el monitor recorre esa ruta; `MINUTE_GAP_WAIT` desde `.env`; `python-engine/.env.example`; `tests/Forensic/paper_parity_test.py` (el arnés entrega 1m completo, sin huecos, como producción) | `tests/Forensic/minute_gap_test.py`: 18 casos en PASS (regla de corte, punto de control con segundos, hueco reciente: se detiene y avisa sin consultas extra, **hueco reparado con el SL adentro: cierra en ese minuto**, hueco permanente: SL con vela completa y hora de la vela, sin toque sigue, sin doble evaluación, sin vela de respaldo espera, dos huecos con plazos distintos, caso normal sin cambios, plazo 26 h). Antes del cambio: **15 FALLOS** (con el código viejo el SL del hueco reparado se pierde). `paper_parity_test` con el arnés nuevo: TODO OK antes y después (arnés fiel). 7 mutaciones detectadas (una destapó un bucle sin fin, ahora con guarda). Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p20)
+
+---
+
 ## 2026-11-05 (Bogotá) — Señal ya operada como el motor y hora de salida del evento (NUEVO-03, BP-08, BP-05)
 
 ### Resumen para el dueño
@@ -41,8 +64,12 @@
 - Las bases simuladas que reconocen una consulta por su texto se quedan viejas cuando cambia el SQL: ahora se ejecuta el SQL real (`sqlfake.py`).
 - Una regla que compara contra `exit_time` exige que `exit_time` sea la hora del evento, no la del proceso.
 
+### Lecciones (instalación)
+- El motor **no escribe en el journal**: escribe en `python-engine/logs/engine.log` (systemd `StandardOutput=append`, rotado por logrotate). La línea «errores del motor desde el reinicio: 0» del instalador p19 usaba `journalctl` y no verificaba nada; se rehízo a mano sobre `engine.log` (sin errores). Desde p20 los instaladores leen `engine.log`.
+- Las líneas de acceso de uvicorn (`INFO: 127.0.0.1 … POST /v1/paper/tick`) no llevan hora: para filtrar por hora usar solo las líneas del logger de la app.
+
 ### Cambios fuera de git
-- (se completa al instalar p19)
+- Instalado con **p19** el 05-nov: regresión 29 en TODO OK; `trading2-engine` reiniciado **20:52:28 UTC**; tick de Paper con el código nuevo (trade abierto actualizado); `engine.log` sin `Traceback` ni `[ERROR]`; `/v1/paper/tick` respondiendo 200; `main` subido (`bb78810..a373996`).
 
 ---
 

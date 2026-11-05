@@ -30,6 +30,31 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 
 VIRTUAL_BALANCE = 10000.0
 
+# Hueco dentro del 1m (BP-03): el monitor se detiene antes del hueco y espera la reparación (validación diaria 04:00).
+# Si tras este plazo sigue sin llenarse, las velas del intervalo que lo contienen se evalúan como vela completa con
+# SL primero (la misma regla que el backtest sin 1m).
+MINUTE_GAP_WAIT = timedelta(hours=float(os.getenv('PAPER_MINUTE_GAP_WAIT_HOURS', '26')))
+ONE_MINUTE = timedelta(minutes=1)
+
+
+def _as_utc(t: datetime) -> datetime:
+    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t.astimezone(timezone.utc)
+
+
+def split_at_minute_gap(bars: list, after: datetime) -> tuple[list, tuple | None]:
+    """
+    (minutos seguidos, hueco): las velas de 1m consecutivas desde el minuto siguiente a `after`, y el primer hueco
+    como (primer minuto faltante, primer minuto presente después) o None si no hay. Un final sin velas no es hueco
+    (son velas que todavía no llegan).
+    """
+    prev = _as_utc(after).replace(second=0, microsecond=0)
+    for j, bar in enumerate(bars):
+        t = _as_utc(bar['time'])
+        if t - prev > ONE_MINUTE:
+            return bars[:j], (prev + ONE_MINUTE, t)
+        prev = t
+    return bars, None
+
 
 class PaperTrader:
 
@@ -127,6 +152,62 @@ class PaperTrader:
             return pd.DataFrame()
 
         return bars_frame(rows, f"paper {symbol}/{interval} ({broker})")
+
+    async def _gap_candles(self, broker: str, symbol: str, interval: str, gap: tuple, now: datetime) -> list:
+        """Velas CERRADAS del intervalo operado que se solapan con el hueco [desde, hasta) del 1m."""
+        step = interval_delta(interval)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT time, open, high, low, close
+                FROM ohlcv_data
+                WHERE broker = $1 AND symbol = $2 AND interval = $3 AND time > $4 AND time < $5
+                ORDER BY time ASC
+                """,
+                broker, symbol, str(interval), gap[0] - step, gap[1]
+            )
+        rows = sorted_records(rows, f"paper {symbol}/{interval} ({broker}) respaldo de hueco 1m")
+        return [r for r in rows if _as_utc(r['time']) + step > gap[0] and _as_utc(r['time']) + step <= now]
+
+    async def _minute_path(self, trade: dict, bars: list, checkpoint: datetime, broker: str, now: datetime) -> list:
+        """
+        Sub-velas a evaluar, en orden: (high, low, close, desde, hasta, punto de control). Los minutos seguidos desde
+        el punto de control; ante un hueco se detiene ahí (espera la reparación) y, si el hueco tiene más de
+        MINUTE_GAP_WAIT, lo cubre con las velas del intervalo operado (vela completa: SL vigente primero) y sigue.
+        """
+        path, after, rest = [], checkpoint, bars
+        entry_time = _as_utc(trade['entry_time'])
+        step = interval_delta(trade['interval'])
+        while True:
+            run, gap = split_at_minute_gap(rest, after)
+            for b in run:
+                t = _as_utc(b['time'])
+                path.append((float(b['high']), float(b['low']), float(b['close']), t, t + ONE_MINUTE - timedelta(microseconds=1), b['time']))
+            if gap is None:
+                return path
+            evaluated = _as_utc(run[-1]['time']) if run else after   # último minuto evaluado (para el mensaje)
+            label = f"[PAPER] Trade #{trade['id']} {trade['symbol']}: faltan velas de 1m {gap[0]:%Y-%m-%d %H:%M}–{gap[1]:%H:%M} UTC"
+            if now - gap[0] < MINUTE_GAP_WAIT:
+                logger.error(f"{label}; SL/TP evaluados hasta {evaluated:%Y-%m-%d %H:%M}, se espera la reparación "
+                             f"(respaldo con vela completa desde {gap[0] + MINUTE_GAP_WAIT:%Y-%m-%d %H:%M} UTC)")
+                return path
+            candles = await self._gap_candles(broker, trade['symbol'], trade['interval'], gap, now)
+            if not candles:
+                logger.error(f"{label}; sin velas {trade['interval']} de respaldo: se sigue esperando")
+                return path
+            logger.error(f"{label} desde hace más de {MINUTE_GAP_WAIT.total_seconds() / 3600:g} h: evaluado con "
+                         f"{len(candles)} vela(s) completa(s) de {trade['interval']} y SL primero (como el backtest sin 1m)")
+            for c in candles:
+                t = _as_utc(c['time'])
+                last_minute = t + step - ONE_MINUTE    # el punto de control queda en el último minuto de la vela
+                path.append((float(c['high']), float(c['low']), float(c['close']), max(t, entry_time),
+                             t + step - timedelta(microseconds=1), last_minute.replace(tzinfo=None)))
+            covered = _as_utc(candles[-1]['time']) + step - ONE_MINUTE
+            if covered <= after:   # defensa: el respaldo siempre avanza; si no, se detiene en vez de girar sin fin
+                logger.error(f"{label}; el respaldo no avanzó (vela {candles[-1]['time']}): se sigue esperando")
+                return path
+            after = covered
+            rest = [b for b in rest if _as_utc(b['time']) > after]
 
     async def get_current_regime(self, df: pd.DataFrame, trending_threshold: float = 25,
                                   ranging_threshold: float = 20, ambiguous_as: str = "RANGING") -> str:
@@ -428,6 +509,8 @@ class PaperTrader:
             bars = sorted_records(bars, f"paper #{trade['id']} {symbol}/1 ({minute_broker})")
             if minute_broker is None:
                 logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: sin velas de 1m; SL/TP no evaluados este ciclo")
+            # Minutos seguidos desde el punto de control; un hueco no se salta (BP-03)
+            path = await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if bars else []
 
             exit_price    = None
             exit_reason   = None
@@ -445,10 +528,8 @@ class PaperTrader:
                     closed_atr = float(atr_series.iloc[-1])
                     closed_atr_avg = float(atr_series.rolling(50).mean().iloc[-1])
 
-            for bar in bars:
-                high  = float(bar['high'])
-                low   = float(bar['low'])
-                last_bar_time = bar['time']
+            for high, low, _close, span_lo, span_hi, checkpoint in path:
+                last_bar_time = checkpoint
 
                 # Mismo orden que el motor V3: SL vigente -> TP1 -> break-even -> trailing
                 sl_label = 'trailing_stop' if trailing_applied else 'stop_loss'
@@ -478,18 +559,17 @@ class PaperTrader:
                     max_loss_pct = adv_pct
 
                 if exit_price is not None:
-                    bt = bar['time'] if bar['time'].tzinfo else bar['time'].replace(tzinfo=timezone.utc)
-                    exit_span = (bt, bt + timedelta(minutes=1) - timedelta(microseconds=1))  # dentro de ese minuto
+                    exit_span = (span_lo, span_hi)   # dentro de ese minuto (o de la vela completa de respaldo)
                     break
 
             # Protección por volatilidad: una vez por ciclo, con la última vela cerrada del intervalo
-            if exit_price is None and bars and closed_atr is not None and closed_atr_avg is not None \
+            if exit_price is None and path and closed_atr is not None and closed_atr_avg is not None \
                     and getattr(strategy_instance, 'volatility_protection_mode', None) is not None:
                 vol_check = strategy_instance.check_volatility_protection(sl, side, closed_atr, closed_atr_avg)
                 if vol_check['action'] == 'close':
-                    exit_price, exit_reason = float(bars[-1]['close']), 'volatility_protection'
-                    bt = bars[-1]['time'] if bars[-1]['time'].tzinfo else bars[-1]['time'].replace(tzinfo=timezone.utc)
-                    exit_span = (bt + timedelta(minutes=1), bt + timedelta(minutes=1))   # al cierre de ese minuto
+                    exit_price, exit_reason = path[-1][2], 'volatility_protection'
+                    end = path[-1][4] + timedelta(microseconds=1)
+                    exit_span = (end, end)   # al cierre de esa sub-vela
                 elif vol_check['action'] == 'widen' and vol_check['new_sl'] is not None and not vol_widened:
                     sl = vol_check['new_sl']   # una sola vez por trade
                     vol_widened = True
@@ -519,7 +599,7 @@ class PaperTrader:
                 entry_time = entry_time.replace(tzinfo=timezone.utc)
             max_bars = int(getattr(strategy_instance, 'max_duration', 0) or 0)
             if max_bars > 0 and now - entry_time >= interval_delta(trade['interval']) * max_bars:
-                last_price = float(bars[-1]['close']) if bars else await get_current_price(symbol)
+                last_price = path[-1][2] if path else await get_current_price(symbol)
                 if last_price is None:
                     logger.warning(f"[PAPER] Trade #{trade['id']}: duración máxima cumplida pero sin precio; reintento próximo ciclo")
                     continue
