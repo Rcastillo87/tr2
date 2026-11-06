@@ -173,8 +173,9 @@ async def simulate(params, df, start, ticks=(2, 3, 4), live_params=None):
 def engine_events(params, df, start):
     s = po.pt.build_strategy(params)
     r = po.BacktestEngine(s, df, trade_from=df['time'][start]).run()
+    # end_of_data (BP-04): el motor cierra al final del rango lo que Real sigue teniendo abierto
     return [(t['side'], _naive(pd_ts(t['entry_time'])), _naive(pd_ts(t['exit_time'])), t['exit_reason'])
-            for t in r['trades']]
+            for t in r['trades'] if t['exit_reason'] != 'end_of_data']
 
 
 def pd_ts(t):

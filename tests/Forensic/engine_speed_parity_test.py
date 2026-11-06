@@ -136,8 +136,26 @@ def compare(label, make, df, minute_df, funding, trade_from):
     r2 = BacktestEngine(strategy=make(), df=df, initial_balance=10000.0, risk_per_trade_pct=1.0, minute_df=minute_df,
                         trade_from=trade_from, funding=funding).run()
     T_NEW += time.time() - t
-    d = same(r1, r2)
+    d = same(r1, without_end_of_data(r2))
     return d, len(r1['trades'])
+
+
+EOD = [0]   # cuántos resultados terminaron con una posición abierta (cerrada con end_of_data)
+
+
+def without_end_of_data(r):
+    """La referencia V3 (congelada) descarta la posición abierta al final; el motor la cierra con end_of_data (BP-04).
+    Se quita ese único último trade y se recalculan las métricas para comparar el resto exacto."""
+    eod = [k for k, t in enumerate(r['trades']) if t['exit_reason'] == 'end_of_data']
+    if not eod:
+        return r
+    assert eod == [len(r['trades']) - 1] and r['closed_at_end'] == 1, f'end_of_data fuera de lugar: {eod}'
+    EOD[0] += 1
+    from backtesting.metrics import calculate_metrics
+    trades = r['trades'][:-1]
+    m = calculate_metrics(trades, 10000.0)
+    m['equity_curve'] = r['metrics']['equity_curve'][:-1]
+    return dict(r, trades=trades, metrics=m)
 
 
 def maker(code, iv, cfg, scfg=None, symbol='X', macro_df=None, signals=None):
@@ -215,6 +233,8 @@ if __name__ == '__main__':
     synthetic_suite()
     if '--real' in sys.argv:
         real_suite()
+    check(f'BP-04: {EOD[0]} resultado(s) con posición abierta al final, cerrada con end_of_data como último trade '
+          f'(el resto idéntico a la referencia)', EOD[0] > 0, EOD[0])
     print(f"\nTiempo de motor: referencia {T_REF:.1f}s · optimizado {T_NEW:.1f}s · "
           f"{T_REF / T_NEW if T_NEW else 0:.1f}x más rápido")
     print('RESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')

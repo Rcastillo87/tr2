@@ -393,6 +393,9 @@ async def run_backtest(request: BacktestRequest):
         if result.get('minute_fallback_bars'):
             warnings.append(f"Aviso: {result['minute_fallback_bars']} vela(s) de {request.symbol} con minutos de 1m "
                             f"faltantes: evaluadas con vela completa y SL primero (pesimista).")
+        if result.get('closed_at_end'):
+            warnings.append("Aviso: 1 posición seguía abierta al final del rango: se cerró al último cierre "
+                            "(motivo end_of_data, con slippage, comisión y funding) y cuenta en las métricas.")
         result['aggregate_metrics'] = result['metrics']
         result['n_windows'] = request.n_windows if request.walk_forward else 1
         result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)

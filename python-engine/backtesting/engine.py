@@ -100,6 +100,7 @@ class BacktestEngine:
         self.trade_from         = pd.Timestamp(trade_from) if trade_from is not None else None
         self.trades: list[dict] = []
         self.minute_fallback_bars = 0   # velas con minutos faltantes evaluadas como vela completa (NUEVO-01)
+        self.closed_at_end = 0          # posición abierta al final del rango cerrada con end_of_data (BP-04)
         self.interval_minutes   = INTERVAL_MINUTES.get(str(getattr(strategy, 'interval', '60')), 60)
 
         # Funding (collectors.funding_collector.FundingData): liquidaciones UTC sin tz + tasas
@@ -481,6 +482,16 @@ class BacktestEngine:
                 pos = None
                 equity_curve.append(self.balance)
 
+        # BP-04: una posición abierta al final del rango no desaparece del resultado: se cierra al cierre de la última
+        # vela (con slippage, comisión y funding, como cualquier salida) y cuenta en trades y métricas.
+        if pos is not None:
+            last = n - 1
+            t_end = bar_times[last] + step
+            self._close(pos, closes[last], 'end_of_data', t_end, last - pos['entry_bar'] + 1, (t_end, t_end))
+            self.closed_at_end = 1
+            pos = None
+            equity_curve.append(self.balance)
+
         metrics = calculate_metrics(self.trades, self.initial_balance)
         metrics['equity_curve'] = equity_curve
         logger.info(f"Backtest completo: {metrics['total_trades']} trades | WR: {metrics['win_rate']}% | "
@@ -492,6 +503,7 @@ class BacktestEngine:
             "interval":    s.interval,
             "total_bars":  n,
             "minute_fallback_bars": self.minute_fallback_bars,
+            "closed_at_end": self.closed_at_end,
             "metrics":     metrics,
             "trades":      self.trades,
         }

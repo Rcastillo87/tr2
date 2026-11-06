@@ -193,8 +193,9 @@ async def simulate(params, df, start, ticks=(2, 3, 4), kill=False):
 def engine_trades(params, df, start):
     s = pt.build_strategy(params)
     r = BacktestEngine(s, df, trade_from=df['time'][start]).run()
+    # end_of_data (BP-04): el motor cierra al final del rango lo que Paper sigue teniendo abierto
     return [(t['side'], round(float(t['entry_price']), 6), round(float(t['exit_price']), 6), t['exit_reason'])
-            for t in r['trades']]
+            for t in r['trades'] if t['exit_reason'] != 'end_of_data']
 
 
 def paper_closed(store):

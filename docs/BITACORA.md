@@ -19,6 +19,27 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Backtest: la posición abierta al final del rango se cierra con end_of_data (BP-04)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** Si al terminar el rango quedaba una posición abierta, el motor calculaba las métricas sin ella: no aparecía en trades, balance ni métricas. Si iba perdiendo, el backtest y cada combinación de la búsqueda salían mejor de lo real. Reproducido: con el código anterior el trade desaparece (9 fallos de la prueba nueva). En la batería sintética de paridad del motor ocurre en **27 resultados**.
+- **Ahora (opción a, elegida por el dueño):**
+  - Se cierra al **cierre de la última vela**, con motivo `end_of_data`, slippage en contra, comisión y funding hasta ese cierre, como cualquier salida.
+  - Cuenta en trades, balance, curva de capital y métricas. El resultado trae `closed_at_end`.
+  - La pantalla avisa: «1 posición seguía abierta al final del rango: se cerró al último cierre (motivo end_of_data…)».
+- **Búsqueda de parámetros:** usa el mismo motor, así que ahora también ve ese trade. Las búsquedas ya guardadas no cambian; las nuevas pueden diferir en el último trade de cada combinación.
+- **Paper/Real:** no cambian. Ahí la posición sigue viva y la cierran sus reglas. Las pruebas de paridad Paper/Real vs motor comparan sin ese último trade del motor.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `backtesting/engine.py` (cierre `end_of_data`, `closed_at_end`); `api/v1/backtest.py` (aviso); `engine_speed_parity_test.py` (la referencia V3 congelada descarta la posición: se compara sin ese único último trade, con las métricas recalculadas, y se exige que aparezca); `paper_opposite_test.py` y `real_opposite_test.py` (paridad sin el `end_of_data` del motor) | `tests/Forensic/end_of_data_test.py`: 13 casos en PASS (long y short con slippage del lado correcto, `exit_time` = cierre de la última vela, comisión de entrada y salida, `bars_open`, métricas y equity, funding del tramo abierto, sin posición al final no cambia nada, entrada en la última vela, reversa + short abierto, aviso y trade en `/backtest/run`). Antes del cambio: **9 FALLOS**. Las 3 pruebas ajustadas pasan también con el código viejo. 7 mutaciones detectadas. Regresión en TODO OK, ahora con `param_search_v3_test` |
+
+### Cambios fuera de git
+- (se completa al instalar p22)
+
+---
+
 ## 2026-11-05 (Bogotá) — Backtest: vela con minutos de 1m faltantes = vela completa con SL primero (NUEVO-01)
 
 ### Resumen para el dueño
@@ -38,7 +59,7 @@
 | (este) | `backtesting/engine.py` (`m_full` por vela, `minute_fallback_bars`); `api/v1/backtest.py` (aviso) | `tests/Forensic/minute_coverage_test.py`: 10 casos en PASS (1m completo sin cambios, SL en minutos faltantes, TP en los minutos con SL en la vela gana el SL, vela incompleta sin toque sigue, conteo solo del tramo operado incluida la vela sin minutos, sin 1m, **homologación con Paper**: mismo motivo, precio y hora; aviso en `/backtest/run`). Antes del cambio: **8 FALLOS**. 5 mutaciones detectadas. `engine_speed_parity_test` (referencia del motor V3) y `param_search_v3_test` en TODO OK. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p21)
+- Instalado con **p21** el 05-nov: regresión 31 en TODO OK; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log` desde el reinicio; `main` subido (`dc0a5c8..fd21778`).
 
 ---
 
