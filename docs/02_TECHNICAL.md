@@ -2,6 +2,8 @@
 
 > ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
 
+> **[V7.2] 2026-11-06:** cambios de p19–p30 (señal ya operada, hora de salida del evento, huecos de 1m, `end_of_data`, volatilidad, snapshot sin código, funding diario, validación de parámetros, fusión del JSON editado, comparador) resumidos en `docs/PROMPT_MAESTRO.md` §7 «Cambios del 05–06 nov» y en `docs/BITACORA.md`. Donde este documento diga otra cosa, manda aquel.
+
 > Documento 2 de 3. Referencia exhaustiva: cada ruta HTTP, cada función, cada campo de base de datos, cada job programado. Escrito para desarrolladores que necesitan modificar o depurar el sistema sin tener que leer el código fuente completo primero.
 
 ---
@@ -645,13 +647,13 @@ Modelos Pydantic: `SubscriptionPayload` (espejo de lo que envía `RealTradingTic
 
 ### Tabla completa de parámetros — `BacktestRequest` (Pydantic, `api/v1/backtest.py`) **[V7.1]**
 
-Solo los campos **enviados** pisan a `strategy_config` (`strategy_params` usa `model_fields_set`).
+Solo los campos **enviados** pisan a `strategy_config` (`strategy_params` usa `model_fields_set`). **[V7.2]** Un `model_validator` rechaza valores imposibles con las reglas de `backtesting/request_rules.json` (las mismas de `App\Services\BacktestPayload::validate`): 422 con el mensaje en español.
 
 | Campo | Tipo | Default | Notas |
 |---|---|---|---|
 | `strategy` | str | requerido | Nombre visible |
 | `strategy_code`, `strategy_config` | str / dict opcional | None | Código de la clase y sus parámetros propios |
-| `symbol`, `interval` | str | "BTCUSDT", "60" | |
+| `symbol`, `interval` | str | "BTCUSDT", "60" | **[V7.2]** intervalo: solo 1, 5, 15, 60, 120, 240, D |
 | `initial_balance`, `risk_per_trade_pct` | float | 10000.0, 1.0 | |
 | `sl_pct`, `tp_pct` | float | 1.5, 3.0 | TP1 |
 | `tp2_pct`, `tp3_pct`, `tp4_pct` | float opcional | None | |
@@ -666,7 +668,7 @@ Solo los campos **enviados** pisan a `strategy_config` (`strategy_params` usa `m
 | `volume_filter`, `volume_filter_period`, `volume_filter_mult` | bool, int, float | False, 20, 1.2 | |
 | `hour_filter`, `hour_filter_start`, `hour_filter_end` | bool, int, int | False, 7, 21 | Sin UI |
 | `weekend_filter`, `blocked_hours`, `blocked_days` | bool, list, list | False, [], [] | Sin UI |
-| `trailing_mode` | str opcional | None | None · fixed · stepped · atr |
+| `trailing_mode` | str opcional | None | None · fixed · stepped · atr (**[V7.2]** stepped exige `trailing_steps` no vacío en el payload o en `strategy_config`) |
 | `trailing_distance_pct`, `trailing_activation_buffer_pct`, `trailing_atr_mult`, `trailing_steps` | | 1.0, 0.0, 2.0, [] | Fijo: mínimo 1,0 % |
 | `close_on_opposite`, `exit_on_opposite`, `allow_short` | bool | False, False, True | |
 | `commission_pct`, `slippage_pct` | float | 0.055, 0.0 | La UI manda 0.055 / 0.05 por lado |
@@ -948,7 +950,7 @@ Si no se pudo obtener el `mark_price` actual (fallo de red puntual), usa los SL/
 16. **Actualiza la fila a `status='open'`** con reintentos propios (hasta 4 intentos con esperas crecientes `[2, 5, 30]` segundos) — si todos fallan, registra un log de nivel `critical` advirtiendo que la posición está abierta en Bybit pero la base de datos no pudo reflejarlo, un escenario de inconsistencia que requeriría intervención manual o que el job de reconciliación lo detecte en su próximo ciclo (la posición seguiría existiendo en Bybit aunque la fila en DB quedara en `pending_open` indefinidamente, hasta que la reconciliación la encuentre).
 17. Registra auditoría final (`'opened'`) y loguea el resumen completo de la apertura.
 
-### `close_trade(trade, exit_reason, client, account_id, exit_price_override=None)`
+### `close_trade(trade, exit_reason, client, account_id, exit_price_override=None, bybit_net_pnl=None, closed_size=None, exit_time=None)` **[V7.2: exit_time = hora del closed-pnl de Bybit en cierres nativos; `COALESCE($9::timestamp, now())`]**
 
 **Camino "override"** (cuando el monitor ya detectó que Bybit cerró la posición y solo hay que reflejarlo en DB, sin enviar ninguna orden): calcula PnL/comisión/PnL neto directamente con el precio de cierre ya conocido, consulta el balance actual tras el cierre, y actualiza la fila a `closed` en una sola operación. (Nota técnica: esta rama usa la variable `symbol` en su línea de log final sin haberla definido localmente dentro de esa rama del código — solo existe `trade['symbol']` disponible — lo que provocaría un `NameError` no controlado en tiempo de ejecución si ese log se alcanza a ejecutar; ver documento de hallazgos para el detalle exacto.)
 

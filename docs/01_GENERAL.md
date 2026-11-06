@@ -2,6 +2,8 @@
 
 > ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
 
+> **[V7.2] 2026-11-06:** cambios de p19–p30 (señal ya operada, hora de salida del evento, huecos de 1m, `end_of_data`, volatilidad, snapshot sin código, funding diario, validación de parámetros, fusión del JSON editado, comparador) resumidos en `docs/PROMPT_MAESTRO.md` §7 «Cambios del 05–06 nov» y en `docs/BITACORA.md`. Donde este documento diga otra cosa, manda aquel.
+
 > Documento 1 de 3. Visión completa del proyecto: qué es, cómo está construido, cómo fluye la información entre sus partes, y qué hace cada módulo de negocio. Escrito para que cualquier persona (técnica o no) entienda el sistema completo sin tener que leer código.
 
 ---

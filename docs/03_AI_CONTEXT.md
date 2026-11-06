@@ -2,6 +2,8 @@
 
 > ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
 
+> **[V7.2] 2026-11-06:** cambios de p19–p30 (señal ya operada, hora de salida del evento, huecos de 1m, `end_of_data`, volatilidad, snapshot sin código, funding diario, validación de parámetros, fusión del JSON editado, comparador) resumidos en `docs/PROMPT_MAESTRO.md` §7 «Cambios del 05–06 nov» y en `docs/BITACORA.md`. Donde este documento diga otra cosa, manda aquel.
+
 > Documento 3 de 3. Optimizado para que un asistente de IA cargue contexto operativo del proyecto sin re-explorar el código fuente. Prosa mínima, máxima densidad de hechos verificables. Última actualización: exploración completa de 227 archivos del repo `Rcastillo87/tr2`, rama `main`.
 
 ---
@@ -732,7 +734,7 @@ SHORT: sl_prov = mark*sl_margin (above price)    tp_prov = mark*tp_margin (below
 LONG:  sl_prov = mark*(2-sl_margin) (below price) tp_prov = mark*(2-tp_margin) (above price)
 ```
 
-**`close_trade(trade, exit_reason, client, account_id, exit_price_override=None)`:**
+**`close_trade(trade, exit_reason, client, account_id, exit_price_override=None, bybit_net_pnl=None, closed_size=None, exit_time=None)`:** [V7.2: exit_time from Bybit closed-pnl updatedTime on native closes]
 ```python
 # OVERRIDE path (monitor already detected Bybit closed it, just reflect in DB):
 #   compute pnl/commission/net_pnl directly with known exit_price_override
@@ -850,7 +852,7 @@ INTERVALS=1,5,15,60,120                        # collector fallback only
 # Laravel composer.json
 php: ^8.3
 laravel/framework: ^13.8
-laravel/horizon: ^5.47        # installed, NOT confirmed actively used (scheduler used, not clear if queue workers run via Horizon)
+laravel/horizon: ^5.47        # [V7.2] USED: systemd trading2-horizon (runs as root), supervisors supervisor-1 (high, default) and supervisor-research (research); restart with systemctl
 phpoffice/phpspreadsheet: ^5.8
 predis/predis: ^3.5
 guzzlehttp/guzzle: ^7.11

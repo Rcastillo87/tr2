@@ -109,7 +109,9 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 | `inversionista` | Paper y Real (su propia cuenta) |
 
 ### Backtesting (`/backtesting`)
-- 24 meses de calendario completos hasta el último mes cerrado. Velas de 1m para las salidas cuando cubren todo el rango; si no, se descartan (regla de integridad).
+- 24 meses de calendario completos hasta el último mes cerrado. Velas de 1m para las salidas cuando cubren el rango (≥ 98 %); si no, se descartan (regla de integridad). Una vela a la que le faltan minutos se evalúa como vela completa con SL primero (aviso en pantalla).
+- **Hora de salida = minuto del evento** (con 1m). Una posición abierta al final del rango se cierra al último cierre con motivo `end_of_data` y cuenta en las métricas (aviso).
+- **Parámetros validados** con las mismas reglas en Laravel y Python (`python-engine/backtesting/request_rules.json`): se rechaza lo imposible (SL/TP fuera de 0–100 %, saldo o comisión negativos, modos o intervalos que no existen, trailing escalonado sin pasos) con un mensaje en español. El JSON de la estrategia editado en el formulario se **fusiona** con el de la estrategia (lo no escrito se conserva). La protección por volatilidad solo se envía si viene en el request; si no, manda el JSON.
 - **Funding de Bybit** descontado en cada trade (pesimista: paga si la liquidación coincide con la entrada o la salida; cobra solo si cae estrictamente dentro).
 - **Filtros de apertura:** régimen con **regímenes permitidos** (por defecto los de la estrategia; aviso si con la elección el filtro no bloquea nada), volumen mínimo, tendencia macro H4 (EMA 50) y **tendencia de BTC** (EMA 50 H4 de BTC; solo altcoins; sin velas de BTC no opera). Todos sin mirar al futuro.
 - Estrellas = `RatingHelper::calculate(win rate, Sharpe, PF, retorno mensual, consistencia)` por moneda, promediadas.
@@ -125,18 +127,19 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 - Historial con enfoque, modo y monedas probadas; **Eliminar** (solo admin).
 
 ### Paper trading (`/paper-trading`)
-Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela).
+Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela). Decide si una señal ya se usó con la misma regla que el motor y guarda como hora de salida la del evento (minuto de 1m). No salta un hueco del 1m: espera la reparación y, si a las 26 h sigue, usa la vela completa con SL primero. Paridad verificable con `tools/analysis/compare_paper_vs_backtest.py --config <id>`.
 
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
 - Tick cada minuto por cuenta (`RealTradingTickJob`), conciliación cada 5 min (`RealTradingReconcileJob`), circuit breaker por pérdida máxima cada minuto.
-- SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick.
+- SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick. En un cierre nativo de Bybit la hora de salida es la del closed-pnl. Misma regla de señal ya operada que Paper y el motor.
 - Órdenes idempotentes (`orderLinkId` guardado antes de enviar; un `pending_open` se recupera preguntando por esa orden). Chequeo de liquidación al abrir.
 - **Límites de riesgo por cuenta** (pérdida máxima del mes y trades abiertos), editables por el dueño en `/trading/accounts`. **Avisos de broker** (`broker_events`) en la campana del dueño.
 
 ### Data Collector (`/collector`)
 - 12 monedas (BTC, ETH, SOL, XRP, ZEC, HYPE, ENA, DOGE, SUI, NEAR, 1000PEPE, LINK) × 1m, 5m, 15m, 1h, 2h, 4h, 1D = **84 series**, historia desde 2024-06-01 (BNB desactivado; sus velas se conservan).
 - Cada minuto: `CollectOhlcvDataJob` → `/v1/collector/run` (4 series en paralelo, UPSERT; nunca dos corridas a la vez).
+- **Funding:** la reparación diaria de las 04:00 lo pone al día para las monedas activas; si una pasa de 30 h sin funding, aviso «Funding atrasado» en la campana (se cierra solo).
 - **Vigilante** (`collector:watchdog`, cron cada 5 min, no depende de Horizon): revisa el motor, el atraso real de cada serie y si la cola corre el collector. Si algo se atrasa, corre el collector directo. Reinicia el motor o Horizon tras 3 revisiones seguidas con falla (máximo 1 vez cada 30 min por servicio) si está habilitado en `.env`.
 - **Validación diaria 04:00 (America/Bogota)**: compara las últimas 300 velas cerradas de cada serie con Bybit y el historial completo (velas esperadas vs guardadas, sin `lag()`). Luego **repara** lo que falle: vuelve a descargar de Bybit y guarda con UPSERT, **nunca borra**, máximo 7 días por serie por pasada. Los días que Bybit tampoco tiene completos se registran en `storage/app/collector_bybit_gaps.json` y dejan de contar como huecos.
 
@@ -299,13 +302,23 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `risk_limits_test.py`, `risk_limits_laravel_test.php` | Límites de riesgo por cuenta |
 | `broker_events_test.py`, `broker_events_drain_test.php`, `broker_event_messages_test.php` | Avisos de broker |
 | `bybit_order_idempotency_test.py`, `real_recovery_test.py` | Órdenes idempotentes y recuperación de `pending_open` |
+| `signal_reuse_test.py` | Señal ya operada y hora de salida como el motor (Paper y Real, sondas A y B, paridad con 1m) |
+| `minute_gap_test.py`, `minute_coverage_test.py` | Huecos de 1m en Paper y velas incompletas en el backtest (homologados) |
+| `end_of_data_test.py`, `exit_time_test.py` | Posición abierta al final del rango; hora de salida del backtest |
+| `volatility_json_test.py`, `backtest_payload_volatility_test.php` | La volatilidad del JSON no se pisa |
+| `snapshot_code_test.py` | Snapshot sin `strategy_code` |
+| `funding_refresh_test.py`, `funding_alert_test.php` | Funding al día y aviso de atraso |
+| `request_rules_test.py`, `config_merge_test.php` | Validación de parámetros (Laravel = Python) y fusión del JSON editado |
+| `compare_tool_test.py` | Comparador Paper vs backtest |
+
+Regresión oficial (36 Python + 6 PHP): lista en `docs/PENDIENTES_AUDITORIA.md` §1.
 
 ---
 
 ## 8. Cómo hacer cambios
 
 1. `git status` antes de tocar nada; leer el estado real del archivo.
-2. Parches como scripts Python con reemplazos exactos (`replace()` con ancla única) y verificación md5: **abortan sin escribir** si el archivo no es el esperado y se pueden correr dos veces sin efecto.
+2. Parches: instalador pegable en SSH (`pNN_instalar.sh`) con el diff en base64 y su md5, `git apply --check`, md5 de origen y final por archivo, respaldo en `/root/patches/pNN/orig/`, regresión completa con reversión automática, reinicios seguros, verificación en `engine.log` y commit + push. **Abortan sin escribir** si el origen no es el esperado, dicen «YA APLICADO» la segunda vez y retoman una corrida cortada («APLICADO SIN TERMINAR»).
 3. Validar: `php -l` (PHP), `venv/bin/python -m py_compile` (Python), `php artisan view:cache` (Blade).
 4. Probar (prueba forense o consulta), y solo entonces `git add -A && git commit`.
 5. Si algo falla: `git checkout -- <archivo>` o restaurar el `.bak_NN`.
@@ -318,6 +331,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 **Backtest vs paper/real**
 - El backtest entra al open de la vela siguiente; paper/real al precio del tick (≤ 1–2 min después).
+- Salida por tiempo máximo: en Paper con la hora de proceso (tick siguiente); el comparador lo tolera (5 min).
 - BE, trailing ATR y cierre por tiempo: por vela de 1m en el backtest, por tick (1 min) en vivo.
 - Real: slippage real de Bybit y cantidad redondeada al paso del símbolo.
 
@@ -326,7 +340,9 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 **Pendientes**
 - Revisión automática de lotes solapados tras cada compresión.
-- Reconciliación paper vs backtest con trades reales.
+- Correr el comparador (`compare_paper_vs_backtest.py --config <id>`) sobre las configs activas de Paper y registrar el resultado.
+- Fase estadística (holdout, cartera, walk forward, drawdown flotante, tamaño con costos): opciones en `docs/FASE12_ESTADISTICA.md`.
+- `trading2-horizon` corre como root (propuesta: `tr2`).
 - Funding en pantalla (diseño listo).
 - Medir slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
 - Reescribir `docs/01–03` (julio 2026).

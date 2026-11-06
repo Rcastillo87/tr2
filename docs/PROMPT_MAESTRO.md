@@ -1,7 +1,7 @@
-# PROMPT MAESTRO V7.1 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.2 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.1 · 2026-10-27 · Reemplaza a la V7.0 y al Prompt Maestro V6.2.
+> Versión 7.2 · 2026-11-06 · Reemplaza a la V7.1 (agrega el protocolo de instalación sin subida de archivos, los cambios p19–p30 y sus lecciones).
 > Complementos: `README.md` (cómo funciona y cómo se opera) y `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**).
 
 ---
@@ -57,7 +57,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 
 **Reinicios permitidos (nunca reiniciar el servidor completo):**
 - Motor: `systemctl restart trading2-engine` (no `uvicorn` a mano, no `fuser -k`).
-- Horizon: `systemctl restart trading2-horizon` — ⚠️ **mata la búsqueda que esté corriendo**. Antes, comprobar:
+- Horizon: `systemctl restart trading2-horizon` — ⚠️ **mata la búsqueda que esté corriendo**. El servicio corre como **root**: `php artisan horizon:terminate` lanzado como `tr2` no le llega (sin error). Verificar con `systemctl show trading2-horizon -p ActiveEnterTimestamp`. Antes, comprobar:
   `bash ops/dbsql.sh -c "SELECT id, status FROM param_search_runs WHERE status IN ('queued','running');"`
 
 **Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`.
@@ -87,6 +87,8 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 ## 6. Protocolo de trabajo (la IA no tiene acceso al servidor)
 
 ### 6.1 Leer
+- **Si el dueño no puede adjuntar archivos** (solo interfaz y SSH): comandos de salida corta (conteos, md5, pocas líneas) para pegar en el chat; `set +H` si el SQL lleva `!`.
+- Logs del motor: `python-engine/logs/engine.log` (no el journal: el servicio usa `StandardOutput=append`). Las líneas de acceso de uvicorn no llevan hora.
 - Dar un comando que **guarde la salida en un archivo** y pedir que lo adjunte (la terminal pierde el principio de salidas largas):
   ```bash
   cd /home/tr2/htdocs/tr2.srv685835.hstgr.cloud && O=/root/lectura_X.txt; { echo "=== git"; git status --short; echo "=== archivo"; cat ruta/archivo; } > $O 2>&1; wc -l $O
@@ -98,8 +100,10 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Bloques largos **como archivo** (SendUserFile), no pegados en el chat: el copiado manual metió números de línea en un base64.
 - **Todo script que el dueño pegue va envuelto en `( … )`**: un `set -euo pipefail` o un `exit` pegados directo en la terminal cierran su sesión SSH (pasó el 2026-10-27). Dentro de la subshell sí se usa `set -euo pipefail`.
 - Instalaciones largas: con `rollback()` que restaura los originales si una prueba falla después de aplicar.
+- La **salida esperada** se escribe sin bloque de código (un bloque parece un comando y se llegó a pegar en la terminal).
 
 ### 6.2 Parchar
+- **Estándar desde p19:** instalador generado `pNN_instalar.sh` con el **diff** (`git diff --binary`, gzip + base64 + md5), manifiesto `archivo md5_origen md5_final`, `git apply --check`, regresión completa (reversión si falla), `php -l`/`py_compile`, cachés de Laravel **como el dueño de `storage/`**, `systemctl restart trading2-horizon` y del motor solo sin búsquedas ni órdenes Real pendientes (Horizon solo si cambió PHP; nada si es solo documentación), tick de Paper y 0 errores en `engine.log` desde el reinicio, commit y push. Modos: «YA APLICADO», «APLICADO SIN TERMINAR» (md5 final + HEAD anterior: retoma sin reaplicar). Probado en un simulador del servidor (dos corridas + reversión).
 - Script dentro de un `.tgz` en **base64** con su **md5** (se extrae en `/root/patches/pNN/`). Para reemplazos de archivo completo: manifiesto `archivo md5_origen md5_nuevo` (aborta si el origen no coincide; "YA APLICADO" si ya está; originales a `/root/patches/pNN/orig/`, **no** `.bak` dentro del proyecto).
 - El script:
   - **verifica md5** de los archivos que reemplaza completos y **aborta sin escribir** si no coinciden;
@@ -124,7 +128,7 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 
 ---
 
-## 7. Estado actual (2026-10-27)
+## 7. Estado actual (2026-10-27; cambios del 05–06 nov al final de esta sección)
 
 ### Módulos
 | Módulo | Estado |
@@ -146,6 +150,20 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 - `app/Services/` (`ParamSearchService`, `BacktestFromSearch`, `StrategyConfigSync`, `SystemAlerts`).
 - `app/Console/Commands/CollectorWatchdog.php`, `routes/console.php` (tareas programadas).
 - `config/trading.php` (motor, clave interna, vigilante), `config/horizon.php`, `config/queue.php`.
+- `python-engine/backtesting/request_rules.json` (validación de parámetros, Laravel y Python), `app/Services/BacktestPayload.php`, `python-engine/tools/analysis/compare_paper_vs_backtest.py` (paridad).
+
+### Cambios del 05–06 nov 2026 (p19–p30, auditoría del 05-nov) **[V7.2]**
+Detalle, pruebas y decisiones en `docs/BITACORA.md`; estado de cada hallazgo en `docs/CERTIFICACION_AUDITORIA.md`.
+- **Señal ya operada (Paper y Real, p19):** la señal de la vela que cierra en T abre solo si en T no había posición y nadie entró desde T (`entry_time >= T OR exit_time >= T` bloquea), igual que el motor.
+- **Hora de salida = la del evento:** Paper guarda el minuto de 1m que disparó la salida (señal opuesta: T); Real guarda el `updatedTime` del closed-pnl de Bybit en los cierres nativos (p19); el backtest guarda el minuto de 1m (p24; métricas idénticas).
+- **Huecos de 1m:** Paper no salta un minuto faltante (espera la reparación; a las 26 h `PAPER_MINUTE_GAP_WAIT_HOURS` usa la vela completa con SL primero, p20); el backtest evalúa como vela completa con SL primero toda vela con minutos faltantes (`minute_fallback_bars`, aviso; p21). Homologados.
+- **`end_of_data` (p22):** la posición abierta al final del rango se cierra al último cierre (slippage, comisión, funding) y cuenta en las métricas (`closed_at_end`, aviso).
+- **Volatilidad (p23):** `BacktestPayload::volatility()` solo la envía si vino en el request; si no, manda el JSON. La búsqueda (`UI_FIXED = {}`) y `BacktestFromSearch` la tratan igual.
+- **Snapshot sin `strategy_code` (p25):** Paper y Real toman solo el código de la config viva; parámetros congelados.
+- **Funding (p26):** la reparación diaria (`cli/collector_repair.py`) lo pone al día para las monedas activas; > 30 h (`FUNDING_STALE_HOURS`) abre el aviso `funding_stale`.
+- **Validación de parámetros (p27, p29):** reglas únicas en `python-engine/backtesting/request_rules.json` (rangos, enteros, modos, intervalos del motor, ADX lateral ≤ tendencia, `stepped` necesita `trailing_steps`), aplicadas por `BacktestPayload::validate` (Laravel, mensaje en español) y `BacktestRequest` (Python, 422).
+- **JSON de la estrategia editado (p29):** se fusiona por clave de primer nivel (`BacktestPayload::mergeConfig`); antes reemplazaba todo.
+- **Comparador (p28):** `tools/analysis/compare_paper_vs_backtest.py --config <id>`: parámetros congelados del snapshot, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
 
 ---
 
@@ -171,15 +189,25 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 | `hash()` de Python cambia entre procesos | Usar `zlib.crc32` para semillas reproducibles. |
 | Script pegado cerró la sesión SSH | Envolver en `( … )` todo lo que se pegue. |
 | `postgres` sin permiso en `/root/` | `psql < archivo` en vez de `-f`. |
+| «0 errores del motor» con `journalctl` | El motor escribe en `python-engine/logs/engine.log`: verificar ahí. |
+| Horizon «reiniciado» con `horizon:terminate` como `tr2` | Corre como root: `systemctl restart trading2-horizon` y comprobar `ActiveEnterTimestamp`. |
+| Pegado cortado tras aplicar el diff | El instalador retoma («APLICADO SIN TERMINAR»); copiar desde el visor del archivo. |
+| Base simulada que reconocía el SQL por su texto | Ejecutar el SQL real sobre SQLite (`tests/Forensic/sqlfake.py`). |
+| Regla que compara contra `exit_time` | Exige que `exit_time` sea la hora del evento, no la del proceso. |
+| Mutación no detectada | O falta un caso (agregarlo) o es equivalente (simplificar el código). |
+| `!~` en SQL pegado en bash | `set +H` (expansión de historial). |
 
 ---
 
 ## 9. Pendientes (orden sugerido)
 
-> **Próxima sesión: empezar por el 1.** Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.1 (si siguen en V6.2, pedirle que las reemplace por este documento).
+> **Próxima sesión: empezar por el 1.** Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.2 (si no, pedirle que las reemplace por este documento).
 
 1. **Revisión automática de lotes solapados** dos veces al día, tras `policy_compression` (detección en `/root/patches/batches/detect.sql`; arreglo = rehacer solo los fragmentos afectados).
-2. Reconciliación paper vs backtest con trades reales (cuando las 3 configs de paper lleven 1–2 semanas cerrando operaciones).
+2. ~~Reconciliación paper vs backtest~~: herramienta lista (p28); falta correrla sobre las configs activas y registrar el resultado.
+2b. Fase estadística: elegir opciones en `docs/FASE12_ESTADISTICA.md`.
+2c. `trading2-horizon` como `tr2` en vez de root (revisar antes qué necesita root).
+2d. Auditoría: `docs/CERTIFICACION_AUDITORIA.md` (faltan los textos de REAL-05 y CFG-01, 02, 06–09).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla" listo, pospuesto por el dueño).
 4. Slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
 5. Etiqueta "código desactualizado" en paper (requiere maqueta).
