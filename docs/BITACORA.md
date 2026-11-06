@@ -19,6 +19,29 @@
 
 ---
 
+## 2026-11-05 (Bogotá) — Backtest: vela con minutos de 1m faltantes = vela completa con SL primero (NUEVO-01)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** El backtest usa el 1m si cubre al menos el **98 %** del rango (`MIN_COMPLETENESS`). Dentro de ese rango, una vela grande a la que le faltaban minutos se evaluaba **solo con los minutos presentes**: un SL tocado en los que faltan no se veía. Reproducido: con el SL en los minutos faltantes el trade no cerraba, quedaba abierto hasta el final del histórico y desaparecía del resultado (eso es BP-04).
+- **Historial:** el 98 % y la regla «no mezclar» vienen de `aea032b` (26-oct, «1m solo si cubre todo el rango»). El 98 % nació como umbral para **reportar** huecos. «No mezclar» evita dos criterios cuando el 1m empieza tarde, no trata un minuto suelto que falta.
+- **Lectura real (05-nov), 24 meses:** 2 horas con 1m incompleto en total. HYPE tiene 1 (faltan 55 min); BNB tiene 1 (26 min, fuera del collector); las otras 11 monedas tienen 0.
+- **Ahora (opción 1, elegida por el dueño):**
+  - Una vela grande a la que le falta cualquier minuto se evalúa como **vela completa con SL primero**, igual que sin 1m y que Paper ante un hueco permanente (p20): backtest y Paper homologados.
+  - El resto del rango sigue con 1m. El umbral del 98 % para usar o descartar el 1m entero no cambia.
+  - La pantalla avisa: «Aviso: N vela(s) de X con minutos de 1m faltantes: evaluadas con vela completa y SL primero (pesimista)». El resultado trae `minute_fallback_bars`.
+- **Costo:** ninguno. El motor ya calculaba los minutos de cada vela; es una comparación vectorial.
+- **Efecto:** con los datos actuales solo cambia una vela de HYPE, y solo si en esa hora había una posición abierta. La búsqueda de parámetros usa el mismo motor (mismo resultado que un backtest de la pantalla).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `backtesting/engine.py` (`m_full` por vela, `minute_fallback_bars`); `api/v1/backtest.py` (aviso) | `tests/Forensic/minute_coverage_test.py`: 10 casos en PASS (1m completo sin cambios, SL en minutos faltantes, TP en los minutos con SL en la vela gana el SL, vela incompleta sin toque sigue, conteo solo del tramo operado incluida la vela sin minutos, sin 1m, **homologación con Paper**: mismo motivo, precio y hora; aviso en `/backtest/run`). Antes del cambio: **8 FALLOS**. 5 mutaciones detectadas. `engine_speed_parity_test` (referencia del motor V3) y `param_search_v3_test` en TODO OK. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p21)
+
+---
+
 ## 2026-11-05 (Bogotá) — Paper no salta un hueco dentro del 1m (BP-03)
 
 ### Resumen para el dueño
@@ -38,7 +61,7 @@
 | (este) | `trading/paper_trader.py`: `split_at_minute_gap()`, `_minute_path()`, `_gap_candles()`; el monitor recorre esa ruta; `MINUTE_GAP_WAIT` desde `.env`; `python-engine/.env.example`; `tests/Forensic/paper_parity_test.py` (el arnés entrega 1m completo, sin huecos, como producción) | `tests/Forensic/minute_gap_test.py`: 18 casos en PASS (regla de corte, punto de control con segundos, hueco reciente: se detiene y avisa sin consultas extra, **hueco reparado con el SL adentro: cierra en ese minuto**, hueco permanente: SL con vela completa y hora de la vela, sin toque sigue, sin doble evaluación, sin vela de respaldo espera, dos huecos con plazos distintos, caso normal sin cambios, plazo 26 h). Antes del cambio: **15 FALLOS** (con el código viejo el SL del hueco reparado se pierde). `paper_parity_test` con el arnés nuevo: TODO OK antes y después (arnés fiel). 7 mutaciones detectadas (una destapó un bucle sin fin, ahora con guarda). Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p20)
+- Instalado con **p20** el 05-nov: regresión 30 en TODO OK; motor reiniciado; tick de Paper `POST /v1/paper/tick 200` con el código nuevo; 0 errores en `engine.log` desde el reinicio (verificación nueva, probada con un `[ERROR]` simulado); `main` subido (`a373996..dc0a5c8`).
 
 ---
 

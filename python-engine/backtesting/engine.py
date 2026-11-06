@@ -99,6 +99,7 @@ class BacktestEngine:
         self.regime_data        = regime_data or {}
         self.trade_from         = pd.Timestamp(trade_from) if trade_from is not None else None
         self.trades: list[dict] = []
+        self.minute_fallback_bars = 0   # velas con minutos faltantes evaluadas como vela completa (NUEVO-01)
         self.interval_minutes   = INTERVAL_MINUTES.get(str(getattr(strategy, 'interval', '60')), 60)
 
         # Funding (collectors.funding_collector.FundingData): liquidaciones UTC sin tz + tasas
@@ -362,10 +363,14 @@ class BacktestEngine:
         self._bar_t = pd.to_datetime(df['time'], utc=True).dt.tz_convert(None).to_numpy(dtype='datetime64[ns]')
         self._bar_open = opens
         bar_times = list(times)   # Timestamps (lo mismo que times.iloc[i], sin el costo de pandas por vela)
-        m_lo = m_hi = None        # velas de 1m de cada vela grande: [m_lo[i], m_hi[i]) en _m_time
+        m_lo = m_hi = m_full = None   # velas de 1m de cada vela grande: [m_lo[i], m_hi[i]) en _m_time
         if self._m_time is not None:
             m_lo = np.searchsorted(self._m_time, self._bar_t, side='left')
             m_hi = np.searchsorted(self._m_time, self._bar_t + np.timedelta64(int(self.interval_minutes), 'm'), side='left')
+            # NUEVO-01: una vela a la que le faltan minutos no está cubierta: se evalúa como vela completa con SL
+            # primero (igual que sin 1m, y que Paper ante un hueco permanente). Revisar solo los minutos presentes
+            # podía no ver un SL tocado en los que faltan.
+            m_full = (m_hi - m_lo) >= int(self.interval_minutes)
         signals = df['signal'].fillna(0).astype(int).to_numpy()
         signal_sl = df['signal_sl_pct'].to_numpy(dtype=float) if 'signal_sl_pct' in df.columns else None
 
@@ -388,6 +393,8 @@ class BacktestEngine:
             elif times.dt.tz is None and tf.tzinfo is not None:
                 tf = tf.tz_convert('UTC').tz_localize(None)
             first_trade_idx = max(1, int((times < tf).sum()))
+        if m_full is not None:
+            self.minute_fallback_bars = int((~m_full[first_trade_idx:]).sum())
         step = timedelta(minutes=self.interval_minutes)
         exit_on_opposite = bool(getattr(s, 'close_on_opposite', False) or getattr(s, 'exit_on_opposite', False))
         reverse_on_opposite = not bool(getattr(s, 'exit_on_opposite', False))
@@ -439,7 +446,7 @@ class BacktestEngine:
             bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None  # al cierre de i
             level = reason = exit_span = None
             a, b = (int(m_lo[i]), int(m_hi[i])) if m_lo is not None else (0, 0)
-            if a < b:
+            if a < b and m_full[i]:
                 k, level, reason = self._scan(pos, self._m_high[a:b], self._m_low[a:b], trail_atr)
                 if level is not None:
                     m0 = pd.Timestamp(self._m_time[a + k])
@@ -484,6 +491,7 @@ class BacktestEngine:
             "symbol":      s.symbol,
             "interval":    s.interval,
             "total_bars":  n,
+            "minute_fallback_bars": self.minute_fallback_bars,
             "metrics":     metrics,
             "trades":      self.trades,
         }
