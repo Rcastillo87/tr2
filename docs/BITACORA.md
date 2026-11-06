@@ -19,6 +19,29 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Snapshot sin strategy_code: se usa el código de la config viva (BP-07)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** Si el `config_snapshot` de un trade abierto no traía `strategy_code`, `build_strategy` fallaba:
+  - **Paper** saltaba la posición en cada ciclo: **sin SL/TP**.
+  - **Real** saltaba la gestión del bot (break-even, trailing, volatilidad, duración); el SL/TP de Bybit seguía activo.
+- **Lectura real (06-nov):** 0 trades de Paper o Real con snapshot sin código, 0 sin snapshot, 0 configs sin código y 0 apariciones del error en todos los logs. **Riesgo teórico hoy.** El dueño eligió la defensa barata.
+- **Ahora:**
+  - Si al snapshot le falta el código (o está en blanco), se toma **solo el código** de la config viva (Paper: la config activa del trade; Real: la de la suscripción, nueva columna `live_strategy_code` en las dos consultas de trades abiertos).
+  - Los parámetros siguen siendo los **congelados**, y queda un `WARNING` en `engine.log`.
+  - Sin config viva, el error de siempre.
+  - Un snapshot con código usa el suyo.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `trading/paper_trader.py` (`_trade_params`); `trading/real_trader.py` (`_trade_strategy`, `live_strategy_code`) | `tests/Forensic/snapshot_code_test.py`: 11 casos en PASS (Paper cierra por SL con los parámetros congelados, sin el slippage de la config viva; aviso; sin config viva igual que antes; snapshot con código usa el suyo; código en blanco = faltante; Real construye la estrategia con `sl_pct` congelado; aviso; sin código vivo, `None`; las dos consultas traen la columna). Antes del cambio: **8 FALLOS**. 6 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p25)
+
+---
+
 ## 2026-11-06 (Bogotá) — Backtest: la hora de salida es la del evento (NUEVO-02)
 
 ### Resumen para el dueño
@@ -36,7 +59,7 @@
 | (este) | `backtesting/engine.py` (`exit_time = exit_span[0]`, en UTC); `engine_speed_parity_test.py` (la referencia V3 guarda la vela: se acepta el minuto solo dentro de esa vela; **11.027 salidas** pasan al minuto); `minute_coverage_test.py` (TP por 1m en su minuto); `signal_reuse_test.py` (la paridad Paper vs motor ahora exige **la misma hora exacta**) | `tests/Forensic/exit_time_test.py`: 8 casos en PASS (SL y TP con 1m en su minuto, UTC, sin 1m y respaldo = apertura, salida al cierre = cierre, **métricas idénticas** a las calculadas con la hora de la vela, minuto dentro de su vela). Antes del cambio: **2 FALLOS** (los de 1m). 3 mutaciones detectadas (una cuarta resultó equivalente y se simplificó el código). Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p24)
+- Instalado con **p24** el 06-nov: regresión 36 en TODO OK; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`2ebbbd2..c2e29ca`).
 
 ---
 
@@ -58,7 +81,7 @@
 | (este) | `app/Services/BacktestPayload.php` (nuevo); `BacktestingController.php` (sin defaults de volatilidad); `BacktestFromSearch.php` (sin `'none'`); `cli/param_search.py` (`UI_FIXED = {}`) | `tests/Forensic/backtest_payload_volatility_test.php` (10 casos: sin campos no se envía nada, `'none'` = null, valores enviados viajan, vacíos = no enviados, el controlador usa el servicio sin defaults, el formulario de la búsqueda no trae volatilidad) y `tests/Forensic/volatility_json_test.py` (6 casos: pantalla sin campos → JSON, `'none'` apaga, enviado pisa, sin JSON → apagada, **la búsqueda respeta el JSON**). Antes del cambio: **4 + 2 FALLOS**. 6 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- Instalado con **p23** el 06-nov: regresión 35 en TODO OK; `php -l`; cachés de Laravel (config/route/view) limpiadas como `tr2`; autoload de `App\Services\BacktestPayload` OK; `horizon:terminate` ejecutado (la línea de `horizon:status` salió vacía: se verifica aparte con `systemctl`; desde p24 el instalador lo comprueba con `systemctl`); motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`eec81a5..2ebbbd2`).
+- Instalado con **p23** el 06-nov: regresión 35 en TODO OK; `php -l`; cachés de Laravel (config/route/view) limpiadas como `tr2`; autoload de `App\Services\BacktestPayload` OK; **Horizon NO se reinició**: `trading2-horizon` corre como **root** y `horizon:terminate` lanzado como `tr2` no pudo enviarle la señal, sin mostrar error (`ActiveEnterTimestamp` seguía en 03-nov 20:19). Se reinició a mano el 06-nov **18:45:22 UTC** con `systemctl restart trading2-horizon`, sin búsquedas activas (6 procesos). Mientras tanto, el único efecto posible fue que un backtest lanzado desde la búsqueda siguiera forzando `'none'`, sin impacto: ninguna estrategia usa volatilidad. Desde p25 el instalador usa `systemctl restart` y verifica que cambie la hora de arranque; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`eec81a5..2ebbbd2`).
 
 ---
 

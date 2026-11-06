@@ -95,9 +95,17 @@ class PaperTrader:
         snapshot = trade.get('config_snapshot')
         if isinstance(snapshot, str):
             snapshot = json.loads(snapshot)
-        if snapshot:
-            return snapshot
         config_id = trade.get('paper_strategy_config_id')
+        if snapshot:
+            if not (snapshot.get('strategy_code') or '').strip():
+                # BP-07: sin el código la estrategia no se construye y la posición quedaría sin gestión de SL/TP.
+                # Se toma SOLO el código de la config viva; los parámetros siguen siendo los congelados.
+                live = self._get_params_for(config_id).get('strategy_code') or '' if config_id in self.config_map else ''
+                if live.strip():
+                    logger.warning(f"[PAPER] Trade #{trade['id']}: el snapshot no trae strategy_code; se usa el "
+                                   f"código de la config viva #{config_id} con los parámetros congelados")
+                    return {**snapshot, 'strategy_code': live}
+            return snapshot
         if config_id in self.config_map:
             logger.warning(f"[PAPER] Trade #{trade['id']} sin config_snapshot (anterior al snapshot): "
                            f"se usa la config viva #{config_id}")

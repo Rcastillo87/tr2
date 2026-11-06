@@ -814,7 +814,8 @@ class RealTrader:
                        rt.size, rt.original_size, rt.realized_pnl_partial,
                        rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
                        rt.trailing_applied, rt.original_sl, rt.vol_widened,
-                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot
+                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot,
+                       psc.params->>'strategy_code' AS live_strategy_code
                 FROM real_trades rt
                 LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
                 LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
@@ -835,7 +836,8 @@ class RealTrader:
                        rt.size, rt.original_size, rt.realized_pnl_partial,
                        rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
                        rt.trailing_applied, rt.original_sl, rt.vol_widened,
-                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot
+                       COALESCE(rt.config_snapshot, psc.params) AS config_snapshot,
+                       psc.params->>'strategy_code' AS live_strategy_code
                 FROM real_trades rt
                 LEFT JOIN real_strategy_subscriptions rss ON rss.id = rt.subscription_id
                 LEFT JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
@@ -863,6 +865,13 @@ class RealTrader:
         if not params:
             logger.error(f"[REAL] Trade #{trade['id']}: sin config_snapshot ni config de suscripción")
             return None
+        live = trade.get('live_strategy_code') or ''
+        if not (params.get('strategy_code') or '').strip() and live.strip():
+            # BP-07: sin el código no hay gestión del bot (BE, trailing, volatilidad, duración). Solo el código
+            # viene de la config viva de la suscripción; los parámetros siguen siendo los congelados.
+            logger.warning(f"[REAL] Trade #{trade['id']}: el snapshot no trae strategy_code; se usa el código de la "
+                           f"config viva de la suscripción con los parámetros congelados")
+            params = {**params, 'strategy_code': live}
         try:
             return build_strategy({**params, 'symbol': trade['symbol'], 'interval': trade['interval']})
         except Exception as e:
