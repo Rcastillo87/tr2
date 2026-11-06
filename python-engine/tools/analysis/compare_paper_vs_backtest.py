@@ -1,209 +1,249 @@
 #!/usr/bin/env python3
 """
-Compara trades de paper_trading (DB) contra backtest (endpoint) para una
-config especifica. Alinea por entry_time redondeado a la hora (H2), muestra
-divergencias en entry_price, exit_price, exit_reason y pnl.
+Paridad Paper vs backtest de una config de Paper (BP-06): mismas reglas → mismos eventos.
+Corre el backtest (/v1/backtest/run) con los parámetros CONGELADOS de los trades de Paper (config_snapshot) en el mismo
+rango y empareja las operaciones por (lado, vela de entrada). Compara motivo y hora EXACTA de salida (Paper y backtest
+guardan la hora del evento: p19, p24), precios y PnL en % (el PnL absoluto no es comparable: Paper dimensiona con un
+saldo fijo y el backtest con el acumulado). Una posición abierta en Paper frente a un end_of_data del backtest se
+informa aparte (no es divergencia).
+
+Uso (desde python-engine/):
+  venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config 54 [--start 2026-10-20] [--end 2026-11-06]
+                                                                           [--json-out salida.json]
+Código de salida: 0 = sin divergencias · 1 = hay divergencias · 2 = no se pudo comparar.
 """
+import argparse
 import asyncio
-import asyncpg
-import httpx
-import os
+import hashlib
 import json
+import os
 import sys
-from datetime import datetime, timezone
-from dotenv import load_dotenv
+from datetime import date, datetime, timedelta, timezone
 
-load_dotenv()
+sys.path.insert(0, os.getcwd())
 
-DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-API_URL = "http://localhost:8002/v1/backtest/run"
-API_KEY = os.getenv("INTERNAL_API_KEY")
-if not API_KEY:
-    raise SystemExit("INTERNAL_API_KEY no definida en python-engine/.env")
+import pandas as pd  # noqa: E402
 
-# Config a comparar (editable)
-DISPLAY_NAME = sys.argv[1] if len(sys.argv) > 1 else "VWAP Tendencia — BTCUSDT H2"
-START_DATE   = sys.argv[2] if len(sys.argv) > 2 else "2026-10-16"  # forward: solo post-fix
-END_DATE     = sys.argv[3] if len(sys.argv) > 3 else "2026-10-15"
+from collectors.broker_resolver import interval_delta  # noqa: E402
+
+PRICE_TOL_PCT = 0.3      # Δ de precio de entrada/salida tolerado (Paper entra al precio vivo del tick)
+TIME_EXIT_TOL_MIN = 5    # salida por tiempo máximo: Paper la ejecuta en el tick siguiente (hora de proceso, por diseño)
+TIME_EXITS = ('time_exit', 'time_exit_profit')
+SKIP_KEYS = {'symbol', 'interval', 'start_date', 'end_date', 'walk_forward', 'monthly_breakdown', 'strategy'}
 
 
-async def fetch_paper_trades():
-    pool = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=3)
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT id, strategy, symbol, side, entry_price, sl, tp, size,
-                   entry_time, exit_time, exit_price, exit_reason,
-                   pnl, pnl_pct, status
-            FROM paper_trades
-            WHERE strategy = $1
-              AND entry_time >= $2
-              AND entry_time <= $3
-            ORDER BY entry_time ASC
-        """, DISPLAY_NAME,
-             datetime.fromisoformat(START_DATE),
-             datetime.fromisoformat(END_DATE + " 23:59:59"))
-    await pool.close()
-    return [dict(r) for r in rows]
+# ───────────────────────────── funciones puras (probadas en tests/Forensic/compare_tool_test.py) ─────────────────────
+
+def as_dict(v) -> dict:
+    return json.loads(v) if isinstance(v, str) else dict(v or {})
 
 
-async def fetch_config():
-    pool = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=3)
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT strategy_class, symbol, interval, params
-            FROM paper_strategy_configs
-            WHERE display_name = $1
-        """, DISPLAY_NAME)
-    await pool.close()
-    return dict(row) if row else None
+def snapshot_key(params: dict) -> str:
+    return hashlib.md5(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:10]
 
 
-def run_backtest(config):
-    params = config['params']
-    if isinstance(params, str):
-        params = json.loads(params)
-
-    strategy_name = config['strategy_class']
-    if strategy_name == 'VwapStrategy':
-        strategy = "VWAP Tendencia" if params.get('mode') == 'trend_follow' else "VWAP Reversión"
-    elif strategy_name == 'MeanReversionStrategy':
-        strategy = "Reversión a la Media"
-    elif strategy_name == 'EmaDonchianStrategy':
-        strategy = "Tendencia EMA/Donchian"
-    else:
-        raise ValueError(f"Clase desconocida: {strategy_name}")
-
-    payload = {
-        "strategy": strategy,
-        "symbol": config['symbol'],
-        "interval": config['interval'],
-        "walk_forward": False,     # false → devuelve trades crudos
-        "start_date": START_DATE,
-        "end_date": END_DATE,
-        **params
-    }
-    payload.setdefault('max_leverage', 1.0)
-
-    print(f"[backtest] POST {API_URL} → {strategy} {config['symbol']} {config['interval']} "
-          f"({START_DATE} → {END_DATE})")
-    r = httpx.post(API_URL, headers={"X-Internal-API-Key": API_KEY},
-                   json=payload, timeout=180)
-    r.raise_for_status()
-    return r.json().get('result', {})
+def naive_utc(t) -> datetime | None:
+    if t is None:
+        return None
+    t = pd.Timestamp(t)
+    return (t.tz_convert('UTC').tz_localize(None) if t.tzinfo is not None else t).to_pydatetime()
 
 
-def floor_to_interval(dt, interval_minutes):
-    if isinstance(dt, str):
-        dt = datetime.fromisoformat(dt)
-    if dt.tzinfo:
-        dt = dt.replace(tzinfo=None)
-    total = dt.hour * 60 + dt.minute
-    floored = (total // interval_minutes) * interval_minutes
-    return dt.replace(hour=floored // 60, minute=floored % 60, second=0, microsecond=0)
+def candle(t, step: timedelta) -> datetime:
+    """Vela (UTC, alineada a 00:00) que contiene t."""
+    t = naive_utc(t)
+    epoch = datetime(1970, 1, 1)
+    return epoch + ((t - epoch) // step) * step
 
 
-def main():
-    paper_trades = asyncio.run(fetch_paper_trades())
-    config = asyncio.run(fetch_config())
+def pick_snapshot(trades: list[dict]) -> tuple[dict | None, int]:
+    """Parámetros congelados del primer trade del rango y cuántos trades tienen otros (cambio de config)."""
+    snaps = [as_dict(t.get('config_snapshot')) for t in trades if t.get('config_snapshot')]
+    if not snaps:
+        return None, 0
+    k = snapshot_key(snaps[0])
+    return snaps[0], sum(1 for s in snaps if snapshot_key(s) != k)
 
-    if not config:
-        print(f"❌ Config no encontrada: {DISPLAY_NAME}")
-        return
 
-    interval_minutes = int(config['interval'])
+def backtest_payload(cfg: dict, params: dict, start: str, end: str) -> dict:
+    p = {k: v for k, v in params.items() if k not in SKIP_KEYS}
+    return dict(p, strategy=cfg['display_name'] or f"config #{cfg['id']}", symbol=cfg['symbol'],
+                interval=str(cfg['interval']), start_date=start, end_date=end, walk_forward=False,
+                monthly_breakdown=False)
 
-    print(f"=== {DISPLAY_NAME} ===")
-    print(f"Paper trades (ventana): {len(paper_trades)}")
-    print()
 
-    bt = run_backtest(config)
-    bt_trades = bt.get('trades', [])
-    print(f"Backtest trades: {len(bt_trades)}")
-    print()
+def default_range(trades: list[dict], start: str | None, end: str | None, today: date) -> tuple[str, str]:
+    first = min((naive_utc(t['entry_time']) for t in trades), default=None)
+    s = start or (first.date().isoformat() if first else (today - timedelta(days=30)).isoformat())
+    return s, end or today.isoformat()
 
-    def key(t, field='entry_time'):
-        et = t.get(field)
-        return floor_to_interval(et, interval_minutes) if et else None
 
-    paper_by_key = {}
-    for t in paper_trades:
-        k = key(t)
-        if k:
-            paper_by_key.setdefault(k, []).append(t)
+def pct(a, b) -> float | None:
+    return None if a is None or b is None or float(b) == 0 else (float(a) - float(b)) / float(b) * 100
 
-    bt_by_key = {}
-    for t in bt_trades:
-        k = key(t)
-        if k:
-            bt_by_key.setdefault(k, []).append(t)
 
-    all_keys = sorted(set(paper_by_key.keys()) | set(bt_by_key.keys()))
-
-    matched = paper_only = bt_only = 0
-    sum_d_entry = 0.0
-    n_d_entry = 0
-    sum_d_exit = 0.0
-    n_d_exit = 0
-
-    print(f"{'entry_time':<20} {'side':<6} {'paper_entry':<14} {'bt_entry':<14} {'Δe%':<7} "
-          f"{'paper_exit':<14} {'bt_exit':<14} {'paper_rsn':<18} {'bt_rsn':<18} {'p_pnl':<9} {'b_pnl':<9}")
-    print("-" * 165)
-
-    for k in all_keys:
-        p_trades = paper_by_key.get(k, [])
-        b_trades = bt_by_key.get(k, [])
-        n = max(len(p_trades), len(b_trades))
-        for i in range(n):
-            p = p_trades[i] if i < len(p_trades) else None
-            b = b_trades[i] if i < len(b_trades) else None
-
+def match_trades(paper: list[dict], bt: list[dict], step: timedelta) -> list[dict]:
+    """Empareja por (lado, vela de entrada), en orden. Cada fila: kind = igual | distinta | abierta | solo_paper |
+    solo_backtest, con las diferencias."""
+    def group(rows):
+        g = {}
+        for t in sorted(rows, key=lambda x: naive_utc(x['entry_time'])):
+            g.setdefault((t['side'], candle(t['entry_time'], step)), []).append(t)
+        return g
+    gp, gb = group(paper), group(bt)
+    out = []
+    for key in sorted(set(gp) | set(gb), key=lambda k: (k[1], k[0])):
+        ps, bs = gp.get(key, []), gb.get(key, [])
+        for i in range(max(len(ps), len(bs))):
+            p = ps[i] if i < len(ps) else None
+            b = bs[i] if i < len(bs) else None
+            row = dict(side=key[0], candle=key[1], paper=p, backtest=b)
             if p and b:
-                matched += 1
-                pe = float(p['entry_price'])
-                be = float(b['entry_price'])
-                d_pct = abs(pe - be) / be * 100 if be else 0
-                sum_d_entry += d_pct
-                n_d_entry += 1
-
-                pex = p.get('exit_price')
-                bex = b.get('exit_price')
-                d_ex = "—"
-                if pex is not None and bex is not None:
-                    pex_f, bex_f = float(pex), float(bex)
-                    d_ex = f"{abs(pex_f - bex_f) / bex_f * 100:.3f}"
-                    sum_d_exit += float(d_ex)
-                    n_d_exit += 1
-
-                print(f"{str(k):<20} {p['side']:<6} {pe:<14.4f} {be:<14.4f} {d_pct:<7.3f} "
-                      f"{str(pex or '—'):<14} {str(bex or '—'):<14} "
-                      f"{str(p.get('exit_reason') or '—'):<18} {str(b.get('exit_reason') or '—'):<18} "
-                      f"{str(p.get('pnl') or '—'):<9} {str(b.get('pnl') or '—'):<9}")
+                is_open = p.get('status') == 'open'
+                d_entry = pct(p['entry_price'], b['entry_price'])
+                row.update(d_entry_pct=d_entry)
+                if is_open:
+                    row['kind'] = 'abierta' if b.get('exit_reason') == 'end_of_data' else 'distinta'
+                    row['why'] = [] if row['kind'] == 'abierta' else [f"Paper abierta, backtest cerró por {b.get('exit_reason')}"]
+                else:
+                    pe, be = naive_utc(p.get('exit_time')), naive_utc(b.get('exit_time'))
+                    d_exit_min = None if pe is None or be is None else (pe - be).total_seconds() / 60
+                    d_exit = pct(p.get('exit_price'), b.get('exit_price'))
+                    why = []
+                    if p.get('exit_reason') != b.get('exit_reason'):
+                        why.append(f"motivo {p.get('exit_reason')} vs {b.get('exit_reason')}")
+                    tol = TIME_EXIT_TOL_MIN if b.get('exit_reason') in TIME_EXITS else 0
+                    if d_exit_min is None or abs(d_exit_min) > tol:
+                        why.append(f"hora de salida {'+' if (d_exit_min or 0) > 0 else ''}{d_exit_min} min"
+                                   if d_exit_min is not None else 'hora de salida desconocida')
+                    if d_entry is not None and abs(d_entry) > PRICE_TOL_PCT:
+                        why.append(f"entrada Δ {d_entry:.3f} %")
+                    if d_exit is not None and abs(d_exit) > PRICE_TOL_PCT:
+                        why.append(f"salida Δ {d_exit:.3f} %")
+                    row.update(d_exit_pct=d_exit, d_exit_min=d_exit_min, why=why, kind='distinta' if why else 'igual',
+                               pnl_pct=(p.get('pnl_pct'), b.get('pnl_pct')))
             elif p:
-                paper_only += 1
-                print(f"{str(k):<20} {p['side']:<6} PAPER-only   entry={p['entry_price']} "
-                      f"exit={p.get('exit_price')} rsn={p.get('exit_reason')} pnl={p.get('pnl')}")
+                row.update(kind='solo_paper', why=['sin operación en el backtest'])
             else:
-                bt_only += 1
-                print(f"{str(k):<20} {b['side']:<6} BT-only      entry={b['entry_price']} "
-                      f"exit={b.get('exit_price')} rsn={b.get('exit_reason')} pnl={b.get('pnl')}")
-
-    paper_pnl = sum(float(t.get('pnl') or 0) for t in paper_trades if t.get('pnl') is not None)
-    bt_pnl    = sum(float(t.get('pnl') or 0) for t in bt_trades)
-
-    print()
-    print(f"=== Resumen ===")
-    print(f"  Matched (mismo bar):  {matched}")
-    print(f"  Paper-only:           {paper_only}")
-    print(f"  BT-only:              {bt_only}")
-    if n_d_entry:
-        print(f"  Δ entry % promedio:   {sum_d_entry / n_d_entry:.4f}%")
-    if n_d_exit:
-        print(f"  Δ exit  % promedio:   {sum_d_exit / n_d_exit:.4f}%")
-    print()
-    print(f"  Paper PnL total:      {paper_pnl:.4f}")
-    print(f"  Backtest PnL total:   {bt_pnl:.4f}")
-    print(f"  Diferencia PnL:       {(paper_pnl - bt_pnl):.4f}")
+                row.update(kind='solo_backtest', why=['sin operación en Paper'])
+            out.append(row)
+    return out
 
 
-if __name__ == "__main__":
-    main()
+def summarize(rows: list[dict]) -> dict:
+    n = {k: sum(1 for r in rows if r['kind'] == k) for k in ('igual', 'distinta', 'abierta', 'solo_paper', 'solo_backtest')}
+    closed = [r for r in rows if r['kind'] in ('igual', 'distinta') and r.get('paper') and r.get('backtest')
+              and r['paper'].get('status') != 'open']
+    same_reason = sum(1 for r in closed if r['paper'].get('exit_reason') == r['backtest'].get('exit_reason'))
+    same_time = sum(1 for r in closed if r.get('d_exit_min') is not None and abs(r['d_exit_min']) <= (
+        TIME_EXIT_TOL_MIN if r['backtest'].get('exit_reason') in TIME_EXITS else 0))
+    d_entry = [abs(r['d_entry_pct']) for r in rows if r.get('d_entry_pct') is not None]
+    return dict(**n, emparejadas_cerradas=len(closed), mismo_motivo=same_reason, misma_hora=same_time,
+                d_entry_medio_pct=round(sum(d_entry) / len(d_entry), 4) if d_entry else None,
+                divergencias=n['distinta'] + n['solo_paper'] + n['solo_backtest'])
+
+
+def report(cfg: dict, start: str, end: str, rows: list[dict], s: dict, other_snapshots: int) -> str:
+    lines = [f"=== Paridad Paper vs backtest · config #{cfg['id']} {cfg['display_name']} · {cfg['symbol']} {cfg['interval']}"
+             f" · {start} → {end} ===",
+             f"{'vela de entrada':<17} {'lado':<5} {'resultado':<13} {'Paper':<34} {'backtest':<34} diferencias"]
+    for r in rows:
+        def side(t):
+            if not t:
+                return '—'
+            if t.get('status') == 'open':
+                return f"abierta @ {float(t['entry_price']):.6g}"
+            return f"{t.get('exit_reason')} {naive_utc(t.get('exit_time')):%m-%d %H:%M} {t.get('pnl_pct')}%"
+        lines.append(f"{r['candle']:%Y-%m-%d %H:%M} {r['side']:<5} {r['kind']:<13} {side(r.get('paper')):<34} "
+                     f"{side(r.get('backtest')):<34} {'; '.join(r.get('why') or [])}")
+    lines += ['', f"Iguales {s['igual']} · distintas {s['distinta']} · solo Paper {s['solo_paper']} · solo backtest "
+                  f"{s['solo_backtest']} · abiertas (end_of_data) {s['abierta']}",
+              f"Cerradas emparejadas {s['emparejadas_cerradas']}: mismo motivo {s['mismo_motivo']}, misma hora de salida "
+              f"{s['misma_hora']} · Δ entrada medio {s['d_entry_medio_pct']} %",
+              f"DIVERGENCIAS: {s['divergencias']}"]
+    if other_snapshots:
+        lines.append(f"AVISO: {other_snapshots} trade(s) del rango tienen otros parámetros congelados (la config cambió):"
+                     f" acotar --start/--end a un solo snapshot para una comparación exacta.")
+    return '\n'.join(lines)
+
+
+# ───────────────────────────── E/S (base de datos y motor) ─────────────────────────────
+
+async def load(config_id: int, start: str | None, end: str | None) -> tuple[dict | None, list[dict]]:
+    import asyncpg
+    from dotenv import load_dotenv
+    load_dotenv()
+    dsn = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:"
+           f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+    conn = await asyncpg.connect(dsn)
+    try:
+        cfg = await conn.fetchrow("SELECT id, display_name, symbol, interval, params FROM paper_strategy_configs"
+                                  " WHERE id = $1", config_id)
+        q = ("SELECT id, side, entry_price, exit_price, entry_time, exit_time, exit_reason, pnl_pct, status,"
+             " config_snapshot FROM paper_trades WHERE paper_strategy_config_id = $1")
+        args = [config_id]
+        if start:
+            q += f" AND entry_time >= ${len(args) + 1}"
+            args.append(datetime.fromisoformat(start))
+        if end:
+            q += f" AND entry_time < ${len(args) + 1}"
+            args.append(datetime.fromisoformat(end) + timedelta(days=1))
+        trades = [dict(r) for r in await conn.fetch(q + " ORDER BY entry_time", *args)]
+    finally:
+        await conn.close()
+    return (dict(cfg) if cfg else None), trades
+
+
+def run_backtest(payload: dict) -> dict:
+    import httpx
+    from dotenv import load_dotenv
+    load_dotenv()
+    key = os.getenv('INTERNAL_API_KEY')
+    if not key:
+        raise SystemExit('INTERNAL_API_KEY no definida en python-engine/.env')
+    url = os.getenv('ENGINE_URL', 'http://127.0.0.1:8002') + '/v1/backtest/run'
+    r = httpx.post(url, headers={'X-Internal-API-Key': key}, json=payload, timeout=600)
+    if r.status_code != 200:
+        raise SystemExit(f'el backtest respondió {r.status_code}: {r.text[:300]}')
+    return r.json()
+
+
+def main(argv=None, loader=load, backtester=run_backtest, today: date | None = None) -> int:
+    ap = argparse.ArgumentParser(description='Paridad Paper vs backtest de una config de Paper')
+    ap.add_argument('--config', type=int, required=True, help='id de paper_strategy_configs')
+    ap.add_argument('--start', help='YYYY-MM-DD (por defecto: el primer trade de Paper)')
+    ap.add_argument('--end', help='YYYY-MM-DD inclusive (por defecto: hoy UTC)')
+    ap.add_argument('--json-out')
+    a = ap.parse_args(argv)
+
+    cfg, trades = asyncio.run(loader(a.config, a.start, a.end))
+    if not cfg:
+        print(f'No existe la config de Paper #{a.config}')
+        return 2
+    if not trades:
+        print(f'La config #{a.config} no tiene trades de Paper en el rango')
+        return 2
+    params, other = pick_snapshot(trades)
+    if params is None:
+        params = as_dict(cfg['params'])
+    start, end = default_range(trades, a.start, a.end, today or datetime.now(timezone.utc).date())
+    out = backtester(backtest_payload(cfg, params, start, end))
+    bt = (out.get('result') or {}).get('trades', [])
+    step = interval_delta(str(cfg['interval']))
+    # el backtest arranca en `start`: solo cuentan sus operaciones desde ahí (y las de Paper del mismo rango)
+    lo = datetime.fromisoformat(start)
+    bt = [t for t in bt if naive_utc(t['entry_time']) >= lo]
+    rows = match_trades(trades, bt, step)
+    s = summarize(rows)
+    print(report(cfg, start, end, rows, s, other))
+    for w in out.get('warnings') or []:
+        print(w)
+    if a.json_out:
+        with open(a.json_out, 'w', encoding='utf-8') as f:
+            json.dump(dict(config=cfg['id'], start=start, end=end, summary=s, rows=rows,
+                           other_snapshots=other), f, ensure_ascii=False, default=str)
+    return 1 if s['divergencias'] else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

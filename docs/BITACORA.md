@@ -19,6 +19,36 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Comparador Paper vs backtest rehecho: paridad de eventos por config (BP-06)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** `tools/analysis/compare_paper_vs_backtest.py` no servía para certificar las configs actuales:
+  - fechas por defecto invertidas (16-oct → 15-oct: rango vacío);
+  - solo conocía clases viejas (falla con `DynamicStrategy`, que son todas);
+  - no mandaba `strategy_code`;
+  - `int('D')` se caía;
+  - buscaba los trades de Paper por **nombre**;
+  - comparaba el **PnL absoluto**, que no es comparable (Paper dimensiona con saldo fijo y el backtest con el acumulado);
+  - no conocía `end_of_data`;
+  - no comparaba la hora de salida.
+- **Ahora (herramienta de línea de comandos, no la usa la pantalla):** `--config <id>`.
+  - Usa los **parámetros congelados** del snapshot de los trades del rango (con `strategy_code`); si la config cambió dentro del rango, avisa.
+  - Fechas por defecto: del primer trade de Paper a hoy.
+  - Empareja por **(lado, vela de entrada)** y compara motivo, **hora exacta de salida** (tolerancia de 5 min solo en `time_exit`, que Paper ejecuta en el tick siguiente), Δ de precios (≤ 0,3 %) y **PnL %**.
+  - Paper abierta frente a `end_of_data` = «abierta», no divergencia.
+  - Código de salida 0/1/2 y `--json-out`.
+- **Criterio acordado** (`PENDIENTES_AUDITORIA.md` §3.5): paridad de reglas y eventos, no de PnL.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `tools/analysis/compare_paper_vs_backtest.py` (reescrito, funciones puras + E/S separada) | `tests/Forensic/compare_tool_test.py`: 25 casos en PASS (emparejamiento por lado y vela, motivo y hora distintos, tolerancia de `time_exit`, abierta vs `end_of_data`, lados distintos no se emparejan, resumen, velas `D` y 240 alineadas a 00:00 UTC, payload con `strategy_code` y `strategy_config` del snapshot, fechas por defecto, cambio de snapshot, `main()` de punta a punta con códigos 0/1/2, sin PnL absoluto; **con salidas reales de Paper simulado y del motor: 34 de 34 iguales, 0 divergencias**). Antes del cambio: FALLA. 8 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p28 y con la corrida sobre las configs reales)
+
+---
+
 ## 2026-11-06 (Bogotá) — Validación de los parámetros del backtest, mismas reglas en Laravel y Python (F-03)
 
 ### Resumen para el dueño
@@ -37,7 +67,7 @@
 | (este) | `backtesting/request_rules.json` y `request_rules.py` (nuevos); `api/v1/backtest.py` (validador); `app/Services/BacktestPayload.php` (`validate()`); `BacktestingController.php` (valida cada payload y los meses) | `tests/Forensic/request_rules_test.py`: 50 casos en PASS. La **misma tabla** pasa por Python y por Laravel (`php`), con 44 casos de aceptar o rechazar en los límites, NaN, infinito, enteros, opcionales, modos, intervalo 30 y numérico, y ADX cruzado; mensaje exacto en español; **valores guardados en producción aceptados**; defaults válidos; el controlador valida antes de llamar a Python. Antes del cambio: **47 FALLOS**. 8 mutaciones detectadas (dos casos agregados tras mutaciones no detectadas: intervalo numérico y saldo infinito). Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p27)
+- Instalado con **p27** el 06-nov: regresión 40 en TODO OK; `php -l`; cachés de Laravel como `tr2`; autoload de `App\Services\BacktestPayload` OK; Horizon reiniciado con `systemctl` (6 procesos); motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`e9951b2..8c1ac16`).
 
 ---
 
