@@ -19,6 +19,27 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Backtest: la hora de salida es la del evento (NUEVO-02)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** Con 1m, una salida por SL/TP/trailing se guardaba con la **apertura de la vela grande** (en H4, un SL a las 03:47 quedaba a las 00:00), aunque el motor ya conocía el minuto (`m0`, que usaba para el funding). Desde p19 Paper guarda el minuto del evento, así que backtest y Paper tenían horas distintas para la misma salida.
+- **Ahora:** `exit_time = inicio de exit_span`, la misma fuente que el funding:
+  - con 1m, el minuto que disparó la salida;
+  - salidas al cierre (tiempo máximo, volatilidad), el cierre de la vela (sin cambios);
+  - sin 1m o con la vela incompleta (NUEVO-01), la apertura de la vela, momento desconocido, igual que Paper (sin cambios).
+- El minuto del 1m venía **sin zona horaria**; ahora se guarda en UTC, como `entry_time` y el resto de las salidas.
+- **Ninguna métrica cambia.** Solo el Sharpe usa `exit_time` (PnL por día UTC), y el minuto cae siempre en el día de su vela. Walk forward, desglose mensual y el corte 2/3 de la búsqueda usan `entry_time`. Cambia la hora que se muestra y se exporta, y el comparador (BP-06) puede comparar horas exactas.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `backtesting/engine.py` (`exit_time = exit_span[0]`, en UTC); `engine_speed_parity_test.py` (la referencia V3 guarda la vela: se acepta el minuto solo dentro de esa vela; **11.027 salidas** pasan al minuto); `minute_coverage_test.py` (TP por 1m en su minuto); `signal_reuse_test.py` (la paridad Paper vs motor ahora exige **la misma hora exacta**) | `tests/Forensic/exit_time_test.py`: 8 casos en PASS (SL y TP con 1m en su minuto, UTC, sin 1m y respaldo = apertura, salida al cierre = cierre, **métricas idénticas** a las calculadas con la hora de la vela, minuto dentro de su vela). Antes del cambio: **2 FALLOS** (los de 1m). 3 mutaciones detectadas (una cuarta resultó equivalente y se simplificó el código). Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p24)
+
+---
+
 ## 2026-11-06 (Bogotá) — La protección por volatilidad del JSON ya no se pisa con valores por defecto (F-01)
 
 ### Resumen para el dueño
@@ -37,7 +58,7 @@
 | (este) | `app/Services/BacktestPayload.php` (nuevo); `BacktestingController.php` (sin defaults de volatilidad); `BacktestFromSearch.php` (sin `'none'`); `cli/param_search.py` (`UI_FIXED = {}`) | `tests/Forensic/backtest_payload_volatility_test.php` (10 casos: sin campos no se envía nada, `'none'` = null, valores enviados viajan, vacíos = no enviados, el controlador usa el servicio sin defaults, el formulario de la búsqueda no trae volatilidad) y `tests/Forensic/volatility_json_test.py` (6 casos: pantalla sin campos → JSON, `'none'` apaga, enviado pisa, sin JSON → apagada, **la búsqueda respeta el JSON**). Antes del cambio: **4 + 2 FALLOS**. 6 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p23)
+- Instalado con **p23** el 06-nov: regresión 35 en TODO OK; `php -l`; cachés de Laravel (config/route/view) limpiadas como `tr2`; autoload de `App\Services\BacktestPayload` OK; `horizon:terminate` ejecutado (la línea de `horizon:status` salió vacía: se verifica aparte con `systemctl`; desde p24 el instalador lo comprueba con `systemctl`); motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`eec81a5..2ebbbd2`).
 
 ---
 

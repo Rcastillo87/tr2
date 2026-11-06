@@ -98,8 +98,8 @@ async def main():
     hours, mins = data(skip=gap, minute_high={hm(11, 30): 102.5})
     r, _ = run(hours, mins)
     t = r['trades']
-    check('vela incompleta sin toque: sigue y el TP de la vela siguiente sale por 1m',
-          len(t) == 1 and t[0]['exit_reason'] == 'take_profit_1' and pd.Timestamp(t[0]['exit_time']) == pd.Timestamp(hm(11, 0)),
+    check('vela incompleta sin toque: sigue y el TP de la vela siguiente sale por 1m (en su minuto, 11:30)',
+          len(t) == 1 and t[0]['exit_reason'] == 'take_profit_1' and pd.Timestamp(t[0]['exit_time']) == pd.Timestamp(hm(11, 30)),
           [(x['exit_reason'], str(x['exit_time'])) for x in t])
 
     # 5. Conteo: solo velas del tramo operado; la vela sin ningún minuto también cuenta

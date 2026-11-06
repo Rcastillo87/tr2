@@ -478,7 +478,12 @@ class BacktestEngine:
                     exit_span = (bar_time + step, bar_time + step)
                 elif exit_span is None:   # salida dentro de la vela sin 1m: momento exacto desconocido
                     exit_span = (bar_time, bar_time + step - one_ns)
-                self._close(pos, level, reason, bar_time + step if at_close else bar_time, bars_held, exit_span)
+                # Hora de salida = inicio de exit_span, la del evento (como Paper, p19): con 1m el minuto que lo disparó
+                # (NUEVO-02); al cierre de la vela en las salidas al cierre; sin 1m, la apertura (momento desconocido).
+                exit_time = exit_span[0]
+                if getattr(bar_time, 'tzinfo', None) is not None and exit_time.tzinfo is None:
+                    exit_time = exit_time.tz_localize('UTC')   # el 1m viene sin zona: mismo tipo que bar_time
+                self._close(pos, level, reason, exit_time, bars_held, exit_span)
                 pos = None
                 equity_curve.append(self.balance)
 

@@ -220,12 +220,12 @@ async def paper_section():
             xt, et = x['exit_time'], naive(y['exit_time'])
             if x['exit_reason'] == 'opposite_signal':
                 ok = xt == et
-            else:   # el motor guarda la vela; Paper el minuto: dentro de esa vela y ese minuto toca el nivel
+            else:   # motor y Paper guardan el minuto del evento (NUEVO-02): igual, y ese minuto toca el nivel
                 row = mins[mins['time'] == pd.Timestamp(xt, tz='UTC')]
                 lvl = y['exit_level']
                 touch = (not row.empty and (row['low'].iloc[0] <= lvl + 1e-9 if (x['side'] == 'long') ==
                                             (x['exit_reason'] == 'stop_loss') else row['high'].iloc[0] >= lvl - 1e-9))
-                ok = xt.replace(minute=0) == et and touch
+                ok = xt == et and touch
             if not ok:
                 bad.append((x['id'], x['exit_reason'], xt, et))
         check(f'paridad 1m {label}: exit_time de Paper = hora del evento', not bad and closed, bad[:3])

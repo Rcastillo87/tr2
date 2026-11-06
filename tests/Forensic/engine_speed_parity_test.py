@@ -136,8 +136,29 @@ def compare(label, make, df, minute_df, funding, trade_from):
     r2 = BacktestEngine(strategy=make(), df=df, initial_balance=10000.0, risk_per_trade_pct=1.0, minute_df=minute_df,
                         trade_from=trade_from, funding=funding).run()
     T_NEW += time.time() - t
-    d = same(r1, without_end_of_data(r2))
+    d = same(r1, exit_minute_as_bar(without_end_of_data(r2), r1))
     return d, len(r1['trades'])
+
+
+MINUTE_EXITS = [0]   # salidas cuya hora pasó de la apertura de la vela al minuto del evento (NUEVO-02)
+
+
+def exit_minute_as_bar(r, ref):
+    """La referencia V3 guarda como hora de salida la apertura de la vela; el motor, el minuto del evento (NUEVO-02).
+    Se acepta solo si ese minuto cae dentro de la vela de la referencia (antes del inicio de la siguiente salida
+    posible: < 1 día) y se reemplaza por la de la referencia para comparar el resto exacto."""
+    if len(r['trades']) != len(ref['trades']):
+        return r
+    out = []
+    for x, y in zip(r['trades'], ref['trades']):
+        a, b = pd.Timestamp(x['exit_time']), pd.Timestamp(y['exit_time'])
+        if a.tzinfo is None and b.tzinfo is not None:
+            a = a.tz_localize('UTC')
+        if a != b and pd.Timedelta(0) < a - b < pd.Timedelta(days=1) and a.floor('min') == a:
+            MINUTE_EXITS[0] += 1
+            x = dict(x, exit_time=y['exit_time'])
+        out.append(x)
+    return dict(r, trades=out)
 
 
 EOD = [0]   # cuántos resultados terminaron con una posición abierta (cerrada con end_of_data)
@@ -233,6 +254,8 @@ if __name__ == '__main__':
     synthetic_suite()
     if '--real' in sys.argv:
         real_suite()
+    check(f'NUEVO-02: {MINUTE_EXITS[0]} salida(s) con 1m guardan el minuto del evento (dentro de la vela de la '
+          f'referencia)', MINUTE_EXITS[0] > 0, MINUTE_EXITS[0])
     check(f'BP-04: {EOD[0]} resultado(s) con posición abierta al final, cerrada con end_of_data como último trade '
           f'(el resto idéntico a la referencia)', EOD[0] > 0, EOD[0])
     print(f"\nTiempo de motor: referencia {T_REF:.1f}s · optimizado {T_NEW:.1f}s · "
