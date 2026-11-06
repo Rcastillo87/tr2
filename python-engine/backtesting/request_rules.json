@@ -1,36 +1,202 @@
 {
-  "_doc": "F-03: rangos VÁLIDOS de los parámetros de un backtest (rechaza lo imposible, no lo imprudente). Única fuente: la leen App\\Services\\BacktestPayload::validate (mensajes de la pantalla) y backtesting/request_rules.py (BacktestRequest, última defensa). number/int: gt, ge, lt, le; nullable: null permitido; enum: valores permitidos (null = desactivado).",
+  "_doc": "F-03: rangos VÁLIDOS de los parámetros de un backtest (rechaza lo imposible, no lo imprudente). Única fuente: la leen App\\Services\\BacktestPayload::validate (mensajes de la pantalla) y backtesting/request_rules.py (BacktestRequest, última defensa). number/int: gt, ge, lt, le; nullable: null permitido; enum: valores permitidos (null = desactivado). cross: le (a <= b); requires_when (si field == equals, needs debe ser una lista no vacía en el payload o en strategy_config).",
   "fields": {
-    "initial_balance":                {"label": "Saldo inicial", "type": "number", "gt": 0},
-    "risk_per_trade_pct":             {"label": "Riesgo por operación (%)", "type": "number", "gt": 0, "le": 100},
-    "sl_pct":                         {"label": "Stop loss (%)", "type": "number", "gt": 0, "lt": 100},
-    "tp_pct":                         {"label": "Take profit (%)", "type": "number", "gt": 0, "lt": 100},
-    "tp2_pct":                        {"label": "Take profit 2 (%)", "type": "number", "gt": 0, "lt": 100, "nullable": true},
-    "tp3_pct":                        {"label": "Take profit 3 (%)", "type": "number", "gt": 0, "lt": 100, "nullable": true},
-    "tp4_pct":                        {"label": "Take profit 4 (%)", "type": "number", "gt": 0, "lt": 100, "nullable": true},
-    "be_pct":                         {"label": "Break-even (%)", "type": "number", "gt": 0, "le": 100},
-    "max_duration":                   {"label": "Duración máxima (velas)", "type": "int", "ge": 0},
-    "commission_pct":                 {"label": "Comisión (% por lado)", "type": "number", "ge": 0, "le": 1},
-    "slippage_pct":                   {"label": "Slippage (% por lado)", "type": "number", "ge": 0, "le": 1},
-    "regime_adx_trending":            {"label": "ADX de tendencia", "type": "number", "ge": 0, "le": 100},
-    "regime_adx_ranging":             {"label": "ADX lateral", "type": "number", "ge": 0, "le": 100},
-    "trailing_distance_pct":          {"label": "Distancia del trailing (%)", "type": "number", "gt": 0, "lt": 100},
-    "trailing_activation_buffer_pct": {"label": "Buffer de activación del trailing (%)", "type": "number", "ge": 0, "lt": 100},
-    "trailing_atr_mult":              {"label": "Multiplicador ATR del trailing", "type": "number", "gt": 0},
-    "volatility_atr_multiplier":      {"label": "Multiplicador ATR de volatilidad", "type": "number", "gt": 0},
-    "volatility_widen_pct":           {"label": "Ensanche por volatilidad (%)", "type": "number", "ge": 0, "lt": 100},
-    "volume_filter_period":           {"label": "Período del filtro de volumen", "type": "int", "ge": 1},
-    "volume_filter_mult":             {"label": "Multiplicador del filtro de volumen", "type": "number", "gt": 0},
-    "hour_filter_start":              {"label": "Hora de inicio", "type": "int", "ge": 0, "le": 23},
-    "hour_filter_end":                {"label": "Hora de fin", "type": "int", "ge": 0, "le": 23},
-    "n_windows":                      {"label": "Ventanas walk forward", "type": "int", "ge": 1, "le": 50},
-    "max_leverage":                   {"label": "Apalancamiento máximo", "type": "number", "gt": 0, "le": 100},
-    "interval":                       {"label": "Intervalo", "type": "enum", "values": ["1", "5", "15", "60", "120", "240", "D"]},
-    "trailing_mode":                  {"label": "Modo de trailing", "type": "enum", "values": [null, "fixed", "stepped", "atr"]},
-    "regime_ambiguous_as":            {"label": "Régimen ambiguo", "type": "enum", "values": ["RANGING", "TRENDING", "NO_OPERAR"]},
-    "volatility_protection_mode":     {"label": "Protección por volatilidad", "type": "enum", "values": [null, "close", "widen"]}
+    "initial_balance": {
+      "label": "Saldo inicial",
+      "type": "number",
+      "gt": 0
+    },
+    "risk_per_trade_pct": {
+      "label": "Riesgo por operación (%)",
+      "type": "number",
+      "gt": 0,
+      "le": 100
+    },
+    "sl_pct": {
+      "label": "Stop loss (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100
+    },
+    "tp_pct": {
+      "label": "Take profit (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100
+    },
+    "tp2_pct": {
+      "label": "Take profit 2 (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100,
+      "nullable": true
+    },
+    "tp3_pct": {
+      "label": "Take profit 3 (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100,
+      "nullable": true
+    },
+    "tp4_pct": {
+      "label": "Take profit 4 (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100,
+      "nullable": true
+    },
+    "be_pct": {
+      "label": "Break-even (%)",
+      "type": "number",
+      "gt": 0,
+      "le": 100
+    },
+    "max_duration": {
+      "label": "Duración máxima (velas)",
+      "type": "int",
+      "ge": 0
+    },
+    "commission_pct": {
+      "label": "Comisión (% por lado)",
+      "type": "number",
+      "ge": 0,
+      "le": 1
+    },
+    "slippage_pct": {
+      "label": "Slippage (% por lado)",
+      "type": "number",
+      "ge": 0,
+      "le": 1
+    },
+    "regime_adx_trending": {
+      "label": "ADX de tendencia",
+      "type": "number",
+      "ge": 0,
+      "le": 100
+    },
+    "regime_adx_ranging": {
+      "label": "ADX lateral",
+      "type": "number",
+      "ge": 0,
+      "le": 100
+    },
+    "trailing_distance_pct": {
+      "label": "Distancia del trailing (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100
+    },
+    "trailing_activation_buffer_pct": {
+      "label": "Buffer de activación del trailing (%)",
+      "type": "number",
+      "ge": 0,
+      "lt": 100
+    },
+    "trailing_atr_mult": {
+      "label": "Multiplicador ATR del trailing",
+      "type": "number",
+      "gt": 0
+    },
+    "volatility_atr_multiplier": {
+      "label": "Multiplicador ATR de volatilidad",
+      "type": "number",
+      "gt": 0
+    },
+    "volatility_widen_pct": {
+      "label": "Ensanche por volatilidad (%)",
+      "type": "number",
+      "ge": 0,
+      "lt": 100
+    },
+    "volume_filter_period": {
+      "label": "Período del filtro de volumen",
+      "type": "int",
+      "ge": 1
+    },
+    "volume_filter_mult": {
+      "label": "Multiplicador del filtro de volumen",
+      "type": "number",
+      "gt": 0
+    },
+    "hour_filter_start": {
+      "label": "Hora de inicio",
+      "type": "int",
+      "ge": 0,
+      "le": 23
+    },
+    "hour_filter_end": {
+      "label": "Hora de fin",
+      "type": "int",
+      "ge": 0,
+      "le": 23
+    },
+    "n_windows": {
+      "label": "Ventanas walk forward",
+      "type": "int",
+      "ge": 1,
+      "le": 50
+    },
+    "max_leverage": {
+      "label": "Apalancamiento máximo",
+      "type": "number",
+      "gt": 0,
+      "le": 100
+    },
+    "interval": {
+      "label": "Intervalo",
+      "type": "enum",
+      "values": [
+        "1",
+        "5",
+        "15",
+        "60",
+        "120",
+        "240",
+        "D"
+      ]
+    },
+    "trailing_mode": {
+      "label": "Modo de trailing",
+      "type": "enum",
+      "values": [
+        null,
+        "fixed",
+        "stepped",
+        "atr"
+      ]
+    },
+    "regime_ambiguous_as": {
+      "label": "Régimen ambiguo",
+      "type": "enum",
+      "values": [
+        "RANGING",
+        "TRENDING",
+        "NO_OPERAR"
+      ]
+    },
+    "volatility_protection_mode": {
+      "label": "Protección por volatilidad",
+      "type": "enum",
+      "values": [
+        null,
+        "close",
+        "widen"
+      ]
+    }
   },
   "cross": [
-    {"rule": "le", "a": "regime_adx_ranging", "b": "regime_adx_trending", "message": "El ADX lateral no puede ser mayor que el ADX de tendencia."}
+    {
+      "rule": "le",
+      "a": "regime_adx_ranging",
+      "b": "regime_adx_trending",
+      "message": "El ADX lateral no puede ser mayor que el ADX de tendencia."
+    },
+    {
+      "rule": "requires_when",
+      "field": "trailing_mode",
+      "equals": "stepped",
+      "needs": "trailing_steps",
+      "message": "El trailing escalonado necesita pasos (trailing_steps) en el JSON de la estrategia: sin pasos no hace nada."
+    }
   ]
 }

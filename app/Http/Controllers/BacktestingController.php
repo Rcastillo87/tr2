@@ -75,7 +75,7 @@ class BacktestingController extends Controller
                 return response()->json(['success' => false, 'error' => 'Los parámetros de la estrategia (JSON) no son válidos: '
                     . json_last_error_msg() . '. Corrígelos antes de ejecutar el backtest.']);
             }
-            $finalConfig = $decoded;
+            $finalConfig = \App\Services\BacktestPayload::mergeConfig((array) ($strategy->config ?? []), $decoded);   // F-05
         }
 
         // Regímenes permitidos: el formulario marca la presencia del bloque (allowed_regimes_present) para que

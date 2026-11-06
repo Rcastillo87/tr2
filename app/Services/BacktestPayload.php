@@ -53,17 +53,37 @@ final class BacktestPayload
             }
         }
         foreach ($rules['cross'] as $c) {
-            $a = $payload[$c['a']] ?? null;
-            $b = $payload[$c['b']] ?? null;
-            if ($c['rule'] === 'le' && is_numeric($a) && is_numeric($b) && (float) $a > (float) $b) {
-                return $c['message'];
+            if ($c['rule'] === 'le') {
+                $a = $payload[$c['a']] ?? null;
+                $b = $payload[$c['b']] ?? null;
+                if (is_numeric($a) && is_numeric($b) && (float) $a > (float) $b) {
+                    return $c['message'];
+                }
+            } elseif ($c['rule'] === 'requires_when' && ($payload[$c['field']] ?? null) === $c['equals']) {
+                $need = $payload[$c['needs']] ?? ($payload['strategy_config'][$c['needs']] ?? null);
+                if (! is_array($need) || $need === []) {
+                    return $c['message'];
+                }
             }
         }
 
         return null;
     }
 
-    /** @return array{fields: array<string, array<string, mixed>>, cross: list<array<string, string>>} */
+    /**
+     * F-05: el JSON editado en el formulario se FUSIONA sobre la configuración de la estrategia (por clave de primer
+     * nivel): las claves que no se escriben se conservan. Antes lo reemplazaba entero y una clave omitida se perdía.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $override
+     * @return array<string, mixed>
+     */
+    public static function mergeConfig(array $base, array $override): array
+    {
+        return array_replace($base, $override);
+    }
+
+    /** @return array{fields: array<string, array<string, mixed>>, cross: list<array<string, mixed>>} */
     private static function rules(?string $file): array
     {
         static $cache = [];

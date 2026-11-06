@@ -19,6 +19,25 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Formulario: JSON editado se fusiona (F-05); F-02 y F-04 cerrados (stepped sin pasos se rechaza)
+
+### Resumen para el dueño
+- **F-05 (auditoría del 05-nov).** El JSON de la estrategia editado en el formulario **reemplazaba** toda la configuración: una clave omitida se perdía. **Lectura (06-nov):** 0 de 28 backtests usaron JSON editado (ni parcial ni completo), así que el defecto existía pero nunca afectó nada.
+  - **Ahora (el dueño eligió fusionar):** `BacktestPayload::mergeConfig()` fusiona el JSON sobre la config de la estrategia por **clave de primer nivel**. Lo omitido se conserva; una lista u objeto escrito se reemplaza entero (predecible). Un JSON inválido sigue rechazándose antes. El backtest guarda la config completa resultante.
+- **F-02 (intervalo 30m).** El selector **no usa** la lista de etiquetas: muestra `CollectorConfig::activeIntervals()`, que hoy son 1, 5, 15, 60, 120, 240 y D. **30m no aparece**: cerrado por datos. Desde p27 un 30 enviado a mano se rechaza con un error claro. La etiqueta `'30' => '30m'` queda sin efecto.
+- **F-04 (trailing escalonado).** El modo `stepped` necesita `trailing_steps` y **ninguna de las 6 estrategias los tiene**: agregarlo al selector crearía un modo que no hace nada. **Cerrado por diseño (decisión del dueño)**, con una regla en `request_rules.json` que aplican Laravel y Python: `stepped` sin pasos (en el payload o en el JSON) se rechaza con «El trailing escalonado necesita pasos (trailing_steps) en el JSON de la estrategia: sin pasos no hace nada.». Si un día se quiere usar, se diseña su editor de pasos con maqueta.
+- **La vista no cambia.**
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `app/Services/BacktestPayload.php` (`mergeConfig()`, regla `requires_when`); `BacktestingController.php` (fusiona); `backtesting/request_rules.json` y `.py` (regla de pasos) | `tests/Forensic/config_merge_test.php` (8 casos: parcial conserva, clave nueva, lista y objeto se reemplazan enteros, completo = igual, sin config, el controlador fusiona, JSON inválido se rechaza antes) y `request_rules_test.py` (+5 casos: stepped sin pasos, con pasos en payload o JSON, listas vacías). Antes del cambio: **3 + 2 FALLOS**. 7 mutaciones detectadas (una tras agregar el caso de pasos vacíos en el JSON). Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p29)
+
+---
+
 ## 2026-11-06 (Bogotá) — Comparador Paper vs backtest rehecho: paridad de eventos por config (BP-06)
 
 ### Resumen para el dueño
@@ -45,7 +64,7 @@
 | (este) | `tools/analysis/compare_paper_vs_backtest.py` (reescrito, funciones puras + E/S separada) | `tests/Forensic/compare_tool_test.py`: 25 casos en PASS (emparejamiento por lado y vela, motivo y hora distintos, tolerancia de `time_exit`, abierta vs `end_of_data`, lados distintos no se emparejan, resumen, velas `D` y 240 alineadas a 00:00 UTC, payload con `strategy_code` y `strategy_config` del snapshot, fechas por defecto, cambio de snapshot, `main()` de punta a punta con códigos 0/1/2, sin PnL absoluto; **con salidas reales de Paper simulado y del motor: 34 de 34 iguales, 0 divergencias**). Antes del cambio: FALLA. 8 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p28 y con la corrida sobre las configs reales)
+- Instalado con **p28** el 06-nov: regresión 41 en TODO OK; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`8c1ac16..56e80bc`). La corrida del comparador sobre las configs reales queda pendiente del dueño (comando en la sesión; resultado a registrar aquí).
 
 ---
 
