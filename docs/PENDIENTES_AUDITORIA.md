@@ -1,6 +1,6 @@
 # Pendientes de la auditoría externa (31-oct) — TR2
 
-> Estado al **2026-11-05 (Bogotá)**. `main` = `c2e29ca` (p24) + p25 (BP-07).
+> Estado al **2026-11-05 (Bogotá)**. `main` = `247fd27` (p25) + p26 (C-12).
 > **Segunda auditoría (05-nov):** confirmó los 11 pendientes y agregó NUEVO-01 a 05. Orden acordado con el dueño (del más crítico al menos) en la sección 0.
 > Informes de la auditoría: zip `TR2_RESULTADOS_AUDITORIA_HASTA_31-10-2026` (01_INFORMES). Detalle de lo ya hecho: `docs/BITACORA.md`.
 > **Empezar aquí la próxima sesión.** Al cerrar cada fix: tacharlo aquí y en «Próxima sesión» punto 6 de la bitácora.
@@ -20,7 +20,7 @@ Entrega acordada: el dueño solo tiene la interfaz y SSH, **sin subir archivos**
 | 5 | F-01 (volatilidad pisada por defaults): solo viaja si vino en el request; búsqueda alineada (0 casos afectados) | **Hecho en p23** |
 | 6 | NUEVO-02 (exit_time del backtest = apertura de la vela grande): minuto del evento, sin cambio de métricas | **Hecho en p24** |
 | 7 | BP-07 (snapshot sin `strategy_code`): código de la config viva con parámetros congelados (0 casos hoy) | **Hecho en p25** |
-| 8 | C-12 (funding) | Plan listo |
+| 8 | C-12 (funding): refresco en la reparación diaria + aviso > 30 h | **Hecho en p26** |
 | 9 | F-03 (validación numérica) | Pendiente |
 | 10 | BP-06 (comparador) | Pendiente |
 | 11 | F-05, F-04, F-02 (formulario; F-04/F-02 con maqueta) | Pendiente |
@@ -41,7 +41,7 @@ Hallazgos propios del 05-nov: Paper dimensiona con `VIRTUAL_BALANCE` fijo y el b
 5. Cada fix: prueba forense nueva en `tests/Forensic/` (sin base ni red), evidencia **antes** (falla con el código viejo) y **después**, **mutaciones** detectadas, regresión completa en TODO OK, entrada en la bitácora.
 6. Entrega: **un solo bloque SSH** (`pNN_instalar.sh`): base64 de un tgz con `install.sh`, `manifest.txt` y `fixes.bundle`; verifica HEAD y md5 de origen, respalda, aplica con `git pull --ff-only` del bundle, verifica md5 final, lint, pruebas (rollback a la base si alguna falla), reinicio del motor solo sin búsquedas ni órdenes Real pendientes, verificación real y `git push origin main`. Plantilla: el instalador de p18.
 7. Commits: autor `Claude <noreply@anthropic.com>`, mensaje en español con las líneas `Co-Authored-By` / `Claude-Session`.
-8. Regresión actual (33 Python + 4 PHP; PHP: `backtest_payload_volatility_test` + las 3 de siempre): `snapshot_code_test exit_time_test volatility_json_test end_of_data_test param_search_v3_test minute_coverage_test minute_gap_test signal_reuse_test live_source_test collector_reload_test collector_catchup_test collector_ingest_test collector_audit_test collector_retry_test collector_configs_test real_lot_trailing_test real_permissions_test real_sizing_test real_balance_test real_protection_test allow_short_test real_opposite_test paper_opposite_test paper_parity_test real_parity_test real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test filters_v2_test bars_order_test` + `broker_event_messages_test.php collector_validation_alert_test.php collector_watchdog_validation_test.php`.
+8. Regresión actual (34 Python + 5 PHP; PHP: `funding_alert_test backtest_payload_volatility_test` + las 3 de siempre): `funding_refresh_test snapshot_code_test exit_time_test volatility_json_test end_of_data_test param_search_v3_test minute_coverage_test minute_gap_test signal_reuse_test live_source_test collector_reload_test collector_catchup_test collector_ingest_test collector_audit_test collector_retry_test collector_configs_test real_lot_trailing_test real_permissions_test real_sizing_test real_balance_test real_protection_test allow_short_test real_opposite_test paper_opposite_test paper_parity_test real_parity_test real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test filters_v2_test bars_order_test` + `broker_event_messages_test.php collector_validation_alert_test.php collector_watchdog_validation_test.php`.
 
 ---
 

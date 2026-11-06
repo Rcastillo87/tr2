@@ -147,6 +147,22 @@ class SystemAlerts
                     $au['compared'] ?? 0, $au['diff'] ?? 0, $au['missing'] ?? 0, $au['repaired'] ?? 0,
                     $au['unrepaired'] ?? 0, $au['extra'] ?? 0), '/collector');
         }
+        $f = $data['funding'] ?? null;   // C-12: funding de Bybit puesto al día en la reparación diaria
+        if (is_array($f) && empty($f['dry_run'])) {
+            $stale = $f['stale'] ?? [];
+            if ($stale) {
+                $this->openIncident('funding_stale', 'warning', 'validation',
+                    sprintf('Funding atrasado: %d moneda(s)', count($stale)),
+                    sprintf('%s sin funding de Bybit desde hace más de %g h: backtest y Paper no descuentan funding'
+                        . ' en ese tramo (optimista). Errores al actualizar: %d.',
+                        implode(', ', array_map(fn ($x) => $x['symbol'] . ' ' . ($x['lag_h'] === null ? 'sin datos'
+                            : $x['lag_h'] . ' h'), $stale)),
+                        $f['stale_hours'] ?? 30, $f['errors'] ?? 0), '/collector');
+            } else {
+                $this->resolveIncident('funding_stale', 'validation', 'Funding al día',
+                    count($f['symbols'] ?? []) . ' moneda(s) con funding de Bybit actualizado.', '/collector');
+            }
+        }
         if ((int) ($s['series'] ?? 0) === 0) {   // C-01: 0 series no es «todo OK»
             $this->openIncident('validation_failed', 'warning', 'validation',
                 'Validación del collector: sin series activas',

@@ -19,6 +19,27 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Funding de Bybit al día en la reparación diaria y aviso si se atrasa (C-12)
+
+### Resumen para el dueño
+- **Auditoría (03-nov y 05-nov).** El funding de Bybit solo se descargaba a demanda (backtest y cierre de Paper). Lectura del 03-nov: atraso entre 9 h y **6 d 21 h** según la moneda. El backtest avisa en pantalla si falta; Paper solo deja log; Real no depende (usa `closedPnl` de Bybit).
+- **Ahora (plan de §3.7, la opción más liviana):**
+  - La reparación diaria de las 04:00 (`cli/collector_repair.py`, cola research) pone al día el funding de cada moneda activa del collector **desde lo ya cubierto** (`load_funding`, ~1 consulta por moneda), **antes** de la auditoría histórica. El resultado trae `funding`: por moneda, cobertura, atraso en horas y error.
+  - Un fallo de Bybit o una excepción en una moneda se informa y no frena las demás ni la reparación.
+  - Una moneda con más de **30 h** sin cubrir (`FUNDING_STALE_HOURS`) abre el aviso **«Funding atrasado: N moneda(s)»** en la campana (`SystemAlerts`, incidente `funding_stale`), que se **cierra solo** al ponerse al día. La simulación (`--dry-run`) y la validación sin reparación no tocan el aviso.
+  - Paper sin cambios.
+- **En la instalación:** una corrida del refresco deja las monedas activas al día.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `cli/collector_repair.py` (`refresh_funding()`, paso en `run()`, línea FUNDING en la salida); `app/Services/SystemAlerts.php` (incidente `funding_stale`) | `tests/Forensic/funding_refresh_test.py` (12 casos: desde `covered_to` hasta ahora, al día sin errores, fallo y excepción no frenan, atraso 165 h, sin cobertura desde 2024-06-01 y `lag None`, dry-run, `--solo`, integrado en `run()` **antes de la auditoría**, umbral 30 h) y `tests/Forensic/funding_alert_test.php` (7 casos: abre con monedas, horas, umbral y errores; «sin datos»; se resuelve; sin sección o simulación no toca; el resto no cambia). Antes del cambio: **1 + 4 FALLOS**. 8 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p26)
+
+---
+
 ## 2026-11-06 (Bogotá) — Snapshot sin strategy_code: se usa el código de la config viva (BP-07)
 
 ### Resumen para el dueño
@@ -38,7 +59,7 @@
 | (este) | `trading/paper_trader.py` (`_trade_params`); `trading/real_trader.py` (`_trade_strategy`, `live_strategy_code`) | `tests/Forensic/snapshot_code_test.py`: 11 casos en PASS (Paper cierra por SL con los parámetros congelados, sin el slippage de la config viva; aviso; sin config viva igual que antes; snapshot con código usa el suyo; código en blanco = faltante; Real construye la estrategia con `sl_pct` congelado; aviso; sin código vivo, `None`; las dos consultas traen la columna). Antes del cambio: **8 FALLOS**. 6 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p25)
+- Instalado con **p25** el 06-nov: regresión 37 en TODO OK; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`c2e29ca..247fd27`).
 
 ---
 

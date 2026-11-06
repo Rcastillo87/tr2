@@ -9,6 +9,8 @@ Qué repara, por serie con fallas:
   · Días que Bybit tampoco tiene completos: se registran en storage/app/collector_bybit_gaps.json y la validación deja
     de contarlos como huecos (no hay nada que reparar).
 No repara: velas que sobran o fuera de horario (borrar está prohibido) ni series detenidas (eso es del vigilante).
+Funding (C-12): pone al día el funding de Bybit de las monedas activas (desde lo ya cubierto) e informa el atraso; una
+moneda con más de FUNDING_STALE_HOURS (30 h) sin cubrir va al aviso de la campana. Un fallo no frena la reparación.
 
 Uso (desde python-engine/):
   venv/bin/python cli/collector_repair.py [--max-days 7] [--recent 300] [--solo BTCUSDT] [--dry-run] [--json-out f]
@@ -32,9 +34,12 @@ from cli.collector_validate import (BYBIT_GAPS_FILE, SETTLE, bybit_gaps, current
 from collectors.broker_resolver import interval_delta  # noqa: E402
 from collectors.ohlcv_collector import DB_DSN, OhlcvCollector  # noqa: E402
 from cli.collector_audit import AUDIT_BUDGET, load_cursor, run_audit, save_cursor  # noqa: E402
+from collectors.funding_collector import _coverage, load_funding  # noqa: E402
 
 DAY = timedelta(days=1)
 AUDIT_DEADLINE_S = 1000   # la auditoría histórica (C-03) termina antes de los 1.100 s que Laravel le da al proceso
+FUNDING_STALE_HOURS = float(os.getenv('FUNDING_STALE_HOURS', '30'))   # C-12: atraso que dispara el aviso
+FUNDING_SINCE = datetime(2024, 6, 1, tzinfo=timezone.utc)             # inicio si una moneda nunca tuvo funding
 
 
 def day_floor(t: datetime) -> datetime:
@@ -109,8 +114,42 @@ async def repair_series(conn, collector, client, s: dict, now: datetime, n_recen
     return rep
 
 
+async def refresh_funding(only: set | None, dry: bool, now: datetime) -> dict:
+    """Funding al día para las monedas activas del collector y su atraso (horas sin cubrir hasta ahora)."""
+    pool = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=2)
+    rows = []
+    try:
+        async with pool.acquire() as conn:
+            symbols = [r['symbol'] for r in await conn.fetch(
+                "SELECT DISTINCT symbol FROM collector_configs WHERE broker = 'bybit' AND active ORDER BY symbol")]
+        symbols = [x for x in symbols if not only or x in only]
+        async with httpx.AsyncClient(timeout=30) as client:
+            for sym in symbols:
+                rec = dict(symbol=sym, refreshed=False, error=None)
+                try:
+                    _, before = await _coverage(pool, sym)
+                    if not dry:
+                        _, warns = await load_funding(pool, sym, before or FUNDING_SINCE, now, client=client, now=now)
+                        bad = [w for w in warns if 'no descargado' in w or 'falló' in w]
+                        rec['error'] = bad[0][:200] if bad else None
+                        rec['refreshed'] = not bad
+                    _, after = await _coverage(pool, sym)
+                    rec['covered_to'] = after.isoformat() if after else None
+                    rec['lag_h'] = round((now - after).total_seconds() / 3600, 1) if after else None
+                except Exception as e:   # un fallo de una moneda no frena las demás ni la reparación
+                    rec['error'] = str(e)[:200]
+                    rec.setdefault('lag_h', None)
+                rows.append(rec)
+    finally:
+        await pool.close()
+    stale = [dict(symbol=r['symbol'], lag_h=r.get('lag_h')) for r in rows
+             if r.get('lag_h') is None or r['lag_h'] > FUNDING_STALE_HOURS]
+    return dict(symbols=rows, stale=stale, stale_hours=FUNDING_STALE_HOURS, dry_run=dry,
+                errors=sum(1 for r in rows if r['error']))
+
+
 async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log,
-              audit_budget: int = AUDIT_BUDGET) -> dict:
+              audit_budget: int = AUDIT_BUDGET, funding: bool = True) -> dict:
     t0 = time.monotonic()
     before = await validate(n_recent, only)
     failing = [s for s in before['series'] if not s.get('ok') and needs_repair(s)]
@@ -139,6 +178,8 @@ async def run(n_recent: int, max_days: int, only: set | None, dry: bool, log,
         fresh = {(s['symbol'], s['interval']): s for s in again['series']}
         series = [fresh.get((s['symbol'], s['interval']), s) for s in before['series']]
         result = dict(before, at=again['at'], series=series, summary=summarize(series))
+    if funding:            # C-12: antes de la auditoría (que usa el tiempo que queda hasta el límite)
+        result = dict(result, funding=await refresh_funding(only, dry, datetime.now(timezone.utc)))
     if audit_budget > 0:   # C-03: auditoría histórica rotativa contra Bybit (vela por vela, por porciones)
         result = await _audit(result, n_recent, only, dry, audit_budget, t0 + AUDIT_DEADLINE_S)
     result['duration_s'] = round(time.monotonic() - t0, 1)
@@ -206,6 +247,10 @@ def main() -> int:
           f"{' (simulación)' if a.dry_run else ''} · {len(r['series'])} serie(s) reparadas · "
           f"{r['recent_written']} velas recientes · {r['days_fixed']} día(s) (+{r['days_written']} velas) · "
           f"pendientes {r['pending_days']} · sin datos en Bybit {r['bybit_gaps_new']} · {result['duration_s']} s")
+    fu = result.get('funding')
+    if fu:
+        print(f"FUNDING: {len(fu['symbols'])} moneda(s) · errores {fu['errors']} · atrasadas (> {fu['stale_hours']:g} h): "
+              + (', '.join(f"{x['symbol']} {x['lag_h']} h" for x in fu['stale']) or 'ninguna'))
     au = result.get('audit')
     if au:
         print(f"AUDITORÍA HISTÓRICA: {au['requests']}/{au['budget']} consultas · {au['windows']} ventanas · "
