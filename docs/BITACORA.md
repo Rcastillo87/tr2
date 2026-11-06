@@ -19,6 +19,24 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Cierre de la sesión de fixes: certificación para el auditor y opciones de la fase 12
+
+### Resumen para el dueño
+- **Fixes 1 a 11 de la auditoría del 05-nov: instalados** (p19 a p29). Regresión: 36 Python + 6 PHP en TODO OK en el servidor.
+- **`docs/CERTIFICACION_AUDITORIA.md`:** los 54 hallazgos (49 de la 1.ª auditoría + 5 nuevos) con estado, parche, prueba y sección de la bitácora, para que el auditor los certifique uno por uno: 35 corregidos, 8 por diseño o documentados, 2 cerrados por datos, NUEVO-04/05 en la fase 12. **Faltan 7 textos** (REAL-05, CFG-01, 02, 06–09): no están transcritos en el repositorio; con su texto se verifican como el resto.
+- **`docs/FASE12_ESTADISTICA.md`:** opciones con costo y efecto para holdout (NUEVO-04), cartera (NUEVO-05), walk forward, drawdown flotante y tamaño con costos. Orden recomendado: drawdown flotante → tres tramos → costos en el tamaño (toca Real) → cartera → renombrar el walk forward. **Nada se programa sin la elección del dueño.**
+- **Pendiente del dueño:** la corrida del comparador (p28) sobre las configs activas de Paper; y la propuesta de Horizon sin root (`PENDIENTES_AUDITORIA.md`).
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `docs/CERTIFICACION_AUDITORIA.md`, `docs/FASE12_ESTADISTICA.md` (nuevos); bitácora y pendientes al día | Solo documentación. Números de parche verificados contra la bitácora (donde no hay número registrado dice «ver bitácora»). Totales cuadran (54). Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p30)
+
+---
+
 ## 2026-11-06 (Bogotá) — Formulario: JSON editado se fusiona (F-05); F-02 y F-04 cerrados (stepped sin pasos se rechaza)
 
 ### Resumen para el dueño
@@ -34,7 +52,11 @@
 | (este) | `app/Services/BacktestPayload.php` (`mergeConfig()`, regla `requires_when`); `BacktestingController.php` (fusiona); `backtesting/request_rules.json` y `.py` (regla de pasos) | `tests/Forensic/config_merge_test.php` (8 casos: parcial conserva, clave nueva, lista y objeto se reemplazan enteros, completo = igual, sin config, el controlador fusiona, JSON inválido se rechaza antes) y `request_rules_test.py` (+5 casos: stepped sin pasos, con pasos en payload o JSON, listas vacías). Antes del cambio: **3 + 2 FALLOS**. 7 mutaciones detectadas (una tras agregar el caso de pasos vacíos en el JSON). Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p29)
+- **p29, primera corrida cortada** (06-nov ~20:46 UTC): el diff se aplicó pero el pegado no llegó completo; no corrieron las pruebas, los reinicios ni el commit (HEAD seguía en `56e80bc` con 8 archivos modificados; el PHP nuevo ya respondía en la web sin regresión). Se completó con el instalador regenerado en **modo «aplicado sin terminar»**: regresión 42 en TODO OK, cachés de Laravel como `tr2`, autoload OK, Horizon reiniciado (8 procesos), motor reiniciado, tick de Paper `200`, 0 errores en `engine.log`, `main` subido (`56e80bc..291da9b`).
+
+### Lecciones (instalación)
+- Un pegado largo puede llegar incompleto. El md5 protege lo que se **escribe**, pero una corrida puede cortarse **después** de aplicar. Los instaladores detectan ahora «aplicado sin terminar» (md5 final + HEAD todavía en el commit anterior): no reaplican ni pisan los respaldos y siguen con pruebas, reinicios y commit (probado en el simulador en los dos modos).
+- La salida esperada se escribe sin bloque de código: un bloque parece un comando y llegó a pegarse en la terminal (sin efecto: «command not found»).
 
 ---
 

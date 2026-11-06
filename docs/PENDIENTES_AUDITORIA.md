@@ -1,6 +1,6 @@
 # Pendientes de la auditoría externa (31-oct) — TR2
 
-> Estado al **2026-11-05 (Bogotá)**. `main` = `56e80bc` (p28) + p29 (F-05/F-02/F-04).
+> Estado al **2026-11-06 (Bogotá)**. `main` = `291da9b` (p29) + p30 (documentación). **Fixes 1 a 11 hechos.** Para el auditor: `docs/CERTIFICACION_AUDITORIA.md`. Lo que sigue: `docs/FASE12_ESTADISTICA.md` (decisiones del dueño).
 > **Segunda auditoría (05-nov):** confirmó los 11 pendientes y agregó NUEVO-01 a 05. Orden acordado con el dueño (del más crítico al menos) en la sección 0.
 > Informes de la auditoría: zip `TR2_RESULTADOS_AUDITORIA_HASTA_31-10-2026` (01_INFORMES). Detalle de lo ya hecho: `docs/BITACORA.md`.
 > **Empezar aquí la próxima sesión.** Al cerrar cada fix: tacharlo aquí y en «Próxima sesión» punto 6 de la bitácora.
@@ -24,7 +24,7 @@ Entrega acordada: el dueño solo tiene la interfaz y SSH, **sin subir archivos**
 | 9 | F-03 (validación numérica): reglas únicas en `request_rules.json`, Laravel + Python (0 valores guardados rechazados) | **Hecho en p27** |
 | 10 | BP-06 (comparador): rehecho por config, parámetros congelados, hora exacta de salida | **Hecho en p28** (falta la corrida sobre configs reales) |
 | 11 | F-05 (fusión del JSON editado), F-02 (cerrado por datos: 30m no aparece), F-04 (cerrado por diseño: stepped sin pasos se rechaza) | **Hecho en p29** |
-| 12 | Fase estadística: NUEVO-04 holdout, NUEVO-05 cartera, walk forward, drawdown flotante, tamaño con costos | Pendiente (decisiones de diseño) |
+| 12 | Fase estadística: NUEVO-04 holdout, NUEVO-05 cartera, walk forward, drawdown flotante, tamaño con costos | **Opciones en `docs/FASE12_ESTADISTICA.md`**; falta la elección del dueño |
 
 Hallazgo del 06-nov: **`trading2-horizon` corre como root**. Los jobs de las colas escriben con root como dueño (riesgo de permisos en `storage/` y `bootstrap/cache`, y mínimo privilegio). Propuesta pendiente: `User=tr2` en el servicio, revisando antes qué necesita root (si algo). Para reiniciarlo: `systemctl restart trading2-horizon` (no `horizon:terminate` como `tr2`).
 
