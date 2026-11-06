@@ -19,6 +19,28 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — La protección por volatilidad del JSON ya no se pisa con valores por defecto (F-01)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** El formulario de Backtesting no tiene campos de volatilidad, pero `BacktestingController` mandaba **siempre** `volatility_protection_mode = null`, `×2.5` y `1.0 %`. Python toma como «enviado» todo lo que llega (`exclude_unset`), así que esos valores **pisaban el JSON de la estrategia**. Ese payload se guarda como `config_params` y con él se implementan las configs de Paper/Real, así que el defecto se propagaba.
+- **La búsqueda imitaba el defecto a propósito:** `param_search.py` (`UI_FIXED`: «lo que la pantalla envía siempre») y `BacktestFromSearch` (`'none'`).
+- **Lectura real (06-nov):** 0 de 6 estrategias con volatilidad en su JSON; 0 de 28 backtests guardados con el JSON pisado; 0 configs de Paper afectadas; 0 con volatilidad activa. **El defecto nunca afectó un resultado.**
+- **Ahora:**
+  - `App\Services\BacktestPayload::volatility()` manda la volatilidad **solo si vino en el request**; `'none'` = apagada explícita. Si no vino, manda el JSON.
+  - La búsqueda (`UI_FIXED = {}`) y `BacktestFromSearch` dejan de forzarla: la pantalla, la búsqueda y el backtest lanzado desde la búsqueda la tratan igual.
+- **Sin cambios visibles hoy**, porque ninguna estrategia la define. Si una la define en su JSON, se respeta en todos lados.
+- **Instalación:** cambia PHP, así que se agregan `php -l`, cachés de Laravel limpiadas **como el dueño de `storage/`** (no root), verificación del autoload de la clase nueva y `horizon:terminate` (solo sin búsquedas activas) para que los workers carguen el código nuevo.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `app/Services/BacktestPayload.php` (nuevo); `BacktestingController.php` (sin defaults de volatilidad); `BacktestFromSearch.php` (sin `'none'`); `cli/param_search.py` (`UI_FIXED = {}`) | `tests/Forensic/backtest_payload_volatility_test.php` (10 casos: sin campos no se envía nada, `'none'` = null, valores enviados viajan, vacíos = no enviados, el controlador usa el servicio sin defaults, el formulario de la búsqueda no trae volatilidad) y `tests/Forensic/volatility_json_test.py` (6 casos: pantalla sin campos → JSON, `'none'` apaga, enviado pisa, sin JSON → apagada, **la búsqueda respeta el JSON**). Antes del cambio: **4 + 2 FALLOS**. 6 mutaciones detectadas. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p23)
+
+---
+
 ## 2026-11-06 (Bogotá) — Backtest: la posición abierta al final del rango se cierra con end_of_data (BP-04)
 
 ### Resumen para el dueño
@@ -36,7 +58,7 @@
 | (este) | `backtesting/engine.py` (cierre `end_of_data`, `closed_at_end`); `api/v1/backtest.py` (aviso); `engine_speed_parity_test.py` (la referencia V3 congelada descarta la posición: se compara sin ese único último trade, con las métricas recalculadas, y se exige que aparezca); `paper_opposite_test.py` y `real_opposite_test.py` (paridad sin el `end_of_data` del motor) | `tests/Forensic/end_of_data_test.py`: 13 casos en PASS (long y short con slippage del lado correcto, `exit_time` = cierre de la última vela, comisión de entrada y salida, `bars_open`, métricas y equity, funding del tramo abierto, sin posición al final no cambia nada, entrada en la última vela, reversa + short abierto, aviso y trade en `/backtest/run`). Antes del cambio: **9 FALLOS**. Las 3 pruebas ajustadas pasan también con el código viejo. 7 mutaciones detectadas. Regresión en TODO OK, ahora con `param_search_v3_test` |
 
 ### Cambios fuera de git
-- (se completa al instalar p22)
+- Instalado con **p22** el 06-nov: regresión 33 en TODO OK; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log` desde el reinicio; `main` subido (`fd21778..eec81a5`).
 
 ---
 

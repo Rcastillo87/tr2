@@ -52,8 +52,9 @@ from backtesting.engine import BacktestEngine  # noqa: E402
 INITIAL = 10000.0
 RISK_PCT = 1.0
 COSTS = dict(commission_pct=0.055, slippage_pct=0.05)  # costos honestos, los mismos de la UI
-# Lo que la pantalla de Backtesting envía siempre (sin protección por volatilidad): mismos parámetros "enviados"
-UI_FIXED = dict(volatility_protection_mode=None, volatility_atr_multiplier=2.5, volatility_widen_pct=1.0)
+# Lo que la pantalla de Backtesting envía siempre además del espacio de búsqueda. Desde F-01 la protección por
+# volatilidad NO se envía (no está en el formulario): manda el JSON de la estrategia, igual que en la pantalla.
+UI_FIXED: dict = {}
 ALLOWED_INTERVALS = ('15', '60', '120', '240', 'D')
 MAX_VALIDATE = 5          # robustas que se validan en otras monedas (las de mayor retorno)
 MIN_TRADES = 30           # operaciones mínimas (24 meses) para que una moneda cuente como sobreviviente

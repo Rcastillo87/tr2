@@ -55,7 +55,7 @@ class BacktestFromSearch
             'regime_ambiguous_as'            => $ambiguous,
             'volume_filter_period'           => (string) $cfg['volume_filter_period'],
             'volume_filter_mult'             => (string) $cfg['volume_filter_mult'],
-            'volatility_protection_mode'     => 'none',
+            // Sin volatility_*: el formulario no los tiene; manda el JSON de la estrategia, como en la búsqueda (F-01)
         ];
         foreach (['max_duration_profit', 'close_on_opposite', 'regime_filter', 'macro_trend_filter', 'volume_filter',
                   'btc_trend_filter'] as $cb) {

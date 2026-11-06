@@ -134,14 +134,11 @@ class BacktestingController extends Controller
                 'volume_filter' => $request->has('volume_filter'),
                 'volume_filter_period' => (int) $request->input('volume_filter_period', 20),
                 'volume_filter_mult' => (float) $request->input('volume_filter_mult', 1.2),
-                
-                // FIX: Protección por volatilidad (Faltaban)
-                'volatility_protection_mode' => $request->input('volatility_protection_mode', 'none') !== 'none' ? $request->input('volatility_protection_mode') : null,
-                'volatility_atr_multiplier' => (float) $request->input('volatility_atr_multiplier', 2.5),
-                'volatility_widen_pct' => (float) $request->input('volatility_widen_pct', 1.0),
-                
+
                 'start_date' => $start->format('Y-m-d'), 'end_date' => $end->format('Y-m-d'),
             ];
+            // Protección por volatilidad: solo si vino en el request (no está en el formulario); si no, manda el JSON (F-01)
+            $payloads[$sym] += \App\Services\BacktestPayload::volatility($request->all());
             // Los valores de la UI SIEMPRE sobrescriben el JSON
             $payloads[$sym]['macro_trend_filter'] = $request->has('macro_trend_filter');
             $payloads[$sym]['volume_filter'] = $request->has('volume_filter');
