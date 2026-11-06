@@ -13,8 +13,9 @@ import os
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from dotenv import load_dotenv
+from backtesting import request_rules
 from backtesting.metrics import calculate_metrics
 from backtesting.engine import BacktestEngine
 from collectors.bars import bars_frame
@@ -101,6 +102,14 @@ class BacktestRequest(BaseModel):
 
     # Si True, ademas de las metricas agregadas devuelve un desglose mes a mes
     monthly_breakdown: bool = False
+
+    @model_validator(mode='after')
+    def _valid_ranges(self):
+        """F-03: rechaza valores imposibles (mismas reglas que Laravel: backtesting/request_rules.json)."""
+        errs = request_rules.errors(self.model_dump())
+        if errs:
+            raise ValueError(' '.join(errs))
+        return self
 
 
 async def get_pool():

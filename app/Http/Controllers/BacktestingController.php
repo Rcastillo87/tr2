@@ -48,7 +48,10 @@ class BacktestingController extends Controller
             return response()->json(['success' => false, 'error' => 'Debes seleccionar al menos un símbolo.']);
         }
 
-        $months = (int) $request->input('months', 6);
+        $months = filter_var($request->input('months', 6), FILTER_VALIDATE_INT);
+        if ($months === false || $months < 1 || $months > 60) {   // F-03
+            return response()->json(['success' => false, 'error' => 'Meses: debe ser un número entero entre 1 y 60.']);
+        }
         $end = now()->subMonthNoOverflow()->endOfMonth();
         $start = $end->copy()->subMonths($months - 1)->startOfMonth();
 
@@ -149,6 +152,13 @@ class BacktestingController extends Controller
             $payloads[$sym]['regime_filter'] = $request->has('regime_filter');
             if ($allowedRegimes !== null) {   // sin el formulario nuevo (p. ej. desde la búsqueda): los de la estrategia
                 $payloads[$sym]['allowed_regimes'] = $allowedRegimes;
+            }
+        }
+
+        // F-03: valores imposibles se rechazan aquí con un mensaje claro (mismas reglas que Python)
+        foreach ($payloads as $payload) {
+            if (($err = \App\Services\BacktestPayload::validate($payload)) !== null) {
+                return response()->json(['success' => false, 'error' => $err]);
             }
         }
 

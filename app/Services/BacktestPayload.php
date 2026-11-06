@@ -33,4 +33,80 @@ final class BacktestPayload
 
         return $out;
     }
+
+    /**
+     * F-03: primer error de un payload de /v1/backtest/run según backtesting/request_rules.json (las mismas reglas
+     * que valida Python en BacktestRequest), o null si es válido. Solo se validan los campos presentes.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public static function validate(array $payload, ?string $rulesFile = null): ?string
+    {
+        $rules = self::rules($rulesFile);
+        foreach ($rules['fields'] as $name => $r) {
+            if (! array_key_exists($name, $payload)) {
+                continue;
+            }
+            $err = self::fieldError($r, $payload[$name]);
+            if ($err !== null) {
+                return $err;
+            }
+        }
+        foreach ($rules['cross'] as $c) {
+            $a = $payload[$c['a']] ?? null;
+            $b = $payload[$c['b']] ?? null;
+            if ($c['rule'] === 'le' && is_numeric($a) && is_numeric($b) && (float) $a > (float) $b) {
+                return $c['message'];
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array{fields: array<string, array<string, mixed>>, cross: list<array<string, string>>} */
+    private static function rules(?string $file): array
+    {
+        static $cache = [];
+        $file ??= dirname(__DIR__, 2) . '/python-engine/backtesting/request_rules.json';
+        return $cache[$file] ??= json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private static function fieldError(array $r, mixed $v): ?string
+    {
+        $label = $r['label'];
+        if ($r['type'] === 'enum') {
+            if (in_array($v, $r['values'], true)) {
+                return null;
+            }
+            $ok = implode(', ', array_map(fn ($x) => $x === null ? 'ninguno' : (string) $x, $r['values']));
+            return sprintf("%s: valor no válido (%s); se admite: %s.", $label, var_export($v, true), $ok);
+        }
+        if ($v === null) {
+            return ! empty($r['nullable']) ? null : "{$label}: es obligatorio.";
+        }
+        if (is_bool($v) || ! is_numeric($v) || ! is_finite((float) $v)) {
+            return sprintf('%s: debe ser un número (recibido: %s).', $label, var_export($v, true));
+        }
+        $x = (float) $v;
+        if ($r['type'] === 'int' && floor($x) !== $x) {
+            return sprintf('%s: debe ser un número entero (recibido: %s).', $label, self::num($x));
+        }
+        $bounds = ['gt' => [fn ($a, $b) => $a > $b, 'mayor que'], 'ge' => [fn ($a, $b) => $a >= $b, 'mayor o igual que'],
+                   'lt' => [fn ($a, $b) => $a < $b, 'menor que'], 'le' => [fn ($a, $b) => $a <= $b, 'menor o igual que']];
+        $want = [];
+        $bad = false;
+        foreach ($bounds as $k => [$ok, $word]) {
+            if (array_key_exists($k, $r)) {
+                $want[] = $word . ' ' . self::num((float) $r[$k]);
+                $bad = $bad || ! $ok($x, (float) $r[$k]);
+            }
+        }
+
+        return $bad ? sprintf('%s: debe ser %s (recibido: %s).', $label, implode(' y ', $want), self::num($x)) : null;
+    }
+
+    private static function num(float $x): string
+    {
+        return rtrim(rtrim(sprintf('%.10F', $x), '0'), '.') ?: '0';
+    }
 }

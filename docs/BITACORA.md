@@ -19,6 +19,28 @@
 
 ---
 
+## 2026-11-06 (Bogotá) — Validación de los parámetros del backtest, mismas reglas en Laravel y Python (F-03)
+
+### Resumen para el dueño
+- **Auditoría del 05-nov.** Se aceptaban valores imposibles: riesgo, SL, TP, comisión o saldo negativos, y modos desconocidos. El controlador solo validaba el slippage y el trailing fijo mínimo; `BacktestRequest` no tenía rangos.
+- **Criterio:** se rechaza lo **imposible** (precio ≤ 0, porcentajes fuera de rango, modos o intervalos que no existen), no lo imprudente. `be_pct = 99` («sin break-even», convención de la búsqueda) sigue siendo válido.
+- **Lectura real (06-nov):** todos los valores guardados (configs Paper, 28 backtests, snapshots de trades, estrategias) caen dentro de los rangos; 0 con ADX lateral > tendencia. **Nada guardado se rechaza.**
+- **Ahora:**
+  - **Una sola fuente de reglas:** `python-engine/backtesting/request_rules.json` (rangos, enteros, opcionales, modos, intervalos del motor y la regla cruzada ADX lateral ≤ tendencia).
+  - **Laravel** (`BacktestPayload::validate`, en el controlador antes de llamar a Python, para la pantalla y el backtest desde la búsqueda) devuelve el primer error en español, p. ej. «Riesgo por operación (%): debe ser mayor que 0 y menor o igual que 100 (recibido: -1).». Meses: entero entre 1 y 60.
+  - **Python** (`BacktestRequest`, `model_validator`) aplica las mismas reglas como última defensa para cualquier llamador (422).
+- **Parte de motor de F-02:** el intervalo 30 (que muestra la pantalla) ahora da un error claro en vez de convertirse en 60 sin aviso. Quitarlo de la vista queda para F-02, con maqueta.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `backtesting/request_rules.json` y `request_rules.py` (nuevos); `api/v1/backtest.py` (validador); `app/Services/BacktestPayload.php` (`validate()`); `BacktestingController.php` (valida cada payload y los meses) | `tests/Forensic/request_rules_test.py`: 50 casos en PASS. La **misma tabla** pasa por Python y por Laravel (`php`), con 44 casos de aceptar o rechazar en los límites, NaN, infinito, enteros, opcionales, modos, intervalo 30 y numérico, y ADX cruzado; mensaje exacto en español; **valores guardados en producción aceptados**; defaults válidos; el controlador valida antes de llamar a Python. Antes del cambio: **47 FALLOS**. 8 mutaciones detectadas (dos casos agregados tras mutaciones no detectadas: intervalo numérico y saldo infinito). Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p27)
+
+---
+
 ## 2026-11-06 (Bogotá) — Funding de Bybit al día en la reparación diaria y aviso si se atrasa (C-12)
 
 ### Resumen para el dueño
@@ -36,7 +58,7 @@
 | (este) | `cli/collector_repair.py` (`refresh_funding()`, paso en `run()`, línea FUNDING en la salida); `app/Services/SystemAlerts.php` (incidente `funding_stale`) | `tests/Forensic/funding_refresh_test.py` (12 casos: desde `covered_to` hasta ahora, al día sin errores, fallo y excepción no frenan, atraso 165 h, sin cobertura desde 2024-06-01 y `lag None`, dry-run, `--solo`, integrado en `run()` **antes de la auditoría**, umbral 30 h) y `tests/Forensic/funding_alert_test.php` (7 casos: abre con monedas, horas, umbral y errores; «sin datos»; se resuelve; sin sección o simulación no toca; el resto no cambia). Antes del cambio: **1 + 4 FALLOS**. 8 mutaciones detectadas. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p26)
+- Instalado con **p26** el 06-nov: regresión 39 en TODO OK; `php -l`; cachés de Laravel como `tr2`; **Horizon reiniciado con `systemctl`** (7 procesos); corrida inicial del funding: **12 monedas, 0 errores, ninguna atrasada**; motor reiniciado; tick de Paper `200`; 0 errores en `engine.log`; `main` subido (`247fd27..e9951b2`).
 
 ---
 
