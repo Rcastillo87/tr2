@@ -7,6 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
+0. **Auditoría del 07-nov (3.er ciclo):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -20,6 +21,19 @@
 - **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por el contenido de `docs/PROMPT_MAESTRO.md` (**V7.2**, 06-nov). No se puede hacer por script.
 
 ---
+
+## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
+
+### Resumen para el dueño
+- **Informe:** `TR2_Actualizacion_Auditoria_Con_Hallazgos_Originales_2026-11-07` + matriz CSV. Recupera los textos de REAL-05 y CFG-01, 02, 06–09 y agrega N-01 a N-16.
+- **Validación contra el código (`1e867d5`):** todos los hallazgos son reales, con estas precisiones: **N-04** no habilita ni bloquea nada (`passed` solo llega a la celda «Aprobado» del Excel), así que baja a P3; **N-13** se cierra por análisis (el SL/TP se recalcula con el precio de ejecución: el riesgo real = riesgo × precio real ÷ precio estimado, un desvío del tamaño del slippage); **N-09** es más grave de lo que dice el informe: `display_name` = estrategia + símbolo + intervalo, y dos backtests de la misma combinación comparten nombre.
+- **Diagnóstico en producción (solo lectura, 09-nov 14:19 UTC):** 0 cierres Real sin PnL; 0 `pending_open`; 2 trades Real (1 abierto, 1 cerrado); 1 cuenta (11, demo, activa); **nombre repetido: «VWAP Tendencia — ETHUSDT H4» = #68 (activa) y #62**; 0 trades Paper sin config; flags siempre booleanos (15 configs); 0 trades Paper abiertos; servidor, base y motor en UTC; `INTERNAL_API_KEY` con valor en `python-engine/.env`.
+
+### N-05 — Cierre Real sin liquidación (p33)
+- **Antes:** si `close_trade()` encontraba la posición ya cerrada en Bybit (SL/TP nativo, liquidación o cierre manual entre el monitor y la orden), marcaba `closed` con `exit_reason='reconciled'`, sin precio, PnL ni comisión, con la hora del proceso y sin exigir el estado abierto. El límite mensual toma ese PnL nulo como 0.
+- **Ahora:** se liquida con el closed-pnl de Bybit desde la apertura (`settle_exchange_close`: precio, PnL neto, comisión = bruto − neto, hora de Bybit; motivo deducido del precio). Si Bybit todavía no lo indexó, **no se cierra sin cifras**: devuelve `False`, queda en la auditoría (`close_unconfirmed` / `pnl_pending`) y el próximo ciclo o la reconciliación lo liquidan. Todos los llamadores ya tratan `False` como «reintentar» (la señal opuesta no abre la reversa).
+- `epoch_ms()` compartido entre `real_trader` y `/real/reconcile` (antes había una copia local).
+- **Prueba:** `real_close_settle_test.py` (18 casos). Con el código anterior: **12 FALLOS**. Mutaciones: motivo del llamador (2 fallos), «sin closed-pnl devuelve True» (1 fallo).
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 
@@ -35,7 +49,7 @@
 | (este) | `resources/views/trading/index.blade.php` (2 líneas); `tests/Forensic/blade_static_test.php` (nuevo) | La prueba nueva da 3 PASS; con la vista anterior, **2 FALLOS** (las dos líneas). Expresión regular comprobada: marca `[]->x(` y `null->x(`, no `null?->x(`. `view:cache` en la instalación. Regresión en TODO OK |
 
 ### Cambios fuera de git
-- (se completa al instalar p32 y con la apertura de /trading)
+- Instalado con **p32** el 09-nov: regresión 43 en TODO OK; cachés de Laravel limpiadas como `tr2`; Horizon reiniciado; motor **no** reiniciado (sin cambios de Python). `main` subido (`cea6472..1e867d5`). El dueño confirmó que `/trading` carga con los trades de la cuenta 11.
 
 ---
 

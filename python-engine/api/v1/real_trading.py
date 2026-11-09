@@ -17,7 +17,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError,
-                                 ORDER_DEAD_STATUSES)
+                                 ORDER_DEAD_STATUSES, epoch_ms)
 from trading.risk_manager import RiskManager
 from trading.broker_events import emit_event
 from trading.bybit_client import api_permission_problems
@@ -387,11 +387,6 @@ async def reconcile(
     trader  = RealTrader(pool)
     results = {'reconciled': [], 'orphaned': [], 'ok': []}
 
-    def _since_ms(ref_time) -> int:
-        if ref_time.tzinfo is None:
-            ref_time = ref_time.replace(tzinfo=timezone.utc)
-        return int(ref_time.timestamp() * 1000)
-
     try:
         for account in request.accounts:
             client = _build_broker_client(account)
@@ -414,7 +409,7 @@ async def reconcile(
                 if position:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
                     continue
-                settled = await trader.settle_exchange_close(trade, client, account.id, _since_ms(trade['entry_time']))
+                settled = await trader.settle_exchange_close(trade, client, account.id, epoch_ms(trade['entry_time']))
                 if settled is None:
                     logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol}: cerrada en Bybit sin closed-pnl — 'orphaned'")
                     async with pool.acquire() as conn:
@@ -451,7 +446,7 @@ async def reconcile(
                     trade['status'] = 'open'  # close_trade solo actualiza filas 'open'
                     async with pool.acquire() as conn:
                         await conn.execute("UPDATE real_trades SET status='open' WHERE id=$1 AND status='orphaned'", trade['id'])
-                    settled = await trader.settle_exchange_close(trade, client, account.id, _since_ms(trade['entry_time']),
+                    settled = await trader.settle_exchange_close(trade, client, account.id, epoch_ms(trade['entry_time']),
                                                                  exit_reason='reconciled_sl_tp_bybit')
                     if settled is None:
                         async with pool.acquire() as conn:

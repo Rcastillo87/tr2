@@ -122,6 +122,11 @@ def floor_to_step(qty: float, step: float) -> float:
     return round(math.floor(qty / step + 1e-9) * step, decimals)
 
 
+def epoch_ms(t: datetime) -> int:
+    """Milisegundos epoch de una hora de la DB (timestamp sin tz = UTC), como los pide la API de Bybit."""
+    return int((t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t).timestamp() * 1000)
+
+
 def bybit_close_time(history: list[dict]) -> datetime | None:
     """Hora del cierre según Bybit (UTC sin tz): el último tramo del closed-pnl (updatedTime, o createdTime).
     None si ningún tramo trae una hora válida (quien llama usa ahora)."""
@@ -1519,18 +1524,18 @@ class RealTrader:
             logger.error(f"[REAL] close_trade #{trade['id']} {symbol}: error consultando Bybit ({e}) — abortando cierre, no se puede confirmar estado")
             return False
         if not position:
-            # Posicion ya cerrada en Bybit — reconciliar DB
-            logger.warning(f"[REAL] Trade #{trade['id']} no tiene posicion en Bybit — reconciliando")
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE real_trades SET status = 'closed',
-                        exit_reason = 'reconciled', exit_time = now(), updated_at = now()
-                    WHERE id = $1
-                    """,
-                    trade['id']
-                )
-            return True
+            # Ya cerrada en Bybit (SL/TP nativo, liquidación o cierre manual) entre el monitor y esta orden: se
+            # liquida con SUS números (closed-pnl desde la apertura). El motivo sale del precio, no del llamador:
+            # este cierre no lo ejecutó él. Sin closed-pnl todavía NO se cierra sin cifras (N-05): el trade queda
+            # como está y el próximo ciclo o la reconciliación lo liquidan.
+            logger.warning(f"[REAL] Trade #{trade['id']} {symbol} ya no tiene posición en Bybit — se liquida con su closed-pnl")
+            settled = await self.settle_exchange_close(trade, client, account_id, epoch_ms(trade['entry_time']))
+            if settled is None:
+                logger.error(f"[REAL] CLOSE #{trade['id']} {symbol}: cerrada en Bybit sin closed-pnl todavía — "
+                             f"se liquida en el próximo ciclo")
+                await self.log_audit(trade['id'], 'close_unconfirmed', {'state': 'pnl_pending', 'requested': exit_reason})
+                return False
+            return settled
 
         # Marcar pending_close
         async with self.pool.acquire() as conn:
