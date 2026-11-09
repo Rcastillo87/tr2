@@ -1,5 +1,6 @@
 <?php
 namespace App\Models;
+use App\Support\StrategyLabel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -15,6 +16,19 @@ class Strategy extends Model {
 
     public function backtests(): HasMany {
         return $this->hasMany(Backtest::class);
+    }
+
+    /**
+     * ¿Alguna config Paper activa sale de un backtest de ESTA estrategia? Por id (N-09): por nombre, «VWAP» abarcaba
+     * «VWAP Tendencia». Configs sin backtest (legado): por la etiqueta exacta.
+     */
+    public function hasActivePaper(): bool
+    {
+        return PaperStrategyConfig::where('active', true)
+            ->where(fn ($q) => $q->whereHas('backtest', fn ($b) => $b->where('strategy_id', $this->id))
+                ->orWhere(fn ($legacy) => $legacy->whereNull('backtest_id')
+                    ->where('display_name', 'like', StrategyLabel::likePrefix($this->name))))
+            ->exists();
     }
 
     /**

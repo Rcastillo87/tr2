@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\StrategyLabel;
 use App\Helpers\RatingHelper;
 use App\Models\Backtest;
 use App\Models\BrokerAccount;
@@ -235,7 +236,7 @@ final class StrategyConfigSync
         $label    = self::INTERVAL_LABELS[$interval] ?? $interval;
         $name     = $backtest->strategy?->name ?? "Backtest #{$backtest->id}";
 
-        return "{$name} — {$symbol} {$label}";
+        return StrategyLabel::compose($name, $symbol, $label);
     }
 
     /**
@@ -247,9 +248,12 @@ final class StrategyConfigSync
         RealStrategySubscription::where('paper_strategy_config_id', $config->id)
             ->update(['strategy' => $config->display_name, 'interval' => $config->interval]);
 
+        // Por nombre solo los trades de legado sin config_id: un trade con config_id es de SU config aunque otra
+        // comparta la etiqueta (dos backtests de la misma estrategia, símbolo e intervalo), N-09
         DB::table('paper_trades')
             ->where('status', 'open')
-            ->where(fn ($q) => $q->where('paper_strategy_config_id', $config->id)->orWhere('strategy', $oldName))
+            ->where(fn ($q) => $q->where('paper_strategy_config_id', $config->id)
+                ->orWhere(fn ($legacy) => $legacy->whereNull('paper_strategy_config_id')->where('strategy', $oldName)))
             ->update(['strategy' => $config->display_name, 'paper_strategy_config_id' => $config->id]);
     }
 

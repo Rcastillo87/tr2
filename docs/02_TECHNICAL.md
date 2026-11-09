@@ -157,7 +157,7 @@ Definidas en `routes/auth.php` (no exploradas en detalle — siguen el patrón e
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | bigint PK | |
-| `strategy` | string | Coincide con `paper_strategy_configs.display_name` |
+| `strategy` | string | Etiqueta (= `paper_strategy_configs.display_name`), solo para mostrar y filtrar. La identidad del trade es `paper_strategy_config_id` [V7.2, p38 N-09] |
 | `symbol` | string | |
 | `interval` | string | |
 | `side` | enum('long','short') | |
@@ -337,7 +337,7 @@ Lanza excepción si el nombre no coincide con ninguno.
 **`implementFromBacktest($strategyName, $symbol, $interval, $params, $displayNameOverride = null)`** (estático) — el método más importante del modelo. Flujo:
 1. Resuelve `{class, mode}` desde `$strategyName`.
 2. Si hay `mode`, lo inyecta dentro de `$params['mode']`.
-3. Construye el `display_name` (ej. "VWAP Tendencia — BTCUSDT H1") usando una tabla de etiquetas de intervalo (`1→1m, 5→5m, 15→15m, 60→H1, 120→H2, 240→H4, D→D1`).
+3. Construye el `display_name` (ej. "VWAP Tendencia — BTCUSDT H1", `App\Support\StrategyLabel::compose`; no es único ni identifica la config) usando una tabla de etiquetas de intervalo (`1→1m, 5→5m, 15→15m, 60→H1, 120→H2, 240→H4, D→D1`).
 4. Codifica `$params` a JSON y busca si ya existe una fila con la misma `strategy_class + symbol + interval` cuyo campo `params` sea JSONB-idéntico (operadores `@>` y `<@` combinados, que ignoran el orden de las claves pero exigen igualdad exacta de contenido).
 5. Si encuentra una coincidencia exacta, actualiza esa fila (`display_name`, `active=true`) y la retorna — no crea un duplicado.
 6. Si no hay coincidencia exacta, **crea una fila nueva** sin restricción adicional — permite múltiples configuraciones del mismo símbolo/estrategia/intervalo con parámetros distintos.
@@ -608,7 +608,7 @@ Manejo de errores: `ValueError` (datos insuficientes, estrategia desconocida) �
 
 **`POST /paper/tick`** — el ciclo completo de Paper Trading, ejecutado cada 5 minutos por el job de Laravel:
 1. Carga configs activas; si no hay ninguna, responde temprano con mensaje informativo.
-2. Para cada config, instancia su estrategia (capturando errores individuales sin abortar todo el ciclo) y construye dos mapas: `strategies` (`display_name → clase`) y `config_map` (`display_name → config completa`).
+2. Para cada config, instancia su estrategia (capturando errores individuales sin abortar todo el ciclo) y construye `config_map` (`id de config → config completa`). La identidad de una config es su **id**: dos backtests de la misma estrategia, símbolo e intervalo comparten `display_name` [V7.2, p38 N-09].
 3. Define `default_params` (valores de respaldo si una config no trae todos los campos).
 4. Instancia `RiskManager` y llama `evaluate()` (ver sección 13) — esto puede generar nuevas pausas o reactivar pausas vencidas, **antes** de tocar ninguna posición.
 5. Instancia `PaperTrader` con todo lo anterior, llama `monitor_open_trades()` y luego `check_new_signals()` en secuencia.

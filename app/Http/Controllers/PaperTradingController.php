@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\StrategyLabel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -25,7 +26,7 @@ class PaperTradingController extends Controller
 
         // Posiciones abiertas (sin filtro de mes, siempre se muestran)
         $openQuery = PaperTrade::open()->orderBy('entry_time', 'desc');
-        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'like', $filterStrategy . '%');
+        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'like', StrategyLabel::likePrefix($filterStrategy));
         if ($filterSymbol   !== 'all') $openQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $openQuery->where('interval', $filterInterval);
         $openTrades = $openQuery->get();
@@ -41,7 +42,7 @@ class PaperTradingController extends Controller
         // Operaciones cerradas del mes con filtros
         $closedQuery = PaperTrade::closed()
             ->whereBetween('entry_time', [$start, $end]);
-        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'like', $filterStrategy . '%');
+        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'like', StrategyLabel::likePrefix($filterStrategy));
         if ($filterSymbol   !== 'all') $closedQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $closedQuery->where('interval', $filterInterval);
         if ($filterResult === 'win')  $closedQuery->where('pnl', '>', 0);

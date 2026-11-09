@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\StrategyLabel;
 use App\Models\BrokerAccount;
 use App\Models\PaperStrategyConfig;
 use App\Models\RealTrade;
@@ -42,7 +43,7 @@ class TradingController extends Controller
         // Posiciones abiertas (sin filtro de mes)
         $openQuery = RealTrade::whereIn('broker_account_id', $accountIds)->open()
             ->orderBy('entry_time', 'desc');
-        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'LIKE', $filterStrategy . ' —%');
+        if ($filterStrategy !== 'all') $openQuery->where('strategy', 'like', StrategyLabel::likePrefix($filterStrategy));
         if ($filterSymbol   !== 'all') $openQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $openQuery->where('interval', $filterInterval);
         if ($filterAccount  !== 'all') $openQuery->where('broker_account_id', $filterAccount);
@@ -69,7 +70,7 @@ class TradingController extends Controller
         $closedQuery = RealTrade::whereIn('broker_account_id', $accountIds)
             ->closed()
             ->whereBetween('entry_time', [$start, $end]);
-        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'LIKE', $filterStrategy . ' —%');
+        if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'like', StrategyLabel::likePrefix($filterStrategy));
         if ($filterSymbol   !== 'all') $closedQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $closedQuery->where('interval', $filterInterval);
         if ($filterResult === 'win')   $closedQuery->where('pnl', '>', 0);

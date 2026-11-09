@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -63,6 +63,16 @@
 - **Datos:** el único trade Real cerrado recalcula su `pnl_pct` con el neto (la instalación imprime antes y después).
 - **Prueba:** `real_close_accounting_test.py` (13 casos; **11 FALLOS** con el código anterior). Mutaciones: `pnl_pct` bruto (3), hora del proceso (2), sin hora de la orden (1), un solo intento (2), funding sin separar (1).
 - Instalación de p36 el 09-nov (modo reanudación: una corrida anterior se cortó): regresión 47 en TODO OK; motor en un solo proceso; reiniciado, tick de Paper 200, 0 errores; `main` = `bf4fce0`.
+
+### N-09 — Identidad de configs por id, no por etiqueta (p38)
+- **Antes:** la etiqueta «estrategia — símbolo intervalo» se usaba como identidad en tres lugares:
+  - `StrategyConfigSync::renameReferences`, al renombrar una config, reasignaba los trades Paper abiertos `WHERE config = X OR strategy = etiqueta_vieja`. Con dos configs de la misma etiqueta (**hay una en producción: «VWAP Tendencia — ETHUSDT H4», #68 y #62**), el trade abierto de una pasaba a la otra; la primera quedaba «sin trade» y podía abrir otro.
+  - `StrategyController::destroy` buscaba configs activas con `LIKE 'Nombre%'`: «VWAP» quedaba bloqueada por una variante activa de «VWAP Tendencia», y `%`/`_` del nombre eran comodines.
+  - Los filtros de Paper usaban `LIKE 'Nombre%'` (sin separador): «VWAP» mostraba los trades de «VWAP Tendencia». Real ya usaba `' —%'`.
+- **Ahora:** `renameReferences` reasigna por nombre solo trades de legado **sin** `paper_strategy_config_id`. `Strategy::hasActivePaper()` compara por el `strategy_id` del backtest (por la etiqueta exacta solo configs de legado sin backtest). `App\Support\StrategyLabel` arma la etiqueta (`compose`) y el patrón de filtro (`likePrefix`: nombre exacto + separador, con `% _ \` escapados), usado por los filtros de Paper y Real y por el borrado.
+- El motor Paper ya indexaba sus configs por id (`config_map[cfg['id']]`); la documentación decía `display_name` y se corrigió.
+- **Pruebas:** `strategy_label_test.php` (PHP puro, en la regresión: 16 casos; **10 FALLOS** con el código anterior). `strategy_identity_test.php` (Laravel + base real, transacción revertida): dos configs con la misma etiqueta y un trade de cada tipo, con el control del criterio anterior; y una estrategia cuyo nombre es prefijo de otra con config activa.
+- Instalación de p37 el 09-nov: regresión 48 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `pnl_pct` neto en los 2 trades Real cerrados (#85: −0,9956 → −1,0540; #86: −0,3285 → −0,4020); `main` = `7abfa89`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

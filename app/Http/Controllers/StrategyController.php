@@ -133,12 +133,7 @@ class StrategyController extends Controller
     {
         Gate::authorize('manageUsers');
 
-        // Verificar si tiene configuraciones activas en Paper Trading
-        $hasActivePaper = \App\Models\PaperStrategyConfig::where('active', true)
-            ->where('display_name', 'like', $strategy->name . '%')
-            ->exists();
-
-        if ($hasActivePaper) {
+        if ($strategy->hasActivePaper()) {
             return back()->with('error', 'No puedes eliminar esta estrategia porque tiene una variante activa en Paper Trading. Pausa el Paper primero.');
         }
         $name = $strategy->name;
