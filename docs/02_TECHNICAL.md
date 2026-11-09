@@ -746,6 +746,8 @@ Si todos pasan, `passed=true` y `reasons=["Estrategia aprobada para paper tradin
 
 Todas las estrategias heredan de aquí. Define el contrato `generate_signals(df) -> df` como método abstracto obligatorio, y `prepare(df) -> df` como hook opcional (por defecto no hace nada, cada estrategia hija lo sobrescribe para calcular sus propios indicadores).
 
+**Flags booleanos [V7.2, p39 N-10]:** `regime_filter`, `volume_filter`, `macro_trend_filter`, `btc_trend_filter`, `hour_filter`, `weekend_filter`, `max_duration_profit`, `close_on_opposite`, `exit_on_opposite` y `allow_short` pasan por `as_flag(valor, default)`: `'false'`, `'0'`, `'off'`, `'no'` y `''` → `False`; `null` o ausente → el default. Paper y Real construyen la estrategia desde los params guardados, donde un texto `'false'` evaluaba verdadero.
+
 **Atributos inicializados desde `params` en el constructor**: `symbol, interval, sl_pct, tp_pct, be_pct, max_duration, regime_filter`, los 3 filtros de volumen (`volume_filter*`), filtro horario legado (`hour_filter*`), `weekend_filter`, `blocked_hours`, `blocked_days` (estos 3 últimos quedan **inicializados dos veces** de forma idéntica en el código fuente — ver hallazgos), los 3 niveles de TP opcionales (`tp2_pct, tp3_pct, tp4_pct`), configuración de trailing (`trailing_mode, trailing_distance_pct, trailing_steps`), y configuración de protección por volatilidad (`volatility_protection_mode, volatility_atr_multiplier, volatility_widen_pct`).
 
 **Filtros aplicables a la columna `signal` de un DataFrame ya calculado** (cada uno anula señales que caigan en la condición bloqueada, sin tocar las demás):

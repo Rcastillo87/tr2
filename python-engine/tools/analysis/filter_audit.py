@@ -36,7 +36,7 @@ load_dotenv(Path.cwd() / '.env')
 import cli.param_search as ps  # noqa: E402
 from api.v1.backtest import BacktestRequest, load_strategy, run_backtest  # noqa: E402
 from backtesting.engine import BacktestEngine  # noqa: E402
-from backtesting.strategies.base_strategy import macro_trend_series  # noqa: E402
+from backtesting.strategies.base_strategy import as_flag, macro_trend_series  # noqa: E402
 from collectors.broker_resolver import interval_delta  # noqa: E402
 from indicators.regime_indicators import calculate_atr  # noqa: E402
 
@@ -150,8 +150,8 @@ def run_one(name, code, scfg, sym, iv, cfg, data, start, split, end):
                           initial_balance=ps.INITIAL, risk_per_trade_pct=ps.RISK_PCT, **kw)
     s = load_strategy(req)
     s.slippage_pct = float(kw['slippage_pct'])
-    s.hour_filter, s.weekend_filter = bool(cfg.get('hour_filter')), bool(cfg.get('weekend_filter'))
-    if cfg.get('macro_trend_filter'):
+    s.hour_filter, s.weekend_filter = as_flag(cfg.get('hour_filter'), False), as_flag(cfg.get('weekend_filter'), False)
+    if as_flag(cfg.get('macro_trend_filter'), False):
         s.macro_df = data.macro_df
     experimental(s, cfg, data, sym, iv)
     res = BacktestEngine(strategy=s, df=data.df, initial_balance=ps.INITIAL, risk_per_trade_pct=ps.RISK_PCT,

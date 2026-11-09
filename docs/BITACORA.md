@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -73,6 +73,12 @@
 - El motor Paper ya indexaba sus configs por id (`config_map[cfg['id']]`); la documentación decía `display_name` y se corrigió.
 - **Pruebas:** `strategy_label_test.php` (PHP puro, en la regresión: 16 casos; **10 FALLOS** con el código anterior). `strategy_identity_test.php` (Laravel + base real, transacción revertida): dos configs con la misma etiqueta y un trade de cada tipo, con el control del criterio anterior; y una estrategia cuyo nombre es prefijo de otra con config activa.
 - Instalación de p37 el 09-nov: regresión 48 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `pnl_pct` neto en los 2 trades Real cerrados (#85: −0,9956 → −1,0540; #86: −0,3285 → −0,4020); `main` = `7abfa89`.
+
+### N-10 — Flags booleanos normalizados (p39)
+- **Antes:** solo `allow_short`, `close_on_opposite` y `exit_on_opposite` pasaban por `as_flag`. `regime_filter`, `volume_filter`, `macro_trend_filter`, `hour_filter`, `weekend_filter` y `max_duration_profit` tomaban el valor crudo, y `btc_trend_filter` usaba `bool()`. Un `"false"` o `"0"` guardado como texto en los params activaba el filtro en Paper y Real (el backtest no, porque Pydantic convierte). El diagnóstico del 09-nov mostró que hoy todos están guardados como booleanos: es defensa.
+- **Ahora:** los 7 flags pasan por `as_flag(valor, default)` en `BaseStrategy.__init__`. `tools/analysis/filter_audit.py` también (usaba `bool()`).
+- **Prueba:** `flag_normalization_test.py` (33 casos: los 10 flags con textos falsos, verdaderos y null, más el efecto en los filtros horario, de fin de semana y de BTC; **21 FALLOS** con el código anterior). Mutaciones: un flag sin `as_flag` (4), `bool()` (2), default cambiado (1).
+- Instalación de p38 el 09-nov: regresión 49 en TODO OK; Horizon reiniciado; integración contra la base real S1–S5 PASS (reproduce los dos casos con el criterio anterior); `main` = `387d646`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

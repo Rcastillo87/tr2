@@ -72,7 +72,7 @@ class BaseStrategy(ABC):
         self.tp_pct       = params.get('tp_pct', 3.0)
         self.be_pct       = params.get('be_pct', 0.8)
         self.max_duration = params.get('max_duration', 24)
-        self.regime_filter = params.get('regime_filter', True)
+        self.regime_filter = as_flag(params.get('regime_filter'), True)
         self.regime_adx_trending = params.get('regime_adx_trending', 25)
         self.regime_adx_ranging  = params.get('regime_adx_ranging', 20)
         self.regime_ambiguous_as = params.get('regime_ambiguous_as', 'RANGING')
@@ -81,20 +81,20 @@ class BaseStrategy(ABC):
         if chosen is not None:
             self.allowed_regimes = [r for r in REGIMES if r in set(chosen)]
         # Filtro de volumen — solo opera si el volumen actual > promedio * multiplicador
-        self.volume_filter          = params.get('volume_filter', False)
+        self.volume_filter          = as_flag(params.get('volume_filter'), False)
         self.volume_filter_period   = params.get('volume_filter_period', 20)
         self.volume_filter_mult     = params.get('volume_filter_mult', 1.2)
-        self.macro_trend_filter = params.get('macro_trend_filter', False)
+        self.macro_trend_filter = as_flag(params.get('macro_trend_filter'), False)
         self.macro_df = None  # velas H4 cerradas; las asigna quien ejecuta (backtest/paper/real)
         # Tendencia de BTC (EMA 50 H4 de BTC) para altcoins; en BTC no aplica (sería el filtro macro)
-        self.btc_trend_filter = bool(params.get('btc_trend_filter', False))
+        self.btc_trend_filter = as_flag(params.get('btc_trend_filter'), False)
         self.btc_macro_df = None  # velas H4 cerradas de BTC; las asigna quien ejecuta
         # Filtro horario — solo opera en horas de alta liquidez
-        self.hour_filter            = params.get('hour_filter', False)
+        self.hour_filter            = as_flag(params.get('hour_filter'), False)
         self.hour_filter_start      = params.get('hour_filter_start', 7)   # UTC
         self.hour_filter_end        = params.get('hour_filter_end', 21)    # UTC
         # Filtro fin de semana — bloquea sabado y domingo
-        self.weekend_filter         = params.get('weekend_filter', False)
+        self.weekend_filter         = as_flag(params.get('weekend_filter'), False)
         # Bloquear horas especificas (lista de horas UTC 0-23)
         self.blocked_hours          = params.get('blocked_hours', [])
         # Bloquear dias especificos (lista: 0=Lun,1=Mar,...,6=Dom)
@@ -134,7 +134,7 @@ class BaseStrategy(ABC):
         self.close_on_opposite     = as_flag(params.get('close_on_opposite'), False)  # Cerrar si aparece señal contraria
         self.exit_on_opposite      = as_flag(params.get('exit_on_opposite'), False)   # Cerrar si aparece señal contraria (pero NO abrir la opuesta)
         self.allow_short           = as_flag(params.get('allow_short'), True)  # Permite o no abrir posiciones Short
-        self.max_duration_profit   = params.get('max_duration_profit', False) # Cerrar por tiempo solo si está en positivo
+        self.max_duration_profit   = as_flag(params.get('max_duration_profit'), False)  # Cerrar por tiempo solo si está en positivo
 
         # Proteccion por volatilidad
         self.volatility_protection_mode = params.get('volatility_protection_mode', None)  # None | "close" | "widen"
