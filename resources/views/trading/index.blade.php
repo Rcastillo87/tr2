@@ -227,7 +227,7 @@
                         </td>
                         <td class="py-2 px-3">
                             @php
-                                $acct = []->firstWhere('id', $trade->broker_account_id);
+                                $acct = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
                             @endphp
                             <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style="background: {{ ($acct?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};
@@ -343,7 +343,7 @@
                             </td>
                             <td class="py-2 px-3">
                                 @php
-                                    $acct2 = []->firstWhere('id', $trade->broker_account_id);
+                                    $acct2 = $filterOptions['accounts']->firstWhere('id', $trade->broker_account_id);
                                 @endphp
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                       style="background: {{ ($acct2?->account_type ?? '') === 'demo' ? '#3A2E0E' : '#16331F' }};

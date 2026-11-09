@@ -21,6 +21,24 @@
 
 ---
 
+## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
+
+### Resumen para el dueño
+- **Síntoma (09-nov):** `GET /trading` → «Call to a member function firstWhere() on array» en `resources/views/trading/index.blade.php:229`.
+- **Causa:** en las líneas 230 (trades abiertos) y 346 (trades cerrados) la etiqueta DEMO/REAL de la cuenta usaba `[]->firstWhere('id', $trade->broker_account_id)`, un método sobre un array literal, que es un error fatal en PHP 8. Lo dejó una edición anterior: el controlador conserva cuatro líneas vacías en el arreglo de la vista. Solo se ejecuta **dentro del bucle de trades de Real**: con 0 trades nunca falló (lectura del 05-nov: 0 trades de Real); con el primer trade de la cuenta 11 la página se cayó.
+- **Corrección:** las dos líneas usan `$filterOptions['accounts']`, las cuentas del usuario (`id, label, account_type, broker`) que el controlador ya entrega y la vista ya usa en el filtro. **Sin cambio visual**: la etiqueta vuelve a mostrar el tipo real de la cuenta.
+- **Prevención:** `tests/Forensic/blade_static_test.php` revisa **todas** las vistas (58) buscando métodos sobre `[]` o `null` literal, que `php -l` no detecta, y entra en la regresión.
+
+### Commits
+| Commit | Qué | Verificación |
+|---|---|---|
+| (este) | `resources/views/trading/index.blade.php` (2 líneas); `tests/Forensic/blade_static_test.php` (nuevo) | La prueba nueva da 3 PASS; con la vista anterior, **2 FALLOS** (las dos líneas). Expresión regular comprobada: marca `[]->x(` y `null->x(`, no `null?->x(`. `view:cache` en la instalación. Regresión en TODO OK |
+
+### Cambios fuera de git
+- (se completa al instalar p32 y con la apertura de /trading)
+
+---
+
 ## 2026-11-06 (Bogotá) — Cierre de la sesión de fixes: certificación para el auditor y opciones de la fase 12
 
 ### Resumen para el dueño
@@ -36,6 +54,7 @@
 
 ### Cambios fuera de git
 - Instalado con **p30** el 06-nov (solo documentación, 4 archivos; sin reinicios): regresión 42 en TODO OK; `main` subido (`291da9b..fcea3f5`). La actualización del resto de la documentación (README, `PROMPT_MAESTRO` V7.2, 01/02/03, «Próxima sesión») va en **p31**.
+- Instalado con **p31** el 06-nov (solo documentación, 6 archivos): regresión 42 en TODO OK; `main` subido (`fcea3f5..cea6472`).
 - Copias en el proyecto «Ruben Castillo» de claude.ai: `claude/PROMPT_MAESTRO_V7.2.md`, `claude/CERTIFICACION_AUDITORIA.md`, `claude/FASE12_ESTADISTICA.md`, `claude/PENDIENTES_AUDITORIA.md`. Las instrucciones del proyecto se reemplazan a mano por el contenido de `PROMPT_MAESTRO` V7.2.
 
 ---
