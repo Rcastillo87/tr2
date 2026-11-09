@@ -89,6 +89,9 @@ _MONTHLY_NOTIFIED: set = set()
 # Comisión taker de Bybit por lado (cierres hechos por el bot). Los cierres detectados
 # en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
 BYBIT_TAKER_FEE = 0.00055  # 0.055%
+# closed-pnl tras el Filled de un cierre: intentos y espera entre ellos (Bybit lo indexa unos segundos después)
+CLOSED_PNL_TRIES  = 3
+CLOSED_PNL_WAIT_S = 2
 
 # El SL debe quedar al menos este margen ANTES del precio de liquidación (la liquidación usa el precio
 # de marca; el SL, el último precio: con el SL pegado a la liquidación, la liquidación puede ganar).
@@ -120,6 +123,40 @@ def floor_to_step(qty: float, step: float) -> float:
         return qty
     decimals = max(0, -int(math.floor(math.log10(step))))
     return round(math.floor(qty / step + 1e-9) * step, decimals)
+
+
+def close_figures(side: str, entry: float, exit_price: float, size: float, balance_before: float | None,
+                  bybit_net: float | None, partial_pnl: float = 0.0) -> dict:
+    """
+    Cifras de un cierre Real. Con closedPnl de Bybit (bybit_net) el neto es el suyo, que ya descuenta comisiones de
+    entrada y salida y funding: costos = bruto - neto. Sin él, comisión taker estimada (entrada + salida).
+    pnl_pct es NETO sobre el saldo previo, como en Paper (N-06).
+    """
+    leg = (exit_price - entry) * size if side == 'long' else (entry - exit_price) * size
+    pnl = leg + partial_pnl
+    if bybit_net is not None:
+        net = float(bybit_net) + partial_pnl
+        commission = pnl - net
+    else:
+        commission = (entry + exit_price) * size * BYBIT_TAKER_FEE
+        net = pnl - commission
+    pct = net / balance_before * 100 if balance_before else 0.0
+    return {'pnl': round(pnl, 4), 'net_pnl': round(net, 4), 'commission': round(commission, 6),
+            'pnl_pct': round(pct, 4), 'source': 'bybit' if bybit_net is not None else 'estimado'}
+
+
+def fee_breakdown(history: list[dict], costs: float) -> dict:
+    """
+    Desglose de los costos (bruto - neto) cuando Bybit informa openFee/closeFee en el closed-pnl: comisiones y,
+    por diferencia, funding. Sin esos campos no se inventa el reparto ({}).
+    """
+    try:
+        fees = sum(float(h['openFee']) + float(h['closeFee']) for h in history) if history else None
+    except (KeyError, TypeError, ValueError):
+        fees = None
+    if fees is None:
+        return {}
+    return {'fees': round(fees, 6), 'funding': round(costs - fees, 6)}
 
 
 def epoch_ms(t: datetime) -> int:
@@ -1481,21 +1518,10 @@ class RealTrader:
         symbol = trade['symbol']
         # Si viene exit_price_override — posicion ya cerrada en Bybit por SL/TP
         if exit_price_override:
-            entry_price = float(trade["entry_price"])
-            size        = float(closed_size or trade["size"])
-            bal_before  = float(trade["balance_before"]) if trade.get("balance_before") else 0
-            if side == "short":
-                pnl = (entry_price - exit_price_override) * size
-            else:
-                pnl = (exit_price_override - entry_price) * size
-            if bybit_net_pnl is not None:
-                # closedPnl de Bybit ya descuenta comisiones (y funding): costo = bruto - neto
-                net_pnl    = float(bybit_net_pnl)
-                commission = pnl - net_pnl
-            else:
-                commission = (entry_price + exit_price_override) * size * BYBIT_TAKER_FEE
-                net_pnl    = pnl - commission
-            pnl_pct       = pnl / bal_before * 100 if bal_before > 0 else 0
+            fig = close_figures(side, float(trade["entry_price"]), exit_price_override,
+                                float(closed_size or trade["size"]),
+                                float(trade["balance_before"]) if trade.get("balance_before") else None, bybit_net_pnl)
+            pnl, net_pnl, commission, pnl_pct = fig['pnl'], fig['net_pnl'], fig['commission'], fig['pnl_pct']
             balance_after = await client.get_balance() or 0
             async with self.pool.acquire() as conn:
                 # Guarda status='open': evita que 2 ciclos de monitoreo que
@@ -1568,35 +1594,43 @@ class RealTrader:
         close_link_id  = result.get('orderLinkId')
 
         # Esperar confirmacion (~30 s). Sin Filled NO se inventa el cierre con el precio de mercado.
-        exit_price = None
+        exit_price, filled_ms = None, None
         for _ in range(6):
             await asyncio.sleep(5)
             order = await client.get_order(symbol, close_order_id, link_id=close_link_id)
             if order and order.get('orderStatus') == 'Filled':
                 close_order_id = close_order_id or order.get('orderId')
                 exit_price = float(order.get('avgPrice') or 0) or await client.get_market_price(symbol)
+                filled_ms = order.get('updatedTime')
                 break
         if not exit_price:
             return await self._settle_unconfirmed_close(trade, exit_reason, client, account_id,
                                                         close_link_id, since_ms)
 
-        # Balance real despues del cierre
-        balance_after = await client.get_balance()
-
-        # Calcular PnL - suma esta pierna final mas lo ya realizado en
-        # cierres parciales previos (TP2/TP3/TP4), si hubo.
+        # Liquidación con los números de Bybit (N-06, N-16): closed-pnl de esta orden (neto con comisiones y
+        # funding reales, hora del cierre). Bybit lo indexa unos segundos después del Filled; si no llega, se
+        # estima la comisión y la hora es la de ejecución de la orden, no la de este proceso.
         entry_price = float(trade['entry_price'])
-        if side == 'long':
-            pnl_leg = (exit_price - entry_price) * size
-        else:
-            pnl_leg = (entry_price - exit_price) * size
+        history = []
+        for attempt in range(CLOSED_PNL_TRIES):
+            history = await client.get_closed_pnl_history(symbol, entry_price, since_ms, limit=50)
+            if sum(float(h.get('closedSize') or 0) for h in history) > 0:
+                break
+            history = []
+            if attempt < CLOSED_PNL_TRIES - 1:
+                await asyncio.sleep(CLOSED_PNL_WAIT_S)
+        bybit_net = sum(float(h.get('closedPnl') or 0) for h in history) if history else None
+        close_time = bybit_close_time(history) if history else None
+        if close_time is None and filled_ms:
+            close_time = datetime.fromtimestamp(int(filled_ms) / 1000, tz=timezone.utc).replace(tzinfo=None)
+        if bybit_net is None:
+            logger.warning(f"[REAL] CLOSE #{trade['id']} {symbol}: closed-pnl todavía no disponible — comisión estimada")
 
-        partial_pnl = float(trade.get('realized_pnl_partial') or 0)
-        pnl = pnl_leg + partial_pnl
-
-        commission = (entry_price + exit_price) * size * BYBIT_TAKER_FEE  # entrada + salida
-        net_pnl    = pnl - commission
-        pnl_pct    = pnl / float(trade['balance_before']) * 100 if trade.get('balance_before') else 0
+        balance_after = await client.get_balance()
+        fig = close_figures(side, entry_price, exit_price, size,
+                            float(trade['balance_before']) if trade.get('balance_before') else None,
+                            bybit_net, float(trade.get('realized_pnl_partial') or 0))
+        pnl, net_pnl, commission, pnl_pct = fig['pnl'], fig['net_pnl'], fig['commission'], fig['pnl_pct']
 
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -1609,18 +1643,19 @@ class RealTrader:
                 WHERE id = $10 AND status = 'pending_close'
                 """,
                 close_order_id, exit_price, exit_reason,
-                datetime.now(timezone.utc).replace(tzinfo=None),
-                round(pnl, 4), round(pnl_pct, 4), round(net_pnl, 4),
-                round(commission, 6), balance_after, trade['id']
+                close_time or datetime.now(timezone.utc).replace(tzinfo=None),
+                pnl, pnl_pct, net_pnl, commission, balance_after, trade['id']
             )
 
         await self.log_audit(trade['id'], 'closed', {
             'close_order_id': close_order_id,
             'exit_price': exit_price,
             'exit_reason': exit_reason,
-            'pnl': round(pnl, 4),
-            'net_pnl': round(net_pnl, 4),
-            'commission': round(commission, 6),
+            'pnl': pnl,
+            'net_pnl': net_pnl,
+            'commission': commission,
+            'figures': fig['source'],
+            **fee_breakdown(history, commission),
             'balance_after': balance_after,
         })
 

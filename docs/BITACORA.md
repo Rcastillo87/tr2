@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -56,6 +56,13 @@
 - El candado es de memoria: vale porque el motor corre como **un solo proceso** (el instalador lo verifica en `ExecStart` y revierte si hay `--workers` > 1).
 - **Prueba:** `real_concurrency_test.py` (16 casos, con tiempos reales; **12 FALLOS** con el código anterior). Mutaciones: circuit breaker sin turno (3 fallos), reclamo sin exigir `open` (1), monitor sin devolver a `open` (1), ignorar el reclamo fallido (1), tick que espera en vez de omitirse (1).
 - Instalación de p35 el 09-nov: regresión 46 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `1734f98`.
+
+### N-06 + N-16 — Contabilidad y hora del cierre Real normal (p37)
+- **Antes:** tras el Filled de la orden de cierre, la comisión se estimaba con la tasa taker (0,055 % de entrada y salida), el funding no se descontaba, `exit_time` era la hora del proceso y `pnl_pct` era el PnL **bruto** sobre el saldo previo (la pantalla mostraba el USDT neto al lado de un % bruto; Paper usa el neto).
+- **Ahora:** se consulta el closed-pnl de esa orden (3 intentos, 2 s entre ellos): neto = `closedPnl` de Bybit (ya descuenta comisiones y funding), `commission` = bruto − neto, `exit_time` = hora del cierre en Bybit. Si no aparece: comisión estimada y `exit_time` = ejecución de la orden (`updatedTime`). `pnl_pct` = neto / saldo previo, también en el camino de posición ya cerrada. Las cifras salen de una sola función (`close_figures`); la auditoría `closed` dice de dónde salieron (`figures`) y, si Bybit informa `openFee`/`closeFee`, separa `fees` y `funding`.
+- **Datos:** el único trade Real cerrado recalcula su `pnl_pct` con el neto (la instalación imprime antes y después).
+- **Prueba:** `real_close_accounting_test.py` (13 casos; **11 FALLOS** con el código anterior). Mutaciones: `pnl_pct` bruto (3), hora del proceso (2), sin hora de la orden (1), un solo intento (2), funding sin separar (1).
+- Instalación de p36 el 09-nov (modo reanudación: una corrida anterior se cortó): regresión 47 en TODO OK; motor en un solo proceso; reiniciado, tick de Paper 200, 0 errores; `main` = `bf4fce0`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 
