@@ -86,6 +86,10 @@ class Conn:
     async def fetchrow(self, sql, *a):
         return None
 
+    async def fetchval(self, sql, *a):                          # última vela de 1m de la fuente (N-02)
+        self.s['tail_queries'] = self.s.get('tail_queries', 0) + 1
+        return max((m['time'] for m in self.s['minutes']), default=None)
+
     async def execute(self, sql, *a):
         t = self.s['trade']
         if 'last_monitored_at = $6' in sql:

@@ -41,6 +41,12 @@
 - **Pruebas:** `real_reconcile_statuses_test.php` (PHP puro, en la regresión: 12 casos; **8 FALLOS** con el código anterior). `real_reconcile_selector_test.php` (Laravel + base real, en una transacción revertida, con `Http::fake`): corre en la instalación; incluye el control con el selector anterior.
 - Instalación de p33 el 09-nov: regresión 44 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `01fc216`.
 
+### N-02 — Final sin velas de 1m en Paper (p35)
+- **Antes:** el monitor solo trataba como hueco un minuto faltante **entre** velas presentes (BP-03). Si la serie de 1m se detenía, no había velas nuevas: `_minute_path` ni se llamaba (`if bars else []`) y el SL/TP del trade abierto no se evaluaba nunca, aunque las velas del intervalo sí siguieran llegando.
+- **Ahora:** `_stale_minute_tail()`: cuando ya pudo cerrar una vela completa del intervalo después del último minuto evaluado, se consulta la última vela de 1m de la fuente. Si tiene más de `PAPER_MINUTE_GAP_WAIT_HOURS` (26 h), el final [primer minuto sin evaluar, ahora) se cubre con las velas **cerradas** del intervalo y SL primero (la regla de BP-03 y del backtest sin 1m). El plazo se mide en la serie, no en el punto de control: una vez detenida, cada vela nueva se evalúa al cerrar, sin otra espera de 26 h. Con 1m solo atrasado (< 26 h) se espera en silencio; en el caso normal no hay consultas extra.
+- **Prueba:** `minute_tail_test.py` (10 casos; **7 FALLOS** con el código anterior). Mutaciones: sin comprobar que la serie está detenida (1 fallo), plazo desde el punto de control (2), la cola también espera 26 h desde su inicio (1), consulta en cada tick (1). `minute_gap_test.py` (BP-03) sigue en TODO OK; su doble de base agrega `fetchval`.
+- Instalación de p34 el 09-nov: regresión 45 en TODO OK; Horizon reiniciado (6 procesos); integración contra la base real: S1–S5 PASS (el selector anterior no enviaba la cuenta: reproduce N-01); `main` = `9adecbb`.
+
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 
 ### Resumen para el dueño

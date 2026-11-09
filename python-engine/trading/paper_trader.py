@@ -32,7 +32,8 @@ VIRTUAL_BALANCE = 10000.0
 
 # Hueco dentro del 1m (BP-03): el monitor se detiene antes del hueco y espera la reparación (validación diaria 04:00).
 # Si tras este plazo sigue sin llenarse, las velas del intervalo que lo contienen se evalúan como vela completa con
-# SL primero (la misma regla que el backtest sin 1m).
+# SL primero (la misma regla que el backtest sin 1m). Lo mismo con el final sin velas si la serie de 1m de la fuente
+# lleva este plazo detenida (N-02).
 MINUTE_GAP_WAIT = timedelta(hours=float(os.getenv('PAPER_MINUTE_GAP_WAIT_HOURS', '26')))
 ONE_MINUTE = timedelta(minutes=1)
 
@@ -177,11 +178,29 @@ class PaperTrader:
         rows = sorted_records(rows, f"paper {symbol}/{interval} ({broker}) respaldo de hueco 1m")
         return [r for r in rows if _as_utc(r['time']) + step > gap[0] and _as_utc(r['time']) + step <= now]
 
+    async def _stale_minute_tail(self, trade: dict, broker: str, first_missing: datetime, now: datetime) -> tuple | None:
+        """
+        Final sin velas de 1m como hueco [primer minuto sin evaluar, ahora) cuando la serie de 1m de la fuente lleva
+        más de MINUTE_GAP_WAIT sin datos (N-02); None si las velas solo vienen con retraso. Solo consulta la base
+        cuando ya pudo cerrar una vela completa del intervalo después del último minuto evaluado.
+        """
+        if now - first_missing < interval_delta(trade['interval']):
+            return None
+        async with self.pool.acquire() as conn:
+            last = await conn.fetchval(
+                "SELECT max(time) FROM ohlcv_data WHERE broker = $1 AND symbol = $2 AND interval = '1'",
+                broker, trade['symbol']
+            )
+        if last is not None and now - _as_utc(last) < MINUTE_GAP_WAIT:
+            return None
+        return first_missing, now
+
     async def _minute_path(self, trade: dict, bars: list, checkpoint: datetime, broker: str, now: datetime) -> list:
         """
         Sub-velas a evaluar, en orden: (high, low, close, desde, hasta, punto de control). Los minutos seguidos desde
         el punto de control; ante un hueco se detiene ahí (espera la reparación) y, si el hueco tiene más de
         MINUTE_GAP_WAIT, lo cubre con las velas del intervalo operado (vela completa: SL vigente primero) y sigue.
+        El final sin velas es igual a un hueco cuando la serie de 1m de esa fuente está detenida (N-02).
         """
         path, after, rest = [], checkpoint, bars
         entry_time = _as_utc(trade['entry_time'])
@@ -191,15 +210,21 @@ class PaperTrader:
             for b in run:
                 t = _as_utc(b['time'])
                 path.append((float(b['high']), float(b['low']), float(b['close']), t, t + ONE_MINUTE - timedelta(microseconds=1), b['time']))
-            if gap is None:
-                return path
-            evaluated = _as_utc(run[-1]['time']) if run else after   # último minuto evaluado (para el mensaje)
-            label = f"[PAPER] Trade #{trade['id']} {trade['symbol']}: faltan velas de 1m {gap[0]:%Y-%m-%d %H:%M}–{gap[1]:%H:%M} UTC"
-            if now - gap[0] < MINUTE_GAP_WAIT:
+            evaluated = _as_utc(run[-1]['time']) if run else after   # último minuto evaluado
+            tail = gap is None
+            if tail:
+                gap = await self._stale_minute_tail(trade, broker, evaluated.replace(second=0, microsecond=0) + ONE_MINUTE, now)
+                if gap is None:
+                    return path
+            label = (f"[PAPER] Trade #{trade['id']} {trade['symbol']}: faltan velas de 1m {gap[0]:%Y-%m-%d %H:%M}–"
+                     f"{gap[1]:%H:%M} UTC" + (" (la serie de 1m está detenida)" if tail else ""))
+            if not tail and now - gap[0] < MINUTE_GAP_WAIT:
                 logger.error(f"{label}; SL/TP evaluados hasta {evaluated:%Y-%m-%d %H:%M}, se espera la reparación "
                              f"(respaldo con vela completa desde {gap[0] + MINUTE_GAP_WAIT:%Y-%m-%d %H:%M} UTC)")
                 return path
             candles = await self._gap_candles(broker, trade['symbol'], trade['interval'], gap, now)
+            if not candles and tail:   # serie detenida, pero la próxima vela del intervalo todavía no cierra
+                return path
             if not candles:
                 logger.error(f"{label}; sin velas {trade['interval']} de respaldo: se sigue esperando")
                 return path
@@ -518,7 +543,7 @@ class PaperTrader:
             if minute_broker is None:
                 logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: sin velas de 1m; SL/TP no evaluados este ciclo")
             # Minutos seguidos desde el punto de control; un hueco no se salta (BP-03)
-            path = await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if bars else []
+            path = await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if minute_broker else []
 
             exit_price    = None
             exit_reason   = None
