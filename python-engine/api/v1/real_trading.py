@@ -200,14 +200,41 @@ async def _process_account(trader, account):
 
 _account_locks: dict[int, asyncio.Lock] = {}
 
+# Espera máxima del circuit breaker y de la reconciliación por el turno de una cuenta (s). Menor que los timeouts
+# HTTP de sus jobs (25 s y 90 s): si se agota, la cuenta se omite y queda para el próximo ciclo.
+CIRCUIT_BREAKER_LOCK_WAIT = 15.0
+RECONCILE_LOCK_WAIT = 20.0
+
+
+async def _exclusive(account_id: int, wait: float, work):
+    """
+    Turno exclusivo de la cuenta para todo lo que abre, cierra o reescribe sus trades: tick, circuit breaker y
+    reconciliación nunca corren a la vez sobre la misma cuenta (N-07). Un solo proceso del motor (uvicorn sin
+    --workers): el candado es de memoria. wait=0 (tick, cada minuto): si la cuenta está ocupada se omite; wait>0:
+    espera hasta ese plazo. Devuelve (True, resultado de work()) o (False, None) si no obtuvo el turno.
+    """
+    lock = _account_locks.setdefault(account_id, asyncio.Lock())
+    if wait <= 0:
+        if lock.locked():
+            return False, None
+        await lock.acquire()   # libre: no suspende
+    else:
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=wait)
+        except asyncio.TimeoutError:
+            return False, None
+    try:
+        return True, await work()
+    finally:
+        lock.release()
+
 
 async def _process_account_locked(trader, account):
-    """Un solo tick a la vez por cuenta (corre cada minuto): si hay otro en curso, este se omite."""
-    lock = _account_locks.setdefault(account.id, asyncio.Lock())
-    if lock.locked():
-        return f"account_{account.id}_{account.broker}", {"signals": "tick anterior de la cuenta aún en curso: omitido"}
-    async with lock:
-        return await _process_account(trader, account)
+    """Un solo tick a la vez por cuenta (corre cada minuto): si la cuenta está ocupada, este se omite."""
+    got, result = await _exclusive(account.id, 0, lambda: _process_account(trader, account))
+    if not got:
+        return f"account_{account.id}_{account.broker}", {"signals": "la cuenta tiene otro proceso en curso: omitido"}
+    return result
 
 
 @router.post('/real/tick')
@@ -267,7 +294,13 @@ async def circuit_breaker_max_loss(
         async def _check_account(account):
             client = _build_broker_client(account)
             try:
-                return account.id, await trader.check_max_loss_circuit_breaker(account.id, client)
+                got, result = await _exclusive(account.id, CIRCUIT_BREAKER_LOCK_WAIT,
+                                               lambda: trader.check_max_loss_circuit_breaker(account.id, client))
+                if not got:
+                    logger.warning(f"[CIRCUIT-MAXLOSS] Cuenta {account.id} ocupada más de {CIRCUIT_BREAKER_LOCK_WAIT:g} s: "
+                                   f"se revisa en el próximo ciclo")
+                    return account.id, {"skipped": "cuenta ocupada por otro proceso"}
+                return account.id, result
             except Exception as e:
                 logger.error(f"[CIRCUIT-MAXLOSS] Error inesperado en cuenta {account.id}: {e}")
                 return account.id, {"error": str(e)}
@@ -388,7 +421,7 @@ async def reconcile(
     results = {'reconciled': [], 'orphaned': [], 'ok': []}
 
     try:
-        for account in request.accounts:
+        async def _reconcile_account(account):
             client = _build_broker_client(account)
 
             # 0. Aperturas interrumpidas ('pending_open' viejos)
@@ -417,7 +450,7 @@ async def reconcile(
                             """UPDATE real_trades SET status = 'orphaned',
                                    error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (get_closed_pnl sin match)',
                                    updated_at = now()
-                               WHERE id = $1""",
+                               WHERE id = $1 AND status IN ('open', 'pending_close')""",
                             trade['id']
                         )
                     results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'no_exit_price_found'})
@@ -479,7 +512,7 @@ async def reconcile(
                         await conn.execute(
                             """UPDATE real_trades SET status='failed',
                                error_message='Orphaned sin posicion en Bybit', updated_at=now()
-                               WHERE id=$1""",
+                               WHERE id=$1 AND status='orphaned'""",
                             trade['id']
                         )
                     logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} → failed (sin posicion en Bybit)")
@@ -541,6 +574,13 @@ async def reconcile(
                 except Exception as e:
                     logger.error(f"[RECONCILE] No se pudo registrar posicion huerfana {sub.symbol}: {e}")
                     results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': f'ERROR: {e}'})
+
+        for account in request.accounts:
+            got, _ = await _exclusive(account.id, RECONCILE_LOCK_WAIT, lambda: _reconcile_account(account))
+            if not got:
+                logger.warning(f"[RECONCILE] Cuenta {account.id} ocupada más de {RECONCILE_LOCK_WAIT:g} s: "
+                               f"se reconcilia en el próximo ciclo")
+                results.setdefault('errors', []).append({'account_id': account.id, 'note': 'cuenta ocupada: omitida'})
 
     finally:
         await pool.close()

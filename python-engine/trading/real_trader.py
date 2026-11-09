@@ -1537,12 +1537,15 @@ class RealTrader:
                 return False
             return settled
 
-        # Marcar pending_close
+        # Reclamar el cierre: solo un proceso pasa el trade de 'open' a 'pending_close' y envía la orden (N-07)
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE real_trades SET status = 'pending_close', updated_at = now() WHERE id = $1",
+            claimed = await conn.execute(
+                "UPDATE real_trades SET status = 'pending_close', updated_at = now() WHERE id = $1 AND status = 'open'",
                 trade['id']
             )
+        if claimed == "UPDATE 0":
+            logger.warning(f"[REAL] CLOSE #{trade['id']} {symbol} omitido: ya no está 'open' (otro proceso lo cierra o lo cerró)")
+            return False
 
         # Orden de cierre (lado contrario) - usa el tamano REAL de la posicion
         # en Bybit (no el guardado en DB), por si ya hubo un cierre parcial
@@ -1603,7 +1606,7 @@ class RealTrader:
                     exit_price = $2, exit_reason = $3, exit_time = $4,
                     pnl = $5, pnl_pct = $6, net_pnl = $7, commission = $8,
                     balance_after = $9, updated_at = now()
-                WHERE id = $10
+                WHERE id = $10 AND status = 'pending_close'
                 """,
                 close_order_id, exit_price, exit_reason,
                 datetime.now(timezone.utc).replace(tzinfo=None),
@@ -1758,7 +1761,7 @@ class RealTrader:
                             """UPDATE real_trades SET status = 'orphaned',
                                    error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (closed-pnl vacio tras reintento)',
                                    updated_at = now()
-                               WHERE id = $1""",
+                               WHERE id = $1 AND status IN ('open', 'pending_close')""",
                             trade_id
                         )
                     outcome["errors"] += 1
@@ -1767,6 +1770,18 @@ class RealTrader:
                 else:
                     outcome["errors"] += 1
                 return outcome
+
+            # 1b. 'pending_close' con la posición viva: un cierre anterior quedó sin confirmar (Bybit no respondió).
+            #     El monitor corre con el turno exclusivo de la cuenta, así que nadie más lo está cerrando: vuelve a
+            #     'open' y sigue con las reglas normales (un cierre se reintenta reclamándolo de nuevo, N-07).
+            if trade.get("status") == "pending_close":
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE real_trades SET status='open', updated_at=now() WHERE id=$1 AND status='pending_close'",
+                        trade_id
+                    )
+                trade["status"] = "open"
+                logger.warning(f"[MONITOR] {symbol} #{trade_id}: cierre anterior sin confirmar y la posición sigue viva — vuelve a open")
 
             # 2. SL/TP del exchange = los de la DB (p. ej. trading-stop fallido tras abrir).
             #    Con trailing nativo ya activo, Bybit es la fuente del SL: no se pisa.
