@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
+use App\Models\RealTrade;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -19,14 +20,15 @@ class RealTradingReconcileJob implements ShouldQueue
     {
         $url = config('trading.python_engine_url') . '/v1/real/reconcile';
 
-        // Activas con suscripciones, y cualquier cuenta con trades abiertos o huérfanos (también pausada)
+        // Activas con suscripciones, y cualquier cuenta con trades por reconciliar (también pausada): incluye los
+        // 'pending_open' interrumpidos, que solo se recuperan aquí
         $accounts = BrokerAccount::query()
             ->where(fn ($q) => $q
                 ->where(fn ($a) => $a->where('status', 'active')
                     ->whereHas('subscriptions', fn ($s) => $s->where('status', 'active')))
                 ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('real_trades')
                     ->whereColumn('real_trades.broker_account_id', 'broker_accounts.id')
-                    ->whereIn('real_trades.status', ['open', 'pending_close', 'orphaned'])))
+                    ->whereIn('real_trades.status', RealTrade::RECONCILE_STATUSES)))
             ->with(['subscriptions' => fn ($q) => $q->where('status', 'active')
                 ->with('paperStrategyConfig')])
             ->get();

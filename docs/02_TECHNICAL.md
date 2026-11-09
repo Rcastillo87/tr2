@@ -514,7 +514,7 @@ El más elaborado de los 5 jobs:
 5. Procesa la respuesta por cuenta: si trae `error`, loguea error y continúa con la siguiente cuenta. Si no, extrae `monitor.closed`/`monitor.errors` para logs de info/warning, y separa las señales en `opened` (las que empiezan con `"ABIERTA"`) y `errors` (las que empiezan con `"ERROR"` o `"EXCEPTION"`) para loguearlas individualmente. Finalmente arma un log de resumen tipo debug con conteos de monitoreadas/cerradas/nuevas/errores/sin-señal por cuenta.
 
 ### `RealTradingReconcileJob` — cada 5 minutos, timeout 120s
-Construye un payload idéntico en estructura al de `RealTradingTickJob` (con las mismas cuentas y suscripciones activas), pero apunta a `/v1/real/reconcile` (timeout HTTP 90s). Procesa la respuesta logueando cada elemento de `results.reconciled` (warning, trade cerrado por reconciliación) y `results.orphaned` (error, posición huérfana detectada en Bybit), más un resumen final con conteos de `ok`/`reconciled`/`orphaned`.
+Construye un payload idéntico en estructura al de `RealTradingTickJob` (con las mismas cuentas y suscripciones activas), pero apunta a `/v1/real/reconcile` (timeout HTTP 90s). **Cuentas que envía [V7.2, p34 N-01]:** las activas con suscripciones activas **y** toda cuenta (también pausada o sin suscripciones) con un trade en `RealTrade::RECONCILE_STATUSES` = `pending_open`, `open`, `pending_close`, `orphaned`. `pending_open` es imprescindible: una apertura interrumpida solo se recupera aquí (`_recover_pending_opens`). Procesa la respuesta logueando cada elemento de `results.reconciled` (warning, trade cerrado por reconciliación) y `results.orphaned` (error, posición huérfana detectada en Bybit), más un resumen final con conteos de `ok`/`reconciled`/`orphaned`.
 
 ---
 

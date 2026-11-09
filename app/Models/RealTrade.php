@@ -10,6 +10,12 @@ class RealTrade extends Model
 {
     use HasFactory;
 
+    /**
+     * Estados con una posición viva o posible en Bybit. La reconciliación revisa toda cuenta que tenga alguno,
+     * aunque esté pausada o sin suscripciones: un 'pending_open' interrumpido puede haberse llenado (N-01).
+     */
+    public const RECONCILE_STATUSES = ['pending_open', 'open', 'pending_close', 'orphaned'];
+
     protected $fillable = [
         'user_id', 'subscription_id', 'broker_account_id', 'paper_strategy_config_id',
         'order_id', 'close_order_id',

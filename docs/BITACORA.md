@@ -35,6 +35,12 @@
 - `epoch_ms()` compartido entre `real_trader` y `/real/reconcile` (antes había una copia local).
 - **Prueba:** `real_close_settle_test.py` (18 casos). Con el código anterior: **12 FALLOS**. Mutaciones: motivo del llamador (2 fallos), «sin closed-pnl devuelve True» (1 fallo).
 
+### N-01 — `pending_open` fuera de la reconciliación (p34)
+- **Antes:** `RealTradingReconcileJob` enviaba al motor las cuentas activas con suscripciones activas y, de las demás, solo las que tenían trades `open`/`pending_close`/`orphaned`. Una cuenta pausada (a mano o por el circuit breaker) o sin suscripciones, cuyo único trade quedara en `pending_open` por un reinicio a mitad de la apertura, nunca se reconciliaba. Si la orden se había llenado en Bybit, la posición quedaba solo con el SL/TP provisional y sin gestión.
+- **Ahora:** una sola lista, `RealTrade::RECONCILE_STATUSES` (`pending_open`, `open`, `pending_close`, `orphaned`), que usa el selector. Al adoptarse, el trade pasa a `open` y el tick de la cuenta lo gestiona aunque la cuenta esté pausada.
+- **Pruebas:** `real_reconcile_statuses_test.php` (PHP puro, en la regresión: 12 casos; **8 FALLOS** con el código anterior). `real_reconcile_selector_test.php` (Laravel + base real, en una transacción revertida, con `Http::fake`): corre en la instalación; incluye el control con el selector anterior.
+- Instalación de p33 el 09-nov: regresión 44 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `01fc216`.
+
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 
 ### Resumen para el dueño
