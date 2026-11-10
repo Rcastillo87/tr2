@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42, N-03 p43, N-11 p44):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42, N-03 p43, N-11 p44, N-08 p45):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -122,6 +122,13 @@
 - **Migración:** `database/sql-migrations/2026_11_10_01_ohlcv_deletions.up.sql` (idempotente; `.down.sql` la quita). La aplica el instalador antes de reiniciar el motor.
 - **Prueba:** `collector_deletion_test.py` (14 casos, con la base en memoria de `collector_reload_test`, que ahora tiene transacción con rollback real). Con el código anterior, **6 FALLOS**: un corte en el 2.º lote dejó **1.200 de 1.500** velas borradas y sin registro. Mutaciones: sin transacción (2), sin registro (5), cualquier origen (1), guardar siempre las velas (1).
 - Instalación de p43 el 10-nov: regresión 54 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `352ca33`.
+
+### N-08 — Tipos del JSON de la estrategia (p45)
+- **Antes:** el JSON editado de la estrategia (`strategy_config_override`) solo se revisaba como JSON válido y se fusionaba (F-05). Un `"20"` en texto donde la estrategia espera un número, o un `"false"` en texto donde espera un booleano, llegaba tal cual al motor. La validación F-03 cubre solo los campos del formulario.
+- **Ahora:** `BacktestPayload::configOverrideError(base, override)`, antes de `mergeConfig`. Cada clave que la estrategia ya tiene en su config guardada debe conservar el tipo, en profundidad (número finito, booleano, texto, lista con el tipo de su primer elemento, objeto), y el error nombra la ruta (`rsi.levels[1]`). Las claves nuevas se siguen aceptando (F-05: el código de la estrategia puede leer parámetros que no están en su config por defecto); `null` en la base admite cualquier valor.
+- La instalación lista, solo como información, las estrategias que guardan números como texto en su config (el formulario los reenviaría como número y serían rechazados).
+- **Prueba:** `strategy_config_types_test.php` (PHP puro, en la regresión: 14 casos; **14 FALLOS** con el código anterior). Mutaciones: sin revisar booleanos (2), aceptar números en texto (3), no bajar a objetos anidados (2). `config_merge_test.php` (F-05) sigue en TODO OK.
+- Instalación de p44 el 10-nov: regresión 55 en TODO OK; migración `ohlcv_deletions` aplicada (12 columnas); motor reiniciado, tick de Paper 200, 0 errores; `main` = `c45cd42`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

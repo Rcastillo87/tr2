@@ -83,6 +83,69 @@ final class BacktestPayload
         return array_replace($base, $override);
     }
 
+    /**
+     * N-08: el JSON editado de la estrategia, validado contra su config guardada ANTES de fusionarlo. Cada clave que la
+     * estrategia ya conoce debe conservar su tipo (número finito, booleano, texto, lista u objeto), en profundidad: un
+     * "20" en texto donde la estrategia espera 20 se rechaza en vez de llegar al motor. Las claves nuevas se aceptan
+     * (F-05: el código de la estrategia puede leer parámetros que no están en su config por defecto). null en la
+     * config guardada admite cualquier valor. Devuelve el primer error o null.
+     *
+     * @param array<string|int, mixed> $base
+     * @param array<string|int, mixed> $override
+     */
+    public static function configOverrideError(array $base, array $override, string $path = ''): ?string
+    {
+        foreach ($override as $key => $value) {
+            if (! array_key_exists($key, $base) || $base[$key] === null) {
+                continue;
+            }
+            $at = $path === '' ? (string) $key : "{$path}.{$key}";
+            $error = self::typeError($base[$key], $value, $at);
+            if ($error !== null) {
+                return $error;
+            }
+        }
+
+        return null;
+    }
+
+    private static function typeError(mixed $expected, mixed $value, string $at): ?string
+    {
+        $got = json_encode($value, JSON_UNESCAPED_UNICODE);
+        $fail = fn (string $what) => "Parámetros de la estrategia (JSON): «{$at}» debe ser {$what} (recibido: {$got}).";
+        if (is_bool($expected)) {
+            return is_bool($value) ? null : $fail('true o false');
+        }
+        if (is_int($expected) || is_float($expected)) {
+            return (is_int($value) || is_float($value)) && is_finite((float) $value) ? null : $fail('un número');
+        }
+        if (is_string($expected)) {
+            return is_string($value) ? null : $fail('un texto');
+        }
+        if (is_array($expected) && array_is_list($expected)) {
+            if (! is_array($value) || ! array_is_list($value)) {
+                return $fail('una lista');
+            }
+            if ($expected === [] || $expected[0] === null) {
+                return null;
+            }
+            foreach ($value as $i => $item) {
+                if (($error = self::typeError($expected[0], $item, "{$at}[{$i}]")) !== null) {
+                    return $error;
+                }
+            }
+
+            return null;
+        }
+        if (is_array($expected)) {
+            return is_array($value) && ($value === [] || ! array_is_list($value))
+                ? self::configOverrideError($expected, $value, $at)
+                : $fail('un objeto');
+        }
+
+        return null;
+    }
+
     /** @return array{fields: array<string, array<string, mixed>>, cross: list<array<string, mixed>>} */
     private static function rules(?string $file): array
     {

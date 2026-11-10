@@ -75,6 +75,10 @@ class BacktestingController extends Controller
                 return response()->json(['success' => false, 'error' => 'Los parámetros de la estrategia (JSON) no son válidos: '
                     . json_last_error_msg() . '. Corrígelos antes de ejecutar el backtest.']);
             }
+            $typeError = \App\Services\BacktestPayload::configOverrideError((array) ($strategy->config ?? []), $decoded);   // N-08
+            if ($typeError !== null) {
+                return response()->json(['success' => false, 'error' => $typeError]);
+            }
             $finalConfig = \App\Services\BacktestPayload::mergeConfig((array) ($strategy->config ?? []), $decoded);   // F-05
         }
 
