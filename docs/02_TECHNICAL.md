@@ -467,6 +467,8 @@ Profit Factor:    <1→1,<1.5→2,  <2→3,<2.5→4, ≥2.5→5
 
 **`index()`** — lista todas las `paper_strategy_configs` (activas e inactivas), ordenadas por clase de estrategia y símbolo.
 
+**`destroyBacktest($backtest, $sync)`** [V7.2, p40 CFG-05] — delega en `StrategyConfigSync::deleteBacktest()`: dentro de una transacción, con las configs del backtest bloqueadas (`FOR UPDATE`), **no borra** si alguna config está activa, si tiene trades Paper abiertos o trades Real en `RealTrade::RECONCILE_STATUSES` (`pending_open`, `open`, `pending_close`, `orphaned`). Si borra: pausa sus suscripciones Real activas, deja una fila `deleted` por config en `strategy_config_changes` (fuente `backtest_delete`, con sus parámetros en `old_params`; como las FK de esa tabla son `ON DELETE SET NULL`, la identidad de lo borrado va en `new_params.deleted` = `{config_id, backtest_id, display_name}`) y borra configs y backtest. Nota: borrar una **estrategia** borra sus backtests en cascada (FK `ON DELETE CASCADE`) y deja sus configs con `backtest_id` nulo; `StrategyController::destroy` solo bloquea si tiene configs activas.
+
 **`run($request)`** — el método con más lógica del sistema. Comportamiento dual según el verbo HTTP:
 - **GET**: construye `$symbols`/`$intervals` desde `CollectorConfig`, y `$paperConfigsForPreload` — un mapa de **todas las configs activas** con sus parámetros completos, serializado a JSON para que el JavaScript del formulario pueda precargar valores al elegir una combinación estrategia/símbolo ya existente. Devuelve la vista vacía (sin resultado de backtest aún).
 - **POST**: 

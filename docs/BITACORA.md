@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -79,6 +79,14 @@
 - **Ahora:** los 7 flags pasan por `as_flag(valor, default)` en `BaseStrategy.__init__`. `tools/analysis/filter_audit.py` también (usaba `bool()`).
 - **Prueba:** `flag_normalization_test.py` (33 casos: los 10 flags con textos falsos, verdaderos y null, más el efecto en los filtros horario, de fin de semana y de BTC; **21 FALLOS** con el código anterior). Mutaciones: un flag sin `as_flag` (4), `bool()` (2), default cambiado (1).
 - Instalación de p38 el 09-nov: regresión 49 en TODO OK; Horizon reiniciado; integración contra la base real S1–S5 PASS (reproduce los dos casos con el criterio anterior); `main` = `387d646`.
+
+### CFG-05 — Borrado seguro de un backtest (p40)
+- **Antes:** `destroyBacktest` bloqueaba solo con config activa o con trades Real `open`/`pending_open`/`pending_close`, fuera de la transacción. No miraba trades Paper abiertos de configs ya detenidas (siguen gestionándose hasta cerrar) ni trades Real `orphaned` (su reconciliación necesita la config; FK `SET NULL`). No dejaba rastro del borrado.
+- **Ahora:** `StrategyConfigSync::deleteBacktest()` (el controlador solo delega). Dentro de la transacción, con las configs bloqueadas, no borra si hay config activa, trade Paper abierto o trade Real en `RealTrade::RECONCILE_STATUSES` (la lista de p34, que incluye `orphaned`). Al borrar: pausa las suscripciones Real activas, deja una fila `deleted` por config en `strategy_config_changes` (fuente `backtest_delete`, parámetros en `old_params`) y borra. Las FK de esa tabla son `ON DELETE SET NULL` (consultado en producción el 09-nov): al borrar, la fila pierde `paper_strategy_config_id` y `backtest_id`; por eso la identidad de lo borrado va en `new_params.deleted` = `{config_id, backtest_id, display_name}`. Las 18 filas de historial que hoy no tienen config son borrados anteriores sin ese dato.
+- **Visto de paso:** borrar una **estrategia** borra sus backtests en cascada (FK `ON DELETE CASCADE`) sin pasar por estas reglas; sus configs sobreviven con `backtest_id` nulo y sus trades siguen gestionándose. Queda documentado. La tabla de rutas de `02_TECHNICAL` y `03_AI_CONTEXT` lista un `PaperStrategyConfigController` que ya no existe: se corrige en el parche de documentación.
+- **Pruebas:** `backtest_delete_rules_test.php` (PHP puro, en la regresión: 12 casos; **12 FALLOS** con el código anterior). `backtest_delete_test.php` (Laravel + base real, transacción revertida): trade Paper abierto, Real `orphaned` y config activa bloquean (con el control del criterio anterior); sin nada vivo borra, pausa suscripciones y audita.
+- **Primer intento (p40) revertido por su propia prueba de integración:** la prueba buscaba la fila `deleted` por `paper_strategy_config_id`, que la FK `SET NULL` deja nulo al borrar. El instalador revirtió todo (`main` siguió en `bd904e9`). Corregido en **p40b** (lápida en `new_params`).
+- Instalación de p39 el 09-nov: regresión 50 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `bd904e9`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

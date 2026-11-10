@@ -386,38 +386,15 @@ class BacktestingController extends Controller
     }
 
 
-    public function destroyBacktest(\App\Models\Backtest $backtest)
+    public function destroyBacktest(Backtest $backtest, StrategyConfigSync $sync)
     {
         Gate::authorize('viewAnalysisTools');
 
-        // Verificar si está en uso ACTIVO en Paper Trading
-        $inUse = \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)
-            ->where('active', true)
-            ->exists();
-        
-        if ($inUse) {
-            return back()->withErrors(['error' => 'No puedes eliminar este backtest porque está OPERANDO en Paper Trading. Detenlo primero.']);
-        }
-        
-        // Si está inactivo, borramos también su configuración de Paper huérfana
-        $configIds = \App\Models\PaperStrategyConfig::where('backtest_id', $backtest->id)->pluck('id');
-
-        // Con una posicion Real abierta NO se borra: la fila perderia su config (FK SET NULL) y su rastro.
-        $openReal = \App\Models\RealTrade::whereIn('paper_strategy_config_id', $configIds)
-            ->whereIn('status', ['open', 'pending_open', 'pending_close'])
-            ->count();
-        if ($openReal > 0) {
-            return back()->withErrors(['error' => "No puedes eliminar este backtest: tiene {$openReal} posición(es) Real abierta(s). Espera a que cierren."]);
+        $blocked = $sync->deleteBacktest($backtest, auth()->id());
+        if ($blocked !== null) {
+            return back()->withErrors(['error' => $blocked]);
         }
 
-        DB::transaction(function () use ($backtest, $configIds) {
-            // Se PAUSAN las suscripciones Real de esas configs antes de borrarlas; si no, quedarian activas y huerfanas.
-            \App\Models\RealStrategySubscription::whereIn('paper_strategy_config_id', $configIds)
-                ->where('status', 'active')
-                ->update(['status' => 'paused']);
-            \App\Models\PaperStrategyConfig::whereIn('id', $configIds)->delete();
-            $backtest->delete();
-        });
         return back()->with('status', 'Backtest eliminado del historial.');
     }
 

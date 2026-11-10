@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Support\StrategyLabel;
 use App\Helpers\RatingHelper;
 use App\Models\Backtest;
 use App\Models\BrokerAccount;
 use App\Models\PaperStrategyConfig;
 use App\Models\RealStrategySubscription;
+use App\Models\RealTrade;
+use App\Support\StrategyLabel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -27,6 +28,7 @@ final class StrategyConfigSync
     public const SOURCE_IMPLEMENT     = 'implement';
     public const SOURCE_BACKTEST_SAVE = 'backtest_save';
     public const SOURCE_STOP          = 'stop';
+    public const SOURCE_DELETE        = 'backtest_delete';
 
     /** Claves que describen la ejecución del backtest, no la estrategia. */
     private const RUN_ONLY_KEYS = [
@@ -180,6 +182,51 @@ final class StrategyConfigSync
         Log::info('[CONFIG-SYNC] backtest #' . $backtest->id, ['source' => $source] + $summary);
 
         return $summary;
+    }
+
+    /**
+     * Borra un backtest y sus configs Paper solo si nada sigue vivo en ellas (CFG-05). Devuelve el motivo del bloqueo,
+     * o null si se borró. Bloquea: config activa, trade Paper abierto, trade Real en RealTrade::RECONCILE_STATUSES
+     * (incluye 'orphaned': su reconciliación necesita la config). Las comprobaciones corren dentro de la transacción
+     * con las configs bloqueadas. Deja una fila 'deleted' por config en strategy_config_changes y pausa sus suscripciones
+     * Real, que si no quedarían activas y huérfanas. Las FK de esa tabla son ON DELETE SET NULL: al borrar, la fila pierde
+     * paper_strategy_config_id y backtest_id, así que la identidad de lo borrado va en new_params['deleted'].
+     */
+    public function deleteBacktest(Backtest $backtest, ?int $userId = null): ?string
+    {
+        return DB::transaction(function () use ($backtest, $userId): ?string {
+            $configs = PaperStrategyConfig::where('backtest_id', $backtest->id)->lockForUpdate()->get();
+            $ids     = $configs->pluck('id');
+
+            if ($configs->where('active', true)->isNotEmpty()) {
+                return 'No puedes eliminar este backtest porque está OPERANDO en Paper Trading. Detenlo primero.';
+            }
+            $openPaper = DB::table('paper_trades')->whereIn('paper_strategy_config_id', $ids)->where('status', 'open')->count();
+            if ($openPaper > 0) {
+                return "No puedes eliminar este backtest: tiene {$openPaper} operación(es) Paper abierta(s). Espera a que cierren.";
+            }
+            $liveReal = RealTrade::whereIn('paper_strategy_config_id', $ids)
+                ->whereIn('status', RealTrade::RECONCILE_STATUSES)->count();
+            if ($liveReal > 0) {
+                return "No puedes eliminar este backtest: tiene {$liveReal} operación(es) Real abierta(s) o por reconciliar. "
+                     . 'Espera a que cierren o se reconcilien.';
+            }
+
+            RealStrategySubscription::whereIn('paper_strategy_config_id', $ids)
+                ->where('status', 'active')
+                ->update(['status' => 'paused']);
+            foreach ($configs as $config) {
+                $tombstone = ['deleted' => ['config_id' => (int) $config->id, 'backtest_id' => (int) $backtest->id,
+                                            'display_name' => $config->display_name]];
+                $this->audit($config, 'deleted', (array) $config->params, $tombstone, [], self::SOURCE_DELETE, $userId);
+            }
+            PaperStrategyConfig::whereIn('id', $ids)->delete();
+            $backtest->delete();
+
+            Log::info('[CONFIG-SYNC] backtest #' . $backtest->id . ' eliminado', ['configs' => $ids->all(), 'user' => $userId]);
+
+            return null;
+        });
     }
 
     /** Detiene un backtest en Paper y, por consiguiente, en Real (real_trader filtra psc.active). */
