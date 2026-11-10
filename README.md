@@ -204,6 +204,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 10-27 04 | `funding_rates`, `funding_coverage` |
 | 10-27 05 | `paper_trades.funding` |
 | 11-10 01 | `ohlcv_deletions`: registro de cada borrado de velas (recarga / invalidación) con las velas borradas |
+| 11-10 02 | `paper_eval_state`, `paper_eval_log`: diagnóstico de Paper (RQ-01.5) |
 | 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
 
 ```bash
@@ -328,10 +329,12 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `is_oos_attribution_test.py` | Tramos de la búsqueda sin trades que cruzan el corte y al capital inicial |
 | `collector_deletion_test.py` | El collector borra solo por recarga/invalidación, en una transacción y con registro |
 | `strategy_config_types_test.php` | El JSON editado de la estrategia conserva los tipos de su config |
+| `paper_eval_test.py` | Diagnóstico de Paper: motivo de cada evaluación, filtro que anuló la señal, historial agrupado; mismos trades con y sin registro |
+| `broker_limits_scope_test.py` | Los límites por cuenta no son parámetros de estrategia ni de Paper (RQ-01.6) |
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (45 Python + 11 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (47 Python + 11 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

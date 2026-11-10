@@ -35,6 +35,14 @@ def opposite_exit_rule(params: dict | None) -> str | None:
     return 'reverse' if as_flag(p.get('close_on_opposite'), False) else None
 
 
+def _last_signal(df: pd.DataFrame) -> int:
+    """Señal de la última vela (0 si no hay columna o filas): para la traza del diagnóstico."""
+    if df is None or df.empty or 'signal' not in df.columns:
+        return 0
+    v = df['signal'].iloc[-1]
+    return int(v) if pd.notna(v) else 0
+
+
 class BaseStrategy(ABC):
     """
     Clase base para todas las estrategias de trading.
@@ -171,10 +179,15 @@ class BaseStrategy(ABC):
         no cambia nada, y garantiza que los checkboxes de la UI funcionen con cualquier estrategia.
         """
         out = self.generate_signals(self.prepare(df))
+        trace = getattr(self, 'signal_trace', None)   # diagnóstico de Paper (RQ-01.5): solo observa, no cambia nada
+        if trace is not None:
+            trace.append(('estrategia', _last_signal(out)))
         for f in (self.apply_volume_filter, self.apply_hour_filter, self.apply_weekend_filter,
                   self.apply_blocked_hours, self.apply_blocked_days, self.apply_macro_trend_filter,
                   self.apply_btc_trend_filter):
             out = f(out)
+            if trace is not None:
+                trace.append((f.__name__.removeprefix('apply_'), _last_signal(out)))
         return out
 
     def apply_macro_trend_filter(self, df: pd.DataFrame) -> pd.DataFrame:

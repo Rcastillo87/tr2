@@ -19,6 +19,26 @@
 
 ---
 
+## 2026-11-10 (Bogotá) — RQ-01: gestión de configuraciones y diagnóstico de Paper
+
+### Validación del requerimiento contra el código (`a0fa1a3`)
+- **RQ-01.1** (configs Paper bajo cada estrategia): parcial. Hay fila desplegable con métricas, por backtest y solo activas. Falta Trades/mes (`avg_monthly_trades` existe pero ningún código la llena), el enlace al backtest exacto y los conteos Paper.
+- **RQ-01.2** (estado «migrada» en la búsqueda): parcial. `results.created.<fila>` + «✓ Creado #id» + índice único `backtests.hash`. Falta el enlace, reconciliar al borrar el backtest (hoy queda «Creado» y bloqueada) y la guarda en el servidor.
+- **RQ-01.3** (origen del backtest): no existe.
+- **RQ-01.4** (listado global): no existe (`backtesting/index.blade.php` es una vista sin uso).
+- **RQ-01.5** (diagnóstico de Paper): el motivo por config ya se calculaba en cada tick, pero solo llegaba como texto a `laravel.log`.
+- **RQ-01.6** (protecciones por broker fuera de Paper/Real): **cumple**. Los límites por cuenta viven en `broker_accounts` y solo los lee Real al abrir (`broker_limits_scope_test.py`).
+- **RQ-01.7** (ciclo de vida): **cumple** (CFG-01 a 05, p34, p40b); las referencias de búsqueda al borrar entran con RQ-01.2.
+- Supuestos (sin respuesta pendiente): RQ-01.6 = límites por cuenta; RQ-01.4 = una fila por backtest guardado con su estado en Paper.
+
+### RQ-01.5 — Diagnóstico de Paper persistido (p48)
+- Cada config termina el tick con un motivo normalizado (14 códigos, ver `02_TECHNICAL` §11) y el mismo texto de siempre para Laravel. La única excepción: «sin senal» ahora dice qué filtro la anuló (`filter_blocked`).
+- `compute_signals` anota, solo si se le pide, la señal de la última vela tras la estrategia y cada filtro, sin cambiar el resultado. Una estrategia con `compute_signals` propio deja la traza vacía y no se rompe.
+- Tablas `paper_eval_state` (última decisión por config) y `paper_eval_log` (agrupado por config, vela y motivo, con la cantidad de evaluaciones; 30 días). En H4 son unas pocas filas por config al día, no una por minuto. Un fallo del registro solo deja un aviso.
+- **Prueba:** `paper_eval_test.py` (22 casos): cada motivo, el filtro que bloquea, la agrupación, el fallo del registro, `compute_signals` idéntico con y sin traza, y **los mismos 16 trades con y sin registro** en 150 velas × 3 ticks. Con el código anterior se corta (no hay registro). Mutaciones: no registrar (corta), fallo del registro que corta el tick (corta), una fila por tick (2 fallos). La mutación «culpar al primer filtro en 0» resultó equivalente y se simplificó `blocking_filter`.
+- Falta la pantalla (con maqueta).
+- Instalación de p47 el 10-nov (informe de resultados del 3.er ciclo, solo documentación): `main` = `21b8a66`.
+
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 
 ### Resumen para el dueño

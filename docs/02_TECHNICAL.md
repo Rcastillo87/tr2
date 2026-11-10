@@ -849,6 +849,9 @@ Calcula PnL absoluto y porcentual (contra `VIRTUAL_BALANCE`), actualiza `max_pro
 **`get_open_trades_with_live_price()`** — variante de solo lectura (no cierra nada, no modifica estado), usada por la interfaz para mostrar posiciones abiertas con su precio actual y PnL flotante calculado al vuelo.
 
 ### `check_new_signals()`
+
+> **Diagnóstico [V7.3, p48 RQ-01.5]:** cada config termina el tick con `decide(código, texto)`: el texto de siempre para Laravel y un motivo normalizado: `kill_switch`, `open_position`, `insufficient_data`, `collector_stale`, `build_error`, `regime_blocked`, `no_signal`, `filter_blocked` (dice qué filtro), `short_not_allowed`, `signal_already_traded`, `no_price`, `opened`, `reversal`, `closed_opposite`. `compute_signals` anota (solo si se le pide con `strategy.signal_trace = []`) la señal de la última vela tras la estrategia y tras cada filtro, sin cambiar el resultado; `blocking_filter()` toma el primero que la deja en 0. `_record_evaluations()` guarda el estado actual por config en `paper_eval_state` y el historial agrupado por (config, vela, motivo) con la cantidad de evaluaciones en `paper_eval_log` (retención `PAPER_EVAL_RETENTION_DAYS` = 30, limpieza una vez por día). Si el registro falla, solo deja un aviso: nunca toca el trading.
+
 1. Si el *kill switch* global del Risk Manager está activo, devuelve inmediatamente un mensaje de bloqueo para todas las estrategias sin evaluar nada más.
 2. Por cada estrategia configurada:
    - Si ya tiene una posición abierta para ese símbolo, salta con mensaje informativo.

@@ -42,6 +42,23 @@ def _as_utc(t: datetime) -> datetime:
     return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t.astimezone(timezone.utc)
 
 
+# Diagnóstico de Paper (RQ-01.5): historial de decisiones por config y su retención.
+EVAL_RETENTION_DAYS = int(os.getenv('PAPER_EVAL_RETENTION_DAYS', '30'))
+_eval_purged_on = None   # fecha UTC de la última limpieza del historial (una por día)
+
+
+def blocking_filter(trace: list | None) -> str | None:
+    """
+    Primer filtro que anuló la señal de la estrategia en la última vela, según la traza de compute_signals
+    [{'step', 'signal'}, …]. None si la estrategia no dio señal (o la traza no está: estrategia con compute_signals
+    propio): eso es «sin señal», no un bloqueo. Los filtros solo anulan, nunca crean señales: el bloqueante es el
+    primero que deja la señal en 0.
+    """
+    if not trace or not trace[0]['signal']:
+        return None
+    return next((cur['step'] for cur in trace[1:] if not cur['signal']), None)
+
+
 def split_at_minute_gap(bars: list, after: datetime) -> tuple[list, tuple | None]:
     """
     (minutos seguidos, hueco): las velas de 1m consecutivas desde el minuto siguiente a `after`, y el primer hueco
@@ -686,8 +703,58 @@ class PaperTrader:
     # Buscar nuevas senales
     # ─────────────────────────────────────────────
 
+    async def _record_evaluations(self, evaluations: list[dict]) -> None:
+        """
+        Diagnóstico (RQ-01.5): estado actual por config (una fila, se reemplaza en cada tick) e historial agrupado
+        por (config, vela, motivo) con la cantidad de evaluaciones: en H4 son unas pocas filas por día, no una por
+        minuto. Las decisiones sin vela (kill switch, posición abierta antes de leer velas) se agrupan por hora.
+        Observa y nada más: un fallo aquí solo deja un aviso, nunca toca el trading.
+        """
+        global _eval_purged_on
+        if not evaluations:
+            return
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        rows = []
+        for ev in evaluations:
+            candle = ev.get('candle_time')
+            candle = candle.astimezone(timezone.utc).replace(tzinfo=None) if candle is not None and candle.tzinfo else candle
+            last_bar = ev.get('last_bar_time')
+            last_bar = last_bar.astimezone(timezone.utc).replace(tzinfo=None) if last_bar is not None and last_bar.tzinfo else last_bar
+            bucket = candle or now.replace(minute=0, second=0, microsecond=0)
+            filters = json.dumps(ev['filters']) if ev.get('filters') is not None else None
+            rows.append((ev['config_id'], now, ev['code'], ev['detail'][:500], ev.get('regime'), ev.get('signal'),
+                         filters, candle, last_bar, ev.get('bars'), bucket))
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """INSERT INTO paper_eval_state (paper_strategy_config_id, evaluated_at, code, detail, regime, signal,
+                                                     filters, candle_time, last_bar_time, bars)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
+                       ON CONFLICT (paper_strategy_config_id) DO UPDATE SET
+                           evaluated_at = EXCLUDED.evaluated_at, code = EXCLUDED.code, detail = EXCLUDED.detail,
+                           regime = EXCLUDED.regime, signal = EXCLUDED.signal, filters = EXCLUDED.filters,
+                           candle_time = EXCLUDED.candle_time, last_bar_time = EXCLUDED.last_bar_time,
+                           bars = EXCLUDED.bars""",
+                    [r[:10] for r in rows])
+                await conn.executemany(
+                    """INSERT INTO paper_eval_log (paper_strategy_config_id, bucket_time, code, detail, regime, signal,
+                                                   filters, first_at, last_at, evaluations)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8, 1)
+                       ON CONFLICT (paper_strategy_config_id, bucket_time, code) DO UPDATE SET
+                           last_at = EXCLUDED.last_at, evaluations = paper_eval_log.evaluations + 1,
+                           detail = EXCLUDED.detail, regime = EXCLUDED.regime, signal = EXCLUDED.signal,
+                           filters = EXCLUDED.filters""",
+                    [(r[0], r[10], r[2], r[3], r[4], r[5], r[6], r[1]) for r in rows])
+                if _eval_purged_on != now.date():
+                    await conn.execute("DELETE FROM paper_eval_log WHERE last_at < $1",
+                                       now - timedelta(days=EVAL_RETENTION_DAYS))
+                    _eval_purged_on = now.date()
+        except Exception as e:   # noqa: BLE001 - el diagnóstico nunca interrumpe el tick
+            logger.warning(f"[PAPER] diagnóstico no registrado ({len(rows)} decisiones): {e}")
+
     async def check_new_signals(self) -> dict:
         results = {}
+        evaluations: list[dict] = []   # decisión de cada config en este tick (diagnóstico RQ-01.5)
 
         kill = await self.risk_manager.is_kill_switch_active()
 
@@ -701,29 +768,41 @@ class PaperTrader:
             interval = cfg['interval']
             reversal = False   # True si este tick cierra por señal opuesta y abre la contraria
             px       = None    # precio único de ese cierre y esa reversa (≈ open de la vela siguiente)
+            ev = {'config_id': config_id, 'regime': None, 'signal': None, 'filters': None, 'candle_time': None,
+                  'last_bar_time': None, 'bars': None}
+
+            def decide(code: str, text: str, _ev=ev, _label=label) -> None:
+                """Resultado del tick para esta config: el texto de siempre para Laravel + el motivo normalizado."""
+                results[_label] = text
+                _ev.update(code=code, detail=text)
+                evaluations.append(_ev)
 
             open_row  = await self.get_open_trade_for_config(config_id)
             exit_rule = self._opposite_rule(open_row) if open_row is not None else None
             if kill and exit_rule is None:
-                results[label] = "KILL SWITCH activo — sin nuevas entradas"
+                decide('kill_switch', "KILL SWITCH activo — sin nuevas entradas")
                 continue
             if open_row is not None and exit_rule is None:
-                results[label] = f"{symbol}: ya tiene posicion abierta"
+                decide('open_position', f"{symbol}: ya tiene posicion abierta")
                 continue
 
             now = datetime.now(timezone.utc)
             df = self._closed_bars(await self.get_bars(symbol, interval), interval, now)
+            ev['bars'] = len(df)
+            if len(df):
+                ev['last_bar_time'] = pd.to_datetime(df['time'].iloc[-1], utc=True).to_pydatetime()
             if len(df) < 64:
-                results[label] = f"{symbol}: datos insuficientes o desactualizados"
+                decide('insufficient_data', f"{symbol}: datos insuficientes o desactualizados")
                 continue
             if pd.to_datetime(df['time'].iloc[-1], utc=True) + 2 * interval_delta(interval) <= now:
-                results[label] = f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera"
+                decide('collector_stale', f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera")
                 continue
+            ev['candle_time'] = ev['last_bar_time']
 
             try:
                 strategy = build_strategy(self._get_params_for(config_id))
             except Exception as e:
-                results[label] = f"Error construyendo la estrategia: {e}"
+                decide('build_error', f"Error construyendo la estrategia: {e}")
                 continue
 
             regime = await self.get_current_regime(
@@ -732,18 +811,22 @@ class PaperTrader:
                 ambiguous_as=strategy.regime_ambiguous_as
             )
             regime_ok = strategy.should_operate(regime)
+            ev['regime'] = regime
             if not regime_ok and open_row is None:   # la salida por señal opuesta no mira el régimen (igual que el motor)
-                results[label] = f"{symbol}: regimen no permitido ({regime})"
+                decide('regime_blocked', f"{symbol}: regimen no permitido ({regime})")
                 continue
 
             if strategy.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
                 strategy.macro_df = self._closed_bars(await self.get_bars(symbol, '240'), '240', now)
             if strategy.btc_filter_applies():  # velas H4 cerradas de BTC para la tendencia de BTC
                 strategy.btc_macro_df = self._closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
+            strategy.signal_trace = []   # señal de la última vela tras la estrategia y cada filtro (solo observa)
             df = strategy.compute_signals(df)
 
             last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas
             signal = int(last_closed['signal'])
+            ev['signal'] = signal
+            ev['filters'] = [{'step': step, 'signal': sig} for step, sig in strategy.signal_trace]
 
             if open_row is not None:
                 # Salida por señal opuesta (misma regla que el motor): la señal de la última vela cerrada es contraria
@@ -756,30 +839,35 @@ class PaperTrader:
                     opened_at = opened_at.replace(tzinfo=timezone.utc)
                 opposite = (open_row['side'] == 'long' and signal == -1) or (open_row['side'] == 'short' and signal == 1)
                 if not opposite or candle_open + interval_delta(interval) <= opened_at:
-                    results[label] = f"{symbol}: ya tiene posicion abierta"
+                    decide('open_position', f"{symbol}: ya tiene posicion abierta")
                     continue
                 px = await get_current_price(symbol)
                 if px is None:
-                    results[label] = f"{symbol}: señal opuesta pero sin precio; se reintenta el próximo ciclo"
+                    decide('no_price', f"{symbol}: señal opuesta pero sin precio; se reintenta el próximo ciclo")
                     continue
                 signal_close = candle_open + interval_delta(interval)   # como el motor: sale en el open siguiente
                 await self.close_trade(open_row, px, 'opposite_signal', (signal_close, signal_close))
                 if exit_rule == 'exit' or kill:
-                    results[label] = f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}"
+                    decide('closed_opposite', f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}")
                     continue
                 if not regime_ok:
-                    results[label] = (f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; "
-                                      f"regimen no permitido ({regime}), sin reversa")
+                    decide('closed_opposite', f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; "
+                                              f"regimen no permitido ({regime}), sin reversa")
                     continue
                 reversal = True
 
             if signal == 0:
-                results[label] = f"{symbol}: sin senal"
+                blocker = blocking_filter(ev['filters'])
+                if blocker:
+                    decide('filter_blocked', f"{symbol}: sin senal (la anuló el filtro {blocker})")
+                else:
+                    decide('no_signal', f"{symbol}: sin senal")
                 continue
             side = 'long' if signal == 1 else 'short'
             if not strategy.allows_side(side):   # allow_short desactivado: como el motor, ni entrada ni reversa
-                results[label] = (f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; short no permitido, "
-                                  f"sin reversa" if reversal else f"{symbol}: señal short ignorada (short no permitido)")
+                decide('closed_opposite' if reversal else 'short_not_allowed',
+                       f"{symbol}: CERRADA {open_row['side']} por señal opuesta @ {px}; short no permitido, "
+                       f"sin reversa" if reversal else f"{symbol}: señal short ignorada (short no permitido)")
                 continue
 
             candle_time = last_closed['time']
@@ -797,17 +885,19 @@ class PaperTrader:
                     config_id, candle_time + interval_delta(interval)
                 )
             if already_traded and not reversal:
-                results[label] = f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})"
+                decide('signal_already_traded', f"{symbol}: senal ya operada en esta vela (trade #{already_traded['id']})")
                 continue
 
             entry_price = px if reversal else await get_current_price(symbol)
             if entry_price is None:
-                results[label] = f"{symbol}: error obteniendo precio"
+                decide('no_price', f"{symbol}: error obteniendo precio")
                 continue
 
             raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
             signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
             await self.open_trade(config_id, strategy, side, entry_price, regime, signal_sl_pct)
-            results[label] = f"{symbol}: {'REVERSA' if reversal else 'ABIERTA'} {side} @ {entry_price} (regime={regime})"
+            decide('reversal' if reversal else 'opened',
+                   f"{symbol}: {'REVERSA' if reversal else 'ABIERTA'} {side} @ {entry_price} (regime={regime})")
 
+        await self._record_evaluations(evaluations)
         return results
