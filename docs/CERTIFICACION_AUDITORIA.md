@@ -3,7 +3,8 @@
 > Estado al **2026-11-10 (Bogotá)**, `main` = `d22b684` (p45). Cubre los **54 hallazgos** del informe original
 > (`TR2_RESULTADOS_AUDITORIA_HASTA_31-10-2026`, con los textos de REAL-05 y CFG-01, 02, 06–09 recuperados por la
 > actualización del 07-nov) y los **16 nuevos (N-01 a N-16)** de esa actualización. Por cada uno: estado, parche o
-> decisión, prueba y dónde está el detalle en `docs/BITACORA.md`.
+> decisión, prueba y dónde está el detalle en `docs/BITACORA.md`. Evidencia del 3.er ciclo (fallos antes del fix,
+> mutaciones, integración, commits): `docs/RESULTADOS_CICLO_07NOV.md`.
 >
 > Cada fix se instaló con su prueba forense **antes/después** (falla con el código anterior, pasa con el nuevo),
 > mutaciones detectadas y la regresión completa en TODO OK en el servidor. Las pruebas están en `tests/Forensic/` y se

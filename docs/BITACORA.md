@@ -131,6 +131,8 @@
 - **Resultado del 3.er ciclo (09–10 nov):** 16 hallazgos nuevos validados contra el código y en la base: 15 corregidos (p33–p45, uno por parche, cada uno con prueba antes/después, mutaciones y regresión) y N-13 cerrado por análisis. Las decisiones del dueño fueron N-03 (a) y N-11 (a). Un parche (p40) lo revirtió su propia prueba de integración y salió corregido como p40b. Regresión: de 43 (p32) a **56** (45 Python + 11 PHP), más 4 pruebas de integración contra la base real.
 - **Documentación:** `CERTIFICACION_AUDITORIA.md` reescrita (70 hallazgos: los 54 originales clasificados, sin «falta el texto», + N-01 a N-16 con parche, commit y prueba); `PENDIENTES_AUDITORIA.md` pasa a ser la lista vigente; `PROMPT_MAESTRO.md` → **V7.3** (fuentes únicas nuevas, motor con 1 worker obligatorio, pruebas de integración en la instalación, lecciones); `FASE12` revisado; `README` (pruebas nuevas, regresión 45 + 11, documentos de auditoría, volcado del esquema desactualizado); `02_TECHNICAL` y `03_AI_CONTEXT` sin el `PaperStrategyConfigController` retirado.
 - Instalación de p45 el 10-nov: regresión 56 en TODO OK; Horizon reiniciado (6 procesos); ninguna estrategia guarda números como texto en su config; `main` = `d22b684`.
+- Instalación de p46 el 10-nov: regresión 56 en TODO OK; solo documentación, sin reinicios; `main` = `a0fa1a3`. Proyecto «Ruben Castillo» en claude.ai actualizado (certificación, pendientes, Fase 12, Prompt V7.3; V7.2 retirada).
+- **Resultados para el auditor (p47):** `docs/RESULTADOS_CICLO_07NOV.md` (método, diagnóstico en producción, evidencia por hallazgo: fallos antes del fix, mutaciones, integración y commit instalado; desviaciones).
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

@@ -92,6 +92,7 @@ tests/Forensic/                            pruebas forenses (ver §7)
 docs/PROMPT_MAESTRO.md                     instrucciones para quien retome el proyecto (V7.3)
 docs/BITACORA.md                           bitácora de cambios (incluye base de datos y servidor)
 docs/CERTIFICACION_AUDITORIA.md            estado de los 70 hallazgos de las auditorías externas (parche y prueba de cada uno)
+docs/RESULTADOS_CICLO_07NOV.md             evidencia del 3.er ciclo de fixes para el auditor (09–10 nov)
 docs/PENDIENTES_AUDITORIA.md               pendientes vigentes (empezar aquí)
 docs/FASE12_ESTADISTICA.md                 decisiones estadísticas pendientes del dueño
 docs/01–03_*.md                            documentación de julio 2026 (secciones clave actualizadas hasta V7.3)
