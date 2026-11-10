@@ -296,14 +296,29 @@ def month_keys(start, end) -> list[str]:
     return [str(p) for p in pd.period_range(naive_utc(start), naive_utc(end) - timedelta(seconds=1), freq='M')]
 
 
-def segment_stats(trades, lo, hi):
-    pnl = [t['pnl'] for t in trades if lo <= naive_utc(t['entry_time']) < hi]
+def segment_stats(trades, lo, hi, last=False):
+    """
+    Tramo [lo, hi) sin contaminación entre tramos (N-03):
+    - un trade cuenta solo si ABRE y CIERRA dentro del tramo; el que abre antes del corte y cierra después no cuenta
+      en ninguno de los dos (se informa en 'cross' del tramo donde abrió). En el último tramo (last=True) no hay corte
+      posterior: cuentan todos los que abren en él, incluido el cierre end_of_data.
+    - el PnL de cada trade se lleva al capital inicial (pnl_pct × INITIAL): la simulación es continua y, sin esto, el
+      tramo posterior heredaba el tamaño del saldo ganado o perdido en el anterior.
+    """
+    pnl, cross = [], 0
+    for t in trades:
+        if not lo <= naive_utc(t['entry_time']) < hi:
+            continue
+        if not last and naive_utc(t['exit_time']) >= hi:
+            cross += 1
+            continue
+        pnl.append(float(t['pnl_pct']) / 100 * INITIAL)
     gp = sum(p for p in pnl if p > 0)
     gl = -sum(p for p in pnl if p <= 0)
     eq = np.cumsum([0.0] + pnl) + INITIAL
     peak = np.maximum.accumulate(eq)
     dd = float(((peak - eq) / peak).max() * 100) if len(eq) else 0.0
-    return dict(n=len(pnl), gp=float(gp), gl=float(gl), pnl=float(sum(pnl)), dd=float(dd))
+    return dict(n=len(pnl), gp=float(gp), gl=float(gl), pnl=float(sum(pnl)), dd=float(dd), cross=cross)
 
 
 def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
@@ -342,7 +357,7 @@ def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
                     ret=finite(m['total_return_pct'], 2), dd=finite(m['max_drawdown_pct'], 2),
                     gp=finite(m.get('gross_profit', 0.0)), gl=finite(m.get('gross_loss', 0.0)),
                     m=[finite(by_month.get(k, 0.0)) for k in month_keys(start, end)], m1=data.minute_df is not None)
-        out.append((i, segment_stats(trades, lo, split), segment_stats(trades, split, end), full))
+        out.append((i, segment_stats(trades, lo, split), segment_stats(trades, split, end, last=True), full))
         if tick:
             tick(f"{sym} · {iv}")
     return out
@@ -410,7 +425,8 @@ class RunReporter:
 
 def seg_view(st: dict) -> dict:
     """Tramo (en / fuera de muestra) de una moneda: operaciones, PF, retorno % sobre el capital inicial."""
-    return dict(n=st['n'], pf=pf(st['gp'], st['gl']), ret=round(st['pnl'] / INITIAL * 100, 2), pos=int(st['pnl'] > 0))
+    return dict(n=st['n'], pf=pf(st['gp'], st['gl']), ret=round(st['pnl'] / INITIAL * 100, 2), pos=int(st['pnl'] > 0),
+                cross=st.get('cross', 0))
 
 
 def seg_sum(parts: list) -> dict:
@@ -418,7 +434,7 @@ def seg_sum(parts: list) -> dict:
     gp, gl = sum(x['gp'] for x in parts), sum(x['gl'] for x in parts)
     return dict(n=sum(x['n'] for x in parts), pf=pf(gp, gl),
                 ret=round(sum(x['pnl'] for x in parts) / (INITIAL * max(1, len(parts))) * 100, 2),
-                pos=int(sum(x['pnl'] > 0 for x in parts)))
+                pos=int(sum(x['pnl'] > 0 for x in parts)), cross=sum(x.get('cross', 0) for x in parts))
 
 
 def accept(is_: dict, oos: dict, full: dict, focus: str) -> str | None:

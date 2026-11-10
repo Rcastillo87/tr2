@@ -120,7 +120,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 ### Búsqueda de configuración (`/strategies` → 🔍 Buscar) — v3
 - Prueba combinaciones de SL, TP, BE, trailing, filtros y duración con el mismo cargador de datos que el backtest (`load_backtest_data`): **búsqueda = backtest**.
 - **Enfoque:** mayor ganancia, win rate alto (además PF ≥ 1,2) o consistencia alta. Decide dónde se busca y cómo se ordena.
-- **"Gana"** = ≥ 30 operaciones y gana en los primeros 2/3 del periodo **y** en el último 1/3 (que no se usa para elegir).
+- **"Gana"** = ≥ 30 operaciones y gana en los primeros 2/3 del periodo **y** en el último 1/3 (que no se usa para elegir). Un trade que abre antes del corte y cierra después no cuenta en ningún tramo, y cada tramo se mide sobre el capital inicial (no hereda lo ganado en el anterior).
 - **Por moneda:** hasta 5 monedas, todas las temporalidades (1D incluido), cada moneda con su propio ranking. **Por temporalidad:** se acepta si gana en ≥ 3/4 de las monedas y las métricas incluyen **todas** (ninguna se descarta después).
 - Prueba el filtro de volumen en ×0,8 / 1,0 / 1,2 / 1,5 y la tendencia de BTC; no prueba el régimen en estrategias que permiten los 3 regímenes (no tendría efecto).
 - Corre en la cola `research` (1 proceso, `nice 19` + `ionice`), una moneda a la vez en memoria, tope técnico de 3 h. Una búsqueda corriendo en todo el sistema y una por estrategia.

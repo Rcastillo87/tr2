@@ -16,6 +16,12 @@ de configuraciones probadas, alguna pasa el filtro por suerte (sesgo de selecci�
 | B. Holdout temporal fijo | Los últimos N meses se reservan y no los ve **ninguna** búsqueda hasta una fecha que decide el dueño. | Bajo. Disciplina: no «mirar» antes de tiempo. | El más limpio, pero gasta datos recientes, que son los más parecidos al mercado actual. |
 | C. Dejarlo y documentar | Rotular el último tercio como «validación» (no «fuera de muestra»). | Ninguno. | No resuelve el sesgo; solo lo nombra. |
 
+> **Hecho aparte [p43, N-03, decisión del dueño 10-nov]:** el corte dejaba pasar dos contaminaciones que la opción
+> elegida aquí necesitará de todas formas: (1) un trade que abría antes del corte y cerraba después contaba entero en el
+> tramo de elección, con precios posteriores al corte; ahora no cuenta en ninguno y se informa como `cross`; (2) la
+> simulación es continua y el PnL del último tramo venía escalado por el saldo ganado antes; ahora cada tramo se mide
+> con `pnl_pct × INITIAL`. El sesgo de selección múltiple de esta sección sigue pendiente (opciones A–C).
+
 ## 2. Cartera con capital compartido (NUEVO-05)
 
 **Hoy**: cada moneda se backtestea por separado con su propio saldo y los resultados se suman. No hay capital
