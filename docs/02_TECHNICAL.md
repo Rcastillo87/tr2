@@ -558,7 +558,7 @@ Lógica: en el primer request autenticado de una sesión, guarda `login_at` en l
 
 ## 8. API del motor Python — endpoint por endpoint
 
-Todos los endpoints viven bajo el prefijo `/v1` (agregado en `main.py` al registrar cada router) y requieren el header `X-Internal-API-Key` salvo `/health`. El servidor escucha exclusivamente en `127.0.0.1:8002`.
+Todos los endpoints viven bajo el prefijo `/v1` (agregado en `main.py` al registrar cada router) y requieren el header `X-Internal-API-Key` salvo `/health`. La comprobación **falla cerrada** (`api/internal_auth.py`, comparación en tiempo constante): sin `INTERNAL_API_KEY` configurada el motor contesta 503 a todo salvo `/health` y lo registra como CRITICAL al arrancar; con clave, cabecera ausente, vacía o distinta → 401 [V7.2, p41 N-12]. `/collector/add-symbol` solo acepta los intervalos de `request_rules.json` y símbolos `^[A-Z0-9]{2,20}$`, y su `inserted` cuenta solo filas nuevas (N-14). Las fechas sin zona de `/collector/backfill` y `/collector/invalidate` se leen como UTC (N-15). El servidor escucha exclusivamente en `127.0.0.1:8002`.
 
 ### `collector.py` — prefijo efectivo `/v1/collector`
 
@@ -1086,7 +1086,7 @@ Tres únicas claves de configuración propias del proyecto en Laravel — todo l
 | Variable | Usada en | Propósito |
 |---|---|---|
 | `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` | Todos los routers y módulos que acceden a PostgreSQL | Construyen el DSN de conexión |
-| `INTERNAL_API_KEY` | `main.py`, `real_trading.py`, `broker.py` | Clave compartida que valida cada request entrante |
+| `INTERNAL_API_KEY` | `main.py` (vía `api/internal_auth.py`), `real_trading.py`, `broker.py` | Clave compartida que valida cada request entrante. **Obligatoria**: sin ella el motor rechaza todo con 503 [V7.2, p41] |
 | `BYBIT_BASE_URL` | `bybit_client.py`, `real_trader.py`, `broker.py`, `ohlcv_collector.py` | Default `https://api.bybit.com` (mainnet) |
 | `BYBIT_TESTNET_URL` | `real_trader.py`, `broker.py` | Default `https://api-testnet.bybit.com` |
 | `REDIS_URL` | `regime.py` | Default `redis://127.0.0.1:6379` |

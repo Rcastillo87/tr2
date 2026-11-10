@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -87,6 +87,15 @@
 - **Pruebas:** `backtest_delete_rules_test.php` (PHP puro, en la regresión: 12 casos; **12 FALLOS** con el código anterior). `backtest_delete_test.php` (Laravel + base real, transacción revertida): trade Paper abierto, Real `orphaned` y config activa bloquean (con el control del criterio anterior); sin nada vivo borra, pausa suscripciones y audita.
 - **Primer intento (p40) revertido por su propia prueba de integración:** la prueba buscaba la fila `deleted` por `paper_strategy_config_id`, que la FK `SET NULL` deja nulo al borrar. El instalador revirtió todo (`main` siguió en `bd904e9`). Corregido en **p40b** (lápida en `new_params`).
 - Instalación de p39 el 09-nov: regresión 50 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `bd904e9`.
+
+### N-12, N-14, N-15 — Endurecimiento del motor (p41)
+- **N-12 (antes):** el middleware de `main.py` comparaba `request.headers.get(...) != os.getenv('INTERNAL_API_KEY')`. Sin la variable y sin la cabecera daba `None == None` y el pedido pasaba. La exposición es baja (el motor solo escucha en 127.0.0.1), pero el criterio fallaba abierto. **Ahora:** `api/internal_auth.py` (`key_ok`, `hmac.compare_digest`); sin clave configurada, todo salvo `/health` recibe 503 y queda un CRITICAL al arrancar; con clave, cabecera ausente, vacía o distinta → 401. En producción la clave está definida (diagnóstico del 09-nov), así que no cambia nada en operación.
+- **N-14 (antes):** `/collector/add-symbol` aceptaba cualquier texto como intervalo o símbolo y contaba `INSERT 0 0` (ya existía) como insertado. **Ahora:** intervalos de `request_rules.json` (la misma lista que el backtest y Laravel), sin repetir; símbolo normalizado a mayúsculas y `^[A-Z0-9]{2,20}$`; `inserted` = filas nuevas. Los errores son 400 con texto, que Laravel muestra tal cual.
+- **N-15 (antes):** `/collector/backfill` e `/collector/invalidate` leían una fecha sin zona con la zona del proceso. El servidor está en UTC (diagnóstico del 09-nov), así que no había error en producción. **Ahora:** `utc_datetime()`: sin zona = UTC; con zona, convertida.
+- **Visto de paso:** `/collector/invalidate` borra un rango de `ohlcv_data` (con `confirm=True`). Junto con la recarga, es la otra excepción a «el collector nunca borra»; entra en la decisión de N-11.
+- **Entorno local:** se instaló `fastapi==0.115.0`, la versión del servidor (había 0.162 y la app no arrancaba con `add_event_handler`).
+- **Prueba:** `engine_hardening_test.py` (18 casos, con la app completa vía `TestClient` y la zona del proceso en Bogotá; con el código anterior, 8 FALLOS y luego se corta porque `utc_datetime` no existe). Mutaciones: sin el 503 (2), vacío == vacío pasa (1), contar `INSERT 0 0` (1), fecha sin zona en la zona del proceso (2).
+- Instalación de p40b el 10-nov: regresión 51 en TODO OK; Horizon reiniciado; integración contra la base real 10/10 PASS (incluye la lápida en `new_params`); `main` = `474c162`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

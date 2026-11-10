@@ -2,6 +2,7 @@
 Endpoint Data Collector V2
 """
 import asyncio
+import re
 import asyncpg
 import time
 from datetime import datetime, timezone
@@ -125,6 +126,21 @@ from datetime import datetime
 from typing import Optional
 
 
+def utc_datetime(value: str) -> datetime:
+    """Fecha ISO de un pedido como instante UTC: sin zona = UTC (no la del proceso, N-15); con zona, convertida."""
+    dt = datetime.fromisoformat(value)
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def collector_intervals() -> list[str]:
+    """Intervalos admitidos: los mismos que el backtest y Laravel (request_rules.json)."""
+    from backtesting.request_rules import RULES
+    return [str(v) for v in RULES['fields']['interval']['values']]
+
+
+SYMBOL_RE = re.compile(r'^[A-Z0-9]{2,20}$')
+
+
 class BackfillRequest(BaseModel):
     symbol: str
     interval: str
@@ -235,8 +251,8 @@ async def collector_backfill(req: BackfillRequest):
         pool = await get_pool()
         collector = OhlcvCollector(pool)
 
-        start_ts = int(datetime.fromisoformat(req.start_date).timestamp())
-        end_ts = int(datetime.fromisoformat(req.end_date).timestamp()) if req.end_date else int(datetime.now().timestamp())
+        start_ts = int(utc_datetime(req.start_date).timestamp())
+        end_ts = int(utc_datetime(req.end_date).timestamp()) if req.end_date else int(time.time())
 
         if req.broker == "bybit":
             bars = await collector.fetch_from_bybit(req.symbol, req.interval, start_ts, end_ts)
@@ -272,10 +288,10 @@ async def collector_invalidate(req: InvalidateRequest):
             args = [req.broker, req.symbol, req.interval]
             if req.start_date:
                 where += " AND time >= $4"
-                args.append(datetime.fromisoformat(req.start_date))
+                args.append(utc_datetime(req.start_date).replace(tzinfo=None))   # columna timestamp en UTC
             if req.end_date:
                 where += f" AND time <= ${len(args)+1}"
-                args.append(datetime.fromisoformat(req.end_date))
+                args.append(utc_datetime(req.end_date).replace(tzinfo=None))
 
             result = await conn.execute(f"DELETE FROM ohlcv_data WHERE {where}", *args)
             deleted = int(result.split()[-1]) if result else 0
@@ -357,27 +373,38 @@ async def collector_reload_status():
 
 @router.post("/collector/add-symbol")
 async def collector_add_symbol(req: AddSymbolRequest):
-    """Añade un símbolo a collector_configs (activo o no)."""
+    """
+    Añade un símbolo a collector_configs (activo o no). Solo intervalos de request_rules.json y símbolos con formato
+    de Bybit (N-14). 'inserted' cuenta las filas nuevas: «INSERT 0 0» (ya existía) no suma.
+    """
+    symbol = req.symbol.strip().upper()
+    if not SYMBOL_RE.match(symbol):
+        raise HTTPException(status_code=400, detail=f"Símbolo no válido: {req.symbol!r} (solo letras y números, 2 a 20).")
+    allowed = collector_intervals()
+    intervals = list(dict.fromkeys(str(i).strip() for i in req.intervals))
+    bad = [i for i in intervals if i not in allowed]
+    if bad or not intervals:
+        raise HTTPException(status_code=400, detail=f"Intervalo no válido: {', '.join(bad) or '(ninguno)'}; "
+                                                    f"se admite: {', '.join(allowed)}.")
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             inserted = 0
-            for interval in req.intervals:
+            for interval in intervals:
                 result = await conn.execute(
                     """
                     INSERT INTO collector_configs (symbol, interval, broker, active, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, now(), now())
                     ON CONFLICT (symbol, interval, broker) DO NOTHING
                     """,
-                    req.symbol, interval, req.broker, req.active,
+                    symbol, interval, req.broker, req.active,
                 )
-                if result.startswith("INSERT"):
-                    inserted += 1
+                inserted += int(result.split()[-1]) if result and result.startswith("INSERT") else 0
         await pool.close()
         return {
             "status": "ok",
             "inserted": inserted,
-            "configs": [{"symbol": req.symbol, "interval": i, "broker": req.broker} for i in req.intervals],
+            "configs": [{"symbol": symbol, "interval": i, "broker": req.broker} for i in intervals],
         }
     except Exception as e:
         logger.error(f"[ADD_SYMBOL] error: {e}")

@@ -4,7 +4,6 @@ FastAPI server — solo accesible en 127.0.0.1:8002
 """
 
 import logging
-import os
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -36,17 +35,22 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# Middleware de autenticación interna
-INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY')
+# Middleware de autenticación interna: falla cerrada (N-12)
+from fastapi.responses import JSONResponse  # noqa: E402
+from api.internal_auth import HEADER, configured_key, key_ok  # noqa: E402
 
-from fastapi.responses import JSONResponse
+INTERNAL_API_KEY = configured_key()
+if not INTERNAL_API_KEY:
+    logger.critical("INTERNAL_API_KEY no está definida: el motor rechaza todo pedido salvo /health (503)")
+
 
 @app.middleware("http")
 async def verify_api_key(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
-    key = request.headers.get("X-Internal-API-Key")
-    if key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY:
+        return JSONResponse({"detail": "Motor sin INTERNAL_API_KEY configurada"}, status_code=503)
+    if not key_ok(request.headers.get(HEADER), INTERNAL_API_KEY):
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
