@@ -136,7 +136,7 @@ Definidas en `routes/auth.php` (no exploradas en detalle — siguen el patrón e
 | `audited_months` | integer nullable | Meses cubiertos en el último backtest |
 | `avg_win_rate` | decimal(5,2) nullable | |
 | `avg_monthly_pnl` | decimal(7,4) nullable | |
-| `avg_monthly_trades` | decimal(6,2) nullable | |
+| `avg_monthly_trades` | decimal(6,2) nullable | [V7.3, p49 RQ-01.1] Trades/mes de **esa moneda**: cerrados por la estrategia (sin el cierre forzado al final del rango) ÷ días del rango / 30,4375. `StrategyConfigSync::tradesPerMonth()`. NULL = N/D (backtest multimoneda guardado antes de p49) |
 | `total_return_pct` | decimal(8,4) nullable | |
 | `star_wr`, `star_sharpe`, `star_ret`, `star_consistency`, `star_pf` | decimal(3,1) nullable | Calificación individual 1-5 de cada métrica |
 | `star_rating` | decimal(3,1) nullable | Promedio de las 5 anteriores |

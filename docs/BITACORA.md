@@ -38,6 +38,15 @@
 - **Prueba:** `paper_eval_test.py` (22 casos): cada motivo, el filtro que bloquea, la agrupación, el fallo del registro, `compute_signals` idéntico con y sin traza, y **los mismos 16 trades con y sin registro** en 150 velas × 3 ticks. Con el código anterior se corta (no hay registro). Mutaciones: no registrar (corta), fallo del registro que corta el tick (corta), una fila por tick (2 fallos). La mutación «culpar al primer filtro en 0» resultó equivalente y se simplificó `blocking_filter`.
 - Falta la pantalla (con maqueta).
 - Instalación de p47 el 10-nov (informe de resultados del 3.er ciclo, solo documentación): `main` = `21b8a66`.
+- Instalación de p48 el 10-nov: `main` = `06f1212`. A las 22:28 UTC `paper_eval_state` ya tenía las 11 configs activas: 9 `no_signal`, 2 `regime_blocked` (#61 BTC, #69 PEPE).
+
+### RQ-01.1 — Trades/mes de cada config Paper (p49)
+- **Antes:** `avg_monthly_trades` existía, pero ningún código la llenaba: la columna estaba vacía en todas las configs.
+- **Cambio:** el backtest guarda por moneda los trades que cerró la estrategia (`metrics.trades_by_symbol`) y cuántos cerró el final del rango (`closed_at_end`). `saveBacktest` los descarta si no cuadran con `total_trades` firmado (`consistentTradeCounts`). Al crear o llenar la config, `tradesPerMonth()` divide los trades de **esa moneda** por el rango real (`end_date − start_date`, días / 30,4375; si faltan fechas, `audited_months`). Con menos de medio mes o datos inválidos queda NULL (N/D), nunca 0 inventado.
+- **Por qué por moneda:** en un backtest de 3 monedas, el total ÷ meses daría a cada config el triple de su frecuencia real.
+- **Datos existentes:** el instalador llena las configs cuyo backtest es de **una** moneda (total − cierre forzado, si se conoce, ÷ meses del rango). Las multimoneda guardadas antes de p49 quedan N/D hasta que se vuelva a guardar su backtest: no hay forma honesta de repartir el total.
+- **Prueba:** `trades_per_month_test.php` (15 casos). Con el código anterior: 11 fallos. Mutaciones (todas detectadas): total del backtest con cualquier cantidad de monedas, sin descontar el cierre forzado, meses pedidos en vez del rango real, aceptar conteos que no suman el total.
+- Falta en pantalla: la columna Trades/mes en la fila de configs, con maqueta.
 
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 

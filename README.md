@@ -331,10 +331,11 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `strategy_config_types_test.php` | El JSON editado de la estrategia conserva los tipos de su config |
 | `paper_eval_test.py` | Diagnóstico de Paper: motivo de cada evaluación, filtro que anuló la señal, historial agrupado; mismos trades con y sin registro |
 | `broker_limits_scope_test.py` | Los límites por cuenta no son parámetros de estrategia ni de Paper (RQ-01.6) |
+| `trades_per_month_test.php` | Trades/mes de cada config Paper: por moneda, sin el cierre forzado, sobre el rango real; conteos incoherentes se descartan (RQ-01.1) |
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (47 Python + 11 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (47 Python + 12 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

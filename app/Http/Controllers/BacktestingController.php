@@ -95,6 +95,8 @@ class BacktestingController extends Controller
         $resultsData = [];
         $warnings = [];
         $totalTrades = 0;
+        $tradesBySymbol = [];
+        $closedAtEnd = 0;
         $totalWins = 0;
         $totalPnl = 0;
         $grossProfit = 0.0;
@@ -199,6 +201,10 @@ class BacktestingController extends Controller
 
                 $agg = $summary['aggregate_metrics'];
                 $totalTrades += $agg['total_trades'] ?? 0;
+                // Trades/mes por moneda (RQ-01.1): cerrados por la estrategia, sin el cierre forzado al final del rango
+                $atEnd = (int) ($res['closed_at_end'] ?? 0);
+                $closedAtEnd += $atEnd;
+                $tradesBySymbol[$sym] = max(0, (int) ($agg['total_trades'] ?? 0) - $atEnd);
                 $totalWins += $agg['winning_trades'] ?? 0;
                 $totalPnl += $agg['total_return_pct'] ?? 0;
                 $grossProfit += (float) ($agg['gross_profit'] ?? 0);
@@ -275,6 +281,8 @@ class BacktestingController extends Controller
                     'profit_factor' => $profitFactor,
                     'avg_monthly_pnl' => round($avgGlobal, 2),
                     'consist_pct' => $consistGlobal,
+                    'trades_by_symbol' => $tradesBySymbol,
+                    'closed_at_end' => $closedAtEnd,
                 ]
             ]
         ];
@@ -445,6 +453,7 @@ class BacktestingController extends Controller
 
                 $metrics = (array) ($data['metrics'] ?? []);
                 $metrics['total_trades'] = $signed['total_trades']; // dato firmado, no el del navegador
+                $metrics = StrategyConfigSync::consistentTradeCounts($metrics, $signed['symbols']);
 
                 $backtest ??= new Backtest();
                 $backtest->fill([

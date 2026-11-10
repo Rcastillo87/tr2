@@ -99,9 +99,11 @@ final class StrategyConfigSync
         $runParams   = (array) $backtest->config_params;
         $params      = self::canonicalParams($runParams);
         $metricAttrs = $this->metricAttributes((array) ($backtest->metrics ?? []), $runParams, (int) $backtest->months);
+        $perSymbolTrades = fn (string $symbol): array => ['avg_monthly_trades' => self::tradesPerMonth(
+            (array) ($backtest->metrics ?? []), $runParams, (int) $backtest->months, $symbol, count($symbols))];
         $summary     = ['created' => [], 'updated' => [], 'unchanged' => [], 'deactivated' => []];
 
-        DB::transaction(function () use ($backtest, $symbols, $params, $metricAttrs, $source, $activate, $userId, &$summary) {
+        DB::transaction(function () use ($backtest, $symbols, $params, $metricAttrs, $perSymbolTrades, $source, $activate, $userId, &$summary) {
             $existing = PaperStrategyConfig::where('backtest_id', $backtest->id)
                 ->lockForUpdate()
                 ->get()
@@ -123,7 +125,7 @@ final class StrategyConfigSync
                 $config      = $existing->get($symbol);
 
                 if ($config === null) {
-                    $config = PaperStrategyConfig::create(array_merge($metricAttrs, [
+                    $config = PaperStrategyConfig::create(array_merge($metricAttrs, $perSymbolTrades($symbol), [
                         'backtest_id'    => $backtest->id,
                         'display_name'   => $displayName,
                         'strategy_class' => 'DynamicStrategy',
@@ -145,7 +147,7 @@ final class StrategyConfigSync
                 }
                 $oldName = $config->display_name;
 
-                $config->fill(array_merge($metricAttrs, [
+                $config->fill(array_merge($metricAttrs, $perSymbolTrades($symbol), [
                     'display_name' => $displayName,
                     'interval'     => (string) $backtest->interval,
                     'params'       => $params,
@@ -318,6 +320,67 @@ final class StrategyConfigSync
             'source'                   => $source,
             'user_id'                  => $userId,
         ]);
+    }
+
+    /**
+     * Trades/mes de UNA moneda del backtest (RQ-01.1): trades cerrados por la estrategia (sin el cierre forzado
+     * end_of_data) / meses del periodo efectivo (start_date → end_date del backtest; si faltan, los meses pedidos).
+     * Fuente: metrics.trades_by_symbol (desde p49). Backtests anteriores: solo si tienen una moneda (total_trades,
+     * que puede incluir como máximo 1 cierre forzado). Sin dato fiable o sin periodo válido: null (la UI muestra N/D).
+     * Es una métrica histórica del backtest, no el ritmo de Paper.
+     *
+     * @param array<string, mixed> $metrics
+     * @param array<string, mixed> $runParams
+     */
+    public static function tradesPerMonth(array $metrics, array $runParams, int $months, string $symbol, int $symbolCount): ?float
+    {
+        $bySymbol = $metrics['trades_by_symbol'] ?? null;
+        if (is_array($bySymbol) && isset($bySymbol[$symbol]) && is_numeric($bySymbol[$symbol])) {
+            $trades = (float) $bySymbol[$symbol];
+        } elseif ($symbolCount === 1 && isset($metrics['total_trades']) && is_numeric($metrics['total_trades'])) {
+            $trades = max(0.0, (float) $metrics['total_trades'] - (float) ($metrics['closed_at_end'] ?? 0));
+        } else {
+            return null;
+        }
+        $from = $runParams['start_date'] ?? null;
+        $to   = $runParams['end_date'] ?? null;
+        $span = null;
+        if (is_string($from) && is_string($to) && strtotime($from) !== false && strtotime($to) !== false) {
+            $days = (strtotime($to) - strtotime($from)) / 86400;
+            $span = $days > 0 ? $days / 30.4375 : null;
+        }
+        $span ??= $months > 0 ? (float) $months : null;
+        if ($span === null || $span < 0.5 || $trades < 0) {
+            return null;
+        }
+
+        return round(min($trades / $span, 9999.99), 2);   // numeric(6,2)
+    }
+
+    /**
+     * Conteos de trades enviados por el navegador al guardar: se conservan solo si cuadran con el total firmado
+     * (suma por moneda + cierres forzados = total_trades) y nombran las monedas del backtest; si no, se descartan.
+     *
+     * @param array<string, mixed> $metrics
+     * @param list<string> $symbols
+     * @return array<string, mixed>
+     */
+    public static function consistentTradeCounts(array $metrics, array $symbols): array
+    {
+        $by  = $metrics['trades_by_symbol'] ?? null;
+        $end = $metrics['closed_at_end'] ?? 0;
+        $ok = is_array($by) && is_numeric($end) && (int) $end >= 0 && (int) $end <= count($symbols)
+            && array_keys($by) == array_values(array_intersect(array_keys($by), $symbols)) && count($by) === count($symbols)
+            && array_reduce($by, fn ($c, $v) => $c && is_numeric($v) && (int) $v >= 0, true)
+            && array_sum(array_map('intval', $by)) + (int) $end === (int) ($metrics['total_trades'] ?? -1);
+        if (! $ok) {
+            unset($metrics['trades_by_symbol'], $metrics['closed_at_end']);
+        } else {
+            $metrics['trades_by_symbol'] = array_map('intval', $by);
+            $metrics['closed_at_end'] = (int) $end;
+        }
+
+        return $metrics;
     }
 
     /** Mapea métricas del backtest a columnas de la config, respetando la precisión de cada numeric. */
