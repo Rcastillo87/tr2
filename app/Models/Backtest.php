@@ -6,13 +6,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Backtest extends Model {
     protected $fillable = [
         'hash', 'strategy_id', 'symbols', 'interval', 'months', 
-        'config_params', 'strategy_snapshot', 'metrics', 'approved'
+        'config_params', 'strategy_snapshot', 'metrics', 'approved', 'origin', 'origin_meta'
     ];
     protected $casts = [
         'symbols' => 'array',
         'config_params' => 'array',
         'strategy_snapshot' => 'array',
         'metrics' => 'array',
+        'origin_meta' => 'array',
         'approved' => 'boolean',
     ];
 

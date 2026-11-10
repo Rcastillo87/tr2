@@ -47,6 +47,15 @@
 - **Datos existentes:** el instalador llena las configs cuyo backtest es de **una** moneda (total − cierre forzado, si se conoce, ÷ meses del rango). Las multimoneda guardadas antes de p49 quedan N/D hasta que se vuelva a guardar su backtest: no hay forma honesta de repartir el total.
 - **Prueba:** `trades_per_month_test.php` (15 casos). Con el código anterior: 11 fallos. Mutaciones (todas detectadas): total del backtest con cualquier cantidad de monedas, sin descontar el cierre forzado, meses pedidos en vez del rango real, aceptar conteos que no suman el total.
 - Falta en pantalla: la columna Trades/mes en la fila de configs, con maqueta.
+- Instalación de p49 el 10-nov: `main` = `10f4f61`. Trades/mes con valor: 0/15 → **15/15** (todas las configs vienen de backtests de una moneda).
+
+### RQ-01.3 — Origen de cada backtest (p50)
+- **Antes:** nada distinguía un backtest guardado a mano de uno creado desde una búsqueda; el único rastro era `results.created` dentro de la búsqueda, y se pierde si la búsqueda se borra.
+- **Cambio:** `backtests.origin` (`manual` | `search`, CHECK en la base) y `origin_meta` (foto de la búsqueda: id, fila, foco, modo, monedas elegidas, fecha de la búsqueda y de la creación; sin FK). Se fija **solo al crear**; un re-test no lo cambia. El origen «search» llega por un atributo interno de la petición que pone `BacktestFromSearch`, no por un campo del formulario: el navegador no puede declararlo. `App\Support\BacktestOrigin` es la única fuente (validación de la foto y texto de pantalla).
+- **Datos existentes:** la migración recupera como `search` (marcados `recovered`) los backtests que «Crear en historial» dejó en `results.created` con estado `done`; si uno figura en varias búsquedas gana la creación más antigua. El resto queda NULL = «Origen no registrado»: no se inventa «manual».
+- **Orden de instalación:** la migración corre **antes** de aplicar el código (columnas nulas: el código anterior las ignora), para que ningún guardado falle entre la aplicación y el final del instalador. Se agregó la clave `pre` al generador de instaladores.
+- **Prueba:** `backtest_origin_test.php` (14 casos; 5 fallos con el código anterior; mutaciones detectadas: run_id como texto, foto sin filtrar claves, origen reescrito en cada guardado, origen leído del formulario) y `backtest_origin_save_test.php` (integración por el `saveBacktest` real, transacción revertida: manual, intento del navegador, búsqueda, re-test en ambos sentidos, CHECK de la base, recuperados que coinciden con su búsqueda). Migración probada en PostgreSQL 16 local: dos corridas (idempotente), recuperación con duplicados y datos basura, `down`.
+- Falta en pantalla la línea de origen, con maqueta.
 
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 

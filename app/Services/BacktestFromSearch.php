@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Http\Controllers\BacktestingController;
 use App\Models\Strategy;
 use App\Models\User;
+use App\Support\BacktestOrigin;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Http\Request;
@@ -70,9 +71,11 @@ class BacktestFromSearch
     /**
      * @return array{payload: array, warnings: array, saved: ?array}
      *         payload = lo que se guarda (métricas por moneda incluidas); saved = respuesta del guardado o null.
+     * @param ?array $origin foto de la búsqueda (BacktestOrigin::fromSearch) que queda en el backtest creado
      * @throws RuntimeException si el backtest o el guardado fallan
      */
-    public function run(User $user, Strategy $strategy, array $cfg, string $interval, array $symbols, int $months, bool $save): array
+    public function run(User $user, Strategy $strategy, array $cfg, string $interval, array $symbols, int $months, bool $save,
+                        ?array $origin = null): array
     {
         $previousUser = Auth::user();
         $previousRequest = app('request');
@@ -94,6 +97,9 @@ class BacktestFromSearch
             if ($save) {
                 $req = Request::create('/backtesting/save', 'POST', ['save_data' => $saveData]);
                 $req->headers->set('Accept', 'application/json');
+                if ($origin !== null) {
+                    $req->attributes->set(BacktestOrigin::REQUEST_ATTRIBUTE, $origin);
+                }
                 $saved = $this->controller->saveBacktest($this->bind($req), $this->sync)->getData(true);
                 if (empty($saved['success'])) {
                     throw new RuntimeException($saved['message'] ?? 'No se pudo guardar el backtest.');

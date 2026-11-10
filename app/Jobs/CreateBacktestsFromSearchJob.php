@@ -6,6 +6,7 @@ use App\Models\ParamSearchRun;
 use App\Models\User;
 use App\Services\BacktestFromSearch;
 use App\Services\ParamSearchService;
+use App\Support\BacktestOrigin;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -50,8 +51,10 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
             }
             $this->mark($rowId, ['status' => 'running', 'symbols' => $symbols]);
             try {
+                $origin = BacktestOrigin::fromSearch($run->id, (string) $rowId, $run->focus, $run->mode,
+                    $this->symbolsMode, $run->created_at?->toIso8601String());
                 $out = $creator->run($user, $run->strategy, $row['cfg'], (string) $row['interval'], $symbols,
-                    (int) $run->months, true);
+                    (int) $run->months, true, $origin);
                 $this->mark($rowId, ['status' => 'done', 'backtest_id' => $out['saved']['backtest_id'] ?? null,
                                      'message' => $out['saved']['message'] ?? null, 'symbols' => $symbols]);
             } catch (Throwable $e) {

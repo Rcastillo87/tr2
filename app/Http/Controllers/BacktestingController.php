@@ -10,6 +10,7 @@ use App\Models\PaperStrategyConfig;
 use App\Models\Backtest;
 use App\Models\Strategy;
 use App\Services\StrategyConfigSync;
+use App\Support\BacktestOrigin;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -434,7 +435,8 @@ class BacktestingController extends Controller
 
         try {
             // Guardado y auto-sync en la MISMA transacción: o queda todo, o no queda nada.
-            $outcome = DB::transaction(function () use ($data, $signed, $strategyId, $hash, $sync) {
+            $origin = $request->attributes->get(BacktestOrigin::REQUEST_ATTRIBUTE);   // interno, no del formulario
+            $outcome = DB::transaction(function () use ($data, $signed, $strategyId, $hash, $sync, $origin) {
                 $backtest = null;
                 if (! empty($data['backtest_id'])) {
                     $backtest = Backtest::whereKey((int) $data['backtest_id'])->lockForUpdate()->first();
@@ -455,7 +457,9 @@ class BacktestingController extends Controller
                 $metrics['total_trades'] = $signed['total_trades']; // dato firmado, no el del navegador
                 $metrics = StrategyConfigSync::consistentTradeCounts($metrics, $signed['symbols']);
 
-                $backtest ??= new Backtest();
+                if ($backtest === null) {   // el origen se fija al nacer; un re-test no lo cambia (RQ-01.3)
+                    $backtest = new Backtest(BacktestOrigin::forNewBacktest($origin));
+                }
                 $backtest->fill([
                     'hash'              => $hash,
                     'strategy_id'       => $strategyId,

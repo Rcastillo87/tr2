@@ -205,6 +205,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 10-27 05 | `paper_trades.funding` |
 | 11-10 01 | `ohlcv_deletions`: registro de cada borrado de velas (recarga / invalidación) con las velas borradas |
 | 11-10 02 | `paper_eval_state`, `paper_eval_log`: diagnóstico de Paper (RQ-01.5) |
+| 11-10 03 | `backtests.origin`, `origin_meta`: origen del backtest; recupera los creados desde búsquedas (RQ-01.3) |
 | 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
 
 ```bash
@@ -331,11 +332,12 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `strategy_config_types_test.php` | El JSON editado de la estrategia conserva los tipos de su config |
 | `paper_eval_test.py` | Diagnóstico de Paper: motivo de cada evaluación, filtro que anuló la señal, historial agrupado; mismos trades con y sin registro |
 | `broker_limits_scope_test.py` | Los límites por cuenta no son parámetros de estrategia ni de Paper (RQ-01.6) |
+| `backtest_origin_test.php`, `backtest_origin_save_test.php`* | Origen del backtest (manual / búsqueda), fijado al crear; el navegador no puede declararlo (RQ-01.3) |
 | `trades_per_month_test.php` | Trades/mes de cada config Paper: por moneda, sin el cierre forzado, sobre el rango real; conteos incoherentes se descartan (RQ-01.1) |
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (47 Python + 12 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (47 Python + 13 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
