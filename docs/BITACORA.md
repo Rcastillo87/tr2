@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -96,6 +96,13 @@
 - **Entorno local:** se instaló `fastapi==0.115.0`, la versión del servidor (había 0.162 y la app no arrancaba con `add_event_handler`).
 - **Prueba:** `engine_hardening_test.py` (18 casos, con la app completa vía `TestClient` y la zona del proceso en Bogotá; con el código anterior, 8 FALLOS y luego se corta porque `utc_datetime` no existe). Mutaciones: sin el 503 (2), vacío == vacío pasa (1), contar `INSERT 0 0` (1), fecha sin zona en la zona del proceso (2).
 - Instalación de p40b el 10-nov: regresión 51 en TODO OK; Horizon reiniciado; integración contra la base real 10/10 PASS (incluye la lápida en `new_params`); `main` = `474c162`.
+
+### N-04 — «Lista para Paper» con compuerta de calidad (p42)
+- **Antes:** `ready_for_paper` = `passed` = solo métricas. Un backtest con slippage 0, comisión menor que la real, sin funding o con huecos en las velas principales podía salir «Aprobada». El efecto práctico era acotado: `passed`/`ready_for_paper` no habilita ni bloquea nada en la aplicación; solo se ve en la celda «Aprobada» del Excel exportado.
+- **Ahora:** `data_quality_issues()` lista las condiciones **optimistas**: slippage 0, comisión < 0,055 % (taker de Bybit), funding no disponible y avisos de cobertura o huecos de las velas principales (`BacktestData.data_problems`). `evaluate_for_paper(metrics, calidad)` devuelve `passed` (métricas, sin cambios), `quality_ok`, `quality_reasons` y `ready_for_paper` = las dos. Los motivos de calidad van también en `pass_reasons` («Calidad: …»). El Excel muestra «Aprobada» con `ready_for_paper` (resultados anteriores: `passed`). Las condiciones pesimistas no bloquean.
+- **Prueba:** `quality_gate_test.py` (15 casos: la función y `/backtest/run` completo con datos sintéticos; **13 FALLOS** con el código anterior). Mutaciones: `ready` ignora la calidad (1), sin revisar funding (3), sin pasar los huecos (3), comisión solo si es 0 (2).
+- La sección de `/backtest/run` de `02_TECHNICAL` describe todavía un `WalkForwardValidator` que ya no se usa: se marcó como histórica y se reescribe en el parche de documentación.
+- Instalación de p41 el 10-nov: regresión 52 en TODO OK; motor reiniciado, tick de Paper 200 (confirma que Laravel envía la clave interna), 0 errores; `main` = `b64b4ce`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

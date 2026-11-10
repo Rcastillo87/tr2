@@ -8,7 +8,7 @@ import asyncpg
 from db import get_pool as shared_get_pool
 import pandas as pd
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -239,8 +239,32 @@ def window_stats(trades: list[dict], start: datetime | None, end: datetime | Non
     return out
 
 
-def evaluate_for_paper(aggregate: dict) -> dict:
-    """Criterios mínimos orientativos (los mismos que usaba el walk-forward)."""
+BYBIT_TAKER_COMMISSION_PCT = 0.055   # comisión taker real de Bybit (%, por lado)
+
+
+def data_quality_issues(slippage_pct: float, commission_pct: float, funding_available: bool,
+                        data_problems: list) -> list[str]:
+    """
+    Condiciones que hacen OPTIMISTA el resultado (N-04): con alguna, las métricas no bastan para pasar a Paper.
+    Las pesimistas (vela completa con SL primero por falta de 1m, cierre al final del rango) no cuentan.
+    """
+    issues = []
+    if slippage_pct <= 0:
+        issues.append("slippage en 0%: entradas y salidas al precio exacto")
+    if commission_pct < BYBIT_TAKER_COMMISSION_PCT:
+        issues.append(f"comisión {commission_pct:g}% menor que la taker de Bybit ({BYBIT_TAKER_COMMISSION_PCT:g}%)")
+    if not funding_available:
+        issues.append("funding no disponible: los trades no lo descuentan")
+    if data_problems:
+        issues.append(f"velas principales incompletas ({len(data_problems)} aviso(s) de cobertura o huecos)")
+    return issues
+
+
+def evaluate_for_paper(aggregate: dict, quality_issues: list | tuple = ()) -> dict:
+    """
+    Dos compuertas separadas (N-04): 'passed' = criterios estadísticos mínimos (los mismos que usaba el walk-forward);
+    'quality_ok' = sin condiciones optimistas de datos o costos. 'ready_for_paper' exige las dos.
+    """
     reasons = []
     if aggregate['total_trades'] < 10:
         reasons.append(f"Trades insuficientes: {aggregate['total_trades']} (mínimo 10)")
@@ -253,7 +277,16 @@ def evaluate_for_paper(aggregate: dict) -> dict:
     if aggregate['profit_factor'] is not None and aggregate['profit_factor'] < 1.2:
         reasons.append(f"Profit Factor bajo: {aggregate['profit_factor']} (mínimo 1.2)")
     passed = not reasons
-    return {"passed": passed, "reasons": reasons or ["Estrategia aprobada para paper trading"]}
+    quality = [f"Calidad: {q}" for q in quality_issues]
+    ready = passed and not quality
+    if ready:
+        head = ["Estrategia aprobada para paper trading"]
+    elif passed:
+        head = ["Métricas aprobadas, pero no lista para Paper: resultado optimista por datos o costos"]
+    else:
+        head = []
+    return {"passed": passed, "quality_ok": not quality, "quality_reasons": list(quality_issues),
+            "ready_for_paper": ready, "reasons": head + reasons + quality}
 
 
 @dataclass
@@ -265,6 +298,7 @@ class BacktestData:
     coverage: dict
     funding: Optional[FundingData] = None  # funding de Bybit del rango operado (None = no disponible)
     btc_macro_df: Optional[pd.DataFrame] = None   # H4 de BTC para 'Tendencia de BTC' (None si no se pidió o no hay)
+    data_problems: list = field(default_factory=list)   # avisos de cobertura/huecos de las velas principales (N-04)
 
 
 async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, start: datetime | None,
@@ -286,7 +320,8 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
         main_src = await resolve_backtest_source(pool, symbol, interval, start, end)
     if main_src is None:
         raise ValueError(f"No hay velas de {symbol} {interval} en el rango solicitado.")
-    warnings.extend(main_src.problems())
+    data_problems = main_src.problems()
+    warnings.extend(data_problems)
     coverage['main'] = main_src.as_dict()
     # Calentamiento: velas previas al inicio solo para indicadores (como paper, 500 velas)
     warm_start = start - interval_delta(interval) * WARMUP_BARS if start else None
@@ -358,7 +393,7 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
             btc_macro_df = await load_ohlcv(pool, BTC_SYMBOL, MACRO_INTERVAL, b_src.broker, b_from, end)
             coverage['btc_macro'] = b_src.as_dict()
     return BacktestData(df=df, macro_df=macro_df, minute_df=minute_df, warnings=warnings, coverage=coverage,
-                        funding=funding, btc_macro_df=btc_macro_df)
+                        funding=funding, btc_macro_df=btc_macro_df, data_problems=data_problems)
 
 
 @router.post("/backtest/run")
@@ -409,8 +444,11 @@ async def run_backtest(request: BacktestRequest):
         result['n_windows'] = request.n_windows if request.walk_forward else 1
         result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)
                                     if request.walk_forward else [])
-        verdict = evaluate_for_paper(result['metrics'])
-        result.update(passed=verdict['passed'], pass_reasons=verdict['reasons'], ready_for_paper=verdict['passed'])
+        quality = data_quality_issues(float(request.slippage_pct), float(request.commission_pct),
+                                      data.funding is not None, data.data_problems)
+        verdict = evaluate_for_paper(result['metrics'], quality)
+        result.update(passed=verdict['passed'], pass_reasons=verdict['reasons'], quality_ok=verdict['quality_ok'],
+                      quality_reasons=verdict['quality_reasons'], ready_for_paper=verdict['ready_for_paper'])
         if request.monthly_breakdown:
             result['monthly_breakdown'] = build_monthly_breakdown(result['trades'], request.initial_balance, start, end)
 

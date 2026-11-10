@@ -586,7 +586,11 @@ Todos los endpoints viven bajo el prefijo `/v1` (agregado en `main.py` al regist
 
 **`build_monthly_breakdown(trades, initial_balance)`** — agrupa una lista de trades cerrados por mes calendario (según `entry_time`, formato `YYYY-MM`), calculando por mes: total de trades, ganadores, perdedores, win rate, PnL absoluto y PnL porcentual sumados. Ordena cronológicamente.
 
-**`POST /backtest/run`** — el endpoint central de todo el backtesting:
+**`POST /backtest/run`** — el endpoint central de todo el backtesting.
+
+> **Vigente [V7.2, p42 N-04]:** una simulación continua de todo el rango (`BacktestEngine`); lo que sigue sobre `WalkForwardValidator` es histórico. El veredicto tiene **dos compuertas**: `passed` = criterios estadísticos mínimos de `evaluate_for_paper` (≥ 10 trades, Sharpe ≥ 0,5, Win Rate ≥ 45 %, Drawdown ≤ 15 %, PF ≥ 1,2); `quality_ok` = ninguna condición que haga **optimista** el resultado (`data_quality_issues`: slippage 0, comisión menor que la taker de Bybit 0,055 %, funding no disponible, velas principales incompletas). `ready_for_paper` = las dos; los motivos de calidad van en `pass_reasons` como «Calidad: …» y en `quality_reasons`. Las condiciones pesimistas (vela completa con SL primero por falta de 1m, cierre `end_of_data`) no bloquean. El Excel muestra «Aprobada» con `ready_for_paper`.
+
+Descripción histórica:
 1. Carga el DataFrame OHLCV y la instancia de estrategia.
 2. **Si `walk_forward=true`** (default):
    - Corre `WalkForwardValidator` sobre el DataFrame completo, obteniendo `result` con métricas walk-forward (out-of-sample).

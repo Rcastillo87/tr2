@@ -83,7 +83,9 @@ class BacktestMonthlyExport
         $sheet->setCellValue('A6', 'Fecha de ejecución');
         $sheet->setCellValue('B6', now()->format('Y-m-d H:i:s'));
         $sheet->setCellValue('A7', 'Aprobada');
-        $sheet->setCellValue('B7', ($result['passed'] ?? false) ? 'Sí' : 'No');
+        // Lista para Paper = métricas mínimas Y sin condiciones optimistas de datos/costos (N-04); resultados guardados
+        // antes de p42 solo tienen 'passed'
+        $sheet->setCellValue('B7', ($result['ready_for_paper'] ?? $result['passed'] ?? false) ? 'Sí' : 'No');
 
         $rows = [
             ['Total trades',            $agg['total_trades'] ?? 0],
