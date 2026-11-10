@@ -69,7 +69,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 1. **Cero asumir.** Todo cambio se valida con logs, pruebas forenses o consultas. Si no se probó, no funciona.
 2. **Simulación pesimista.** Peor escenario: cero look-ahead, comisión 0.055 % por lado, slippage 0.05 % por lado, SL primero si SL y TP se tocan en la misma vela.
 3. **Cero parámetros quemados.** Todo valor de la UI viaja intacto al motor; umbrales operativos en `config/` + `.env`.
-4. **Integridad de datos.** Si el 1m no cubre el rango, se descarta. El collector **nunca borra** para reparar: re-descarga de Bybit y UPSERT.
+4. **Integridad de datos.** Si el 1m no cubre el rango, se descarta. El collector **nunca borra** para reparar: re-descarga de Bybit y UPSERT. **Única excepción [V7.2, p44 N-11, decisión del dueño 10-nov]:** la recarga explícita (borra solo velas que Bybit ya no tiene, tras re-verificar la serie completa) y la invalidación explícita (`/collector/invalidate`, `confirm=True`). Las dos pasan por `collectors/deletion_log.delete_bars`: una transacción con su registro en `ohlcv_deletions` (origen, motivo, rango y las velas borradas hasta 50.000, para restaurarlas).
 5. **Misma lógica en backtest, paper y real** (`strategy_params` + `build_strategy` + `compute_signals`). Toda lectura de velas pasa por `collectors/bars.py` (`bars_frame` / `sorted_records`): ordena por tiempo y **avisa** `[BARS]` si la base entregó algo desordenado; nunca corrige en silencio.
 6. **No romper el diseño.** Prohibido modificar Blade/HTML sin autorización explícita y maqueta aprobada.
 7. **Flujo git:** `git status` antes; tras un cambio probado, `git add -A && git commit`; si falla, `git checkout -- <archivo>` o el `.bak_NN`.

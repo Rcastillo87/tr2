@@ -7,7 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42, N-03 p43):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
+0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42, N-03 p43, N-11 p44):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
 1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
 2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
 3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
@@ -114,6 +114,14 @@
 - **Efecto:** las búsquedas nuevas pueden aceptar o rechazar distinto en el borde; las guardadas no se recalculan. La pantalla de resultados no muestra `cross` todavía (cambiar la vista requiere tu autorización y un mockup).
 - **Prueba:** `is_oos_attribution_test.py` (11 casos, incluidos los bordes «cierra justo en el corte» y «abre justo en el corte»; con el código anterior, **8 FALLOS** y se corta). Mutaciones: sin llevar al capital inicial (2), el último tramo también corta (4), el que cruza suma igual (3). `param_search_v3_test` sigue en TODO OK.
 - Instalación de p42 el 10-nov: la salida recibida fue la de una segunda corrida («YA APLICADO»); verificado después: `main` = `origin/main` = `c193ee3`.
+
+### N-11 — Cuándo y cómo borra el collector (p44, opción a)
+- **Antes:** el Prompt rector decía «el collector nunca borra», pero había dos caminos que borraban velas: la recarga (sobrantes que Bybit ya no tiene, tras re-verificar) y `/collector/invalidate` (un rango, con `confirm=True`). La recarga borraba en lotes de 1.000 **confirmados uno por uno**: una cancelación a mitad dejaba la mitad borrada y el mensaje decía «no se eliminó nada». Ninguno dejaba registro de lo borrado.
+- **Ahora:** una sola puerta, `collectors/deletion_log.delete_bars()`, con orígenes `reload` e `invalidate` únicamente. Lee las velas (o, con más de 50.000, su rango) y las borra con un `DELETE` simple, todo en **una transacción** junto con su registro en `ohlcv_deletions` (origen, motivo, cantidad, rango y las velas, para restaurarlas). Una cancelación o un error revierte todo. El mensaje de la recarga cortada dice lo que de verdad pasó. `ohlcv_data` es una hypertable comprimida: el diseño evita `DELETE … RETURNING` sobre chunks comprimidos.
+- `/collector/invalidate` recibe las fechas como instantes UTC con zona: `ohlcv_data.time` es `timestamptz`. Corrige el comentario de p41, que la llamaba «timestamp» y pasaba la fecha sin zona.
+- **Migración:** `database/sql-migrations/2026_11_10_01_ohlcv_deletions.up.sql` (idempotente; `.down.sql` la quita). La aplica el instalador antes de reiniciar el motor.
+- **Prueba:** `collector_deletion_test.py` (14 casos, con la base en memoria de `collector_reload_test`, que ahora tiene transacción con rollback real). Con el código anterior, **6 FALLOS**: un corte en el 2.º lote dejó **1.200 de 1.500** velas borradas y sin registro. Mutaciones: sin transacción (2), sin registro (5), cualquier origen (1), guardar siempre las velas (1).
+- Instalación de p43 el 10-nov: regresión 54 en TODO OK; motor reiniciado, tick de Paper 200, 0 errores; `main` = `352ca33`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

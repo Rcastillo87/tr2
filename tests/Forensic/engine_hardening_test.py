@@ -73,6 +73,23 @@ class Conn:
     def __init__(self, s):
         self.s = s
 
+    def transaction(self):                    # delete_bars (p44) borra dentro de una transacción
+        class _T:
+            async def __aenter__(self_):
+                return self_
+
+            async def __aexit__(self_, *e):
+                return False
+        return _T()
+
+    async def fetchval(self, sql, *a):
+        self.s.append(a)
+        return 0
+
+    async def fetch(self, sql, *a):
+        self.s.append(a)
+        return []
+
     async def execute(self, sql, *a):
         self.s.append(a)
         if 'INSERT INTO collector_configs' in sql:
@@ -170,7 +187,7 @@ calls.clear()
 asyncio.run(col.collector_invalidate(col.InvalidateRequest(symbol='BTCUSDT', interval='60', broker='bybit',
                                                            start_date='2026-03-01T00:00:00-05:00', confirm=True)))
 arg = calls[0][3] if calls and len(calls[0]) > 3 else None
-check('T4: invalidate compara la columna (UTC sin zona) con 05:00 UTC', arg == datetime(2026, 3, 1, 5, 0), arg)
+check('T4: invalidate compara la columna (timestamptz) con 05:00 UTC', arg == datetime(2026, 3, 1, 5, 0, tzinfo=timezone.utc), arg)
 
 print(f"\nRESULTADO: {'TODO OK' if fails == 0 else f'{fails} FALLO(S)'}")
 sys.exit(1 if fails else 0)

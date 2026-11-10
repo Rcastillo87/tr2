@@ -27,7 +27,7 @@ Plataforma de trading algorítmico sobre **Bybit (perpetuos USDT)**: backtesting
 | **Cero asumir** | Todo cambio se valida con logs, pruebas forenses o consultas a la base. Si no se probó, no funciona. |
 | **Backtest pesimista** | Peor escenario siempre: cero look-ahead, comisión 0.055 % por lado, slippage 0.05 % por lado, SL primero si en la misma vela se tocan SL y TP. |
 | **Cero parámetros quemados** | Todo valor de la UI viaja intacto al motor; los umbrales operativos viven en `config/` y `.env`. |
-| **Integridad de datos** | Si no hay velas de 1m que cubran el rango, no se usan. El collector **nunca borra** datos para "reparar". |
+| **Integridad de datos** | Si no hay velas de 1m que cubran el rango, no se usan. El collector **nunca borra** datos para "reparar"; solo la recarga y la invalidación explícitas borran, en una transacción y con registro (y copia de las velas) en `ohlcv_deletions`. |
 | **Misma lógica en todos lados** | Backtest, paper y real usan el mismo constructor de estrategia y el mismo `compute_signals`. Toda lectura de velas pasa por `collectors/bars.py` (orden garantizado, aviso `[BARS]` si la base entregó algo desordenado). |
 | **No romper el diseño** | Cambios de vistas solo con maqueta aprobada. |
 
@@ -198,6 +198,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 10-27 03 | Límites de riesgo por cuenta |
 | 10-27 04 | `funding_rates`, `funding_coverage` |
 | 10-27 05 | `paper_trades.funding` |
+| 11-10 01 | `ohlcv_deletions`: registro de cada borrado de velas (recarga / invalidación) con las velas borradas |
 | 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
 
 ```bash

@@ -53,23 +53,55 @@ class World:
         self.min_len = len(self.local)
         self.fail_at, self.status, self.empty_window, self.requests = None, None, None, 0
         self.write_ok, self.gate = True, None
+        self.deletions, self.fail_delete_after, self.deleted_rows = [], None, 0
 
 
 class Conn:
+    """Base en memoria: UPSERT del collector y el borrado de delete_bars (DELETE … RETURNING, transacción con
+    rollback real y registro en ohlcv_deletions, p44 N-11)."""
+
     def __init__(self, w):
         self.w = w
 
-    async def fetchval(self, sql, symbol, interval):
+    def transaction(self):
+        w = self.w
+
+        class _T:
+            async def __aenter__(self_):
+                self_.snap = (dict(w.local), list(w.deletions))
+                return self_
+
+            async def __aexit__(self_, et, e, tb):
+                if et is not None:                 # rollback
+                    w.local, w.deletions = dict(self_.snap[0]), list(self_.snap[1])
+                return False
+        return _T()
+
+    async def fetchval(self, sql, *args):
         return min(self.w.local) if self.w.local else None
 
-    async def fetch(self, sql, symbol, interval, start, end):
-        return [dict(time=t, **v) for t, v in sorted(self.w.local.items()) if start <= t <= end]
+    async def fetch(self, sql, *args):
+        w = self.w
+        if len(args) == 4 and isinstance(args[3], list):     # SELECT de las velas a borrar (delete_bars)
+            _broker, _symbol, _interval, times = args
+            return [dict(time=t, **w.local[t]) for t in sorted(times) if t in w.local]
+        symbol, interval, start, end = args
+        return [dict(time=t, **v) for t, v in sorted(w.local.items()) if start <= t <= end]
 
     async def execute(self, sql, *args):
         w = self.w
-        if sql.lstrip().upper().startswith('DELETE'):
-            _symbol, _interval, times = args
-            n = sum(1 for t in times if w.local.pop(t, None) is not None)
+        if 'INSERT INTO ohlcv_deletions' in sql:
+            w.deletions.append(args)
+            return 'INSERT 0 1'
+        if sql.lstrip().upper().startswith('DELETE'):       # delete_bars (broker, …) o el camino anterior a p44
+            times = args[-1]
+            n = 0
+            for t in times:
+                if w.local.pop(t, None) is not None:
+                    n += 1
+                    w.deleted_rows += 1
+                    if w.fail_delete_after is not None and w.deleted_rows >= w.fail_delete_after:
+                        raise asyncio.CancelledError()   # corte a mitad del borrado (acumulado entre lotes)
             w.min_len = min(w.min_len, len(w.local))
             return f'DELETE {n}'
         if not w.write_ok:

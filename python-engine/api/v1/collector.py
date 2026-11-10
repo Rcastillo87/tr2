@@ -281,20 +281,15 @@ async def collector_invalidate(req: InvalidateRequest):
             status_code=400,
             detail="Debes pasar confirm=True para ejecutar esta operación destructiva",
         )
+    from collectors.deletion_log import delete_bars
     try:
+        start = utc_datetime(req.start_date) if req.start_date else None   # ohlcv_data.time es timestamptz
+        end = utc_datetime(req.end_date) if req.end_date else None
         pool = await get_pool()
         async with pool.acquire() as conn:
-            where = "broker=$1 AND symbol=$2 AND interval=$3"
-            args = [req.broker, req.symbol, req.interval]
-            if req.start_date:
-                where += " AND time >= $4"
-                args.append(utc_datetime(req.start_date).replace(tzinfo=None))   # columna timestamp en UTC
-            if req.end_date:
-                where += f" AND time <= ${len(args)+1}"
-                args.append(utc_datetime(req.end_date).replace(tzinfo=None))
-
-            result = await conn.execute(f"DELETE FROM ohlcv_data WHERE {where}", *args)
-            deleted = int(result.split()[-1]) if result else 0
+            deleted = await delete_bars(conn, broker=req.broker, symbol=req.symbol, interval=req.interval,
+                                        source='invalidate', start=start, end=end,
+                                        reason=f"invalidación manual {req.start_date or 'inicio'} → {req.end_date or 'fin'}")
         await pool.close()
         return {
             "status": "ok",
@@ -308,13 +303,23 @@ async def collector_invalidate(req: InvalidateRequest):
 # ─────────────── Recarga = re-verificación completa sin borrar (C-10) ───────────────
 # Antes: DELETE de toda la serie y descarga desde cero dentro de la petición (un corte la dejaba vacía o a medias,
 # Paper/Real/backtests leían un hueco y Laravel cortaba a los 600 s). Ahora compara toda la serie contra Bybit en
-# segundo plano, corrige con UPSERT y elimina solo sobrantes confirmados al final. Una a la vez.
+# segundo plano, corrige con UPSERT y elimina solo sobrantes confirmados al final, en una transacción y con registro
+# en ohlcv_deletions (N-11). Una a la vez.
 _reload_state: dict = {'running': False, 'task': None, 'progress': None, 'result': None, 'error': None,
                        'started_at': None, 'finished_at': None}
 
 
 def _reload_public() -> dict:
     return {k: v for k, v in _reload_state.items() if k != 'task'}
+
+
+def _reload_deleted_note(st: dict) -> str:
+    """
+    Qué se borró si la recarga se corta. El borrado de sobrantes es una sola transacción (delete_bars): o quedó
+    entero y registrado (y el progreso ya lo informa) o no ocurrió.
+    """
+    n = int((st.get('progress') or {}).get('extra_deleted') or 0)
+    return f'ya se habían eliminado {n} sobrante(s) confirmados, registrados en ohlcv_deletions' if n else 'no se eliminó nada'
 
 
 async def _reload_job(symbol: str, interval: str) -> None:
@@ -332,11 +337,11 @@ async def _reload_job(symbol: str, interval: str) -> None:
         logger.info(f"[RELOAD] {symbol}/{interval}: {r['compared']} comparadas, {r['repaired']} corregidas, "
                     f"{r['extra_deleted']} sobrantes eliminadas, completa={r['complete']} {r['stopped'] or ''}")
     except asyncio.CancelledError:
-        st['error'] = 'interrumpida (el motor se detuvo); no se eliminó nada'
+        st['error'] = 'interrumpida (el motor se detuvo); ' + _reload_deleted_note(st)
         raise
-    except Exception as e:   # noqa: BLE001 - se informa en el estado; nada se borró
+    except Exception as e:   # noqa: BLE001 - se informa en el estado
         logger.error(f"[RELOAD] {symbol}/{interval} error: {e}")
-        st['error'] = f'{e}'[:300] + ' (no se eliminó nada)'
+        st['error'] = f'{e}'[:300] + ' (' + _reload_deleted_note(st) + ')'
     finally:
         st['running'], st['task'] = False, None
         st['finished_at'] = datetime.now(timezone.utc).isoformat()

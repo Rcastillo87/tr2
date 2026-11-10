@@ -20,6 +20,7 @@ from pathlib import Path
 
 from cli.collector_validate import FIELDS, SETTLE, current_bar, differs
 from collectors.broker_resolver import interval_delta
+from collectors.deletion_log import delete_bars
 from collectors.bybit_http import BybitRateLimited, get_json
 from collectors.ohlcv_collector import BYBIT_BASE_URL, BYBIT_LIMIT
 
@@ -161,7 +162,6 @@ async def run_audit(conn, collector, client, series: list[tuple[str, str]], now:
 
 
 # ─────────────── Re-verificación completa de UNA serie (botón «Recargar», C-10) ───────────────
-RELOAD_DELETE_BATCH = 1000
 
 
 async def reverify_series(pool, collector, client, symbol: str, interval: str, history_days: int,
@@ -232,12 +232,11 @@ async def reverify_series(pool, collector, client, symbol: str, interval: str, h
         out['complete'] = True
 
     if out['complete'] and out['unrepaired'] == 0 and to_delete:
+        # Una transacción con su registro (N-11): una cancelación aquí no deja la mitad borrada
         async with pool.acquire() as conn:
-            for i in range(0, len(to_delete), RELOAD_DELETE_BATCH):
-                res = await conn.execute(
-                    "DELETE FROM ohlcv_data WHERE broker = 'bybit' AND symbol = $1 AND interval = $2 "
-                    "AND time = ANY($3::timestamptz[])", symbol, interval, to_delete[i:i + RELOAD_DELETE_BATCH])
-                out['extra_deleted'] += int(str(res).split()[-1]) if res else 0
+            out['extra_deleted'] = await delete_bars(
+                conn, broker='bybit', symbol=symbol, interval=interval, source='reload', times=to_delete,
+                reason=f"recarga: {len(to_delete)} vela(s) que Bybit ya no tiene (serie re-verificada completa)")
     elif to_delete:
         out['extra_kept'] += len(to_delete)
     if out['complete'] and out['unrepaired']:
