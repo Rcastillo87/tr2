@@ -1,6 +1,7 @@
 # Fase 12 — Validez estadística de los resultados (opciones para decidir)
 
-> 2026-11-06 (Bogotá). Auditoría del 05-nov: NUEVO-04, NUEVO-05 y «otros riesgos estadísticos». **No son defectos de
+> 2026-11-06 (Bogotá), revisado el 10-nov (N-03 hecho aparte, ver §1). Auditoría del 05-nov: NUEVO-04, NUEVO-05 y
+> «otros riesgos estadísticos». **No son defectos de
 > código: son decisiones de diseño.** Cada una cambia los resultados de búsquedas y backtests, por eso nada se programa
 > sin la elección del dueño. Orden recomendado al final.
 
@@ -21,6 +22,7 @@ de configuraciones probadas, alguna pasa el filtro por suerte (sesgo de selecci�
 > tramo de elección, con precios posteriores al corte; ahora no cuenta en ninguno y se informa como `cross`; (2) la
 > simulación es continua y el PnL del último tramo venía escalado por el saldo ganado antes; ahora cada tramo se mide
 > con `pnl_pct × INITIAL`. El sesgo de selección múltiple de esta sección sigue pendiente (opciones A–C).
+> `segment_stats(trades, lo, hi, last)` ya admite cualquier corte: la opción A (tres tramos) solo agrega un corte.
 
 ## 2. Cartera con capital compartido (NUEVO-05)
 

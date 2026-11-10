@@ -173,11 +173,7 @@ GET  /                                                            → DashboardC
 GET  /paper-trading/                                              → PaperTradingController@index
 GET  /paper-trading/live                                          → PaperTradingController@live
 
-# paper-trading/configs (can:manageUsers)
-PATCH  /paper-trading/configs/{config}/toggle                     → PaperStrategyConfigController@toggleActive
-POST   /paper-trading/configs/implement                           → PaperStrategyConfigController@implement
-POST   /paper-trading/configs/                                    → PaperStrategyConfigController@store
-DELETE /paper-trading/configs/{config}                            → PaperStrategyConfigController@destroy
+# paper-trading/configs: retiradas [V7.3] (las configs las maneja StrategyConfigSync al guardar/detener un backtest)
 
 # collector/configs (can:manageUsers)
 GET    /collector/configs/                                        → CollectorConfigController@index
@@ -323,14 +319,7 @@ retest($config): JSON endpoint, returns exact params of an existing config for f
 ```
 
 ### `PaperStrategyConfigController`
-```php
-store() and implement() are near-IDENTICAL — same validation block, same create/update logic,
-  same metrics-update block. Only difference: different success message text.
-  ⚠️ Functionally interchangeable as currently written.
-
-Both: if request has config_id → UPDATE that row directly (bypasses implementFromBacktest's
-  duplicate-detection). If no config_id → calls implementFromBacktest().
-```
+Removed [V7.3]. Paper configs are created, updated and stopped by `App\Services\StrategyConfigSync` when a backtest is saved or stopped; deletion goes through `StrategyConfigSync::deleteBacktest` (CFG-05).
 
 ### `TradingController` (275 lines)
 ```php

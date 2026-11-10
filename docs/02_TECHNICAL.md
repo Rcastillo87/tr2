@@ -44,13 +44,8 @@ Definidas en `routes/web.php`, todas dentro de `Route::middleware(['auth', 'veri
 | GET | `/paper-trading/` | `paper-trading.index` | `PaperTradingController@index` |
 | GET | `/paper-trading/live` | `paper-trading.live` | `PaperTradingController@live` |
 
-### Configs de Paper Trading — middleware `can:manageUsers`, prefijo `paper-trading/configs`
-| Método | Ruta | Nombre | Controller@método |
-|---|---|---|---|
-| PATCH | `/paper-trading/configs/{config}/toggle` | `paper-trading.configs.toggle` | `PaperStrategyConfigController@toggleActive` |
-| POST | `/paper-trading/configs/implement` | `paper-trading.configs.implement` | `PaperStrategyConfigController@implement` |
-| POST | `/paper-trading/configs/` | `paper-trading.configs.store` | `PaperStrategyConfigController@store` |
-| DELETE | `/paper-trading/configs/{config}` | `paper-trading.configs.destroy` | `PaperStrategyConfigController@destroy` |
+### Configs de Paper Trading
+**Ya no existe [V7.3].** Las configs Paper se crean, actualizan y detienen con `App\Services\StrategyConfigSync` al guardar o detener un backtest (`BacktestingController`); el borrado pasa por `StrategyConfigSync::deleteBacktest` (CFG-05). Las rutas `paper-trading/configs/*` se retiraron.
 
 ### Data Collector — middleware `can:manageUsers`, prefijo `collector/configs`
 | Método | Ruta | Nombre | Controller@método |
@@ -426,15 +421,8 @@ Estándar de Laravel: `edit()`, `update()` (resetea `email_verified_at` si cambi
 - **`live($request)`** — endpoint JSON liviano usado para refrescar precios sin recargar la página completa; devuelve solo `id, current_price, floating_pnl_pct` de las posiciones abiertas.
 - `getLiveOpenTrades()` (privado) — wrapper HTTP con `try/catch` hacia Python, devuelve array vacío en caso de fallo.
 
-### `PaperStrategyConfigController` (170 líneas)
-- **`toggleActive($config)`** — autoriza `manageUsers`, invierte `active`.
-- **`store($request)`** y **`implement($request)`** — **prácticamente idénticos** (mismo bloque de validación, misma lógica de creación/actualización, mismo bloque masivo de actualización de métricas). La única diferencia observable es el mensaje de éxito devuelto (`store` dice "creada", `implement` dice "implementada en Paper Trading") — funcionalmente intercambiables tal como están escritos hoy. Ambos:
-  1. Validan un payload extenso: `config_id` opcional, `strategy_name, symbol, interval, params` (JSON como string) requeridos, y un conjunto largo de métricas/estrellas opcionales.
-  2. Decodifican `params` desde JSON, devuelven error si no es JSON válido.
-  3. **Si viene `config_id`** — actualiza esa fila existente directamente (`params`, `active=true`), sin pasar por la lógica de duplicados de `implementFromBacktest()`.
-  4. **Si no viene `config_id`** — llama `PaperStrategyConfig::implementFromBacktest()` (con su lógica de detección de duplicados exactos descrita en la sección 3).
-  5. En ambos casos, hace un segundo `update()` masivo con todos los campos de métricas/estrellas/rango de fechas del backtest que originó la implementación.
-- **`destroy($config)`** — autoriza `manageUsers`, borra la fila.
+### `PaperStrategyConfigController`
+**Ya no existe [V7.3].** Las configs Paper se crean, actualizan y detienen con `App\Services\StrategyConfigSync` al guardar o detener un backtest (`BacktestingController`); el borrado pasa por `StrategyConfigSync::deleteBacktest` (CFG-05).
 
 ### `TradingController` (275 líneas) — el más grande junto a Backtesting
 - **`index($request)`** — vista principal de Trading Real, estructuralmente similar a `PaperTradingController::index()` pero con varias diferencias importantes:

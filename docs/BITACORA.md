@@ -7,18 +7,15 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-0. **Auditoría del 07-nov (3.er ciclo, hechos: N-05 p33, N-01 p34, N-02 p35, N-07 p36, N-06/N-16 p37, N-09 p38, N-10 p39, CFG-05 p40b, N-12/N-14/N-15 p41, N-04 p42, N-03 p43, N-11 p44, N-08 p45):** fixes uno por uno desde p33, del más crítico al menos (sección «Auditoría del 07-nov» abajo). Orden: N-05 → N-01 → N-02 → N-07 → N-06/N-16 → N-09 → N-10 → CFG-05 → N-12/N-14/N-15; N-03 y N-11 esperan decisión del dueño; N-13 cerrado por análisis.
-1. **Primero:** revisión automática de lotes solapados dos veces al día, después de `policy_compression` (detección: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`; arreglo: `decompress_chunk` + `compress_chunk` solo de los fragmentos afectados; dejar registro y aviso en la campana).
-2. Comparar paper contra backtest con trades reales: **herramienta lista (p28)**. Correr `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades y registrar el resultado aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
-3. Funding en pantalla (diseño "TR2 — Funding en pantalla").
-4. Slippage de altcoins en demo (SOL, SUI, LINK).
-5. Reescribir `docs/01`, `02` y `03` (el 06-nov solo se agregaron las notas [V7.2]; lo vigente está en `README.md`, `PROMPT_MAESTRO.md` §7 y esta bitácora).
-5b. **Fase estadística:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (orden recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
-5c. **Horizon como root:** pasar `trading2-horizon` a `User=tr2` tras revisar qué archivos de `storage/` y `bootstrap/cache` quedaron con root como dueño.
-6. **Auditoría externa (31-oct y 05-nov): fixes 1 a 11 hechos (p19–p29).** Para el auditor: `docs/CERTIFICACION_AUDITORIA.md` (faltan los textos de REAL-05 y CFG-01, 02, 06–09). Antes: **`docs/PENDIENTES_AUDITORIA.md`** (11 pendientes con prioridad, estado y plan; C-12 diagnosticado y con plan listo). Historial de la lista: ~~`allow_short` en Paper y Real (BP-01/REAL-03)~~ hecho 03-nov, ~~cierre por señal opuesta en **Real** (BP-02)~~ hecho 03-nov (motor reiniciado 15:56 UTC: la cuenta 11 ya se puede reanudar), ~~aviso al dueño si falla `set_trading_stop` (REAL-01)~~ hecho 03-nov, ~~REAL-02~~ se mantiene por diseño, ~~REAL-06~~ hecho 03-nov, ~~REAL-07~~ correcto por diseño + paridad del tope, ~~REAL-08~~ falla segura + aviso claro (03-nov, p07), ~~REAL-09~~ permisos de la clave (03-nov, p08), ~~REAL-10~~ ya homologado + constante compartida, ~~REAL-11~~ lote real con caché (03-nov, p09), ~~REAL-12 a REAL-15~~ por diseño / informativos, IG retirado (03-nov, p10). **Real cerrado.** Collector: ~~C-01~~ una sola fuente de series (03-nov, p11), ~~C-02~~ reintentos acotados (03-nov, p12), ~~C-03~~ auditoría histórica rotativa (03-nov, p13), ~~C-04~~ barrera de velas inválidas (03-nov, p14), ~~C-05~~ carga por ventanas sin bloquear (03-nov, p15; resuelve también buena parte de C-09), ~~C-06~~ vigilante de la validación diaria (03-nov, p16), ~~C-07~~ por diseño, ~~C-08~~ ya resuelto en la pantalla, ~~C-09~~ cerrado con datos reales, ~~C-10~~ recarga sin borrar (03-nov, p17), ~~C-11~~ en vivo solo Bybit (03-nov, p18); sigue C-12, luego Backtest/Paper (BP-03 a BP-07, sondas A/B) y formulario (en revisión con el dueño).
-7. **Seguridad:** `python-engine/.env` y `.env` tienen permisos 664 pero `/home/tr2` es 770 (`tr2:tr2`), así que otros usuarios no llegan a ellos y `tr2` ya lee las mismas claves en el `.env` de Laravel. **No poner 600** (PHP no podría leer su `.env`). Sin acción. El dueño pondrá el repo en privado (estuvo público solo para validar).
-8. ~~**Entradas de Paper distintas del motor (sondas A y B)**~~ hecho 05-nov (p19, NUEVO-03 / BP-08 / BP-05, también en Real).
-- **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por el contenido de `docs/PROMPT_MAESTRO.md` (**V7.2**, 06-nov). No se puede hacer por script.
+**Lista vigente: `docs/PENDIENTES_AUDITORIA.md`.** Las tres rondas de auditoría están resueltas en código (estado de los 70 hallazgos en `docs/CERTIFICACION_AUDITORIA.md`).
+1. **Respaldo de la base** fuera del VPS: confirmar que existe y que se puede restaurar.
+2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades; registrar aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
+3. **Fase 12:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
+4. **Infraestructura:** `trading2-horizon` como `User=tr2` (revisar qué de `storage/` y `bootstrap/cache` quedó con dueño root); revisión automática de lotes solapados tras `policy_compression` (`/root/patches/batches/detect.sql`); regenerar `database/schema/pgsql-schema.sql` (desactualizado).
+5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; decidir si borrar una estrategia debe bloquearse como un backtest (cascada).
+6. **Limpieza:** TP2–TP4 (REAL-05); reescribir `docs/01–03`; slippage de altcoins en demo.
+7. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
+- **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por `docs/PROMPT_MAESTRO.md` (**V7.3**, 10-nov). No se puede hacer por script.
 
 ---
 
@@ -129,6 +126,11 @@
 - La instalación lista, solo como información, las estrategias que guardan números como texto en su config (el formulario los reenviaría como número y serían rechazados).
 - **Prueba:** `strategy_config_types_test.php` (PHP puro, en la regresión: 14 casos; **14 FALLOS** con el código anterior). Mutaciones: sin revisar booleanos (2), aceptar números en texto (3), no bajar a objetos anidados (2). `config_merge_test.php` (F-05) sigue en TODO OK.
 - Instalación de p44 el 10-nov: regresión 55 en TODO OK; migración `ohlcv_deletions` aplicada (12 columnas); motor reiniciado, tick de Paper 200, 0 errores; `main` = `c45cd42`.
+
+### Cierre del ciclo y documentación (p46)
+- **Resultado del 3.er ciclo (09–10 nov):** 16 hallazgos nuevos validados contra el código y en la base: 15 corregidos (p33–p45, uno por parche, cada uno con prueba antes/después, mutaciones y regresión) y N-13 cerrado por análisis. Las decisiones del dueño fueron N-03 (a) y N-11 (a). Un parche (p40) lo revirtió su propia prueba de integración y salió corregido como p40b. Regresión: de 43 (p32) a **56** (45 Python + 11 PHP), más 4 pruebas de integración contra la base real.
+- **Documentación:** `CERTIFICACION_AUDITORIA.md` reescrita (70 hallazgos: los 54 originales clasificados, sin «falta el texto», + N-01 a N-16 con parche, commit y prueba); `PENDIENTES_AUDITORIA.md` pasa a ser la lista vigente; `PROMPT_MAESTRO.md` → **V7.3** (fuentes únicas nuevas, motor con 1 worker obligatorio, pruebas de integración en la instalación, lecciones); `FASE12` revisado; `README` (pruebas nuevas, regresión 45 + 11, documentos de auditoría, volcado del esquema desactualizado); `02_TECHNICAL` y `03_AI_CONTEXT` sin el `PaperStrategyConfigController` retirado.
+- Instalación de p45 el 10-nov: regresión 56 en TODO OK; Horizon reiniciado (6 procesos); ninguna estrategia guarda números como texto en su config; `main` = `d22b684`.
 
 ## 2026-11-09 (Bogotá) — /trading caía con error 500: `[]->firstWhere()` en la vista
 

@@ -75,6 +75,7 @@ app/
   Notifications/SystemAlert.php            aviso en la plataforma (canal database)
 config/trading.php                         URL del motor, clave interna, vigilante
 database/sql-migrations/                   migraciones SQL numeradas (up/down) — se aplican a mano, en orden
+database/schema/pgsql-schema.sql           volcado viejo del esquema: DESACTUALIZADO (FK, CHECK y columnas: consultar la base)
 ops/                                       dbsql.sh, backtest_from_search.php, logrotate-tr2.conf
 python-engine/
   main.py · start.py                       FastAPI (uvicorn 127.0.0.1:8002)
@@ -88,9 +89,12 @@ python-engine/
 resources/views/                           Blade (param-search/, notifications/, layouts/bell*)
 routes/web.php · routes/console.php        rutas y tareas programadas
 tests/Forensic/                            pruebas forenses (ver §7)
-docs/PROMPT_MAESTRO.md                     instrucciones para quien retome el proyecto (V7.1)
+docs/PROMPT_MAESTRO.md                     instrucciones para quien retome el proyecto (V7.3)
 docs/BITACORA.md                           bitácora de cambios (incluye base de datos y servidor)
-docs/01–03_*.md                            documentación de julio 2026 (secciones clave actualizadas en V7.1)
+docs/CERTIFICACION_AUDITORIA.md            estado de los 70 hallazgos de las auditorías externas (parche y prueba de cada uno)
+docs/PENDIENTES_AUDITORIA.md               pendientes vigentes (empezar aquí)
+docs/FASE12_ESTADISTICA.md                 decisiones estadísticas pendientes del dueño
+docs/01–03_*.md                            documentación de julio 2026 (secciones clave actualizadas hasta V7.3)
 docs/archive/                              documentos y resultados viejos
 ```
 
@@ -311,8 +315,22 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `funding_refresh_test.py`, `funding_alert_test.php` | Funding al día y aviso de atraso |
 | `request_rules_test.py`, `config_merge_test.php` | Validación de parámetros (Laravel = Python) y fusión del JSON editado |
 | `compare_tool_test.py` | Comparador Paper vs backtest |
+| `real_close_settle_test.py`, `real_close_accounting_test.py` | Cierre Real liquidado con el closed-pnl de Bybit (neto, costos, funding, hora); `pnl_pct` neto |
+| `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
+| `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
+| `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `strategy_label_test.php`, `strategy_identity_test.php`* | Configs identificadas por id, no por etiqueta |
+| `flag_normalization_test.py` | Flags booleanos normalizados (`"false"` en texto no activa un filtro) |
+| `backtest_delete_rules_test.php`, `backtest_delete_test.php`* | Borrado seguro de un backtest y su auditoría |
+| `engine_hardening_test.py` | Clave interna que falla cerrada; `add-symbol` validado; fechas en UTC |
+| `quality_gate_test.py` | «Lista para Paper» = métricas + calidad de datos/costos |
+| `is_oos_attribution_test.py` | Tramos de la búsqueda sin trades que cruzan el corte y al capital inicial |
+| `collector_deletion_test.py` | El collector borra solo por recarga/invalidación, en una transacción y con registro |
+| `strategy_config_types_test.php` | El JSON editado de la estrategia conserva los tipos de su config |
 
-Regresión oficial (36 Python + 6 PHP): lista en `docs/PENDIENTES_AUDITORIA.md` §1.
+\* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
+
+Regresión oficial (45 Python + 11 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
@@ -347,5 +365,6 @@ Regresión oficial (36 Python + 6 PHP): lista en `docs/PENDIENTES_AUDITORIA.md` 
 - Funding en pantalla (diseño listo).
 - Medir slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
 - Reescribir `docs/01–03` (julio 2026).
+- Lista completa y orden: `docs/PENDIENTES_AUDITORIA.md`.
 
 Bitácora de decisiones, commits y cambios de base/servidor: `docs/BITACORA.md`.

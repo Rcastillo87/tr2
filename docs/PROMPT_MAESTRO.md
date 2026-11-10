@@ -1,8 +1,8 @@
-# PROMPT MAESTRO V7.2 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.3 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.2 · 2026-11-06 · Reemplaza a la V7.1 (agrega el protocolo de instalación sin subida de archivos, los cambios p19–p30 y sus lecciones).
-> Complementos: `README.md` (cómo funciona y cómo se opera) y `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**).
+> Versión 7.3 · 2026-11-10 · Reemplaza a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
+> Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría) y `docs/PENDIENTES_AUDITORIA.md` (qué sigue).
 
 ---
 
@@ -46,7 +46,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 | Raíz | `/home/tr2/htdocs/tr2.srv685835.hstgr.cloud` |
 | Web | Laravel 13 · PHP 8.4 · Blade + Tailwind (ya compilado) · SweetAlert2 |
 | Colas | Horizon + Redis. `supervisor-1` (`high`, `default`) y `supervisor-research` (`research`, 1 proceso) |
-| Motor | FastAPI · Python 3.12 · `python-engine/` · `127.0.0.1:8002`, 1 worker |
+| Motor | FastAPI 0.115.0 · Python 3.12 · `python-engine/` · `127.0.0.1:8002`, **1 worker obligatorio** (el turno exclusivo por cuenta de Real es un candado en memoria, N-07). Sin `INTERNAL_API_KEY` responde 503 a todo salvo `/health` |
 | Base | PostgreSQL 16 + TimescaleDB 2.27 (`ohlcv_data` comprimida: fragmentos de 7 días, segmentby broker/symbol/interval, política `compress_after` 14 días cada 12 h). Cache de Laravel: `database` |
 | Ajustes de la base (fuera de git) | `ALTER DATABASE trading2 SET timescaledb.enable_ordered_append = off` y `SET plan_cache_mode = force_custom_plan`; `maintenance_work_mem = 256MB`, `autovacuum_work_mem = 128MB` (`ALTER SYSTEM`). Ver `docs/BITACORA.md` |
 | Universo | 12 monedas × 7 temporalidades (1m, 5m, 15m, 1h, 2h, 4h, 1D): BTC, ETH, SOL, XRP, ZEC, HYPE, ENA, DOGE, SUI, NEAR, 1000PEPE, LINK. BNB fuera del collector |
@@ -60,7 +60,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Horizon: `systemctl restart trading2-horizon` — ⚠️ **mata la búsqueda que esté corriendo**. El servicio corre como **root**: `php artisan horizon:terminate` lanzado como `tr2` no le llega (sin error). Verificar con `systemctl show trading2-horizon -p ActiveEnterTimestamp`. Antes, comprobar:
   `bash ops/dbsql.sh -c "SELECT id, status FROM param_search_runs WHERE status IN ('queued','running');"`
 
-**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`.
+**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`, `strategy_config_changes` (auditoría de configs), `ohlcv_deletions` (registro de velas borradas), `funding_rates`. **El volcado `database/schema/pgsql-schema.sql` está desactualizado:** para FK, CHECK y columnas, consultar `pg_constraint` / `information_schema`.
 
 ---
 
@@ -69,7 +69,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 1. **Cero asumir.** Todo cambio se valida con logs, pruebas forenses o consultas. Si no se probó, no funciona.
 2. **Simulación pesimista.** Peor escenario: cero look-ahead, comisión 0.055 % por lado, slippage 0.05 % por lado, SL primero si SL y TP se tocan en la misma vela.
 3. **Cero parámetros quemados.** Todo valor de la UI viaja intacto al motor; umbrales operativos en `config/` + `.env`.
-4. **Integridad de datos.** Si el 1m no cubre el rango, se descarta. El collector **nunca borra** para reparar: re-descarga de Bybit y UPSERT. **Única excepción [V7.2, p44 N-11, decisión del dueño 10-nov]:** la recarga explícita (borra solo velas que Bybit ya no tiene, tras re-verificar la serie completa) y la invalidación explícita (`/collector/invalidate`, `confirm=True`). Las dos pasan por `collectors/deletion_log.delete_bars`: una transacción con su registro en `ohlcv_deletions` (origen, motivo, rango y las velas borradas hasta 50.000, para restaurarlas).
+4. **Integridad de datos.** Si el 1m no cubre el rango, se descarta. El collector **nunca borra** para reparar: re-descarga de Bybit y UPSERT. **Única excepción [V7.3, p44 N-11, decisión del dueño 10-nov]:** la recarga explícita (borra solo velas que Bybit ya no tiene, tras re-verificar la serie completa) y la invalidación explícita (`/collector/invalidate`, `confirm=True`). Las dos pasan por `collectors/deletion_log.delete_bars`: una transacción con su registro en `ohlcv_deletions` (origen, motivo, rango y las velas borradas hasta 50.000, para restaurarlas).
 5. **Misma lógica en backtest, paper y real** (`strategy_params` + `build_strategy` + `compute_signals`). Toda lectura de velas pasa por `collectors/bars.py` (`bars_frame` / `sorted_records`): ordena por tiempo y **avisa** `[BARS]` si la base entregó algo desordenado; nunca corrige en silencio.
 6. **No romper el diseño.** Prohibido modificar Blade/HTML sin autorización explícita y maqueta aprobada.
 7. **Flujo git:** `git status` antes; tras un cambio probado, `git add -A && git commit`; si falla, `git checkout -- <archivo>` o el `.bak_NN`.
@@ -100,6 +100,8 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Bloques largos **como archivo** (SendUserFile), no pegados en el chat: el copiado manual metió números de línea en un base64.
 - **Todo script que el dueño pegue va envuelto en `( … )`**: un `set -euo pipefail` o un `exit` pegados directo en la terminal cierran su sesión SSH (pasó el 2026-10-27). Dentro de la subshell sí se usa `set -euo pipefail`.
 - Instalaciones largas: con `rollback()` que restaura los originales si una prueba falla después de aplicar.
+- **Pruebas de integración en la instalación [V7.3]:** lo que solo se puede probar con Laravel y la base real corre en el paso posterior del instalador, como el dueño de `storage/`, **dentro de una transacción que se revierte** y con `Http::fake` (sin motor ni Bybit). Incluye un control con el criterio anterior que debe reproducir el bug. Si no da TODO OK, el instalador revierte y reinicia Horizon con el código anterior (p40 se revirtió así, correctamente).
+- «YA APLICADO» no informa el push: pedir `git log --oneline -2; git status -sb | head -1; git rev-parse --short origin/main` y usar ese SHA como base del siguiente instalador.
 - La **salida esperada** se escribe sin bloque de código (un bloque parece un comando y se llegó a pegar en la terminal).
 
 ### 6.2 Parchar
@@ -136,8 +138,8 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
 | Backtesting | Motor V3 honesto y 4–5× más rápido (resultados idénticos a la referencia `tests/Forensic/reference/engine_v3_ref.py`); 24 meses calendario; 1m si cubre; **funding de Bybit** por trade (pesimista en bordes); estrellas `RatingHelper`. Auto-Sync a Paper/Real (`StrategyConfigSync`). |
 | Filtros de apertura (v2) | Régimen con **regímenes permitidos** elegibles (`allowed_regimes`; sin enviar = los de la estrategia) y aviso si no bloquea nada; volumen; macro H4 (EMA 50); **tendencia de BTC** (EMA 50 H4 de BTC, solo altcoins). Horario/fin de semana existen en el motor pero no en la UI (la auditoría no los justificó). |
 | Búsqueda de configuración (v3) | `cli/param_search.py` + `ParamSearchService`. Enfoque ganancia / win rate (PF ≥ 1,2) / consistencia. **Gana** = ≥ 30 operaciones y gana en los primeros 2/3 **y** en el último 1/3. Tramos sin contaminación [p43 N-03]: en los 2/3 cuentan solo trades que abren **y cierran** antes del corte; el que cruza el corte no cuenta en ninguno (`cross`); el PnL de cada tramo va al capital inicial (`pnl_pct × INITIAL`). Por moneda (hasta 5, ranking propio) o por temporalidad (≥ 3/4 de las monedas, métricas de todas). Prueba volumen ×0,8/1,0/1,2/1,5 y tendencia de BTC; no prueba régimen si la estrategia permite los 3. Historial con monedas; eliminar (admin). |
-| Paper | Tick cada minuto, mismo motor, funding al cerrar. 3 configs activas (VWAP Tendencia H4: SUI #54, ZEC #55, SOL #56; backtest #86). |
-| Real | Bybit, demo validada. `orderLinkId` idempotente, `pending_open` recuperable, avisos de broker al dueño, límites de riesgo por cuenta (pérdida del mes, trades abiertos), conciliación cada 5 min, circuit breaker, kill switch manual. |
+| Paper | Tick cada minuto, mismo motor, funding al cerrar. Las configs activas cambian: consultarlas (`/paper-trading` o `paper_strategy_configs WHERE active`). Identidad = id (la etiqueta «estrategia — símbolo intervalo» no es única, N-09). |
+| Real | Bybit, demo validada (cuenta 11). `orderLinkId` idempotente, `pending_open` recuperable también en cuentas pausadas, avisos de broker al dueño, límites de riesgo por cuenta (pérdida del mes, trades abiertos), conciliación cada 5 min, circuit breaker, kill switch manual. Tick, circuit breaker y conciliación con **turno exclusivo por cuenta**; cierres liquidados con el **closed-pnl de Bybit** (neto, costos, funding y hora reales; `pnl_pct` neto). |
 | Data Collector | 12 monedas × 7 temporalidades = 84 series, idénticas a Bybit. Vigilante cada 5 min (sin Horizon), validación + reparación diaria 04:00 Bogotá. |
 | Avisos | Campana 🔔 + `/avisos`. Sistema → admin; broker → dueño de la cuenta (eventos pendientes de definir). |
 
@@ -164,6 +166,15 @@ Detalle, pruebas y decisiones en `docs/BITACORA.md`; estado de cada hallazgo en 
 - **Validación de parámetros (p27, p29):** reglas únicas en `python-engine/backtesting/request_rules.json` (rangos, enteros, modos, intervalos del motor, ADX lateral ≤ tendencia, `stepped` necesita `trailing_steps`), aplicadas por `BacktestPayload::validate` (Laravel, mensaje en español) y `BacktestRequest` (Python, 422).
 - **JSON de la estrategia editado (p29):** se fusiona por clave de primer nivel (`BacktestPayload::mergeConfig`); antes reemplazaba todo.
 - **Comparador (p28):** `tools/analysis/compare_paper_vs_backtest.py --config <id>`: parámetros congelados del snapshot, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
+
+### Cambios del 09–10 nov 2026 (p32–p45, auditoría del 07-nov) **[V7.3]**
+Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `docs/CERTIFICACION_AUDITORIA.md`.
+- **Fuentes únicas nuevas (usarlas, no duplicar):** `RealTrade::RECONCILE_STATUSES` (estados que la reconciliación revisa y que bloquean borrar), `App\Support\StrategyLabel` (etiqueta y patrón LIKE escapado), `close_figures()` (cifras de un cierre Real), `_exclusive()` (turno por cuenta en `api/v1/real_trading.py`), `collectors/deletion_log.delete_bars()` (único borrado de velas), `api/internal_auth.py` (clave interna), `StrategyConfigSync::deleteBacktest()` (borrado de backtest), `BacktestPayload::configOverrideError()` (tipos del JSON de la estrategia).
+- **Real:** cierre con la posición ya cerrada en Bybit → closed-pnl, nunca `closed` sin cifras (p33); `pending_open` en la conciliación aunque la cuenta esté pausada (p34); turno exclusivo por cuenta, cierre **reclamado** (`open` → `pending_close` solo si sigue `open`) y UPDATE de estado con el estado esperado (p36); cierre normal liquidado con el closed-pnl (3 intentos; si no, comisión estimada y hora de la orden) y `pnl_pct` neto (p37).
+- **Paper:** final sin velas de 1m con la serie detenida > 26 h → velas del intervalo con SL primero, vela a vela (p35). Flags booleanos de la estrategia con `as_flag` (p39).
+- **Configs:** identidad por id en rename, borrado de estrategia y filtros (p38); borrar un backtest se bloquea con Paper abierto o Real por reconciliar y deja auditoría `deleted` con la identidad en `new_params.deleted` (FK `SET NULL`, p40b).
+- **Backtest y búsqueda:** `ready_for_paper` = métricas (`passed`) **y** calidad (`quality_ok`: sin slippage 0, comisión menor que la taker, falta de funding ni velas incompletas) (p42); tramos en/fuera de muestra sin trades que cruzan el corte y al capital inicial (p43); JSON de la estrategia validado por tipos (p45).
+- **Collector y motor:** borrado solo por recarga/invalidación con registro (p44); clave interna que falla cerrada, `add-symbol` validado, fechas sin zona = UTC (p41). `ohlcv_data.time` es `timestamptz`: pasar fechas con zona.
 
 ---
 
@@ -196,23 +207,27 @@ Detalle, pruebas y decisiones en `docs/BITACORA.md`; estado de cada hallazgo en 
 | Regla que compara contra `exit_time` | Exige que `exit_time` sea la hora del evento, no la del proceso. |
 | Mutación no detectada | O falta un caso (agregarlo) o es equivalente (simplificar el código). |
 | `!~` en SQL pegado en bash | `set +H` (expansión de historial). |
+| La prueba buscaba la auditoría por un id que la FK `SET NULL` anula | Antes de diseñar sobre una FK, leerla en la base (`pg_constraint`): el volcado del repo está desactualizado. Lo que debe sobrevivir a un borrado va en el propio registro (lápida). |
+| La app no arrancaba en local (`add_event_handler`) | El entorno de pruebas debe tener las versiones del servidor (`fastapi==0.115.0`). |
+| Esperas de 0 s en una prueba de concurrencia | `real_parity_test` acelera `asyncio.sleep` al importarse: guardar el original antes si los tiempos importan. |
+| Mutación «sin detectar» por el filtro de salida | En las mutaciones, filtrar `^RESULTADO` (un `grep Error` atrapó «ValueError» de una línea PASS). |
+| Mutación de un archivo nuevo que no se pudo restaurar | Copiar los archivos nuevos al scratchpad antes de mutarlos (`git checkout` no los restaura). |
+| `DELETE … RETURNING` sobre una hypertable comprimida | Evitarlo: leer con SELECT y borrar con un DELETE simple en la misma transacción. |
+| Candado en memoria con varios procesos | Solo vale con un proceso: el instalador verifica que el motor no tenga `--workers` > 1. |
 
 ---
 
 ## 9. Pendientes (orden sugerido)
 
-> **Próxima sesión: empezar por el 1.** Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.2 (si no, pedirle que las reemplace por este documento).
+> **Próxima sesión:** la lista vigente es `docs/PENDIENTES_AUDITORIA.md`. Antes, confirmar con el dueño que las
+> instrucciones del proyecto en claude.ai ya son esta V7.3 (si no, pedirle que las reemplace por este documento).
 
-1. **Revisión automática de lotes solapados** dos veces al día, tras `policy_compression` (detección en `/root/patches/batches/detect.sql`; arreglo = rehacer solo los fragmentos afectados).
-2. ~~Reconciliación paper vs backtest~~: herramienta lista (p28); falta correrla sobre las configs activas y registrar el resultado.
-2b. Fase estadística: elegir opciones en `docs/FASE12_ESTADISTICA.md`.
-2c. `trading2-horizon` como `tr2` en vez de root (revisar antes qué necesita root).
-2d. Auditoría: `docs/CERTIFICACION_AUDITORIA.md` (faltan los textos de REAL-05 y CFG-01, 02, 06–09).
-3. Funding en pantalla (diseño "TR2 — Funding en pantalla" listo, pospuesto por el dueño).
-4. Slippage de altcoins en demo (`real_demo_roundtrip.py` con SOL, SUI, LINK).
-5. Etiqueta "código desactualizado" en paper (requiere maqueta).
-6. Reescribir `docs/01_GENERAL.md`, `02_TECHNICAL.md`, `03_AI_CONTEXT.md` (de julio; en V7.1 solo se actualizaron las secciones afectadas).
-7. El dueño rehace las búsquedas desde cero con los cambios (las anteriores se borraron).
+1. Respaldo de la base fuera del VPS (confirmar que existe y se restaura).
+2. Correr el comparador Paper ↔ backtest sobre las configs activas y registrar el resultado.
+3. Fase 12: elegir opciones en `docs/FASE12_ESTADISTICA.md`.
+4. `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema.
+5. Pantallas con maqueta: `cross` en la búsqueda, separación maestra/config/suscripción, funding, «código desactualizado».
+6. Limpieza: TP2–TP4; reescribir `docs/01–03`.
 
 ---
 
