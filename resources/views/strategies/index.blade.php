@@ -73,6 +73,7 @@
     @if($sbAnyId)
         <button type="button" onclick="sbOpenAll({{ $sbActiveCount }}, {{ $sbAnyId }})" class="btn-search px-4 py-2 rounded-lg text-sm font-medium text-white text-center whitespace-nowrap">🔍 Buscar en todas las estrategias</button>
     @endif
+    <a href="{{ route('backtesting.saved') }}" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors text-center whitespace-nowrap" style="background:#374151; color:#e5e7eb;">Backtests guardados</a>
     <a href="{{ route('strategies.create') }}" class="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors text-center whitespace-nowrap" style="background:#3b82f6; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);">
         + Nueva Estrategia
     </a>

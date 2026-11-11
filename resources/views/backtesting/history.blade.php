@@ -31,7 +31,6 @@
             $consist = (float)($metrics['consist_pct'] ?? 0);
 
             if ($wr > 0 && $wr <= 1) $wr *= 100;
-            if (abs($ret) > 0 && abs($ret) <= 1 && $ret != 0) $ret *= 100;
             if ($consist > 0 && $consist <= 1) $consist *= 100;
 
             $rating = isset($metrics['rating']) ? (float)$metrics['rating'] : \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $ret, $consist);

@@ -40,6 +40,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/data-range/{symbol}/{interval}', [BacktestingController::class, 'dataRange'])->name('data-range');
         Route::post('/export-excel',                  [BacktestingController::class, 'exportExcel'])->name('export-excel');
                 Route::get('/history/{strategy}',             [BacktestingController::class, 'history'])->name('history');
+        Route::get('/guardados',                      [BacktestingController::class, 'saved'])->name('saved');
         Route::post('/backtest/{backtest}/implement-paper', [\App\Http\Controllers\BacktestingController::class, 'implementPaper'])->name('implement-paper');
         Route::post('/backtest/{backtest}/stop-paper', [\App\Http\Controllers\BacktestingController::class, 'stopPaper'])->name('stop-paper');
         Route::delete('/backtest/{backtest}', [\App\Http\Controllers\BacktestingController::class, 'destroyBacktest'])->name('destroy-backtest');

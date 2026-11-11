@@ -409,6 +409,23 @@ class BacktestingController extends Controller
     }
 
 
+    /** RQ-01.4: backtests guardados de todas las estrategias con su estado en Paper. */
+    public function saved(Request $request, \App\Services\SavedBacktests $saved)
+    {
+        Gate::authorize('viewAnalysisTools');
+        $filters = \App\Services\SavedBacktests::filters($request->query());
+        $rows = $saved->page($filters, (int) $request->query('page', 1));
+        $strategies = Strategy::orderBy('name')->get(['id', 'name']);
+        $totals = DB::selectOne("SELECT count(*) AS total,
+                count(*) FILTER (WHERE EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id AND c.active)) AS active,
+                count(*) FILTER (WHERE EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id)
+                                   AND NOT EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id AND c.active)) AS stopped
+            FROM backtests b");
+        $canSearch = Gate::allows('manageUsers');
+
+        return view('backtesting.saved', compact('rows', 'filters', 'strategies', 'totals', 'canSearch'));
+    }
+
     public function destroyBacktest(Backtest $backtest, StrategyConfigSync $sync)
     {
         Gate::authorize('viewAnalysisTools');

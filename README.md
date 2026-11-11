@@ -335,11 +335,12 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `backtest_origin_test.php`, `backtest_origin_save_test.php`* | Origen del backtest (manual / búsqueda), fijado al crear; el navegador no puede declararlo (RQ-01.3) |
 | `search_create_rules_test.php`, `search_create_guard_test.php`* | «Crear en historial»: fila disponible otra vez si se borró su backtest; sin duplicados por doble clic (RQ-01.2) |
 | `rq01_screens_static_test.php`, `rq01_screens_test.php`* | Pantallas RQ-01: Trades/mes y Paper en Estrategias, origen y ancla en Historial, insignias de la búsqueda |
+| `saved_backtests_test.php`, `saved_backtests_screen_test.php`* | Backtests guardados: filtros en SQL, estado y trades de Paper sin N+1, cifras contra SQL independiente (RQ-01.4) |
 | `trades_per_month_test.php` | Trades/mes de cada config Paper: por moneda, sin el cierre forzado, sobre el rango real; conteos incoherentes se descartan (RQ-01.1) |
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (47 Python + 15 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (47 Python + 16 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
