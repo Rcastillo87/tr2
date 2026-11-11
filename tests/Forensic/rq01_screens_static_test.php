@@ -25,13 +25,14 @@ $check('E2: Estrategias: Trades/mes (N/D si falta), abiertos/cerrados y enlace a
 
 $bc = $read('app/Http/Controllers/BacktestingController.php');
 $hv = $read('resources/views/backtesting/history.blade.php');
-$check('H1: Historial: ancla bt-<id> y resaltado con :target', str_contains($hv, 'id="bt-{{ $bt->id }}"')
+$sv = $read('app/Services/SavedBacktests.php');
+$check('H1: Historial: ancla bt-<id> y resaltado con :target', str_contains($hv, 'id="bt-{{ $r[\'id\'] }}"')
     && str_contains($hv, '.bt-card:target'));
-$check('H2: Historial: origen con BacktestOrigin::describe y enlace solo si la búsqueda existe y el usuario la puede ver',
-    str_contains($hv, 'BacktestOrigin::describe($bt->origin, $bt->origin_meta)') && str_contains($hv, 'isset($searchLinks[$originRun])')
-    && str_contains($bc, "Gate::allows('manageUsers')") && str_contains($bc, "ParamSearchRun::whereIn('id', \$runIds)"));
+$check('H2: Historial: origen con BacktestOrigin::describe y enlace a la búsqueda solo si el usuario la puede ver',
+    str_contains($sv, 'BacktestOrigin::describe($b->origin, $b->origin_meta)') && str_contains($hv, "@if(\$r['run_exists'] && \$canSearch)") && str_contains($sv, "DB::table('param_search_runs')->whereIn('id', \$runIds)")
+    && str_contains($bc, "\$canSearch = Gate::allows('manageUsers')"));
 $check('H3: Historial: Trades/mes con la misma regla que las configs (StrategyConfigSync::tradesPerMonth)',
-    str_contains($bc, 'StrategyConfigSync::tradesPerMonth($b->metrics') && str_contains($hv, "['Trades/mes', \$tpmText]"));
+    str_contains($sv, 'StrategyConfigSync::tradesPerMonth($m, $cp,') && str_contains($hv, "['Trades/mes', \$fmtTpm(\$r['tpm']), null]"));
 
 $ps = $read('resources/views/param-search/show.blade.php');
 $check('B1: Búsqueda: una sola función de insignia (createdBadge) para las dos vistas',

@@ -56,18 +56,22 @@ namespace {
     $svc = (string) @file_get_contents($file);
     $check('W1: estado en Paper filtrado en SQL con EXISTS (no en PHP)', substr_count($svc, '->whereExists(') >= 2
         && str_contains($svc, '->whereNotExists($configs(true))') && str_contains($svc, "'none'    => \$q->whereNotExists(\$configs())"));
-    $check('W2: la página se enriquece con 2 consultas agregadas (configs por backtest, trades cerrados por config)',
-        substr_count($svc, "DB::table(") === 2 && str_contains($svc, "->where('status', 'closed')")
+    $check('W2: la página se enriquece con 3 consultas agregadas (configs por backtest, trades cerrados por config, búsquedas existentes)',
+        substr_count($svc, "DB::table(") === 3 && str_contains($svc, "->where('status', 'closed')")
         && str_contains($svc, "->groupBy('paper_strategy_config_id')"));
-    $check('W3: moneda con parámetro enlazado (no concatenada)', str_contains($svc, "s ILIKE ?)\",\n                ['%' . \$f['symbol'] . '%']"));
+    $check('W3: moneda exacta (de la lista) con parámetro enlazado', str_contains($svc, "WHERE s = ?)', [\$f['symbol']]")
+        && str_contains($svc, 'SELECT DISTINCT s FROM backtests'));
     $check('W4: Trades/mes con la regla de las configs', str_contains($svc, 'StrategyConfigSync::tradesPerMonth('));
     $web = (string) @file_get_contents("{$root}/routes/web.php");
     $ctl = (string) @file_get_contents("{$root}/app/Http/Controllers/BacktestingController.php");
     $idx = (string) @file_get_contents("{$root}/resources/views/strategies/index.blade.php");
-    $check('W5: ruta /backtesting/guardados (grupo viewAnalysisTools), acción con Gate y botón en Estrategias',
-        str_contains($web, "Route::get('/guardados',") && str_contains($ctl, 'public function saved(')
-        && (bool) preg_match('/function saved\([^)]*\)\s*\{\s*Gate::authorize\(\'viewAnalysisTools\'\)/', $ctl)
-        && str_contains($idx, "route('backtesting.saved')"));
+    $check('W5: UNA vista: /history/{strategy?} (Gate) usa SavedBacktests; /guardados redirige; sin botón aparte ni vista saved',
+        str_contains($web, "Route::get('/history/{strategy?}',")
+        && (bool) preg_match('/function history\(Request \$request, \\\\App\\\\Services\\\\SavedBacktests \$saved, \?Strategy \$strategy = null\)\s*\{\s*Gate::authorize\(\'viewAnalysisTools\'\)/', $ctl)
+        && str_contains($ctl, "return redirect()->route('backtesting.history', \$request->query());")
+        && ! str_contains($idx, "route('backtesting.saved')") && ! is_file("{$root}/resources/views/backtesting/saved.blade.php"));
+    $check('W6: orden por calificación o Trades/mes sobre TODO el conjunto filtrado (con tope), no solo la página',
+        str_contains($svc, '->limit(self::MAX_SORTED)->get())->sortByDesc($key)') && str_contains($svc, '->forPage($page, self::PER_PAGE)'));
 
     echo "\nRESULTADO: " . ($fails === 0 ? 'TODO OK' : "{$fails} FALLO(S)") . "\n";
     exit($fails === 0 ? 0 : 1);

@@ -383,47 +383,35 @@ class BacktestingController extends Controller
     }
 
 
-    public function history(\App\Models\Strategy $strategy)
+    /**
+     * Historial de backtests: UNA vista para todas las estrategias (p55). /history/{strategy} abre la misma vista con
+     * esa estrategia filtrada (los enlaces existentes siguen funcionando); el filtro de la pantalla manda si viene.
+     */
+    public function history(Request $request, \App\Services\SavedBacktests $saved, ?Strategy $strategy = null)
     {
         Gate::authorize('viewAnalysisTools');
-        $backtests = $strategy->backtests()->orderBy('created_at', 'desc')->get();
-
-        // Buscar TODOS los backtests de esta estrategia operando en paper
-        $activeBacktestIds = \App\Models\PaperStrategyConfig::whereIn('backtest_id', $backtests->pluck('id'))
-            ->where('active', true)
-            ->pluck('backtest_id')
-            ->unique()
-            ->toArray();
-
-        // RQ-01.3: origen de cada tarjeta; enlace a la búsqueda solo si sigue existiendo y el usuario puede verla
-        $runIds = $backtests->map(fn ($b) => $b->origin === BacktestOrigin::SEARCH ? (int) ($b->origin_meta['run_id'] ?? 0) : 0)
-            ->filter()->unique()->values();
-        $searchLinks = $runIds->isEmpty() || ! Gate::allows('manageUsers') ? []
-            : \App\Models\ParamSearchRun::whereIn('id', $runIds)->pluck('id')->flip()->all();
-        // RQ-01.1: Trades/mes por moneda, con la misma regla que las configs Paper
-        $tradesPerMonth = $backtests->mapWithKeys(fn ($b) => [$b->id => collect($b->symbols ?? [])->mapWithKeys(
-            fn ($sym) => [$sym => StrategyConfigSync::tradesPerMonth($b->metrics ?? [], $b->config_params ?? [], (int) $b->months,
-                (string) $sym, count($b->symbols ?? []))])->all()])->all();
-
-        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestIds', 'searchLinks', 'tradesPerMonth'));
-    }
-
-
-    /** RQ-01.4: backtests guardados de todas las estrategias con su estado en Paper. */
-    public function saved(Request $request, \App\Services\SavedBacktests $saved)
-    {
-        Gate::authorize('viewAnalysisTools');
-        $filters = \App\Services\SavedBacktests::filters($request->query());
+        $query = $request->query();
+        if ($strategy !== null && ! array_key_exists('strategy', $query)) {
+            $query['strategy'] = (string) $strategy->id;
+        }
+        $filters = \App\Services\SavedBacktests::filters($query);
         $rows = $saved->page($filters, (int) $request->query('page', 1));
         $strategies = Strategy::orderBy('name')->get(['id', 'name']);
+        $symbols = $saved->symbols();
         $totals = DB::selectOne("SELECT count(*) AS total,
                 count(*) FILTER (WHERE EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id AND c.active)) AS active,
                 count(*) FILTER (WHERE EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id)
                                    AND NOT EXISTS (SELECT 1 FROM paper_strategy_configs c WHERE c.backtest_id = b.id AND c.active)) AS stopped
-            FROM backtests b");
+            FROM backtests b WHERE (?::bigint IS NULL OR b.strategy_id = ?::bigint)", [$filters['strategy'], $filters['strategy']]);
         $canSearch = Gate::allows('manageUsers');
 
-        return view('backtesting.saved', compact('rows', 'filters', 'strategies', 'totals', 'canSearch'));
+        return view('backtesting.history', compact('rows', 'filters', 'strategies', 'symbols', 'totals', 'canSearch'));
+    }
+
+    /** Dirección anterior de «Backtests guardados» (p53): ahora es el Historial. */
+    public function saved(Request $request)
+    {
+        return redirect()->route('backtesting.history', $request->query());
     }
 
     public function destroyBacktest(Backtest $backtest, StrategyConfigSync $sync)

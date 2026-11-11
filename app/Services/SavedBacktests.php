@@ -6,12 +6,16 @@ use App\Helpers\RatingHelper;
 use App\Models\Backtest;
 use App\Support\BacktestOrigin;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\LengthAwarePaginator as Paginator;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * RQ-01.4: lista global de backtests guardados (todas las estrategias) con su estado en Paper.
- * Filtros y orden en SQL; la página se enriquece con DOS consultas agregadas (configs y trades Paper), sin N+1.
+ * Historial de backtests (una sola vista, RQ-01.4 unificado en p55): backtests de todas las estrategias o de una,
+ * con su estado en Paper. Filtros en SQL. Orden reciente en SQL; por calificación o Trades/mes (dependen de métricas
+ * JSON) se ordena en PHP sobre TODO el conjunto filtrado (tope MAX_SORTED) y luego se pagina.
+ * Cada página se enriquece con DOS consultas agregadas (configs y trades Paper), sin N+1.
  *
  * Estado en Paper de un backtest: «active» si alguna de sus configs está activa, «stopped» si tiene configs y
  * ninguna activa, «none» si no tiene configs.
@@ -22,6 +26,8 @@ class SavedBacktests
     public const PAPER = ['active' => 'Operando', 'stopped' => 'Detenido', 'none' => 'Sin implementar'];
     public const ORIGINS = ['search' => 'Búsqueda', 'manual' => 'Manual', 'unknown' => 'No registrado'];
     public const SORTS = ['recent', 'rating', 'tpm'];
+    /** Tope de filas para ordenar en PHP (hoy hay ~30 backtests; el tope evita cargar sin límite). */
+    public const MAX_SORTED = 2000;
 
     /** Filtros saneados desde la petición (valores fuera de lista = sin filtro). */
     public static function filters(array $in): array
@@ -64,23 +70,39 @@ class SavedBacktests
             default            => null,
         };
         if ($f['symbol'] !== null) {
-            // symbols es un arreglo JSON de textos: coincidencia parcial sobre sus elementos
-            $q->whereRaw("EXISTS (SELECT 1 FROM json_array_elements_text(backtests.symbols::json) s WHERE s ILIKE ?)",
-                ['%' . $f['symbol'] . '%']);
+            // symbols es un arreglo JSON de textos; la moneda llega de la lista de la pantalla (valor exacto)
+            $q->whereRaw('EXISTS (SELECT 1 FROM json_array_elements_text(backtests.symbols::json) s WHERE s = ?)', [$f['symbol']]);
         }
 
         return $q->orderByDesc('updated_at')->orderByDesc('id');
     }
 
-    /**
-     * Página de filas listas para la vista. Orden por calificación o Trades/mes: se calcula en PHP sobre la página
-     * (ambos dependen de métricas en JSON); el orden por defecto, el reciente, es SQL.
-     */
+    /** Monedas de los backtests guardados, para la lista del filtro. */
+    public function symbols(): array
+    {
+        return array_map(fn ($r) => $r->s, DB::select(
+            'SELECT DISTINCT s FROM backtests, json_array_elements_text(backtests.symbols::json) s ORDER BY s'));
+    }
+
     public function page(array $f, int $page = 1): LengthAwarePaginator
     {
-        $p = $this->query($f)->paginate(self::PER_PAGE, ['*'], 'page', max(1, $page))->withQueryString();
-        $ids = $p->getCollection()->pluck('id');
+        $page = max(1, $page);
+        if ($f['sort'] === 'recent') {
+            $p = $this->query($f)->paginate(self::PER_PAGE, ['*'], 'page', $page)->withQueryString();
 
+            return $p->setCollection($this->enrich($p->getCollection()));
+        }
+        $key = $f['sort'] === 'rating' ? 'rating' : 'tpm_sort';
+        $all = $this->enrich($this->query($f)->limit(self::MAX_SORTED)->get())->sortByDesc($key)->values();
+
+        return (new Paginator($all->forPage($page, self::PER_PAGE)->values(), $all->count(), self::PER_PAGE, $page,
+            ['path' => Paginator::resolveCurrentPath(), 'pageName' => 'page']))->withQueryString();
+    }
+
+    /** Filas listas para la tarjeta: métricas, parámetros, origen, Trades/mes y estado/trades de Paper. */
+    private function enrich(Collection $backtests): Collection
+    {
+        $ids = $backtests->pluck('id');
         $configs = $ids->isEmpty() ? collect() : DB::table('paper_strategy_configs')->whereIn('backtest_id', $ids)
             ->orderBy('id')->get(['id', 'backtest_id', 'symbol', 'active']);
         $trades = $configs->isEmpty() ? collect() : DB::table('paper_trades')
@@ -89,13 +111,20 @@ class SavedBacktests
             ->selectRaw('paper_strategy_config_id AS id, count(*) AS n, coalesce(sum(pnl_pct), 0) AS pnl_pct')
             ->get()->keyBy('id');
         $byBacktest = $configs->groupBy('backtest_id');
+        // búsquedas que siguen existiendo (el enlace a una borrada daría 404)
+        $runIds = $backtests->map(fn ($b) => $b->origin === BacktestOrigin::SEARCH ? (int) ($b->origin_meta['run_id'] ?? 0) : 0)
+            ->filter()->unique()->values();
+        $runs = $runIds->isEmpty() ? [] : DB::table('param_search_runs')->whereIn('id', $runIds)->pluck('id')
+            ->map(fn ($v) => (int) $v)->flip()->all();
 
-        $rows = $p->getCollection()->map(function (Backtest $b) use ($byBacktest, $trades) {
+        return $backtests->map(function (Backtest $b) use ($byBacktest, $trades, $runs) {
             $cfgs = $byBacktest->get($b->id, collect());
             $active = $cfgs->where('active', true);
             $m = $b->metrics ?? [];
+            $cp = $b->config_params ?? [];
+            $n = self::normalized($m);
             $symbols = $b->symbols ?? [];
-            $tpm = collect($symbols)->mapWithKeys(fn ($s) => [$s => StrategyConfigSync::tradesPerMonth($m, $b->config_params ?? [],
+            $tpm = collect($symbols)->mapWithKeys(fn ($s) => [$s => StrategyConfigSync::tradesPerMonth($m, $cp,
                 (int) $b->months, (string) $s, count($symbols))]);
 
             return [
@@ -105,11 +134,21 @@ class SavedBacktests
                 'strategy_id' => $b->strategy_id,
                 'symbols'     => $symbols,
                 'interval'    => $b->interval,
+                'months'      => (int) $b->months,
                 'origin'      => $b->origin,
                 'origin_text' => BacktestOrigin::describe($b->origin, $b->origin_meta),
                 'run_id'      => $b->origin === BacktestOrigin::SEARCH ? (int) ($b->origin_meta['run_id'] ?? 0) : 0,
+                'run_exists'  => isset($runs[(int) ($b->origin_meta['run_id'] ?? 0)]),
                 'rating'      => self::rating($m),
-                'ret_month'   => self::normalized($m)['ret'],
+                'wr'          => $n['wr'],
+                'sharpe'      => (float) ($m['sharpe_ratio'] ?? 0),
+                'ret_month'   => $n['ret'],
+                'consist'     => $n['consist'],
+                'pf'          => (float) ($m['profit_factor'] ?? 0),
+                'trades'      => (int) ($m['total_trades'] ?? 0),
+                'ret_total'   => (float) ($m['total_return_pct'] ?? 0),
+                'params'      => ['sl' => $cp['sl_pct'] ?? null, 'tp' => $cp['tp_pct'] ?? null, 'be' => $cp['be_pct'] ?? null,
+                                  'dur' => $cp['max_duration'] ?? null, 'risk' => $cp['risk_per_trade_pct'] ?? null],
                 'tpm'         => $tpm->all(),
                 'tpm_sort'    => $tpm->filter(fn ($v) => $v !== null)->sum(),
                 'paper'       => $active->isNotEmpty() ? 'active' : ($cfgs->isNotEmpty() ? 'stopped' : 'none'),
@@ -118,12 +157,6 @@ class SavedBacktests
                 'paper_pnl'   => round((float) $cfgs->sum(fn ($c) => $trades[$c->id]->pnl_pct ?? 0), 2),
             ];
         });
-        if ($f['sort'] !== 'recent') {
-            $key = $f['sort'] === 'rating' ? 'rating' : 'tpm_sort';
-            $rows = $rows->sortByDesc($key)->values();
-        }
-
-        return $p->setCollection($rows);
     }
 
     /**

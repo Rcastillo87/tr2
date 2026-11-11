@@ -92,26 +92,36 @@ try {
         $exp = (int) DB::scalar("SELECT count(*) FROM backtests WHERE {$where}");
         $check("F2: filtro origen «{$k}» = {$exp}", count($all(['origin' => $k])) === $exp, count($all(['origin' => $k])));
     }
-    $sym = $all(['symbol' => 'zzprobe']);
-    $check('F3: filtro de moneda parcial y sin importar mayúsculas encuentra el de prueba', array_keys($sym) === [$probe->id], array_keys($sym));
+    $sym = $all(['symbol' => 'zzprobeusdt']);
+    $check('F3: la lista de monedas trae la del backtest de prueba y su filtro (exacto) lo encuentra solo a él',
+        in_array('ZZPROBEUSDT', $svc->symbols(), true) && array_keys($sym) === [$probe->id] && $all(['symbol' => 'ZZPROBE']) === [], array_keys($sym));
+    $sorted = array_values($all(['sort' => 'rating']));
+    $okSort = true;
+    for ($i = 1; $i < count($sorted); $i++) {
+        $okSort = $okSort && $sorted[$i - 1]['rating'] >= $sorted[$i]['rating'];
+    }
+    $check('F6: orden por calificación sobre todo el conjunto (todas las páginas) y sin perder filas', $okSort && count($sorted) === $total);
     $byStrategy = $all(['strategy' => (string) $strategy->id]);
     $check('F4: filtro de estrategia', count($byStrategy) === (int) DB::scalar('SELECT count(*) FROM backtests WHERE strategy_id = ?', [$strategy->id])
         && collect($byStrategy)->every(fn ($r) => $r['strategy_id'] === $strategy->id));
     $check('F5: el retorno mensual 0,71 % se muestra como 0,71 %, no 71 %', abs($rows[$probe->id]['ret_month'] - 0.71) < 1e-9, $rows[$probe->id]['ret_month']);
 
     // Pantalla
-    $req = Request::create('/backtesting/guardados', 'GET', ['paper' => 'active']);
+    $req = Request::create('/backtesting/history', 'GET', ['paper' => 'active']);
     $req->setUserResolver(fn () => Auth::user());
     app()->instance('request', $req);
     try {
-        $html = (string) app(BacktestingController::class)->saved($req, $svc)->render();
+        $html = (string) app(BacktestingController::class)->history($req, $svc)->render();
     } catch (Throwable $e) {
         $html = 'EXCEPCION: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine();
     }
     $firstActive = $truth->where('paper', 'active')->keys()->first();
-    $check('P1: la pantalla renderiza con el filtro «Operando», enlaza al historial y muestra la cabecera de totales',
+    $redir = app(BacktestingController::class)->saved(Request::create('/backtesting/guardados', 'GET', ['paper' => 'none']));
+    $check('P0: la dirección vieja /guardados redirige al Historial con sus filtros', $redir->getStatusCode() === 302
+        && str_contains($redir->getTargetUrl(), '/backtesting/history') && str_contains($redir->getTargetUrl(), 'paper=none'), $redir->getTargetUrl());
+    $check('P1: la pantalla renderiza con el filtro «Operando», trae la tarjeta de un backtest operando y la cabecera de totales',
         ! str_starts_with($html, 'EXCEPCION') && str_contains($html, 'operando en Paper')
-        && ($firstActive === null || str_contains($html, '#bt-' . $firstActive . '"')), substr($html, 0, 200));
+        && ($firstActive === null || str_contains($html, 'id="bt-' . $firstActive . '"')), substr($html, 0, 200));
 } finally {
     DB::rollBack();
 }

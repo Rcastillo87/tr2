@@ -21,6 +21,7 @@ use App\Models\Backtest;
 use App\Models\ParamSearchRun;
 use App\Models\Strategy;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -69,7 +70,11 @@ try {
                   'origin_meta' => ['run_id' => 999999999, 'row_id' => 'r1']]);
 
     // Historial
-    $h = $render(fn () => app(BacktestingController::class)->history($strategy));
+    // /backtesting/history/{strategy}: la vista única con esa estrategia filtrada (p55)
+    $hreq = Request::create('/backtesting/history/' . $strategy->id, 'GET');
+    $hreq->setUserResolver(fn () => Auth::user());
+    app()->instance('request', $hreq);
+    $h = $render(fn () => app(BacktestingController::class)->history($hreq, app(\App\Services\SavedBacktests::class), $strategy));
     $card = function (int $id) use ($h): string {
         $p = strpos($h, 'id="bt-' . $id . '"');
         if ($p === false) {
@@ -81,7 +86,7 @@ try {
     };
     $check('H0: el historial renderiza', $h !== '' && ! str_starts_with($h, 'EXCEPCION'), substr($h, 0, 200));
     $cS = $card($bS->id);
-    $check('H1: tarjeta con ancla bt-<id> y número de backtest', $cS !== '' && str_contains($cS, "Backtest #{$bS->id}"));
+    $check('H1: tarjeta con ancla bt-<id> y número de backtest', $cS !== '' && str_contains($cS, "<b style=\"color:var(--color-text-primary);\">#{$bS->id}</b>"));
     $check('H2: origen búsqueda con enlace a la búsqueda', str_contains($cS, route('strategies.search.show', $run->id))
         && str_contains($cS, "Búsqueda #{$run->id} · fila ENAUSDT-240-3"), substr(strip_tags($cS), 0, 300));
     $check('H3: Trades/mes de la tarjeta = 60 trades / 181 días × 30,4375 = 10.09', str_contains($cS, '10.09'));
