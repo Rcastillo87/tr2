@@ -79,6 +79,13 @@
 - `App\Services\SavedBacktests` concentra filtros, consulta y cálculo; la calificación usa la misma regla que la tarjeta del historial.
 - **Fix de paso (historial):** la tarjeta multiplicaba por 100 el retorno promedio mensual cuando era ≤ 1 en valor absoluto, suponiendo que era una fracción. Siempre se guardó en %: un 0,71 % se mostraba como 71 % y además inflaba la calificación calculada (la guardada en `metrics.rating` no cambia). Ahora no se escala; win rate y consistencia sí siguen pasando de fracción a % (un 1 % real no es plausible).
 - **Prueba:** `saved_backtests_test.php` (13 casos; con el código anterior 6 fallos) y `saved_backtests_screen_test.php` (integración: compara estado en Paper, trades y P&L de cada backtest con SQL independiente, cada filtro con su conteo real, el retorno 0,71 %, y renderiza la pantalla).
+- Instalación de p53 el 11-nov: `main` = `8f5b7b8`. Integración 13 PASS: 29 backtests (11 operando, 4 detenidos, 14 sin implementar; 27 de búsqueda, 1 sin origen; el manual era el de prueba).
+
+### RQ-01.5 — Diagnóstico de Paper en pantalla (p54)
+- **Sección desplegable** «Diagnóstico» en Paper Trading, antes de Posiciones abiertas (no se agregó pantalla ni menú). Cabecera con contadores por grupo y la hora de la última evaluación; se abre sola si hay problemas. Una fila por config activa: decisión, régimen, vela evaluada (y velas disponibles), motivos de las últimas 24 h, y «Ver»: el texto del motor y la traza de la señal paso a paso con el filtro que la anuló marcado.
+- `App\Services\PaperDiagnostics`: 2 consultas (estado de las configs activas; historial 24 h agregado por motivo). Grupos: problemas (kill switch, error de estrategia, collector atrasado, datos insuficientes, sin precio, **sin evaluar en 15 min**, sin evaluar todavía) primero, luego régimen, señal anulada, posición abierta, operaron, sin señal. La regla del filtro que anuló es la de `paper_trader.blocking_filter`.
+- Si el diagnóstico falla (tabla, datos), Paper Trading se muestra igual sin la sección y queda un aviso en el log.
+- **Prueba:** `paper_diagnostics_test.php` (10 casos; 4 fallos con el código anterior; mutaciones detectadas: cualquier 0 posterior marcado como «anuló», un motivo del motor sin texto; D5 lee los motivos de `paper_trader.py`, así que un motivo nuevo del motor sin texto en pantalla rompe la regresión) y `paper_diagnostics_screen_test.php` (integración: filas = configs activas, motivo = `paper_eval_state`, traza con filtro que anuló, config sin evaluar hace 2 h como problema, suma de 24 h, render de Paper Trading; transacción revertida).
 
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 

@@ -151,14 +151,14 @@ real_protection_test allow_short_test real_opposite_test paper_opposite_test pap
 real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test
 filters_v2_test bars_order_test`.
 
-16 PHP: `saved_backtests_test rq01_screens_static_test search_create_rules_test backtest_origin_test trades_per_month_test strategy_config_types_test backtest_delete_rules_test strategy_label_test real_reconcile_statuses_test
+17 PHP: `paper_diagnostics_test saved_backtests_test rq01_screens_static_test search_create_rules_test backtest_origin_test trades_per_month_test strategy_config_types_test backtest_delete_rules_test strategy_label_test real_reconcile_statuses_test
 blade_static_test config_merge_test funding_alert_test backtest_payload_volatility_test broker_event_messages_test
 collector_validation_alert_test collector_watchdog_validation_test`.
 
 Integración (Laravel + base real, transacción revertida; corren al instalar su parche): `real_config_gate_test.php`
 (REAL-04/CFG-03/04), `real_reconcile_selector_test.php` (N-01), `strategy_identity_test.php` (N-09),
 `backtest_delete_test.php` (CFG-05),
-`backtest_origin_save_test.php` (RQ-01.3), `search_create_guard_test.php` (RQ-01.2), `rq01_screens_test.php` (pantallas RQ-01), `saved_backtests_screen_test.php` (RQ-01.4).
+`backtest_origin_save_test.php` (RQ-01.3), `search_create_guard_test.php` (RQ-01.2), `rq01_screens_test.php` (pantallas RQ-01), `saved_backtests_screen_test.php` (RQ-01.4), `paper_diagnostics_screen_test.php` (RQ-01.5).
 
 ## Límites de esta certificación
 

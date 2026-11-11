@@ -126,6 +126,8 @@
     </div>
 </div>
 
+@includeWhen($diagnostics !== null, 'paper-trading._diagnostics', ['d' => $diagnostics])
+
 {{-- Posiciones abiertas --}}
 @if ($openTrades->isNotEmpty())
 <div class="rounded-lg border mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">

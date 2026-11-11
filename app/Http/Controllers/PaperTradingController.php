@@ -94,7 +94,16 @@ class PaperTradingController extends Controller
             'intervals'  => collect(array_merge($actIntervals, $histIntervals))->unique()->sort()->values()->toArray(),
         ];
 
+        // RQ-01.5: el diagnóstico es informativo; si falla, la pantalla de Paper sigue igual sin la sección
+        try {
+            $diagnostics = app(\App\Services\PaperDiagnostics::class)->overview();
+        } catch (\Throwable $e) {
+            Log::warning('Diagnóstico de Paper no disponible: ' . $e->getMessage());
+            $diagnostics = null;
+        }
+
         return view('paper-trading.index', [
+            'diagnostics'     => $diagnostics,
             'openTrades'      => $openTrades,
             'closedTrades'    => $closedTrades,
             'totalClosed'     => $totalClosed,
