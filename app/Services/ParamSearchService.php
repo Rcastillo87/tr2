@@ -32,6 +32,9 @@ class ParamSearchService
     public const MAX_MINUTES = 180;
     public const QUEUE_CONNECTION = 'redis-research';
     public const QUEUE = 'research';
+    /** «Crear en historial» en curso más viejo que esto = interrumpido (espera en cola tras una búsqueda de hasta
+     *  MAX_MINUTES + timeout del job de 3900 s, con margen). RQ-01.2 */
+    public const CREATE_STALE_AFTER_S = 5 * 3600;
     /** Minutos medidos/estimados por intervalo (4 monedas + validación). 4h medido: ~3 min. */
     public const MINUTES_PER_INTERVAL = ['15' => 8, '60' => 5, '120' => 3, '240' => 3, 'D' => 1];   // 2h y 4h medidos
 
@@ -278,5 +281,90 @@ class ParamSearchService
         }
 
         return $row['survivors'] ?? $this->summarize($row)['winners'];
+    }
+
+    /**
+     * Estado de «Crear en historial» por fila (results.created), conciliado con la base (RQ-01.2):
+     *  - done cuyo backtest ya no existe (o sin id) -> deleted: la fila vuelve a estar disponible.
+     *  - running sin terminar después de CREATE_STALE_AFTER_S (el trabajo murió o se perdió) -> error: disponible.
+     * Una sola consulta por búsqueda (ids del bloque created), sin N+1.
+     *
+     * @return array<string, array>
+     */
+    public function createdStates(ParamSearchRun $run): array
+    {
+        $created = is_array($run->results['created'] ?? null) ? $run->results['created'] : [];
+        $ids = [];
+        foreach ($created as $c) {
+            $id = self::backtestIdOf($c);
+            if ($id !== null) {
+                $ids[] = $id;
+            }
+        }
+        $existing = $ids === [] ? [] : DB::table('backtests')->whereIn('id', array_values(array_unique($ids)))
+            ->pluck('id')->map(fn ($v) => (int) $v)->all();
+
+        return self::reconcileCreated($created, $existing, time());
+    }
+
+    /** Parte pura de createdStates(): sin base ni reloj. */
+    public static function reconcileCreated(array $created, array $existingIds, int $now): array
+    {
+        $exists = array_flip($existingIds);
+        $out = [];
+        foreach ($created as $rowId => $c) {
+            if (! is_array($c)) {
+                continue;
+            }
+            $status = $c['status'] ?? null;
+            if ($status === 'done') {
+                $id = self::backtestIdOf($c);
+                if ($id === null || ! isset($exists[$id])) {
+                    $c = ['status' => 'deleted', 'previous_status' => 'done'] + $c;
+                }
+            } elseif ($status === 'running') {
+                $at = strtotime((string) ($c['at'] ?? ''));
+                if ($at === false || $now - $at > self::CREATE_STALE_AFTER_S) {
+                    $c = ['status' => 'error', 'previous_status' => 'running',
+                          'error' => 'Se interrumpió sin terminar; se puede volver a crear.'] + $c;
+                }
+            }
+            $out[(string) $rowId] = $c;
+        }
+
+        return $out;
+    }
+
+    /** Motivo por el que una fila no se puede volver a crear, o null si se puede. */
+    public static function creationBlock(?array $state): ?string
+    {
+        return match ($state['status'] ?? null) {
+            'done'    => 'ya está en el historial (backtest #' . ($state['backtest_id'] ?? '?') . ')',
+            'running' => 'ya se está creando',
+            default   => null,
+        };
+    }
+
+    /** Escribe el estado de una fila en results.created (un UPDATE atómico sobre la fila de la búsqueda). */
+    public static function markCreated(int $runId, string $rowId, array $state): void
+    {
+        DB::update(
+            "UPDATE param_search_runs
+                SET results = jsonb_set(jsonb_set(results, '{created}', coalesce(results->'created', '{}'::jsonb)),
+                                        ARRAY['created', ?], ?::jsonb),
+                    updated_at = now()
+              WHERE id = ?",
+            [$rowId, json_encode($state + ['at' => now()->toIso8601String()], JSON_UNESCAPED_UNICODE), $runId]
+        );
+    }
+
+    private static function backtestIdOf(mixed $state): ?int
+    {
+        $id = is_array($state) ? ($state['backtest_id'] ?? null) : null;
+        if (is_int($id) && $id > 0) {
+            return $id;
+        }
+
+        return is_string($id) && preg_match('/^[1-9][0-9]{0,17}$/', $id) ? (int) $id : null;
     }
 }

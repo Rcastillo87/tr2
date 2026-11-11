@@ -9,6 +9,7 @@ use App\Services\ParamSearchService;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /** Estrategias → 🔍 Buscar configuración (endpoints JSON; la pantalla de resultados llega en el paso de vistas). */
 class ParamSearchController extends Controller
@@ -144,6 +145,7 @@ class ParamSearchController extends Controller
     public function results(Request $request, ParamSearchRun $run): JsonResponse
     {
         $mode = $request->query('symbols') === 'all' ? 'all' : 'survivors';
+        $created = $this->service->createdStates($run);   // conciliado con los backtests que existen (RQ-01.2)
         $rows = [];
         foreach ($run->results['rows'] ?? [] as $row) {
             $rows[] = [
@@ -167,7 +169,7 @@ class ParamSearchController extends Controller
                 'detail'     => array_map(fn ($s) => ['role' => in_array($s['role'] ?? 'search', ['survivor', 'discarded'], true) ? 'search' : ($s['role'] ?? 'search'), 'why' => $s['why'] ?? null, 'ret' => $s['ret'] ?? null,
                                                       'pf' => $s['pf'] ?? null, 'n' => $s['n'] ?? 0, 'dd' => $s['dd'] ?? null,
                                                       'm1' => $s['m1'] ?? null], $row['symbols']),
-                'created'    => $run->results['created'][$row['id']] ?? null,
+                'created'    => isset($created[$row['id']]) ? array_diff_key($created[$row['id']], ['token' => true]) : null,
             ];
         }
         // Orden: métrica del enfoque ↓ (v3; antes, retorno total), luego retorno total, estrellas y consistencia
@@ -199,13 +201,34 @@ class ParamSearchController extends Controller
         if ($run->isOutdated()) {
             return response()->json(['success' => false, 'error' => 'La estrategia cambió después de esta búsqueda: vuelve a buscar.'], 422);
         }
+        $ids = array_values(array_unique($data['rows']));
         $rows = collect($run->results['rows'] ?? [])->keyBy('id');
-        foreach ($data['rows'] as $id) {
+        foreach ($ids as $id) {
             if (! $rows->has($id) || ! $this->service->creatable($run, $rows[$id])) {
                 return response()->json(['success' => false, 'error' => "La configuración {$id} no se puede crear."], 422);
             }
         }
-        CreateBacktestsFromSearchJob::dispatch($run->id, array_values($data['rows']), $data['symbols'], $request->user()->id)
+        // RQ-01.2: con la búsqueda bloqueada, rechaza filas ya creadas (backtest existente) o en curso y reserva las
+        // demás con un token; el job solo crea las filas cuyo token es el suyo (doble clic o dos pestañas = una vez).
+        $token = bin2hex(random_bytes(8));
+        $blocked = DB::transaction(function () use ($run, $ids, $token) {
+            $locked = ParamSearchRun::query()->lockForUpdate()->findOrFail($run->id);
+            $states = $this->service->createdStates($locked);
+            foreach ($ids as $id) {
+                if (($why = ParamSearchService::creationBlock($states[$id] ?? null)) !== null) {
+                    return "La configuración {$id} {$why}.";
+                }
+            }
+            foreach ($ids as $id) {
+                ParamSearchService::markCreated($run->id, $id, ['status' => 'running', 'phase' => 'queued', 'token' => $token]);
+            }
+
+            return null;
+        });
+        if ($blocked !== null) {
+            return response()->json(['success' => false, 'error' => $blocked], 409);
+        }
+        CreateBacktestsFromSearchJob::dispatch($run->id, $ids, $data['symbols'], $request->user()->id, $token)
             ->onConnection(ParamSearchService::QUEUE_CONNECTION)->onQueue(ParamSearchService::QUEUE);
 
         return response()->json(['success' => true, 'message' => count($data['rows']) . ' configuración(es) en cola para crear en el historial.']);

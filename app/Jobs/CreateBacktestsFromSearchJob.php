@@ -9,7 +9,6 @@ use App\Services\ParamSearchService;
 use App\Support\BacktestOrigin;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -23,10 +22,17 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
 
     public int $tries = 1;
     public int $timeout = 3900;
+    /** No promovida: un job serializado antes de p51 no la trae y debe leerse como null (no como no inicializada). */
+    public ?string $token = null;
 
-    /** @param string $symbolsMode survivors (monedas que sobrevivieron) | all (todas las probadas) */
-    public function __construct(public int $runId, public array $rowIds, public string $symbolsMode, public int $userId)
+    /**
+     * @param string $symbolsMode survivors (monedas que sobrevivieron) | all (todas las probadas)
+     * @param ?string $token reserva hecha por ParamSearchController::create (RQ-01.2); null = trabajo encolado antes de p51
+     */
+    public function __construct(public int $runId, public array $rowIds, public string $symbolsMode, public int $userId,
+                                ?string $token = null)
     {
+        $this->token = $token;
     }
 
     public function handle(BacktestFromSearch $creator, ParamSearchService $service): void
@@ -34,11 +40,17 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
         $run = ParamSearchRun::with('strategy')->find($this->runId);
         $user = User::find($this->userId);
         if (! $run || ! $user || $run->status !== 'done' || ! $run->strategy) {
+            $this->releaseReservations($service, 'La búsqueda o el usuario ya no están disponibles.');
             return;
         }
         $rows = collect($run->results['rows'] ?? [])->keyBy('id');
 
         foreach ($this->rowIds as $rowId) {
+            // RQ-01.2: fila ya creada (backtest existente) o reservada por otro pedido -> no se crea otra vez
+            $state = $service->createdStates($run->fresh())[$rowId] ?? null;
+            if (ParamSearchService::creationBlock($state) !== null && ! $this->ownsReservation($state)) {
+                continue;
+            }
             $row = $rows->get($rowId);
             if (! $row || ! $service->creatable($run, $row)) {
                 $this->mark($rowId, ['status' => 'error', 'error' => 'Esta configuración no se puede crear.']);
@@ -49,7 +61,7 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
                 $this->mark($rowId, ['status' => 'error', 'error' => 'Ninguna moneda para crear.']);
                 continue;
             }
-            $this->mark($rowId, ['status' => 'running', 'symbols' => $symbols]);
+            $this->mark($rowId, ['status' => 'running', 'symbols' => $symbols, 'token' => $this->token]);
             try {
                 $origin = BacktestOrigin::fromSearch($run->id, (string) $rowId, $run->focus, $run->mode,
                     $this->symbolsMode, $run->created_at?->toIso8601String());
@@ -63,15 +75,35 @@ class CreateBacktestsFromSearchJob implements ShouldQueue
         }
     }
 
+    /** Laravel lo llama si el job muere (timeout, excepción): las filas que quedaron en curso vuelven a estar disponibles. */
+    public function failed(?Throwable $e): void
+    {
+        $this->releaseReservations(app(ParamSearchService::class), 'Se interrumpió sin terminar; se puede volver a crear.');
+    }
+
+    /** Fila reservada o en curso por ESTE pedido (mismo token). */
+    private function ownsReservation(?array $state): bool
+    {
+        return $this->token !== null && ($state['status'] ?? null) === 'running'
+            && hash_equals($this->token, (string) ($state['token'] ?? ''));
+    }
+
+    private function releaseReservations(ParamSearchService $service, string $why): void
+    {
+        $run = ParamSearchRun::find($this->runId);
+        if ($run === null || $this->token === null) {
+            return;
+        }
+        $states = $service->createdStates($run);
+        foreach ($this->rowIds as $rowId) {
+            if ($this->ownsReservation($states[$rowId] ?? null)) {
+                $this->mark((string) $rowId, ['status' => 'error', 'error' => $why]);
+            }
+        }
+    }
+
     private function mark(string $rowId, array $state): void
     {
-        DB::update(
-            "UPDATE param_search_runs
-                SET results = jsonb_set(jsonb_set(results, '{created}', coalesce(results->'created', '{}'::jsonb)),
-                                        ARRAY['created', ?], ?::jsonb),
-                    updated_at = now()
-              WHERE id = ?",
-            [$rowId, json_encode($state + ['at' => now()->toIso8601String()], JSON_UNESCAPED_UNICODE), $this->runId]
-        );
+        ParamSearchService::markCreated($this->runId, (string) $rowId, $state);
     }
 }
