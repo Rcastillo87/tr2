@@ -336,12 +336,14 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `search_create_rules_test.php`, `search_create_guard_test.php`* | «Crear en historial»: fila disponible otra vez si se borró su backtest; sin duplicados por doble clic (RQ-01.2) |
 | `rq01_screens_static_test.php`, `rq01_screens_test.php`* | Pantallas RQ-01: Trades/mes y Paper en Estrategias, origen y ancla en Historial, insignias de la búsqueda |
 | `saved_backtests_test.php`, `saved_backtests_screen_test.php`* | Historial de backtests (vista única): filtros en SQL, orden sobre todo el conjunto, estado y trades de Paper sin N+1, cifras contra SQL independiente (RQ-01.4) |
+| `opposite_rule_config_test.py` | Salida por señal opuesta pedida en el JSON de la estrategia: Paper/Real la leen igual que el backtest |
+| `new_strategies_test.py` | Estrategias BNF y Ruptura de triángulos (`docs/estrategias`): señales, sin mirar al futuro, Paper = backtest, SL por swing |
 | `paper_diagnostics_test.php`, `paper_diagnostics_screen_test.php`* | Diagnóstico de Paper en pantalla: motivo por config, filtro que anuló la señal, configs sin evaluar (RQ-01.5) |
 | `trades_per_month_test.php` | Trades/mes de cada config Paper: por moneda, sin el cierre forzado, sobre el rango real; conteos incoherentes se descartan (RQ-01.1) |
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (47 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (49 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

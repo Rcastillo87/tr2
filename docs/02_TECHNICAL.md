@@ -672,7 +672,7 @@ Solo los campos **enviados** pisan a `strategy_config` (`strategy_params` usa `m
 | `weekend_filter`, `blocked_hours`, `blocked_days` | bool, list, list | False, [], [] | Sin UI |
 | `trailing_mode` | str opcional | None | None · fixed · stepped · atr (**[V7.2]** stepped exige `trailing_steps` no vacío en el payload o en `strategy_config`) |
 | `trailing_distance_pct`, `trailing_activation_buffer_pct`, `trailing_atr_mult`, `trailing_steps` | | 1.0, 0.0, 2.0, [] | Fijo: mínimo 1,0 % |
-| `close_on_opposite`, `exit_on_opposite`, `allow_short` | bool | False, False, True | |
+| `close_on_opposite`, `exit_on_opposite`, `allow_short` | bool | False, False, True | [V7.3, p58] Pueden venir también en el JSON de la estrategia (`strategy_config`); `opposite_exit_rule` (Paper/Real) los lee con el mismo orden que `build_strategy` (JSON abajo, parámetros de operación encima) |
 | `commission_pct`, `slippage_pct` | float | 0.055, 0.0 | La UI manda 0.055 / 0.05 por lado |
 | `max_leverage` | float | 1.0 | |
 | `volatility_protection_mode`, `volatility_atr_multiplier`, `volatility_widen_pct` | | None, 2.5, 1.0 | close · widen |

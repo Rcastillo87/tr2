@@ -1,0 +1,10 @@
+{
+  "ma_days": 25,
+  "entry_dev_pct": 6.0,
+  "drop_bars": 6,
+  "drop_pct": 4.0,
+  "exit_reversion": 0.5,
+  "exit_window": 30,
+  "allow_short": false,
+  "exit_on_opposite": true
+}

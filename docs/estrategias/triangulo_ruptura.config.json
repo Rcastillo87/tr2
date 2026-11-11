@@ -1,0 +1,25 @@
+{
+  "pivot_bars": 3,
+  "window": 80,
+  "min_touches": 2,
+  "max_pivots": 4,
+  "touch_tol_pct": 0.6,
+  "flat_tol_pct": 0.8,
+  "min_contraction": 0.3,
+  "min_height_pct": 2.0,
+  "vol_contraction": 0.9,
+  "break_pct": 0.2,
+  "breakout_vol_mult": 1.3,
+  "entry_mode": "aggressive",
+  "retest_bars": 8,
+  "bias": false,
+  "types": [
+    "asc",
+    "desc",
+    "sym"
+  ],
+  "sl_mode": "swing",
+  "sl_buffer_pct": 0.2,
+  "min_sl_pct": 0.8,
+  "max_sl_pct": 6.0
+}

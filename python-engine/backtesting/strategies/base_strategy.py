@@ -29,7 +29,11 @@ def opposite_exit_rule(params: dict | None) -> str | None:
     'reverse' = close_on_opposite (cierra y abre la contraria), 'exit' = exit_on_opposite (solo cierra; manda si
     ambas están activas), None = el trade no usa la regla.
     """
-    p = params or {}
+    # Mismo orden que loader.build_strategy (lo que usa el backtest): strategy_config abajo, parámetros de operación
+    # encima. Antes solo se leía el nivel de arriba: una estrategia que pedía exit_on_opposite en su JSON salía por
+    # señal opuesta en el backtest y NO en Paper/Real.
+    p = dict((params or {}).get('strategy_config') or {})
+    p.update(params or {})
     if as_flag(p.get('exit_on_opposite'), False):
         return 'exit'
     return 'reverse' if as_flag(p.get('close_on_opposite'), False) else None
