@@ -94,6 +94,8 @@
 - **Tarjeta en 3 filas** (antes ~9): (1) número, fecha, monedas/intervalo/meses, estrategia, origen corto con enlace a la búsqueda solo si existe, estado en Paper con config y acciones (Detener o Implementar/Eliminar, Probar de nuevo); (2) calificación con estrellas, WR, Sharpe, Ret/mes, Consistencia, PF, Trades/mes, Paper cerrados · P&L; (3) línea de configuración SL/TP/BE/Duración/Riesgo, trades y retorno total. Se quitaron las estrellas por métrica.
 - **Filtros:** Estrategia, Estado en Paper, Origen, Moneda (lista con las monedas de los backtests guardados; coincidencia exacta), Orden. El orden por calificación o Trades/mes ahora se aplica a todo el conjunto filtrado (tope 2.000) y no solo a la página.
 - **Pruebas:** `rq01_screens_static_test`, `saved_backtests_test` (W5: una vista, redirección, sin botón ni vista aparte; W6: orden global), `rq01_screens_test` y `saved_backtests_screen_test` (F3 lista de monedas y filtro exacto, F6 orden global sin perder filas, P0 redirección) actualizadas. La primera corrida la revirtió el instalador porque P1 seguía buscando el enlace `#bt-<id>` de la vista Guardados en vez del ancla `id="bt-<id>"` de la tarjeta: error de la prueba.
+- Instalación de p55 el 11-nov: `main` = `4b55d2d` (segunda corrida). Integración: 15 + 13 PASS.
+- **p56:** vuelve a la cabecera de Estrategias el botón para ver el historial de todas las estrategias, ahora «Historial de backtests» (abre la vista única sin filtro). p55 lo había quitado junto con «Backtests guardados».
 
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 

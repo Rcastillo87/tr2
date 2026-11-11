@@ -65,11 +65,11 @@ namespace {
     $web = (string) @file_get_contents("{$root}/routes/web.php");
     $ctl = (string) @file_get_contents("{$root}/app/Http/Controllers/BacktestingController.php");
     $idx = (string) @file_get_contents("{$root}/resources/views/strategies/index.blade.php");
-    $check('W5: UNA vista: /history/{strategy?} (Gate) usa SavedBacktests; /guardados redirige; sin botón aparte ni vista saved',
+    $check('W5: UNA vista: /history/{strategy?} (Gate) usa SavedBacktests; /guardados redirige; botón «Historial de backtests» (todas) en Estrategias; sin vista saved',
         str_contains($web, "Route::get('/history/{strategy?}',")
         && (bool) preg_match('/function history\(Request \$request, \\\\App\\\\Services\\\\SavedBacktests \$saved, \?Strategy \$strategy = null\)\s*\{\s*Gate::authorize\(\'viewAnalysisTools\'\)/', $ctl)
         && str_contains($ctl, "return redirect()->route('backtesting.history', \$request->query());")
-        && ! str_contains($idx, "route('backtesting.saved')") && ! is_file("{$root}/resources/views/backtesting/saved.blade.php"));
+        && ! str_contains($idx, "route('backtesting.saved')") && str_contains($idx, "<a href=\"{{ route('backtesting.history') }}\"") && ! is_file("{$root}/resources/views/backtesting/saved.blade.php"));
     $check('W6: orden por calificación o Trades/mes sobre TODO el conjunto filtrado (con tope), no solo la página',
         str_contains($svc, '->limit(self::MAX_SORTED)->get())->sortByDesc($key)') && str_contains($svc, '->forPage($page, self::PER_PAGE)'));
 
