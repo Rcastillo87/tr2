@@ -96,6 +96,7 @@
 - **Pruebas:** `rq01_screens_static_test`, `saved_backtests_test` (W5: una vista, redirección, sin botón ni vista aparte; W6: orden global), `rq01_screens_test` y `saved_backtests_screen_test` (F3 lista de monedas y filtro exacto, F6 orden global sin perder filas, P0 redirección) actualizadas. La primera corrida la revirtió el instalador porque P1 seguía buscando el enlace `#bt-<id>` de la vista Guardados en vez del ancla `id="bt-<id>"` de la tarjeta: error de la prueba.
 - Instalación de p55 el 11-nov: `main` = `4b55d2d` (segunda corrida). Integración: 15 + 13 PASS.
 - **p56:** vuelve a la cabecera de Estrategias el botón para ver el historial de todas las estrategias, ahora «Historial de backtests» (abre la vista única sin filtro). p55 lo había quitado junto con «Backtests guardados».
+- Instalación de p56 el 11-nov: `main` = `de37022`. Integración 13 PASS. **Cierre de RQ-01** (p48–p56): resumen en `docs/PENDIENTES_AUDITORIA.md` §0 y en el proyecto (`claude/RQ-01_CIERRE.md`).
 
 ## 2026-11-09 (Bogotá) — Auditoría del 07-nov: validación y fixes (3.er ciclo)
 

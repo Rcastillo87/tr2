@@ -1,9 +1,24 @@
 # Pendientes — TR2
 
-> Estado al **2026-11-10 (Bogotá)**, `main` = `d22b684` (p45). **Las tres rondas de auditoría externa están resueltas en
+> Estado al **2026-11-11 (Bogotá)**, `main` = `de37022` (p56). RQ-01 cerrado (ver §0).
+> Estado anterior: 2026-11-10, `main` = `d22b684` (p45). **Las tres rondas de auditoría externa están resueltas en
 > código** (54 hallazgos originales + N-01 a N-16): estado de cada uno en `docs/CERTIFICACION_AUDITORIA.md`, detalle en
 > `docs/BITACORA.md`. Esta lista reemplaza la del 05-nov (fixes 1 a 11, todos instalados).
 > **Empezar aquí la próxima sesión.** Al cerrar un punto: tacharlo aquí y en «Próxima sesión» de la bitácora.
+
+## 0. RQ-01 — gestión de configuraciones Paper, búsqueda y diagnóstico: CERRADO (p48–p56)
+
+| Parte | Parche · commit | Resultado |
+|---|---|---|
+| RQ-01.5 motor + RQ-01.6 | p48 · `06f1212` | El motor registra cada decisión de Paper y el filtro que anuló la señal; límites por cuenta verificados |
+| RQ-01.1 Trades/mes | p49 · `10f4f61` | Por moneda, sin cierre forzado, sobre el rango real; 15/15 configs |
+| RQ-01.3 Origen | p50 · `5ca81c7` | Manual / búsqueda con su foto; 27 de 28 recuperados |
+| RQ-01.2 Crear en historial | p51 · `5c5ab53` | Disponible si se borra su backtest; sin duplicados; creaciones colgadas se liberan |
+| Pantallas | p52 · `0e85584` | Trades/mes, Paper y enlace en Estrategias; insignias en la búsqueda |
+| Historial único | p53 `8f5b7b8` → p55 `4b55d2d` → p56 `de37022` | Historial y Guardados en UNA vista (todas o una estrategia), tarjeta compacta, filtros Estrategia/Paper/Origen/Moneda (lista)/Orden global; botón «Historial de backtests» en Estrategias. Fix: retorno mensual 0,71 % se veía 71 % |
+| RQ-01.5 pantalla | p54 · `feea8c0` | Sección «Diagnóstico» en Paper Trading |
+
+Regresión al cierre: 47 Python + 17 PHP. Pendiente propio de RQ-01: ninguno. Observación abierta: la config #65 NEAR evalúa con régimen NO_OPERAR porque tiene el filtro de régimen apagado (confirmar si es intencional).
 
 ## Cómo se trabaja (acordado con el dueño)
 
