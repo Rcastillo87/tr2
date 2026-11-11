@@ -182,6 +182,21 @@
                                     
                                     <span class="text-gray-500 mx-1">|</span>
                                     <span class="whitespace-nowrap" style="color:var(--color-text-muted);">PF: <b style="color:var(--color-text-primary);">{{ number_format($pf, 2) }}</b></span>
+
+                                    @php $cfgs = $paperByBacktest[$bt_obj->id] ?? []; $multi = count($cfgs) > 1; @endphp
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);" title="Trades por mes de esa moneda en su backtest. N/D: backtest de varias monedas guardado antes del 10-nov (se calcula al volver a guardarlo).">Trades/mes:
+                                        @forelse($cfgs as $c)
+                                            <b class="font-mono" style="color:{{ $c['tpm'] === null ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }};">{{ $multi ? $c['symbol'] . ' ' : '' }}{{ $c['tpm'] === null ? 'N/D' : number_format($c['tpm'], 2) }}</b>@if(! $loop->last) · @endif
+                                        @empty
+                                            <b>N/D</b>
+                                        @endforelse
+                                    </span>
+
+                                    <span class="text-gray-500 mx-1">|</span>
+                                    <span class="whitespace-nowrap" style="color:var(--color-text-muted);">Paper: <b style="color:var(--color-text-primary);">{{ collect($cfgs)->sum('open') }}</b> abiertos · <b style="color:var(--color-text-primary);">{{ collect($cfgs)->sum('closed') }}</b> cerrados</span>
+
+                                    <a href="{{ route('backtesting.history', $s->id) }}#bt-{{ $bt_obj->id }}" class="whitespace-nowrap ml-auto hover:underline" style="color:var(--color-info);">Backtest #{{ $bt_obj->id }} ↗</a>
                                 </div>
                             @endforeach
                         </div>

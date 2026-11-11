@@ -12,6 +12,10 @@
     </a>
 </div>
 
+<style>
+    .bt-card { scroll-margin-top: 80px; }
+    .bt-card:target { border-color: var(--color-info) !important; box-shadow: 0 0 0 3px rgba(77, 143, 232, .18); }
+</style>
 <div class="space-y-4">
     @forelse($backtests as $bt)
         @php
@@ -43,11 +47,12 @@
             $isOperating = in_array($bt->id, $activeBacktestIds ?? []);
         @endphp
 
-        <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
+        <div id="bt-{{ $bt->id }}" class="bt-card rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);">
             <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                 <div class="flex items-center gap-3">
                     <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $bt->updated_at->timezone('America/Bogota')->format('Y-m-d H:i') }}</span>
                     <span class="text-[11px] font-mono px-2 py-0.5 rounded" style="background:var(--color-surface-raised); color:var(--color-text-muted);">{{ implode(', ', $bt->symbols ?? []) }} / {{ $bt->interval }} / {{ $bt->months }} meses</span>
+                    <span class="text-[11px]" style="color:var(--color-text-muted);">Backtest #{{ $bt->id }}</span>
                 </div>
                 <div class="flex items-center gap-2">
                     @if($isOperating)
@@ -70,14 +75,33 @@
                 </div>
             </div>
 
-            <!-- CONFIGURACIÓN ORIGINAL (Cuadrícula de 5 columnas) -->
-            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
+            {{-- RQ-01.3: origen del backtest --}}
+            @php
+                $originText = \App\Support\BacktestOrigin::describe($bt->origin, $bt->origin_meta);
+                $originRun = $bt->origin === 'search' ? (int) ($bt->origin_meta['run_id'] ?? 0) : 0;
+                $tpm = $tradesPerMonth[$bt->id] ?? [];
+                $tpmText = count($tpm) <= 1
+                    ? (($v = reset($tpm)) === null || $v === false ? 'N/D' : number_format($v, 2))
+                    : collect($tpm)->map(fn ($v, $s) => $s . ' ' . ($v === null ? 'N/D' : number_format($v, 2)))->implode(' · ');
+            @endphp
+            <div class="flex items-center gap-2 flex-wrap px-4 py-1.5 border-b text-[11px]" style="border-color:var(--color-border-soft); background:var(--color-base);">
+                <span class="text-[9px] uppercase tracking-wider" style="color:var(--color-text-muted);">Origen</span>
+                @if($originRun && isset($searchLinks[$originRun]))
+                    <a href="{{ route('strategies.search.show', $originRun) }}" class="hover:underline" style="color:var(--color-info);">{{ $originText }}</a>
+                @else
+                    <span style="color:{{ $bt->origin ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }};">{{ $originText }}</span>
+                @endif
+            </div>
+
+            <!-- CONFIGURACIÓN ORIGINAL (Cuadrícula de 6 columnas) -->
+            <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:0; border-bottom:1px solid var(--color-border-soft);">
                 @foreach([
                     ['Stop Loss', ($params['sl_pct'] ?? '—').'%'],
                     ['Take Profit 1', ($params['tp_pct'] ?? '—').'%'],
                     ['Break-even', ($params['be_pct'] ?? '—').'%'],
                     ['Duración', ($params['max_duration'] ?? '—').' velas'],
                     ['Riesgo/trade', ($params['risk_per_trade_pct'] ?? '—').'%'],
+                    ['Trades/mes', $tpmText],
                 ] as [$label, $value])
                 <div class="px-2 py-2 text-center" style="border-right:1px solid var(--color-border-soft);">
                     <p class="text-[9px] mb-0.5" style="color:var(--color-text-muted);">{{ $label }}</p>

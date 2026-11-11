@@ -233,12 +233,7 @@
     }
     function finalCell(r) {
         const late = r.oos_ok ? '<span class="sb-badge late">✓ también gana</span>' : '<span class="sb-badge early">solo al principio</span>';
-        const c = r.created;
-        let st = '';
-        if (c && c.status === 'done') st = `<span class="sb-badge ok">✓ Creado #${c.backtest_id}</span>`;
-        else if (c && c.status === 'running') st = '<span class="sb-badge run">Creando…</span>';
-        else if (c && c.status === 'error') st = `<span class="sb-badge no" title="${SB.esc(c.error)}">✗ No se creó</span>`;
-        else if (pending.has(r.id)) st = '<span class="sb-badge run">En cola…</span>';
+        const st = createdBadge(r);
         return late + (st ? '<div style="margin-top:4px">' + st + '</div>' : '');
     }
     function canPick(r) { return r.creatable && !state.outdated && !(r.created && ['done', 'running'].includes(r.created.status)) && !pending.has(r.id); }
@@ -305,11 +300,15 @@
 
     // ── v3 ──────────────────────────────────────────────────────────────────────────────────────────────
     let tab = null;
+    // Estado de «Crear en historial» (RQ-01.2): conciliado en el servidor con los backtests que existen
     function createdBadge(r) {
-        const c = r.created;
-        if (c && c.status === 'done') return `<span class="sb-badge ok">✓ Creado #${c.backtest_id}</span>`;
-        if (c && c.status === 'running') return '<span class="sb-badge run">Creando…</span>';
-        if (c && c.status === 'error') return `<span class="sb-badge no" title="${SB.esc(c.error)}">✗ No se creó</span>`;
+        const c = r.created, id = c ? parseInt(c.backtest_id, 10) : NaN;
+        if (c && c.status === 'done') return URL_HISTORY && id > 0
+            ? `<a class="sb-badge ok" href="${URL_HISTORY}#bt-${id}" title="Ver en el historial">✓ Creado #${id} ↗</a>`
+            : `<span class="sb-badge ok">✓ Creado #${SB.esc(c.backtest_id)}</span>`;
+        if (c && c.status === 'running') return c.phase === 'queued' ? '<span class="sb-badge run">En cola…</span>' : '<span class="sb-badge run">Creando…</span>';
+        if (c && c.status === 'deleted') return `<span class="sb-badge early" title="Su backtest se borró del historial: puedes volver a crearla.">Backtest${id > 0 ? ' #' + id : ''} borrado · disponible</span>`;
+        if (c && c.status === 'error') return `<span class="sb-badge no" title="${SB.esc(c.error)}">✗ No se creó · reintentar</span>`;
         if (pending.has(r.id)) return '<span class="sb-badge run">En cola…</span>';
         return '';
     }

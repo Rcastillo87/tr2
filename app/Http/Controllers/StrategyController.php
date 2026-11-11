@@ -27,6 +27,20 @@ class StrategyController extends Controller
         foreach ($backtests as $bt) {
             $groupedPapers[$bt->strategy_id][] = $bt;
         }
+        // RQ-01.1: por backtest, sus configs activas con Trades/mes y trades Paper abiertos/cerrados (una consulta agregada)
+        $paperCounts = $paperConfigs->isEmpty() ? collect() : \Illuminate\Support\Facades\DB::table('paper_trades')
+            ->whereIn('paper_strategy_config_id', $paperConfigs->pluck('id'))
+            ->groupBy('paper_strategy_config_id')
+            ->selectRaw("paper_strategy_config_id AS id, count(*) FILTER (WHERE status = 'open') AS open, count(*) FILTER (WHERE status = 'closed') AS closed")
+            ->get()->keyBy('id');
+        $paperByBacktest = $paperConfigs->sortBy('symbol')->groupBy('backtest_id')
+            ->map(fn ($cfgs) => $cfgs->map(fn ($c) => [
+                'id'     => $c->id,
+                'symbol' => $c->symbol,
+                'tpm'    => $c->avg_monthly_trades !== null ? (float) $c->avg_monthly_trades : null,
+                'open'   => (int) ($paperCounts[$c->id]->open ?? 0),
+                'closed' => (int) ($paperCounts[$c->id]->closed ?? 0),
+            ])->values()->all())->all();
 
         // Búsqueda de configuraciones: la última de cada estrategia (chip de estado) y si hay una en curso (solo una a la vez)
         app(\App\Services\ParamSearchService::class)->reapStale();
@@ -41,7 +55,7 @@ class StrategyController extends Controller
         $sbQueue = \App\Models\ParamSearchRun::where('status', 'queued')->orderBy('id')->pluck('id')
             ->values()->flip()->map(fn ($i) => $i + 1)->all();
 
-        return view('strategies.index', compact('strategies', 'groupedPapers', 'latestRuns', 'searchActive', 'sbLabels', 'sbQueue'));
+        return view('strategies.index', compact('strategies', 'groupedPapers', 'paperByBacktest', 'latestRuns', 'searchActive', 'sbLabels', 'sbQueue'));
     }
 
     public function create()

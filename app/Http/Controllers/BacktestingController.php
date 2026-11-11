@@ -395,7 +395,17 @@ class BacktestingController extends Controller
             ->unique()
             ->toArray();
 
-        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestIds'));
+        // RQ-01.3: origen de cada tarjeta; enlace a la búsqueda solo si sigue existiendo y el usuario puede verla
+        $runIds = $backtests->map(fn ($b) => $b->origin === BacktestOrigin::SEARCH ? (int) ($b->origin_meta['run_id'] ?? 0) : 0)
+            ->filter()->unique()->values();
+        $searchLinks = $runIds->isEmpty() || ! Gate::allows('manageUsers') ? []
+            : \App\Models\ParamSearchRun::whereIn('id', $runIds)->pluck('id')->flip()->all();
+        // RQ-01.1: Trades/mes por moneda, con la misma regla que las configs Paper
+        $tradesPerMonth = $backtests->mapWithKeys(fn ($b) => [$b->id => collect($b->symbols ?? [])->mapWithKeys(
+            fn ($sym) => [$sym => StrategyConfigSync::tradesPerMonth($b->metrics ?? [], $b->config_params ?? [], (int) $b->months,
+                (string) $sym, count($b->symbols ?? []))])->all()])->all();
+
+        return view('backtesting.history', compact('strategy', 'backtests', 'activeBacktestIds', 'searchLinks', 'tradesPerMonth'));
     }
 
 
