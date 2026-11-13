@@ -137,7 +137,7 @@ Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, s
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
 - Tick cada minuto por cuenta (`RealTradingTickJob`), conciliación cada 5 min (`RealTradingReconcileJob`), circuit breaker por pérdida máxima cada minuto.
-- SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick. En un cierre nativo de Bybit la hora de salida es la del closed-pnl. Misma regla de señal ya operada que Paper y el motor.
+- SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick. El trailing fijo es nativo de Bybit y la DB solo toma su nivel cuando se activó (precio en el `activePrice`), como el backtest y Paper. En un cierre nativo de Bybit la hora de salida es la del closed-pnl. Misma regla de señal ya operada que Paper y el motor.
 - Órdenes idempotentes (`orderLinkId` guardado antes de enviar; un `pending_open` se recupera preguntando por esa orden). Chequeo de liquidación al abrir.
 - **Límites de riesgo por cuenta** (pérdida máxima del mes y trades abiertos), editables por el dueño en `/trading/accounts`. **Avisos de broker** (`broker_events`) en la campana del dueño.
 
@@ -322,6 +322,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
 | `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
 | `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `real_native_trailing_sync_test.py` | Trailing nativo de Real: solo se sincroniza activado; SL ficticio reparado; circuit breaker sin falsos cierres (casos reales #91 y #93) |
 | `paper_no_minute_source_test.py` | Paper con la fuente sin ninguna vela de 1m del símbolo: velas del intervalo con SL primero |
 | `strategy_label_test.php`, `strategy_identity_test.php`* | Configs identificadas por id, no por etiqueta |
 | `flag_normalization_test.py` | Flags booleanos normalizados (`"false"` en texto no activa un filtro) |
@@ -344,7 +345,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (50 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (51 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

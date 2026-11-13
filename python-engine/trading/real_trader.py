@@ -789,7 +789,13 @@ class RealTrader:
             if entry_price <= 0:
                 continue
 
-            if trade.get("trailing_applied") and live_sl:
+            trailing_live = bool(trade.get("trailing_applied") and live_sl)
+            if trailing_live and self._snapshot(trade).get("trailing_mode") == "fixed":
+                # R-12: con trailing nativo, solo es referencia si de verdad se activó (si no, el SL de la DB es ficticio
+                # hasta que el monitor lo repare: se usa el SL original)
+                strat = self._trade_strategy(trade)
+                trailing_live = strat is not None and await self._native_trailing_activated(trade, strat, None)
+            if trailing_live:
                 snap = self._snapshot(trade)
                 trailing_dist_pct = float(snap["trailing_distance_pct"]) if snap.get("trailing_distance_pct") else None
                 if trailing_dist_pct:
@@ -953,6 +959,50 @@ class RealTrader:
         if not row or row['hi'] is None:
             return None, None
         return float(row['hi']), float(row['lo'])
+
+    @staticmethod
+    def _native_active_price(strategy, entry: float, side: str) -> float:
+        """activePrice con el que open_trade armó el trailing nativo (misma función y mismo buffer: el configurado o,
+        si es <= 0, el mínimo NATIVE_TRAILING_MIN_BUFFER_PCT)."""
+        buf = getattr(strategy, 'trailing_activation_buffer_pct', None)
+        buffer_pct = (buf if buf and buf > 0 else NATIVE_TRAILING_MIN_BUFFER_PCT) / 100
+        return compute_native_trailing_params(entry, side, strategy.trailing_distance_pct, buffer_pct=buffer_pct)[1]
+
+    async def _native_trailing_activated(self, trade: dict, strategy, current_price: float | None) -> bool:
+        """
+        ¿El trailing nativo de Bybit ya se activó? Solo si el precio llegó al activePrice desde la entrada (precio actual
+        o extremo de las velas de 1m cerradas). Antes de activarse, Bybit informa en la orden TrailingProfit
+        triggerPrice = activePrice ± trailingStop, que NO es un SL vivo (R-12: se tomaba como tal desde el primer
+        minuto). Misma regla que backtest y Paper: el trailing empieza con ganancia mayor que el buffer.
+        """
+        long = trade['side'] == 'long'
+        active = self._native_active_price(strategy, float(trade['entry_price']), trade['side'])
+        if current_price is not None and (current_price >= active if long else current_price <= active):
+            return True
+        hi, lo = await self._minute_extremes_since_entry(trade)
+        best = hi if long else lo
+        return best is not None and (best >= active if long else best <= active)
+
+    async def _repair_native_sync(self, trade: dict, position: dict | None, fake_sl: float) -> float:
+        """
+        R-12: trade con trailing_applied pero el trailing nativo nunca se activó. El SL de la DB vuelve al que de verdad
+        tiene la posición en Bybit (stopLoss; si no lo informa, original_sl) y trailing_applied a false. Devuelve el SL.
+        """
+        ex_sl = float((position or {}).get('stopLoss') or 0)
+        fixed = ex_sl if ex_sl > 0 else float(trade.get('original_sl') or 0)
+        if fixed <= 0:
+            logger.error(f"[MONITOR] #{trade['id']} {trade['symbol']}: trailing nativo no activado y sin SL de Bybit ni "
+                         f"original_sl para repararlo")
+            return fake_sl
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE real_trades SET sl=$1, trailing_applied=false, updated_at=now()"
+                               " WHERE id=$2 AND trailing_applied", fixed, trade['id'])
+        await self.log_audit(trade['id'], 'trailing_sync_repaired',
+                             {'fake_sl': fake_sl, 'sl': fixed, 'source': 'bybit' if ex_sl > 0 else 'original_sl'})
+        logger.warning(f"[MONITOR] {trade['symbol']} #{trade['id']}: trailing nativo no activado: se repara "
+                       f"sl {fake_sl} -> {fixed} y trailing_applied=false (R-12)")
+        trade['trailing_applied'], trade['sl'] = False, fixed
+        return fixed
 
     async def _closed_atr(self, symbol: str, interval: str) -> tuple[float | None, float | None]:
         """(ATR, media 50 del ATR) de la última vela CERRADA del intervalo."""
@@ -1818,6 +1868,14 @@ class RealTrader:
                 trade["status"] = "open"
                 logger.warning(f"[MONITOR] {symbol} #{trade_id}: cierre anterior sin confirmar y la posición sigue viva — vuelve a open")
 
+            # 1c. Trailing nativo (fixed): ¿activado? Si no, un trailing_applied heredado es un SL ficticio (R-12) y se
+            #     repara ANTES del BE y de la alineación, que leen el SL de la DB.
+            native_active = False
+            if strategy.trailing_mode == "fixed":
+                native_active = await self._native_trailing_activated(trade, strategy, price_cache.get(symbol))
+                if not native_active and trade.get("trailing_applied"):
+                    sl = await self._repair_native_sync(trade, position, sl)
+
             # 2. SL/TP del exchange = los de la DB (p. ej. trading-stop fallido tras abrir).
             #    Con trailing nativo ya activo, Bybit es la fuente del SL: no se pisa.
             if not (strategy.trailing_mode == "fixed" and trade.get("trailing_applied")):
@@ -1879,14 +1937,22 @@ class RealTrader:
                 new_sl = strategy.calculate_trailing_sl(entry, side, current_price, sl, current_atr=closed_atr)
                 if new_sl != sl and await move_sl(new_sl, f"Trailing {strategy.trailing_mode}", ", trailing_applied=true"):
                     sl = new_sl
-            elif strategy.trailing_mode == "fixed":
+            elif strategy.trailing_mode == "fixed" and native_active:
+                # Solo un trailing ACTIVADO (R-12), con el nivel del lado que protege y que mejora el SL vigente
+                # (en Bybit conviven el stopLoss fijo y el trailing: protege el más cercano al precio).
                 native_sl = await client.get_native_trailing_level(symbol)
                 if native_sl is not None and round(native_sl, 8) != round(sl, 8):
-                    async with self.pool.acquire() as conn:
-                        await conn.execute("UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
-                                           native_sl, trade_id)
-                    sl = native_sl
-                    logger.info(f"[MONITOR] Trailing nativo sincronizado: {symbol} sl={native_sl}")
+                    protective = native_sl < current_price if long else native_sl > current_price
+                    improves = native_sl > sl if long else native_sl < sl
+                    if protective and improves:
+                        async with self.pool.acquire() as conn:
+                            await conn.execute("UPDATE real_trades SET sl=$1, trailing_applied=true WHERE id=$2",
+                                               native_sl, trade_id)
+                        sl = native_sl
+                        logger.info(f"[MONITOR] Trailing nativo sincronizado: {symbol} #{trade_id} sl={native_sl}")
+                    else:
+                        logger.warning(f"[MONITOR] {symbol} #{trade_id}: nivel del trailing nativo {native_sl} descartado "
+                                       f"(precio {current_price}, SL vigente {sl}: no protege o no mejora)")
 
             # 5. Protección por volatilidad (velas cerradas; 'widen' una sola vez por trade)
             if strategy.volatility_protection_mode and closed_atr is not None and closed_atr_avg is not None:

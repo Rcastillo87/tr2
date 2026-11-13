@@ -21,6 +21,7 @@ use App\Jobs\RealTradingTickJob;
 use App\Models\Backtest;
 use App\Models\RealStrategySubscription;
 use App\Models\RealTrade;
+use App\Services\StrategyConfigSync;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -159,8 +160,10 @@ try {
         $btId = (int) $btId;
         $cfgIds = DB::table('paper_strategy_configs')->where('backtest_id', $btId)->pluck('id')->all();
         DB::table('paper_strategy_configs')->whereIn('id', $cfgIds)->update(['active' => false]); // que no esté "operando"
+        // Reglas de borrado vigentes (p40b, CFG-05): bloquean los trades Real por reconciliar y los Paper abiertos
         $openReal = RealTrade::whereIn('paper_strategy_config_id', $cfgIds)
-            ->whereIn('status', ['open', 'pending_open', 'pending_close'])->count();
+            ->whereIn('status', RealTrade::RECONCILE_STATUSES)->count();
+        $openPaper = DB::table('paper_trades')->whereIn('paper_strategy_config_id', $cfgIds)->where('status', 'open')->count();
         $subsOfBt = DB::table('real_strategy_subscriptions')->whereIn('paper_strategy_config_id', $cfgIds)->pluck('id')->all();
         $statusBefore = DB::table('real_strategy_subscriptions')->whereIn('id', $subsOfBt)->pluck('status', 'id')->all();
 
@@ -169,9 +172,10 @@ try {
         $req->setLaravelSession(app('session.store'));
         app()->instance('request', $req);
         try {
-            app(BacktestingController::class)->destroyBacktest(Backtest::findOrFail($btId));
-            if ($openReal > 0) {
-                $check('D1 con posición Real abierta NO se borra', Backtest::find($btId) !== null, "abiertas={$openReal}");
+            app(BacktestingController::class)->destroyBacktest(Backtest::findOrFail($btId), app(StrategyConfigSync::class));
+            if ($openReal > 0 || $openPaper > 0) {
+                $check('D1 con posición Real por reconciliar o Paper abierta NO se borra', Backtest::find($btId) !== null,
+                       "real={$openReal} paper={$openPaper}");
                 $statusAfter = DB::table('real_strategy_subscriptions')->whereIn('id', $subsOfBt)->pluck('status', 'id')->all();
                 $check('D2 sus suscripciones siguen como estaban (no se tocó nada)', $statusAfter === $statusBefore);
             } else {

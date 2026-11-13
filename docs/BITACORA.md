@@ -21,6 +21,44 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-12 — Trailing nativo «sincronizado» antes de activarse; circuit breaker prematuro (p60)
+- **Hallazgo** (investigación de INV-006, ETHUSDT): la contabilidad del trade #91 cuadra al centavo con Bybit (el
+  «36,1998» del informe era la comisión, no la cantidad). La causa del cierre era otra. Con `trailing_mode='fixed'` el
+  monitor leía `get_native_trailing_level()` (`triggerPrice` de la orden `TrailingProfit` Untriggered) y lo guardaba
+  como SL vivo con `trailing_applied=true` desde el primer ciclo. Antes de la activación ese valor es
+  `activePrice ± trailingStop`:
+  - #86: 2055,5224 + 20,932 = 2076,45;
+  - #91: 2019,31606 + 20,5633 = 2039,87;
+  - #93: 1896,25182 + 19,3101 = 1915,56, sincronizado 47 s después de abrir.
+
+  La DB quedaba con un SL 0,8 % en zona de ganancia y el circuit breaker (referencia = SL vivo, tolerancia 1 % × 1,2)
+  cerraba con +0,39 %/+0,42 % en contra, con el SL real de Bybit al 1,5 %: #86 −200,91 y #91 −174,82 USDT (demo).
+  Efecto secundario: con el SL ficticio el BE se marcaba sin mover el SL en Bybit. Backtest y Paper solo activan el
+  trailing con ganancia > buffer (1,8 %): divergencia sistemática en Real.
+- **Cambio** (`real_trader.py`): `_native_trailing_activated()` (precio actual o extremo de 1m cerradas ≥ `activePrice`,
+  recalculado con `compute_native_trailing_params` y el mismo buffer que al abrir). El monitor sincroniza solo con
+  activación y con un nivel que protege y mejora el SL; un `trailing_applied` sin activación se repara al `stopLoss` de
+  Bybit **antes** del BE y de la alineación (`_repair_native_sync`, auditoría `trailing_sync_repaired`). El circuit
+  breaker usa el SL vivo como referencia de trailing solo si está activado.
+- **Prueba:** `real_native_trailing_sync_test.py` (11 casos con los precios reales de #91 y #93). Con el código anterior:
+  **7 FALLOS**, incluido C1 (reproduce el cierre de #91 por circuit breaker). Mutaciones (7/7):
+
+  | Mutación | Fallos |
+  |---|---|
+  | Sin comprobar la activación en el monitor | 3 |
+  | Ignorar el buffer configurado | 4 |
+  | Sin reparación | 3 |
+  | Sin exigir que proteja | 1 |
+  | Sin exigir que mejore | 1 |
+  | Circuit breaker sin comprobar la activación | 1 |
+  | Extremo equivocado | 2 |
+
+- **R-13:** `real_config_gate_test.php` (integración), sección D, al día con la firma de `destroyBacktest` (p40b) y sus reglas
+  (`RECONCILE_STATUSES` y trade Paper abierto). En el servidor fallaba por `ArgumentCountError` (13-nov).
+- **Lección (mutaciones):** una mutación del mismo tamaño restaurada en el mismo segundo deja vivo el `.pyc` mutado
+  (Python lo valida por mtime y tamaño) y la corrida siguiente da falsos fallos. Las mutaciones se corren con
+  `python -B`, sin caché de bytecode.
+
 Detalle punto por punto, sondas y decisiones pendientes: `docs/VALIDACION_AUDITORIA_13NOV.md`. Base: `7375e5e` (p58).
 Regresión local antes de tocar nada: 49 Python + 17 PHP en TODO OK. Confirmado en producción: FK `users →
 broker_accounts / real_strategy_subscriptions / real_trades` = CASCADE; 1 admin, 1 inversionista, 0 consultores.
@@ -39,6 +77,8 @@ broker_accounts / real_strategy_subscriptions / real_trades` = CASCADE; 1 admin,
   (8), ignorar el punto de control (1), `exit_time` antes de la entrada (1), incluir la vela sin cerrar (3).
   `minute_gap_test` y `minute_tail_test` siguen en TODO OK. Regresión: 50 Python + 17 PHP.
 - **De paso:** `.gitignore` ignora `docs/**/__pycache__/` (la carga de `docs/estrategias/` dejaba `.pyc` sin seguimiento).
+- **Instalador:** probado en simulador con 7 escenarios (aplicar, «YA APLICADO», push caído y retoma, corte y retoma, regresión que falla, origen distinto, errores tras el reinicio). El simulador detectó que la primera versión decía «YA APLICADO» con el push fallido: ahora exige el commit en `origin/main`.
+- Instalación de p59 el 13-nov: regresión 50 Python + 17 PHP en TODO OK; motor reiniciado 16:27:23 UTC, tick de Paper 200, 0 errores en `engine.log`; `main` = `origin/main` = `904154d`.
 
 ## 2026-11-10 (Bogotá) — RQ-01: gestión de configuraciones y diagnóstico de Paper
 
