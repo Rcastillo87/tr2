@@ -21,7 +21,9 @@ use App\Jobs\RealTradingTickJob;
 use App\Models\Backtest;
 use App\Models\RealStrategySubscription;
 use App\Models\RealTrade;
+use App\Models\User;
 use App\Services\StrategyConfigSync;
+use App\Services\UserDeactivation;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +51,7 @@ $before = $counts();
 /** Ids de suscripción que el job de la cuenta enviaría al motor (null = no hubo pedido). */
 $sentSubIds = function (int $accountId): ?array {
     Http::swap(new HttpFactory());
-    Http::fake(['*' => Http::response(['status' => 'ok', 'results' => []], 200)]);
+    Http::fake(['*' => Http::response(['status' => 'ok', 'results' => [], 'features' => ['sub_entries']], 200)]);
     (new RealTradingAccountTickJob($accountId))->handle();
     $recorded = Http::recorded();
     if ($recorded->isEmpty()) {
@@ -59,6 +61,22 @@ $sentSubIds = function (int $accountId): ?array {
     $accounts = $request->data()['accounts'] ?? [];
 
     return collect($accounts[0]['subscriptions'] ?? [])->pluck('subscription_id')->map(fn ($v) => (int) $v)->all();
+};
+/** Suscripciones del pedido al motor: [id => entries_allowed] (null = no hubo pedido). */
+$sentSubs = function (int $accountId): ?array {
+    Http::swap(new HttpFactory());
+    Http::fake(['*' => Http::response(['status' => 'ok', 'results' => [], 'features' => ['sub_entries']], 200)]);
+    (new RealTradingAccountTickJob($accountId))->handle();
+    $recorded = Http::recorded();
+    if ($recorded->isEmpty()) {
+        return null;
+    }
+    [$request] = $recorded->last();
+    $out = [];
+    foreach ($request->data()['accounts'][0]['subscriptions'] ?? [] as $s) {
+        $out[(int) $s['subscription_id']] = (bool) ($s['entries_allowed'] ?? true);
+    }
+    return $out;
 };
 $cfgActive = fn (int $id, bool $v) => DB::table('paper_strategy_configs')->where('id', $id)->update(['active' => $v]);
 
@@ -125,16 +143,37 @@ try {
     $check('A4-control: con el filtro VIEJO la suscripción huérfana SÍ habría viajado', in_array($subId, $old, true));
     DB::table('real_strategy_subscriptions')->where('id', $subId)->update(['paper_strategy_config_id' => $cfgId]);
 
+    // A5 (D-03, 13-nov): pausada CON operación abierta viaja SIN entradas (termina su ciclo); SIN operación no viaja
     DB::table('real_strategy_subscriptions')->where('id', $subId)->update(['status' => 'paused']);
-    $ids = $sentSubIds($accountId);
-    $check('A5 suscripción pausada -> NO viaja (comportamiento previo intacto)', $ids === null || ! in_array($subId, $ids, true), json_encode($ids));
+    $hasOpenA5 = RealTrade::where('subscription_id', $subId)->whereIn('status', ['open', 'pending_close'])->exists();
+    $sentA5 = $sentSubs($accountId);
+    if ($hasOpenA5) {
+        $check('A5a suscripción pausada CON operación abierta -> viaja SIN entradas (D-03)',
+            is_array($sentA5) && array_key_exists($subId, $sentA5) && $sentA5[$subId] === false, json_encode($sentA5));
+    } else {
+        $check('A5a suscripción pausada sin operación abierta -> NO viaja', $sentA5 === null || ! array_key_exists($subId, $sentA5),
+            json_encode($sentA5));
+    }
     DB::table('real_strategy_subscriptions')->where('id', $subId)->update(['status' => 'active']);
+    $idle = DB::table('real_strategy_subscriptions as s')->join('paper_strategy_configs as c', 'c.id', '=', 's.paper_strategy_config_id')
+        ->where('s.broker_account_id', $accountId)->where('s.id', '<>', $subId)->where('c.active', true)
+        ->whereNotExists(fn ($e) => $e->selectRaw('1')->from('real_trades as t')->whereColumn('t.subscription_id', 's.id')
+            ->whereIn('t.status', ['open', 'pending_close']))->value('s.id');
+    if ($idle) {
+        DB::table('real_strategy_subscriptions')->where('id', $idle)->update(['status' => 'paused']);
+        $sentA5 = $sentSubs($accountId);
+        $check("A5b suscripción pausada #{$idle} SIN operación abierta -> NO viaja (comportamiento previo intacto)",
+            $sentA5 === null || ! array_key_exists((int) $idle, $sentA5), json_encode($sentA5));
+    } else {
+        echo "SKIP  A5b: no hay otra suscripción con config activa y sin operación abierta en la cuenta #{$accountId}\n";
+    }
 
     echo "=== B. El scope coincide con la consulta cruda\n";
     $viaScope = RealStrategySubscription::runnable()->count();
     $viaSql = DB::table('real_strategy_subscriptions as s')
         ->join('paper_strategy_configs as c', 'c.id', '=', 's.paper_strategy_config_id')
-        ->where('s.status', 'active')->where('c.active', true)->count();
+        ->join('users as u', 'u.id', '=', 's.user_id')
+        ->where('s.status', 'active')->where('c.active', true)->where('u.is_active', true)->count();
     $check('B1 runnable() == SQL crudo', $viaScope === $viaSql, "scope={$viaScope} sql={$viaSql}");
 
     echo "=== C. El despachador no encola cuentas sin suscripciones operables\n";
@@ -190,6 +229,123 @@ try {
         } catch (\Throwable $e) {
             $check('D destroyBacktest sin excepción', false, get_class($e) . ': ' . substr($e->getMessage(), 0, 200));
         }
+    }
+
+    echo "=== E. Usuario inactivo (p62, decisión del dueño 13-nov)\n";
+    $uid = (int) DB::table('broker_accounts')->where('id', $accountId)->value('user_id');
+    $userSubs = fn () => DB::table('real_strategy_subscriptions')->where('user_id', $uid)->pluck('status', 'id')->all();
+    $liveOf = fn (array $ids) => DB::table('real_trades')->whereIn('subscription_id', $ids)
+        ->whereIn('status', RealTrade::RECONCILE_STATUSES)->distinct()->pluck('subscription_id')->map(fn ($v) => (int) $v)->all();
+    $tradesBefore = DB::table('real_trades')->where('user_id', $uid)->count();
+    DB::table('paper_strategy_configs')->where('id', $cfgId)->update(['active' => true]);
+    DB::table('real_strategy_subscriptions')->where('id', $subId)->update(['status' => 'active']);
+
+    // E1. Inactivado por SQL (sin pasar por la pantalla) con una suscripción activa
+    DB::table('users')->where('id', $uid)->update(['is_active' => false]);
+    $old = RealStrategySubscription::where('status', 'active')
+        ->whereHas('paperStrategyConfig', fn ($c) => $c->where('active', true))->whereKey($subId)->exists();
+    $check('E1-control: con el filtro anterior, la suscripción del usuario inactivado por SQL SÍ habría abierto', $old);
+    $check('E1 runnable() excluye al usuario inactivo (U-1)', ! RealStrategySubscription::runnable()->whereKey($subId)->exists());
+    $sent = $sentSubs($accountId);
+    $withEntries = array_keys(array_filter($sent ?? []));
+    $check('E1 el motor no recibe ninguna suscripción con entradas de ese usuario',
+        array_intersect($withEntries, array_keys($userSubs())) === [], json_encode($sent));
+    // Con operaciones abiertas y config Paper activa (con la config apagada no viajan: regla vigente, igual que Paper)
+    $liveOpen = DB::table('real_trades as t')->join('real_strategy_subscriptions as s', 's.id', '=', 't.subscription_id')
+        ->join('paper_strategy_configs as c', 'c.id', '=', 's.paper_strategy_config_id')
+        ->where('s.user_id', $uid)->where('c.active', true)->whereIn('t.status', ['open', 'pending_close'])
+        ->distinct()->pluck('t.subscription_id')->map(fn ($v) => (int) $v)->all();
+    $check('E2 sus suscripciones con operaciones abiertas (config activa) SÍ viajan, sin entradas (terminan su ciclo)',
+        $liveOpen === [] || collect($liveOpen)->every(fn ($id) => array_key_exists($id, $sent ?? []) && ($sent[$id] === false)),
+        json_encode(['abiertas' => $liveOpen, 'enviadas' => $sent]));
+    DB::table('users')->where('id', $uid)->update(['is_active' => true]);
+
+    // E3. Inactivar por la pantalla (UserDeactivation): sin operaciones vivas -> eliminadas; con vivas -> pausadas
+    $subsBefore = $userSubs();
+    $live = $liveOf(array_keys($subsBefore));
+    $r = app(UserDeactivation::class)->setActive(User::findOrFail($uid), false);
+    $subsAfter = $userSubs();
+    $sorted = function (array $a): array { $a = array_values(array_map('intval', $a)); sort($a); return $a; };
+    $gone = $sorted(array_diff(array_keys($subsBefore), array_keys($subsAfter)));
+    $check('E3 eliminadas exactamente las suscripciones sin operaciones vivas',
+        $gone === $sorted(array_diff(array_keys($subsBefore), $live)) && $r['deleted'] === count($gone),
+        json_encode(['antes' => count($subsBefore), 'vivas' => $live, 'eliminadas' => $gone, 'r' => $r]));
+    $retiring = DB::table('real_strategy_subscriptions')->where('user_id', $uid)->where('retire_on_close', true)->pluck('id')->all();
+    $check('E3 las de operaciones vivas siguen, pausadas y marcadas para eliminarse al cerrar (retire_on_close)',
+        $sorted(array_keys($subsAfter)) === $sorted($live) && collect($subsAfter)->every(fn ($st) => $st === 'paused')
+        && $sorted($retiring) === $sorted($live), json_encode(['subs' => $subsAfter, 'retire' => $retiring]));
+    $check('E4 ningún trade borrado (historial intacto) y el usuario existe',
+        DB::table('real_trades')->where('user_id', $uid)->count() === $tradesBefore && User::find($uid) !== null);
+
+    // E5. Limpieza: conserva las de operaciones vivas y elimina una suscripción sin operaciones del usuario inactivo
+    $extra = DB::table('real_strategy_subscriptions')->insertGetId(['user_id' => $uid, 'broker_account_id' => $accountId,
+        'paper_strategy_config_id' => null, 'strategy' => 'p62-prueba', 'symbol' => 'XXXUSDT', 'interval' => '240',
+        'status' => 'paused', 'created_at' => now(), 'updated_at' => now()]);
+    $purged = app(UserDeactivation::class)->purgeFinished();
+    $check('E5 purgeFinished elimina la sin operaciones y conserva las vivas',
+        ! DB::table('real_strategy_subscriptions')->where('id', $extra)->exists() && $sorted(array_keys($userSubs())) === $sorted($live),
+        json_encode(['purgadas' => $purged, 'quedan' => $userSubs()]));
+
+    // E6. ensureSubscriptions no crea suscripciones para el usuario inactivo (U-3)
+    $freeCfg = \App\Models\PaperStrategyConfig::whereNotExists(fn ($e) => $e->selectRaw('1')->from('real_strategy_subscriptions as r')
+        ->whereColumn('r.paper_strategy_config_id', 'paper_strategy_configs.id')->where('r.broker_account_id', $accountId))->first();
+    if (! $freeCfg) {
+        echo "SKIP  E6: todas las configs ya tienen suscripción en la cuenta #{$accountId}\n";
+    } else {
+        $n0 = count($userSubs());
+        app(StrategyConfigSync::class)->ensureSubscriptions($freeCfg, [$accountId]);
+        $check("E6 ensureSubscriptions (config #{$freeCfg->id} sin suscripción) no crea nada para el usuario inactivo",
+            count($userSubs()) === $n0, json_encode($userSubs()));
+    }
+
+    // E7. Reactivar: no recupera las eliminadas (elige de nuevo)
+    app(UserDeactivation::class)->setActive(User::findOrFail($uid), true);
+    $check('E7 reactivado: activo y sin las suscripciones eliminadas', User::find($uid)->is_active && $sorted(array_keys($userSubs())) === $sorted($live),
+        json_encode($userSubs()));
+
+    echo "=== F. Pausa manual y suscripciones por eliminar (decisiones del dueño D-03, D-04)\n";
+    // F1. Reactivado: una marcada para eliminarse no se puede volver a activar desde la pantalla
+    if ($live !== []) {
+        $rid = (int) $live[0];
+        \Illuminate\Support\Facades\Auth::setUser(User::findOrFail($uid));
+        $resp = app(\App\Http\Controllers\RealStrategySubscriptionController::class)
+            ->toggle(\App\Models\BrokerAccount::findOrFail((int) DB::table('real_strategy_subscriptions')->where('id', $rid)->value('broker_account_id')),
+                RealStrategySubscription::findOrFail($rid));
+        $check('F1 reactivar una suscripción marcada para eliminarse -> rechazado, sigue pausada',
+            DB::table('real_strategy_subscriptions')->where('id', $rid)->value('status') === 'paused'
+            && $resp->getSession()?->get('errors') !== null, (string) DB::table('real_strategy_subscriptions')->where('id', $rid)->value('status'));
+    } else {
+        echo "SKIP  F1: el usuario no tenía operaciones vivas\n";
+    }
+    // F2. Usuario reactivado: la limpieza elimina igual una marcada sin operaciones vivas (D-04, opción a)
+    $ret = DB::table('real_strategy_subscriptions')->insertGetId(['user_id' => $uid, 'broker_account_id' => $accountId,
+        'paper_strategy_config_id' => null, 'strategy' => 'p62-retiro', 'symbol' => 'YYYUSDT', 'interval' => '240',
+        'status' => 'paused', 'retire_on_close' => true, 'created_at' => now(), 'updated_at' => now()]);
+    app(UserDeactivation::class)->purgeFinished();
+    $check('F2 usuario activo: la marcada sin operaciones vivas se elimina; las vivas se conservan',
+        ! DB::table('real_strategy_subscriptions')->where('id', $ret)->exists() && $sorted(array_keys($userSubs())) === $sorted($live),
+        json_encode($userSubs()));
+    // F3. Pausa manual (usuario activo, config activa) con operación abierta: viaja sin entradas (D-03)
+    DB::table('real_strategy_subscriptions')->where('id', $subId)->update(['status' => 'paused', 'retire_on_close' => false]);
+    DB::table('paper_strategy_configs')->where('id', $cfgId)->update(['active' => true]);
+    $hasOpenTrade = DB::table('real_trades')->where('subscription_id', $subId)->whereIn('status', ['open', 'pending_close'])->exists();
+    if ($hasOpenTrade) {
+        $sent = $sentSubs($accountId);
+        $check('F3 suscripción pausada a mano con operación abierta -> viaja SIN entradas (termina su ciclo)',
+            is_array($sent) && array_key_exists($subId, $sent) && $sent[$subId] === false, json_encode($sent));
+        $oldWinding = RealStrategySubscription::whereKey($subId)->whereHas('user', fn ($u) => $u->where('is_active', false))->exists();
+        $check('F3-control: con la regla anterior (solo usuarios inactivos) NO habría viajado', ! $oldWinding);
+        // F4. Defensa: si el motor no confirma 'sub_entries' (motor anterior), la pausada NO viaja (podría abrir)
+        \Illuminate\Support\Facades\Cache::forget('engine:features:sub_entries');
+        Http::swap(new HttpFactory());
+        Http::fake(['*' => Http::response(['status' => 'ok', 'results' => []], 200)]);   // /health sin 'features'
+        (new RealTradingAccountTickJob($accountId))->handle();
+        $last = Http::recorded()->last();
+        $subsSent = $last ? collect($last[0]->data()['accounts'][0]['subscriptions'] ?? [])->pluck('subscription_id')->map(fn ($v) => (int) $v)->all() : [];
+        $check('F4 motor sin sub_entries -> la suscripción pausada NO viaja', ! in_array($subId, $subsSent, true), json_encode($subsSent));
+        \Illuminate\Support\Facades\Cache::forget('engine:features:sub_entries');
+    } else {
+        echo "SKIP  F3: la suscripción #{$subId} no tiene operación abierta\n";
     }
 } catch (\Throwable $e) {
     $fails++;

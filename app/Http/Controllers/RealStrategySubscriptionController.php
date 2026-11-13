@@ -135,6 +135,11 @@ class RealStrategySubscriptionController extends Controller
         }
 
         $activating = $subscription->status !== 'active';
+        if ($activating && $subscription->retire_on_close) {
+            // D-04: quedó de un usuario inactivado; se elimina al cerrar su operación y luego se vuelve a agregar
+            return back()->withErrors(['subscription' => 'Esta suscripción se eliminará cuando cierre su operación abierta'
+                . ' (el usuario fue inactivado). Después podrás agregar la configuración de nuevo.']);
+        }
 
         $subscription->status = $activating ? 'active' : 'paused';
         $subscription->save();

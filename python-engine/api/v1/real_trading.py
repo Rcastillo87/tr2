@@ -40,6 +40,9 @@ class SubscriptionPayload(BaseModel):
     strategy_class:           Optional[str] = None
     config_params:            Optional[dict] = None
     risk_override_pct:        Optional[float] = None   # sin declararlo Pydantic lo descartaba
+    # False: suscripción de un usuario inactivo con operaciones vivas -> se gestionan hasta terminar su ciclo (salida
+    # por señal opuesta incluida), sin entradas ni reversas. Ausente (Laravel anterior a p62) = True.
+    entries_allowed:          bool = True
 
 
 class AccountPayload(BaseModel):
@@ -184,7 +187,8 @@ async def _process_account(trader, account):
             try:
                 strategy = instantiate_strategy(sub)
                 sub_dict["broker"] = account.broker
-                result   = await trader.check_new_signals(sub_dict, strategy, client, entries_allowed=entries_ok)
+                result   = await trader.check_new_signals(sub_dict, strategy, client,
+                                                          entries_allowed=entries_ok and sub.entries_allowed)
                 signal_results[sub.strategy] = result
             except Exception as e:
                 logger.error(f"[REAL] Error procesando {sub.strategy}: {e}")

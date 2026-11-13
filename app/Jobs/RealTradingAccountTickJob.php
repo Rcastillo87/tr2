@@ -50,6 +50,31 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
         if (!$hasOpen && (!$entriesAllowed || $account->subscriptions->isEmpty())) {
             return;
         }
+        // Suscripciones pausadas o de un usuario inactivo con operaciones abiertas: viajan SIN entradas para que esas
+        // operaciones terminen su ciclo completo (D-03, D-04)
+        $winding = \App\Models\RealStrategySubscription::where('broker_account_id', $account->id)
+            ->windingDown()->with('paperStrategyConfig')->get();
+        if ($winding->isNotEmpty() && ! self::engineSupportsSubEntries()) {
+            // Defensa: un motor anterior a p62 ignoraría entries_allowed y podría ABRIR con una suscripción pausada
+            Log::warning("RealTradingAccountTickJob: el motor no confirma 'sub_entries'; no se envían {$winding->count()} suscripción(es) sin entradas");
+            $winding = collect();
+        }
+        $subPayload = function ($sub, bool $entries) {
+            $config = $sub->paperStrategyConfig;
+            return [
+                'subscription_id'          => $sub->id,
+                'user_id'                  => $sub->user_id,
+                'broker_account_id'        => $sub->broker_account_id,
+                'paper_strategy_config_id' => $sub->paper_strategy_config_id,
+                'strategy'                 => $sub->strategy,
+                'symbol'                   => $sub->symbol,
+                'interval'                 => $sub->interval,
+                'strategy_class'           => $config?->strategy_class,
+                'config_params'            => $config?->params,
+                'risk_override_pct'        => $sub->risk_override_pct,
+                'entries_allowed'          => $entries,
+            ];
+        };
 
         $url = config('trading.python_engine_url') . '/v1/real/tick';
 
@@ -61,21 +86,8 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
                 'api_key'      => $account->api_key,
                 'api_secret'   => $account->api_secret,
                 'entries_allowed' => $entriesAllowed,
-                'subscriptions' => $account->subscriptions->map(function ($sub) {
-                    $config = $sub->paperStrategyConfig;
-                    return [
-                        'subscription_id'          => $sub->id,
-                        'user_id'                  => $sub->user_id,
-                        'broker_account_id'        => $sub->broker_account_id,
-                        'paper_strategy_config_id' => $sub->paper_strategy_config_id,
-                        'strategy'                 => $sub->strategy,
-                        'symbol'                   => $sub->symbol,
-                        'interval'                 => $sub->interval,
-                        'strategy_class'           => $config?->strategy_class,
-                        'config_params'            => $config?->params,
-                        'risk_override_pct'        => $sub->risk_override_pct,
-                    ];
-                })->values()->toArray(),
+                'subscriptions' => $account->subscriptions->map(fn ($sub) => $subPayload($sub, true))
+                    ->concat($winding->map(fn ($sub) => $subPayload($sub, false)))->values()->toArray(),
             ]],
         ];
 
@@ -111,4 +123,18 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
             Log::error("RealTradingAccountTickJob: error (cuenta {$this->accountId}) — " . $e->getMessage());
         }
     }
+
+    /** ¿El motor respeta entries_allowed por suscripción? (/health -> features). 60 s en caché; ante error, no. */
+    public static function engineSupportsSubEntries(): bool
+    {
+        return (bool) \Illuminate\Support\Facades\Cache::remember('engine:features:sub_entries', 60, function () {
+            try {
+                $r = Http::timeout(3)->get(config('trading.python_engine_url') . '/health');
+                return $r->successful() && in_array('sub_entries', (array) $r->json('features', []), true);
+            } catch (\Throwable $e) {
+                return false;
+            }
+        });
+    }
+
 }

@@ -69,6 +69,11 @@ from db import close_pools  # noqa: E402
 app.add_event_handler('shutdown', close_pools)
 
 
+# Capacidades que Laravel consulta antes de usarlas. sub_entries (p62): /real/tick respeta entries_allowed por
+# suscripción; sin ella Laravel no envía suscripciones pausadas (un motor anterior las trataría con entradas).
+FEATURES = ["sub_entries"]
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.0.0", "features": FEATURES}

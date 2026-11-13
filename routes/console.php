@@ -21,6 +21,9 @@ Schedule::job(new PaperTradingTickJob)->everyMinute();
 Schedule::job(new RealTradingTickJob)->everyMinute();
 Schedule::job(new RealTradingReconcileJob)->everyFiveMinutes();
 Schedule::job(new CircuitBreakerMaxLossJob)->everyMinute();
+// Usuarios inactivos: elimina sus suscripciones Real cuando sus operaciones vivas terminaron (UserDeactivation)
+Schedule::call(fn () => app(\App\Services\UserDeactivation::class)->purgeFinished())
+    ->everyFiveMinutes()->name('inactive-users-purge')->withoutOverlapping(10);
 
 // Collector: vigilante por cron (no depende de Horizon), validación diaria contra Bybit y limpieza de avisos (30 días)
 Schedule::command('collector:watchdog')->everyFiveMinutes()->withoutOverlapping(15)->runInBackground();

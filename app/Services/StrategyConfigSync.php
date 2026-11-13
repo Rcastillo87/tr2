@@ -258,7 +258,9 @@ final class StrategyConfigSync
      */
     public function ensureSubscriptions(PaperStrategyConfig $config, array $liveAccounts = []): void
     {
-        BrokerAccount::where('status', 'active')->get()->each(function (BrokerAccount $account) use ($config, $liveAccounts) {
+        BrokerAccount::where('status', 'active')
+            ->whereHas('user', fn ($u) => $u->where('is_active', true))   // U-3: nunca para usuarios inactivos
+            ->get()->each(function (BrokerAccount $account) use ($config, $liveAccounts) {
             RealStrategySubscription::firstOrCreate(
                 ['broker_account_id' => $account->id, 'paper_strategy_config_id' => $config->id],
                 [

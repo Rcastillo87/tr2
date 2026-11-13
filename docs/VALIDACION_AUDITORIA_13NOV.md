@@ -279,7 +279,7 @@ Confirmado en producción el 13-nov:
 
 | ID | Prioridad | Hallazgo | Estado |
 |---|---|---|---|
-| R-01 | **P1** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | Abierto: propuesta = quitar la ruta y bloquear en el controlador (la vista requiere maqueta) |
+| R-01 | **P1 → corregido en p62** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | Abierto: propuesta = quitar la ruta y bloquear en el controlador (la vista requiere maqueta) |
 | R-02 | P2 (latente) | El rol `consultor` puede implementar, detener y borrar backtests, y su guardado sincroniza Paper → Real. Hoy no hay consultores | Abierto: gate propio para lo que muta Paper/Real |
 | R-03 | **P1 rendimiento** | Dashboard: `ROW_NUMBER()` sobre toda la serie de 1m por moneda. PostgreSQL local: 2.218 ms contra 1,4 ms acotado | Abierto |
 | R-04 | P2 | `openTrades()` de la suscripción no incluye `orphaned`, y `BrokerAccountController::destroy` no mira trades vivos: una cuenta se puede borrar con un trade sin reconciliar | Abierto |
@@ -290,8 +290,9 @@ Confirmado en producción el 13-nov:
 | R-09 | P3 | El monitor Real busca el closed-pnl desde `updated_at` (no `entry_time`): falso `orphaned` temporal y motivo de salida perdido | Abierto |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Abierto |
 | R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decisión del dueño |
-| **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | Corregido e instalado en p60 (`ce21154`): prueba 7 FALLOS → TODO OK, 7/7 mutaciones. **Validación en producción pendiente:** la reparación de #93 no corrió porque el tick estaba omitido (R-14); se valida al instalar p61 |
-| **R-14** | **P1** | El tick Real se omitía cada minuto (sin espera ante el circuit breaker) y el omitido rompía `array_filter` en Laravel: posiciones sin BE/trailing/tiempo. Visto en producción el 13-nov (aviso «Trading real sin gestionar posiciones») | Corregido en p61 (3 FALLOS → TODO OK en Python, PHP nuevo, 6/6 mutaciones) |
+| **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | **Validado** en producción: p60 (`ce21154`); #93 reparado (`sl` 1959,97 = SL de Bybit, `trailing_applied` = f), visto al instalar p61 |
+| **R-14** | **P1** | El tick Real se omitía cada minuto (sin espera ante el circuit breaker) y el omitido rompía `array_filter` en Laravel: posiciones sin BE/trailing/tiempo. Visto en producción el 13-nov (aviso «Trading real sin gestionar posiciones») | **Validado** en producción: p61 (`53be807`); tick gestionado 17:47:11 y 0 `array_filter`. Ocurría desde p36 (09-nov), ~275 ticks omitidos al día |
+| U-1/U-2/U-3 | P1 | Usuario inactivo: la selección Real no miraba `is_active` (inactivar por SQL no bloqueaba nada); pausa fuera de transacción; `ensureSubscriptions` creaba para inactivos. Decisión del dueño: eliminar las suscripciones al inactivar y dejar que las operaciones vivas terminen su ciclo | p62 (v2, tras confirmar con el dueño D-03/D-04, registradas en `docs/DECISIONES_DUENO.md`): Python 1 FALLO → OK, 3/3 mutaciones; estática 8 FALLOS → OK; integración E/F en la instalación. Primer intento revertido por un error de la prueba (Z1), base intacta |
 | R-13 | P3 | `real_config_gate_test.php` (integración) desactualizada desde p40b: la sección D falla por la firma de `destroyBacktest` | Corregido en p60; corre en el instalador |
 
 **Código muerto:**

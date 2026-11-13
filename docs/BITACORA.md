@@ -21,6 +21,59 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### U-1 a U-3 y R-01 — Usuarios inactivos, suscripciones pausadas y registro de decisiones del dueño (p62)
+- **Pedidos del dueño (13-nov), registrados en `docs/DECISIONES_DUENO.md`** (nuevo, regla D-01: no se cambian sin su
+  pedido; consultarlo antes de preguntar):
+  - **D-02:** los usuarios se inactivan, no se eliminan; borrado propio bloqueado.
+  - **D-03:** una suscripción pausada con operación abierta termina el ciclo completo, incluida la señal opuesta, sin
+    entradas. **Reemplaza la decisión del 03-nov (BP-02) solo para la pausa.** Antes de cambiarla se le confirmó al
+    dueño el choque y el efecto en Real.
+  - **D-04:** inactivar elimina las suscripciones; las que tienen operaciones vivas se eliminan al cerrar, aunque se
+    reactive.
+  - **D-05:** la config Paper apagada sigue como estaba (sin señal opuesta).
+- **Validación contra el código:**
+  - La pausa al inactivar bloqueaba entradas (A5 en el servidor).
+  - **U-1:** la selección no miraba `users.is_active`; inactivar por SQL no bloqueaba.
+  - **U-2:** la pausa iba fuera de una transacción.
+  - **U-3:** `ensureSubscriptions` creaba suscripciones para inactivos.
+  - Una suscripción pausada no viajaba al motor, así que su trade perdía la señal opuesta.
+  - **R-01:** borrado propio activo, con CASCADE a los trades Real.
+- **Cambio:**
+  - **Servicio:** `App\Services\UserDeactivation`, en una transacción. Las suscripciones sin operaciones vivas se
+    eliminan; las que tienen quedan `paused` + `retire_on_close` (columna nueva, migración
+    `2026_11_13_01_subscription_retire`). `purgeFinished` (cada 5 min) las elimina al cerrar, aunque el usuario esté
+    activo, y la pantalla no deja reactivarlas.
+  - **Selección:** `runnable()` exige usuario activo. `windingDown()` (pausada o de usuario inactivo, con config activa
+    y trades abiertos) viaja con `entries_allowed=false`; el motor lo respeta por suscripción.
+  - **Defensa:** el motor anuncia `sub_entries` en `/health` y Laravel solo envía suscripciones sin entradas si el
+    motor lo confirma. Un motor anterior las trataría con entradas.
+  - `ensureSubscriptions` excluye a los usuarios inactivos.
+  - **R-01:** `ProfileController::destroy` queda bloqueado con mensaje, sin tocar la vista.
+- **Primer intento (13-nov 19:2x UTC) revertido por su propia prueba de integración** (error de la prueba, no del
+  código). La sección E reutilizaba la variable `$before` de los conteos iniciales y la comprobación Z1 comparó contra
+  ella. Los conteos «después» eran los de siempre (8 suscripciones, 15 configs, 28 backtests): la base quedó intacta.
+  El instalador revirtió sin reiniciar ni hacer commit. La prueba quedó corregida (`$subsBefore`/`$subsAfter`).
+- **Segundo intento (13-nov ~20:00 UTC, v2) revertido también por la prueba** (`FALLOS: 1`, base intacta: Z1 PASS).
+  A5 seguía exigiendo la regla anterior a D-03: «suscripción pausada → NO viaja». La suscripción del fixture es la
+  94, con la operación #93 abierta: por D-03 viaja sin entradas, y F3 lo confirmó en la misma corrida. A5 se divide
+  en A5a (pausada **con** operación abierta: viaja sin entradas) y A5b (pausada **sin** operación: no viaja). Se
+  revisaron las demás pruebas que mencionan la pausa (reconciliación, avisos de broker): ninguna exigía la regla
+  vieja. **Lección:**
+  1. Al cambiar una regla de negocio, buscar en TODAS las pruebas (también las de integración) las que exigen la
+     anterior.
+  2. El instalador muestra la salida **completa** de la integración: el filtro por secciones ocultó la línea A5.
+- **Pruebas:**
+  - `real_sub_entries_test.py` (6 casos; 1 FALLO con el código anterior; mutaciones 3/3).
+  - `user_deactivation_static_test.php` (8 FALLOS con el código anterior).
+  - `real_config_gate_test.php` (integración, transacción revertida):
+    - **E:** usuario inactivo: control con el filtro anterior, inactivo por SQL, operaciones vivas sin entradas,
+      eliminar/pausar/marcar, historial intacto, limpieza, `ensureSubscriptions`, reactivar.
+    - **F:** pausa manual con operación abierta viaja sin entradas, con control de la regla anterior; una suscripción
+      marcada no se reactiva; la limpieza la elimina con el usuario activo; defensa sin `sub_entries`.
+    - **B1:** el SQL crudo incluye `users.is_active`.
+- **Entorno local:** la integración no puede correr aquí (Laravel 13 usa Symfony 8, que exige PHP 8.4, y el entorno
+  local tiene 8.3). Corre en el instalador; si falla, revierte.
+
 ### R-14 — El tick Real se omitía minuto tras minuto; el omitido rompía `array_filter` (p61)
 - **Síntoma (13-nov 17:16 UTC):** aviso «Trading real sin gestionar posiciones: #11 (hace 3 min)», y p60 no reparó
   #93 en la instalación. En `laravel.log`, cada minuto desde al menos las 17:10 (antes de p60):
@@ -53,6 +106,19 @@
     | Sin `skipped` | 1 |
     | Sin `is_array` | 1 |
     | Job sin delegar | 1 |
+
+- **Alcance medido en la instalación (ticks omitidos por día en `laravel.log`):**
+
+  | Día | 09-nov | 10-nov | 11-nov | 12-nov | 13-nov |
+  |---|---|---|---|---|---|
+  | Ticks omitidos | 75 | 279 | 274 | 284 | 245 |
+
+  Unos 275 de 1440 minutos al día (~19 %) desde p36 (N-07, instalado el 09-nov). El tick no se omitía siempre, así
+  que la gestión se retrasaba con frecuencia, pero no se perdía del todo.
+- Instalación de p61 el 13-nov: regresión 51 Python + 18 PHP en TODO OK; autoload de `RealTickResults` OK; integración
+  `real_config_gate_test` TODO OK (como tr2); motor 17:46:23 y Horizon 17:46:26 UTC reiniciados; tick de Paper 200;
+  0 errores en `engine.log`; primer tick Real gestionado a las 17:47:11 (`monitoreadas:2`), 0 `array_filter` nuevos;
+  `main` = `origin/main` = `53be807`.
 
 ### R-12 — Trailing nativo «sincronizado» antes de activarse; circuit breaker prematuro (p60)
 - **Hallazgo** (investigación de INV-006, ETHUSDT): la contabilidad del trade #91 cuadra al centavo con Bybit (el
@@ -91,7 +157,7 @@
 - **Lección (mutaciones):** una mutación del mismo tamaño restaurada en el mismo segundo deja vivo el `.pyc` mutado
   (Python lo valida por mtime y tamaño) y la corrida siguiente da falsos fallos. Las mutaciones se corren con
   `python -B`, sin caché de bytecode.
-- Instalación de p60 el 13-nov: regresión 51 Python + 17 PHP en TODO OK; integración `real_config_gate_test` TODO OK (D1/D2 PASS con real=1 paper=1, como tr2); motor reiniciado 17:13:27 UTC, tick de Paper 200, 0 errores; `main` = `origin/main` = `ce21154`. #93 **no** se reparó en los 3 min de espera: el tick de la cuenta 11 se estaba omitiendo (R-14, p61).
+- Instalación de p60 el 13-nov: regresión 51 Python + 17 PHP en TODO OK; integración `real_config_gate_test` TODO OK (D1/D2 PASS con real=1 paper=1, como tr2); motor reiniciado 17:13:27 UTC, tick de Paper 200, 0 errores; `main` = `origin/main` = `ce21154`. #93 **no** se reparó en los 3 min de espera: el tick de la cuenta 11 se estaba omitiendo (R-14, p61). Se reparó con uno de los ticks que sí pasaron antes de p61: al instalar p61, #93 ya tenía `sl` = 1959,97 (el `stopLoss` de Bybit, redondeado al tick de 0,01) y `trailing_applied` = f. **p60 validado en producción.**
 
 Detalle punto por punto, sondas y decisiones pendientes: `docs/VALIDACION_AUDITORIA_13NOV.md`. Base: `7375e5e` (p58).
 Regresión local antes de tocar nada: 49 Python + 17 PHP en TODO OK. Confirmado en producción: FK `users →
@@ -913,7 +979,7 @@ broker_accounts / real_strategy_subscriptions / real_trades` = CASCADE; 1 admin,
 - Ahora Real sigue la misma regla que el motor y Paper: cierra por señal opuesta y, con `close_on_opposite`, invierte.
 - **Reversa solo con el cierre confirmado en Bybit y la posición en cero**: si Bybit no confirma, no abre la contraria y reintenta en el tick siguiente. Nunca dos posiciones a la vez.
 - Con la cuenta pausada, el kill switch, un límite de riesgo, `exit_on_opposite`, régimen no permitido o `allow_short` apagado: **cierra sin reversa**.
-- Decisión del dueño (03-nov): con la suscripción pausada o la config Paper apagada **no** se aplica (igual que Paper); la posición sigue con SL/TP/BE.
+- Decisión del dueño (03-nov): con la suscripción pausada o la config Paper apagada **no** se aplica (igual que Paper); la posición sigue con SL/TP/BE. **[13-nov: para la suscripción pausada la reemplaza D-03 (termina el ciclo con señal opuesta); la config Paper apagada sigue igual (D-05). Ver `docs/DECISIONES_DUENO.md`.]**
 
 ### Commits
 | Commit | Qué | Verificación |

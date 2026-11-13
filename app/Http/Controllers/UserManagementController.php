@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\RealStrategySubscription;
 use App\Models\User;
+use App\Services\UserDeactivation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -28,20 +28,12 @@ class UserManagementController extends Controller
             return back()->withErrors(['user' => 'No puedes inactivar tu propia cuenta.']);
         }
 
-        $user->is_active = ! $user->is_active;
-        $user->save();
-
-        // Al inactivar: pausar todas sus suscripciones de trading real,
-        // de modo que el motor de ejecucion deje de abrir nuevas posiciones
-        // para esa cuenta. Las posiciones abiertas no se tocan.
-        if (! $user->is_active) {
-            RealStrategySubscription::where('user_id', $user->id)
-                ->where('status', 'active')
-                ->update(['status' => 'paused']);
-        }
+        // Una transacción: estado del usuario y sus suscripciones Real (UserDeactivation; decisión del dueño 13-nov)
+        $r = app(UserDeactivation::class)->setActive($user, ! $user->is_active);
 
         return back()->with('status', $user->is_active
-            ? 'Usuario activado correctamente.'
-            : 'Usuario inactivado. Sus estrategias en real fueron pausadas.');
+            ? 'Usuario activado. Debe elegir de nuevo sus estrategias en real.'
+            : "Usuario inactivado. Suscripciones en real eliminadas: {$r['deleted']}"
+              . ($r['kept'] ? "; {$r['kept']} con operaciones vivas siguen hasta que terminen su ciclo y luego se eliminan." : '.'));
     }
 }

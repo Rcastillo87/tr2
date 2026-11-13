@@ -105,7 +105,7 @@ contabilidad muestra NUEVO-04/05 como categoría propia: **35 + 14 + 2 + 1 + 2 =
 | CFG-05 | Eliminar Backtest/config no deja huérfanos ni pierde gestión | Corregido: `StrategyConfigSync::deleteBacktest` bloquea con config activa, trade Paper abierto o Real en `RealTrade::RECONCILE_STATUSES` (incluye `orphaned`), dentro de la transacción; pausa suscripciones; deja auditoría `deleted` con la identidad en `new_params.deleted` (las FK son `SET NULL`) | **p40b** | `backtest_delete_rules_test.php`, `backtest_delete_test.php` (integración) |
 | CFG-06 | Editar la estrategia maestra actualiza las configs desplegadas | Por diseño (versionado por publicación): el código nuevo se publica volviendo a correr y guardar el Backtest | — | Falta explicarlo en la UI (requiere maqueta) |
 | CFG-07 | Desactivar la estrategia maestra detiene las configs desplegadas | Por diseño: el interruptor es del catálogo, no un kill switch; los motores usan el estado de la config Paper y de la suscripción Real | — | Falta explicarlo en la UI (requiere maqueta) |
-| CFG-08 | Pausar/eliminar una suscripción Real no afecta Paper | Por diseño; los trades Real abiertos siguen gestionados (borrar se bloquea con trades vivos) | — | — |
+| CFG-08 | Pausar/eliminar una suscripción Real no afecta Paper | Por diseño; los trades Real abiertos de una suscripción **pausada** terminan su ciclo completo, incluida la salida por señal opuesta, sin entradas (D-03, p62; antes, sin señal opuesta); borrar se bloquea con trades vivos | p62 | `real_sub_entries_test.py`, `real_config_gate_test.php` F3 |
 | CFG-09 | Propagación de cambios y demora | Documentado: polling; se aplica en el siguiente tick exitoso, no al instante | — | — |
 
 ## Nuevos de la segunda auditoría (05-nov)
@@ -139,9 +139,9 @@ contabilidad muestra NUEVO-04/05 como categoría propia: **35 + 14 + 2 + 1 + 2 =
 | N-15 | Backfill con fecha sin zona | Corregido (UTC; servidor ya en UTC: defensa) | p41 `b64b4ce`, p44 | `engine_hardening_test.py` |
 | N-16 | `exit_time` Real = hora de proceso | Corregido (hora del cierre en Bybit o de ejecución de la orden) | p37 `7abfa89` | `real_close_accounting_test.py` |
 
-## Pruebas de la regresión (todas en TODO OK en el servidor; lista al 13-nov, p61)
+## Pruebas de la regresión (todas en TODO OK en el servidor; lista al 13-nov, p62)
 
-51 Python: `real_native_trailing_sync_test paper_no_minute_source_test opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
+52 Python: `real_sub_entries_test real_native_trailing_sync_test paper_no_minute_source_test opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
 flag_normalization_test real_close_accounting_test real_concurrency_test minute_tail_test real_close_settle_test
 compare_tool_test request_rules_test funding_refresh_test snapshot_code_test exit_time_test volatility_json_test
 end_of_data_test param_search_v3_test minute_coverage_test minute_gap_test signal_reuse_test live_source_test
@@ -151,7 +151,7 @@ real_protection_test allow_short_test real_opposite_test paper_opposite_test pap
 real_recovery_test broker_events_test risk_limits_test strategy_parity_test engine_rules_test engine_speed_parity_test
 filters_v2_test bars_order_test`.
 
-18 PHP: `real_tick_results_test paper_diagnostics_test saved_backtests_test rq01_screens_static_test search_create_rules_test backtest_origin_test trades_per_month_test strategy_config_types_test backtest_delete_rules_test strategy_label_test real_reconcile_statuses_test
+19 PHP: `user_deactivation_static_test real_tick_results_test paper_diagnostics_test saved_backtests_test rq01_screens_static_test search_create_rules_test backtest_origin_test trades_per_month_test strategy_config_types_test backtest_delete_rules_test strategy_label_test real_reconcile_statuses_test
 blade_static_test config_merge_test funding_alert_test backtest_payload_volatility_test broker_event_messages_test
 collector_validation_alert_test collector_watchdog_validation_test`.
 

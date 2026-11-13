@@ -2,6 +2,7 @@
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
 > Versión 7.3 · 2026-11-10 · Reemplaza a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
+> **Decisiones del dueño (reglas de negocio vigentes): `docs/DECISIONES_DUENO.md`. Consultarlo ANTES de preguntar; no se cambian salvo pedido explícito del dueño (13-nov).**
 > Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría) y `docs/PENDIENTES_AUDITORIA.md` (qué sigue).
 
 ---
@@ -81,6 +82,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
     - Nunca usar la función de depósito de Bybit.
     - Claves API con permisos **Contratos: Órdenes + Posiciones**; nunca retiros.
 11. **Mejoras:** investigar, sugerir, optimizar, quitar lo que no se usa.
+12. **Decisiones del dueño [13-nov]:** las reglas de negocio decididas viven en `docs/DECISIONES_DUENO.md`. **Desconfiar de todo y verificar** contra el código y la documentación; si la respuesta no está ahí, o dos decisiones chocan, preguntar al dueño **en palabras simples** antes de construir. Nunca cambiar una decisión registrada sin su pedido explícito. Cada decisión nueva se registra en el mismo parche.
 
 ---
 
@@ -233,7 +235,7 @@ Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `d
 
 ## 10. Plantilla de cada intervención
 
-1. **Entender:** qué pide el dueño; si es ambiguo o caro de rehacer, preguntar.
+1. **Entender:** qué pide el dueño; revisar `docs/DECISIONES_DUENO.md`; si es ambiguo, caro de rehacer o cambia algo que ya funciona, preguntar (en palabras simples).
 2. **Leer:** comando de lectura → archivo adjunto.
 3. **Proponer:** qué cambiará, riesgos, alternativas; maqueta si toca pantallas. Esperar visto bueno.
 4. **Construir y probar en local** (§6.3).

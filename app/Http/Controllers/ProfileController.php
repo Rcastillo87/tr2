@@ -42,19 +42,9 @@ class ProfileController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        $request->validateWithBag('userDeletion', [
-            'password' => ['required', 'current_password'],
-        ]);
-
-        $user = $request->user();
-
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return Redirect::to('/');
+        // R-01 (13-nov): los usuarios no se eliminan, se inactivan (Usuarios -> inactivar). Borrar arrastraba en cascada
+        // sus cuentas, suscripciones y trades Real (FK ON DELETE CASCADE) y dejaba posiciones sin gestión.
+        return back()->withErrors(
+            ['password' => 'La eliminación de cuentas está deshabilitada; contacta al administrador.'], 'userDeletion');
     }
 }

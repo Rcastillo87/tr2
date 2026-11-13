@@ -19,7 +19,10 @@ class RealStrategySubscription extends Model
         'symbol',
         'interval',
         'status',
+        'retire_on_close',
     ];
+
+    protected $casts = ['retire_on_close' => 'boolean'];
 
     public function user(): BelongsTo
     {
@@ -65,7 +68,26 @@ class RealStrategySubscription extends Model
     public function scopeRunnable($query)
     {
         return $query->where('status', 'active')
-            ->whereHas('paperStrategyConfig', fn ($c) => $c->where('active', true));
+            ->whereHas('paperStrategyConfig', fn ($c) => $c->where('active', true))
+            // Usuario activo (U-1): un usuario inactivo nunca abre, aunque se inactive por SQL o una suscripción
+            // vuelva a quedar activa por error. Sus operaciones vivas se gestionan con windingDown().
+            ->whereHas('user', fn ($u) => $u->where('is_active', true));
+    }
+
+    /**
+     * Suscripciones que NO abren (pausadas, o de un usuario inactivo) pero tienen operaciones abiertas: el tick las
+     * envía al motor SIN entradas (entries_allowed=false) para que esas operaciones terminen su ciclo completo
+     * (gestión y salida por señal opuesta). Decisión del dueño (13-nov, docs/DECISIONES_DUENO.md D-03/D-04).
+     * Con la config Paper apagada no viajan (regla vigente, igual que Paper).
+     */
+    public function scopeWindingDown($query)
+    {
+        return $query->where(fn ($q) => $q->where('status', 'paused')
+                ->orWhereHas('user', fn ($u) => $u->where('is_active', false)))
+            ->whereHas('paperStrategyConfig', fn ($c) => $c->where('active', true))
+            ->whereExists(fn ($e) => $e->selectRaw('1')->from('real_trades')
+                ->whereColumn('real_trades.subscription_id', 'real_strategy_subscriptions.id')
+                ->whereIn('real_trades.status', ['open', 'pending_close']));
     }
 
     public function scopeForUser($query, int $userId)

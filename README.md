@@ -93,6 +93,7 @@ docs/PROMPT_MAESTRO.md                     instrucciones para quien retome el pr
 docs/BITACORA.md                           bitácora de cambios (incluye base de datos y servidor)
 docs/CERTIFICACION_AUDITORIA.md            estado de los 70 hallazgos de las auditorías externas (parche y prueba de cada uno)
 docs/RESULTADOS_CICLO_07NOV.md             evidencia del 3.er ciclo de fixes para el auditor (09–10 nov)
+docs/DECISIONES_DUENO.md                   decisiones del dueño vigentes (consultar antes de preguntar; no se cambian sin su pedido)
 docs/PENDIENTES_AUDITORIA.md               pendientes vigentes (empezar aquí)
 docs/FASE12_ESTADISTICA.md                 decisiones estadísticas pendientes del dueño
 docs/01–03_*.md                            documentación de julio 2026 (secciones clave actualizadas hasta V7.3)
@@ -112,6 +113,8 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 | `admin` | Todo: estrategias, backtesting, búsqueda, data collector, usuarios, paper, real, avisos del sistema |
 | `consultor` | Backtesting (herramientas de análisis) |
 | `inversionista` | Paper y Real (su propia cuenta) |
+
+**Usuarios: se inactivan, no se eliminan** (el borrado propio desde Perfil está deshabilitado). Inactivar (Usuarios) elimina sus suscripciones Real para que al reactivarlo elija de nuevo; las que tienen operaciones vivas siguen, **sin entradas**, hasta que esas operaciones terminen su ciclo (gestión y salida por señal opuesta) y luego se eliminan solas (cada 5 min), aunque el usuario ya esté reactivado. Un usuario inactivo nunca abre posiciones, aunque se inactive por SQL. Sus trades (historial) se conservan. Reglas completas: `docs/DECISIONES_DUENO.md` (D-02 a D-05).
 
 ### Backtesting (`/backtesting`)
 - 24 meses de calendario completos hasta el último mes cerrado. Velas de 1m para las salidas cuando cubren el rango (≥ 98 %); si no, se descartan (regla de integridad). Una vela a la que le faltan minutos se evalúa como vela completa con SL primero (aviso en pantalla).
@@ -137,6 +140,7 @@ Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, s
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
 - Tick cada minuto por cuenta (`RealTradingTickJob`), conciliación cada 5 min (`RealTradingReconcileJob`), circuit breaker por pérdida máxima cada minuto.
+- **Pausar una suscripción** no abre nada más, pero su operación abierta termina el ciclo completo (incluida la salida por señal opuesta). Con la config Paper apagada, la operación sigue con SL/TP/BE/trailing/tiempo sin señal opuesta (`docs/DECISIONES_DUENO.md` D-03, D-05).
 - SL/TP en el servidor de Bybit (trading-stop); BE, trailing y cierre por tiempo los gestiona el tick. El trailing fijo es nativo de Bybit y la DB solo toma su nivel cuando se activó (precio en el `activePrice`), como el backtest y Paper. En un cierre nativo de Bybit la hora de salida es la del closed-pnl. Misma regla de señal ya operada que Paper y el motor.
 - Órdenes idempotentes (`orderLinkId` guardado antes de enviar; un `pending_open` se recupera preguntando por esa orden). Chequeo de liquidación al abrir.
 - **Límites de riesgo por cuenta** (pérdida máxima del mes y trades abiertos), editables por el dueño en `/trading/accounts`. **Avisos de broker** (`broker_events`) en la campana del dueño.
@@ -230,7 +234,7 @@ cp ops/logrotate-tr2.conf /etc/logrotate.d/tr2
 ```bash
 systemctl is-active trading2-engine trading2-horizon redis-server postgresql
 curl -s http://127.0.0.1:8002/health
-php artisan schedule:list            # 11 tareas (ver §6)
+php artisan schedule:list            # 12 tareas (ver §6)
 php artisan collector:watchdog --dry # "motor OK · series atrasadas 0"
 ```
 
@@ -243,7 +247,7 @@ php artisan collector:watchdog --dry # "motor OK · series atrasadas 0"
 | Frecuencia | Tarea |
 |---|---|
 | cada minuto | `CollectOhlcvDataJob`, `PaperTradingTickJob`, `RealTradingTickJob`, `CircuitBreakerMaxLossJob`, `broker:events` (avisos de broker, en segundo plano) |
-| cada 5 min | `RealTradingReconcileJob`, `collector:watchdog` (en segundo plano, sin Horizon) |
+| cada 5 min | `RealTradingReconcileJob`, `collector:watchdog` (en segundo plano, sin Horizon), `inactive-users-purge` (elimina las suscripciones de usuarios inactivos cuyas operaciones ya terminaron) |
 | cada 15 min | `DetectMarketRegimeJob` |
 | 09:00 UTC (04:00 Bogotá) | `collector-validate-daily` (valida y repara) |
 | 09:30 UTC | `alerts-prune` (borra avisos de más de 30 días) |
@@ -322,6 +326,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
 | `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
 | `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `real_sub_entries_test.py`, `user_deactivation_static_test.php`, `real_config_gate_test.php`* (sección E) | Usuario inactivo: nunca abre; sus operaciones vivas terminan su ciclo sin entradas; suscripciones eliminadas al inactivar y al terminar; borrado propio bloqueado |
 | `real_tick_results_test.php` | Tick Real omitido (cuenta ocupada) registrado como aviso, no como `TypeError`; el tick espera su turno (con `real_concurrency_test`) |
 | `real_native_trailing_sync_test.py` | Trailing nativo de Real: solo se sincroniza activado; SL ficticio reparado; circuit breaker sin falsos cierres (casos reales #91 y #93) |
 | `paper_no_minute_source_test.py` | Paper con la fuente sin ninguna vela de 1m del símbolo: velas del intervalo con SL primero |
@@ -346,7 +351,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (51 Python + 18 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (52 Python + 19 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
