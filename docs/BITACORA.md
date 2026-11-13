@@ -21,6 +21,29 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-04 — No borrar suscripción ni cuenta con operaciones sin confirmar (p64)
+- **Hallazgo:** `openTrades()` de la suscripción no contaba `orphaned` y `BrokerAccountController::destroy` solo
+  exigía que la cuenta no tuviera suscripciones. Secuencia posible: borrar la suscripción con una operación sin
+  confirmar y después la cuenta. La conciliación recupera las `orphaned` con las claves de la cuenta: sin cuenta
+  (`broker_account_id` → NULL), la operación quedaba huérfana para siempre.
+- **Lectura del servidor (13-nov, solo lectura):** md5 de los 4 archivos = repo; 2 operaciones `open` en la cuenta 11;
+  **0 `orphaned` en toda la historia** y 0 operaciones vivas sin cuenta. Fix **defensivo**: nada que reparar.
+- **Cambio:** «operación viva» = `RealTrade::RECONCILE_STATUSES` (`pending_open`, `open`, `pending_close`,
+  `orphaned`) también aquí, como en el borrado de backtests y la inactivación de usuarios (p62).
+  - `RealStrategySubscription::openTrades()` usa esa lista.
+  - `BrokerAccount::hasLiveTrades()` (nuevo); `BrokerAccountController::destroy` lo revisa antes de borrar.
+  - Mensajes: «…con operaciones abiertas o sin confirmar con el broker. Espera a que se cierren o se concilien.» Se
+    muestran con el aviso de errores que ya tiene la pantalla de cuentas: la vista no cambia.
+  - En Real no cambia nada de lo que opera: solo se bloquean dos borrados.
+- **Pruebas:**
+  - `live_trades_delete_static_test.php` (PHP puro): 3 FALLOS con el código anterior. Mutaciones: 3 de 4 las detecta
+    la prueba estática; la cuarta (chequeo anulado con `false &&`) solo la ve la integración (G2).
+  - `real_config_gate_test.php` sección **G** (Laravel + base real, transacción revertida): llama a los controladores
+    reales. G1: suscripción con una operación pasada a `orphaned` → no se elimina (control: con el filtro anterior se
+    habría eliminado). G2: cuenta sin suscripciones con esa operación → no se elimina. G3 (control positivo): sin
+    operaciones vivas la cuenta sí se elimina.
+  - Regresión 52 Python + 21 PHP en TODO OK.
+
 ### R-03 — Precios del dashboard: consulta acotada al último día (p63)
 - **Hallazgo de la auditoría:** el dashboard pedía las 2 últimas velas de 1m de cada moneda con `ROW_NUMBER()` sobre
   toda la serie.
@@ -42,6 +65,11 @@
   - Regresión 52 Python + 20 PHP en TODO OK.
   - En el instalador: antes de copiar, compara anterior vs nueva para todas las monedas activas en una sola sentencia;
     si alguna difiere, no instala.
+- Instalación de p63 el 13-nov (~20:50 UTC):
+  - Equivalencia en producción, una sola sentencia: 11 de 11 monedas iguales, 0 distintas.
+  - Tiempos medidos (1000PEPEUSDT): anterior 90,7 ms de planificación + 801,7 ms de ejecución; nueva 7,4 ms + 2,1 ms.
+  - Regresión 52 Python + 20 PHP en TODO OK. PHP-FPM con `opcache.validate_timestamps=1`: sin reinicios.
+  - `main` = `origin/main` = `dd9bca6`.
 
 ### U-1 a U-3 y R-01 — Usuarios inactivos, suscripciones pausadas y registro de decisiones del dueño (p62)
 - **Pedidos del dueño (13-nov), registrados en `docs/DECISIONES_DUENO.md`** (nuevo, regla D-01: no se cambian sin su

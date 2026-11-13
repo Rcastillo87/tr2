@@ -44,10 +44,15 @@ class RealStrategySubscription extends Model
         return $this->hasMany(RealTrade::class, 'subscription_id');
     }
 
+    /**
+     * Operaciones vivas de la suscripción: abiertas, en curso o sin confirmar con el broker (`orphaned`), las mismas que
+     * concilia el motor (RealTrade::RECONCILE_STATUSES). R-04: antes no incluía `orphaned` y se podía borrar la
+     * suscripción con una operación pendiente de conciliar.
+     */
     public function openTrades(): HasMany
     {
         return $this->hasMany(RealTrade::class, 'subscription_id')
-            ->whereIn('status', ['open', 'pending_open', 'pending_close']);
+            ->whereIn('status', RealTrade::RECONCILE_STATUSES);
     }
 
     public function isActive(): bool

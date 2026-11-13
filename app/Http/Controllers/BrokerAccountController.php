@@ -148,6 +148,13 @@ class BrokerAccountController extends Controller
             ]);
         }
 
+        // R-04: sin suscripciones puede quedar una operación viva o sin confirmar (se borró la suscripción antes)
+        if ($account->hasLiveTrades()) {
+            return back()->withErrors([
+                'account' => 'No puedes eliminar una cuenta con operaciones abiertas o sin confirmar con el broker. Espera a que se cierren o se concilien.',
+            ]);
+        }
+
         $label = $account->label;
         $account->delete();
 

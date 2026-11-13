@@ -347,6 +347,44 @@ try {
     } else {
         echo "SKIP  F3: la suscripción #{$subId} no tiene operación abierta\n";
     }
+
+    echo "=== G. Borrar suscripción o cuenta con una operación sin confirmar (orphaned) (R-04)\n";
+    $g = DB::table('real_trades as t')->join('real_strategy_subscriptions as s', 's.id', '=', 't.subscription_id')
+        ->whereIn('t.status', ['open', 'pending_close'])->orderBy('t.id')
+        ->first(['t.id as trade', 's.id as sub', 't.broker_account_id as acc']);
+    if ($g) {
+        $acc = \App\Models\BrokerAccount::findOrFail((int) $g->acc);
+        \Illuminate\Support\Facades\Auth::setUser(User::findOrFail((int) $acc->user_id));
+        DB::table('real_trades')->where('id', $g->trade)->update(['status' => 'orphaned']);
+        $oldRule = DB::table('real_trades')->where('subscription_id', $g->sub)->whereIn('status', ['open', 'pending_open', 'pending_close'])->exists();
+        $resp = app(\App\Http\Controllers\RealStrategySubscriptionController::class)
+            ->destroy($acc, RealStrategySubscription::findOrFail((int) $g->sub));
+        $check("G1 suscripción #{$g->sub} con la operación #{$g->trade} sin confirmar -> NO se elimina",
+            DB::table('real_strategy_subscriptions')->where('id', $g->sub)->exists() && $resp->getSession()?->get('errors') !== null);
+        $onlyOrphan = DB::table('real_trades')->where('subscription_id', $g->sub)->whereIn('status', RealTrade::RECONCILE_STATUSES)->pluck('status')->unique()->all();
+        if ($onlyOrphan === ['orphaned']) {
+            $check('G1-control: con el filtro anterior (sin orphaned) se habría eliminado', ! $oldRule);
+        }
+        // G2. Sin suscripciones (la operación ya no tiene suscripción) pero con la operación sin confirmar: la cuenta no se borra
+        DB::table('real_strategy_subscriptions')->where('broker_account_id', $acc->id)->delete();   // FK: subscription_id -> NULL
+        $resp = app(\App\Http\Controllers\BrokerAccountController::class)->destroy($acc->fresh());
+        $check("G2 cuenta #{$acc->id} sin suscripciones y con la operación sin confirmar -> NO se elimina",
+            DB::table('broker_accounts')->where('id', $acc->id)->exists() && $resp->getSession()?->get('errors') !== null);
+        // G3. Control positivo: sin operaciones vivas ni sin confirmar, la cuenta SÍ se borra (no se bloqueó todo)
+        // (en un punto de guardado: un error ajeno a R-04 al borrar la cuenta se informa, no tumba la prueba)
+        DB::beginTransaction();
+        try {
+            DB::table('real_trades')->where('broker_account_id', $acc->id)->whereIn('status', RealTrade::RECONCILE_STATUSES)->update(['status' => 'closed']);
+            app(\App\Http\Controllers\BrokerAccountController::class)->destroy($acc->fresh());
+            $check("G3 control: sin operaciones vivas la cuenta #{$acc->id} se elimina", ! DB::table('broker_accounts')->where('id', $acc->id)->exists());
+        } catch (\Illuminate\Database\QueryException $qe) {
+            echo 'SKIP  G3: la base no deja borrar la cuenta por otra razón (anterior a R-04): ' . substr($qe->getMessage(), 0, 160) . "\n";
+        } finally {
+            DB::rollBack();
+        }
+    } else {
+        echo "SKIP  G: no hay ninguna operación abierta con suscripción para armar el caso\n";
+    }
 } catch (\Throwable $e) {
     $fails++;
     echo 'FAIL  excepción inesperada: ' . get_class($e) . ': ' . $e->getMessage() . "\n";

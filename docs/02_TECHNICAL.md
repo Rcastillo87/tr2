@@ -361,7 +361,7 @@ Scopes: `open()` (incluye `open`, `pending_open`, `pending_close`), `closed()`, 
 ### `RealStrategySubscription` (`app/Models/RealStrategySubscription.php`)
 Fillable: `user_id, broker_account_id, paper_strategy_config_id, strategy, symbol, interval, status`.
 
-Relaciones: `user()`, `brokerAccount()`, `paperStrategyConfig()`, `trades()` (hasMany RealTrade vía `subscription_id`), `openTrades()` (igual pero filtrado a estados abiertos).
+Relaciones: `user()`, `brokerAccount()`, `paperStrategyConfig()`, `trades()` (hasMany RealTrade vía `subscription_id`), `openTrades()` (igual pero filtrado a `RealTrade::RECONCILE_STATUSES`: abiertas, en curso y `orphaned`) [p64, R-04].
 
 Métodos: `isActive()`. Scopes: `active()`, `forUser($userId)`.
 
@@ -402,13 +402,13 @@ Estándar de Laravel: `edit()`, `update()` (resetea `email_verified_at` si cambi
   5. **Llama al motor Python** (`POST /v1/broker/validate-credentials`) para confirmar contra la API real de Bybit que las credenciales son válidas y tienen permisos suficientes, *antes* de guardar nada.
   6. Si son válidas, crea el registro con `label` autogenerado (`"Bybit Real"` / `"Bybit Demo"`).
 - **`toggleStatus($account)`** — verifica ownership (`user_id === auth()->id()`, si no `abort(403)`), invierte `active`/`paused`. Si pasa a `paused`, también pausa todas sus suscripciones activas.
-- **`destroy($account)`** — verifica ownership, bloquea el borrado si tiene suscripciones asociadas (debe eliminarlas primero).
+- **`destroy($account)`** — verifica ownership, bloquea el borrado si tiene suscripciones asociadas (debe eliminarlas primero) o si `hasLiveTrades()` (operaciones en `RealTrade::RECONCILE_STATUSES`: la conciliación las recupera con las claves de esa cuenta) [p64, R-04].
 
 ### `RealStrategySubscriptionController` (131 líneas)
 - **`store($account)`** — suscribe **una** configuración activa a la cuenta. Valida que la config exista y esté activa, verifica que no exista ya esa combinación cuenta+config, crea la suscripción copiando `strategy, symbol, interval` desde la config al momento de la creación (snapshot, no referencia viva — si luego cambia el `display_name` de la config, la suscripción ya creada conserva el nombre original a menos que se actualice manualmente).
 - **`storeAll($account)`** — itera **todas** las configs activas y crea las suscripciones que falten, devolviendo cuántas se agregaron.
 - **`toggle($account, $subscription)`** — verifica doble ownership (cuenta del usuario Y suscripción pertenece a esa cuenta), invierte `active`/`paused`.
-- **`destroy($account, $subscription)`** — bloquea el borrado si la suscripción tiene `openTrades()` (operaciones reales abiertas) — debe esperarse a que cierren primero.
+- **`destroy($account, $subscription)`** — bloquea el borrado si la suscripción tiene `openTrades()` (operaciones abiertas, en curso o `orphaned`) — debe esperarse a que cierren o se concilien [p64, R-04].
 
 ### `PaperTradingController` (165 líneas)
 - **`index($request)`** — vista principal de Paper Trading. Lógica:

@@ -154,7 +154,7 @@ class RealStrategySubscriptionController extends Controller
     }
 
     /**
-     * Eliminar una suscripcion (solo si no tiene trades abiertos).
+     * Eliminar una suscripcion (solo sin operaciones vivas ni sin confirmar: openTrades(), R-04).
      */
     public function destroy(BrokerAccount $account, RealStrategySubscription $subscription)
     {
@@ -166,7 +166,7 @@ class RealStrategySubscriptionController extends Controller
 
         if ($subscription->openTrades()->exists()) {
             return back()->withErrors([
-                'subscription' => 'No puedes eliminar una suscripción con operaciones abiertas. Espera a que se cierren primero.',
+                'subscription' => 'No puedes eliminar una suscripción con operaciones abiertas o sin confirmar con el broker. Espera a que se cierren o se concilien.',
             ]);
         }
 

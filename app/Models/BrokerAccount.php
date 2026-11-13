@@ -52,6 +52,17 @@ class BrokerAccount extends Model
         return $this->hasMany(RealStrategySubscription::class);
     }
 
+    /**
+     * ¿La cuenta tiene operaciones vivas o sin confirmar (RealTrade::RECONCILE_STATUSES)? La conciliación las recupera
+     * con las claves de ESTA cuenta: si se borra, quedan sin gestión para siempre (R-04).
+     */
+    public function hasLiveTrades(): bool
+    {
+        return RealTrade::where('broker_account_id', $this->id)
+            ->whereIn('status', RealTrade::RECONCILE_STATUSES)
+            ->exists();
+    }
+
     public function isDemo(): bool
     {
         return $this->account_type === 'demo';
