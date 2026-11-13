@@ -21,6 +21,28 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-03 — Precios del dashboard: consulta acotada al último día (p63)
+- **Hallazgo de la auditoría:** el dashboard pedía las 2 últimas velas de 1m de cada moneda con `ROW_NUMBER()` sobre
+  toda la serie.
+- **Severidad corregida con la medición del servidor (13-nov, solo lectura):** la primera estimación (2,2 s por moneda,
+  P1) venía de PostgreSQL local sin TimescaleDB. En producción: 86,8 ms de planificación + 298,5 ms de ejecución
+  (~0,39 s por moneda, ~4 s con las 11 monedas cada vez que vence la caché del dashboard) contra 5,6 ms + 0,23 ms
+  acotada. **P1 → P2.**
+- **Diferencia de precios en la lectura:** se debía a la vela de 1m en formación entre una consulta y otra, no a la
+  consulta nueva. Por eso la equivalencia se compara en **una sola sentencia SQL** (misma foto de la base).
+- **Cambio:** `DashboardController::lastTwoMinuteCloses()` filtra `time > now() - interval '1 day'` con
+  `ORDER BY time DESC LIMIT 2`. Si en el último día hay menos de 2 velas (collector detenido o recién reanudado), repite
+  sin límite de tiempo: **el resultado es siempre el mismo que antes** (mismas filas, mismo orden). La vista no cambia.
+- **Pruebas:**
+  - `dashboard_prices_static_test.php` (PHP puro: ejecuta el método contra un DB falso). 2 FALLOS con el código
+    anterior; mutaciones 6/6 (sin respaldo, umbral 1, sin LIMIT, sin acotar, símbolo concatenado, orden ascendente).
+  - Equivalencia local con datos sintéticos: normal, detenido (0 velas en el día), reanudado (1 vela) y moneda sin
+    datos, iguales a la consulta anterior; el control demuestra que sin el respaldo «reanudado» y «detenido» darían
+    otro resultado.
+  - Regresión 52 Python + 20 PHP en TODO OK.
+  - En el instalador: antes de copiar, compara anterior vs nueva para todas las monedas activas en una sola sentencia;
+    si alguna difiere, no instala.
+
 ### U-1 a U-3 y R-01 — Usuarios inactivos, suscripciones pausadas y registro de decisiones del dueño (p62)
 - **Pedidos del dueño (13-nov), registrados en `docs/DECISIONES_DUENO.md`** (nuevo, regla D-01: no se cambian sin su
   pedido; consultarlo antes de preguntar):
@@ -62,6 +84,17 @@
   1. Al cambiar una regla de negocio, buscar en TODAS las pruebas (también las de integración) las que exigen la
      anterior.
   2. El instalador muestra la salida **completa** de la integración: el filtro por secciones ocultó la línea A5.
+
+  Además exige código 0 **y** la última línea `TODO OK` (el simulador mostró que un `FALLOS` con código 0 habría
+  pasado).
+- Instalación de p62 (v3) el 13-nov:
+  - Migración `retire_on_close` aplicada antes del código.
+  - Regresión 52 Python + 19 PHP en TODO OK.
+  - Integración `real_config_gate_test` completa en TODO OK, como tr2 y con transacción revertida (Z1 PASS).
+  - Motor 20:21:30 y Horizon 20:21:33 UTC reiniciados; tick de Paper 200; 0 errores en `engine.log`.
+  - Tick Real gestionado a las 20:22:12; `inactive-users-purge` programada; `/health` con `sub_entries`.
+  - Usuarios: admin con 8 suscripciones activas y 2 trades vivos; inversionista sin suscripciones.
+  - `main` = `origin/main` = `140e22b`.
 - **Pruebas:**
   - `real_sub_entries_test.py` (6 casos; 1 FALLO con el código anterior; mutaciones 3/3).
   - `user_deactivation_static_test.php` (8 FALLOS con el código anterior).

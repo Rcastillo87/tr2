@@ -78,14 +78,7 @@ class DashboardController extends Controller
             $initialPrices = \Illuminate\Support\Facades\Cache::remember($initialCacheKey, 30, function () use ($activeSymbols) {
                 $prices = [];
                 foreach ($activeSymbols as $sym) {
-                    // Consulta ultra ligera usando DISTINCT ON de PostgreSQL
-                    $candles = \DB::select("
-                        SELECT close FROM (
-                            SELECT close, time, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) as rn
-                            FROM ohlcv_data
-                            WHERE broker = 'bybit' AND symbol = ? AND interval = '1'
-                        ) sub WHERE rn <= 2 ORDER BY time DESC
-                    ", [$sym]);
+                    $candles = self::lastTwoMinuteCloses($sym);
 
                     if (count($candles) >= 2) {
                         $curr = (float) $candles[0]->close;
@@ -115,6 +108,22 @@ class DashboardController extends Controller
             'activeSymbols'   => $activeSymbols,
             
         ]);
+    }
+
+    /**
+     * Cierres de las 2 últimas velas de 1m del símbolo (la más reciente primero), fuente en vivo bybit (D-22).
+     * R-03 (13-nov): antes, ROW_NUMBER() recorría TODA la serie de 1m (≈1,1 M velas comprimidas por moneda) para
+     * quedarse con 2 filas: ~0,39 s por moneda en producción. Acotada al último día usa el último fragmento (~6 ms).
+     * Con menos de 2 velas en el último día (collector detenido o recién reanudado) usa la consulta sin límite de
+     * tiempo: el resultado es SIEMPRE el mismo que antes (mismas 2 filas, mismo orden).
+     */
+    private static function lastTwoMinuteCloses(string $symbol): array
+    {
+        $sql = "SELECT close FROM ohlcv_data WHERE broker = 'bybit' AND symbol = ? AND interval = '1'%s ORDER BY time DESC LIMIT 2";
+        $rows = \DB::select(sprintf($sql, " AND time > now() - interval '1 day'"), [$symbol]);
+
+        // Menos de 2 en el último día (collector detenido o recién reanudado): sin límite, como antes
+        return count($rows) >= 2 ? $rows : \DB::select(sprintf($sql, ''), [$symbol]);
     }
 
     public function livePrices()
