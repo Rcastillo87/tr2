@@ -204,6 +204,10 @@ _account_locks: dict[int, asyncio.Lock] = {}
 # HTTP de sus jobs (25 s y 90 s): si se agota, la cuenta se omite y queda para el próximo ciclo.
 CIRCUIT_BREAKER_LOCK_WAIT = 15.0
 RECONCILE_LOCK_WAIT = 20.0
+# El tick también espera (R-14): circuit breaker y tick salen del mismo schedule:run cada minuto y llegan casi juntos;
+# con espera 0 el tick se omitía minuto tras minuto y las posiciones quedaban sin BE, trailing ni cierre por tiempo.
+# Menor que el timeout HTTP de RealTradingAccountTickJob (60 s).
+TICK_LOCK_WAIT = 15.0
 
 
 async def _exclusive(account_id: int, wait: float, work):
@@ -230,10 +234,13 @@ async def _exclusive(account_id: int, wait: float, work):
 
 
 async def _process_account_locked(trader, account):
-    """Un solo tick a la vez por cuenta (corre cada minuto): si la cuenta está ocupada, este se omite."""
-    got, result = await _exclusive(account.id, 0, lambda: _process_account(trader, account))
+    """Un tick a la vez por cuenta. Espera su turno hasta TICK_LOCK_WAIT (el circuit breaker o la reconciliación pueden
+    tenerla unos segundos); si se agota, se omite con 'skipped' (estructura que Laravel distingue de 'signals')."""
+    got, result = await _exclusive(account.id, TICK_LOCK_WAIT, lambda: _process_account(trader, account))
     if not got:
-        return f"account_{account.id}_{account.broker}", {"signals": "la cuenta tiene otro proceso en curso: omitido"}
+        logger.warning(f"[REAL] Tick de la cuenta {account.id} omitido: ocupada más de {TICK_LOCK_WAIT:g} s")
+        return f"account_{account.id}_{account.broker}", {
+            "skipped": f"la cuenta tiene otro proceso en curso más de {TICK_LOCK_WAIT:g} s: tick omitido"}
     return result
 
 

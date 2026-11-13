@@ -322,6 +322,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
 | `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
 | `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `real_tick_results_test.php` | Tick Real omitido (cuenta ocupada) registrado como aviso, no como `TypeError`; el tick espera su turno (con `real_concurrency_test`) |
 | `real_native_trailing_sync_test.py` | Trailing nativo de Real: solo se sincroniza activado; SL ficticio reparado; circuit breaker sin falsos cierres (casos reales #91 y #93) |
 | `paper_no_minute_source_test.py` | Paper con la fuente sin ninguna vela de 1m del símbolo: velas del intervalo con SL primero |
 | `strategy_label_test.php`, `strategy_identity_test.php`* | Configs identificadas por id, no por etiqueta |
@@ -345,7 +346,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (51 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (51 Python + 18 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

@@ -21,6 +21,39 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-14 — El tick Real se omitía minuto tras minuto; el omitido rompía `array_filter` (p61)
+- **Síntoma (13-nov 17:16 UTC):** aviso «Trading real sin gestionar posiciones: #11 (hace 3 min)», y p60 no reparó
+  #93 en la instalación. En `laravel.log`, cada minuto desde al menos las 17:10 (antes de p60):
+  `RealTradingAccountTickJob: error (cuenta 11) — array_filter(): Argument #1 ($array) must be of type array, string
+  given`. Solo pasó el tick de las 17:13:12, justo tras el reinicio del motor.
+- **Causa:**
+  1. Desde N-07 (p36), tick, circuit breaker y conciliación comparten el turno exclusivo de la cuenta. El circuit
+     breaker espera hasta 15 s, pero el tick **no esperaba**: con la cuenta ocupada se omitía. Los dos se programan cada
+     minuto desde el mismo `schedule:run` y llegan juntos, así que el omitido se repetía.
+  2. El omitido respondía `{"signals": "texto"}` y `logAccountResults` le pasaba ese texto a `array_filter`
+     (`TypeError`): un tick omitido aparecía como error de PHP. El vigilante, con razón, no lo contaba como gestionado.
+- **Hipótesis descartada con evidencia:** la consulta de `resolve_live_broker` (1m, `ORDER BY time DESC LIMIT 1`)
+  tarda 28 ms y la de extremos 0,6 ms; no era lentitud del circuit breaker por p60.
+- **Cambio:**
+  - `api/v1/real_trading.py`: el tick espera su turno hasta `TICK_LOCK_WAIT` = 15 s; si se agota, responde
+    `{"skipped": …}` con WARNING en `engine.log`. N-07 intacto: nunca corre en paralelo.
+  - `App\Support\RealTickResults` (PHP puro) interpreta la respuesta, incluida la forma vieja `signals` como texto;
+    `RealTradingTickJob::logAccountResults` solo escribe sus líneas. El formato del resumen no cambia.
+- **Prueba:**
+  - `real_concurrency_test.py`: L3 cambia a «el tick espera y corre después del circuit breaker»; L3b cubre el plazo
+    agotado y el plazo < 60 s. **3 FALLOS** con el código anterior, que reproduce la respuesta de producción.
+  - `real_tick_results_test.php`: el control R0 reproduce el `TypeError`. Sin la clase, falla.
+  - Mutaciones 6/6:
+
+    | Mutación | Fallos |
+    |---|---|
+    | Tick sin espera | 1 |
+    | Omitido como `signals` | 1 |
+    | Tick sin turno | 5 |
+    | Sin `skipped` | 1 |
+    | Sin `is_array` | 1 |
+    | Job sin delegar | 1 |
+
 ### R-12 — Trailing nativo «sincronizado» antes de activarse; circuit breaker prematuro (p60)
 - **Hallazgo** (investigación de INV-006, ETHUSDT): la contabilidad del trade #91 cuadra al centavo con Bybit (el
   «36,1998» del informe era la comisión, no la cantidad). La causa del cierre era otra. Con `trailing_mode='fixed'` el
@@ -58,6 +91,7 @@
 - **Lección (mutaciones):** una mutación del mismo tamaño restaurada en el mismo segundo deja vivo el `.pyc` mutado
   (Python lo valida por mtime y tamaño) y la corrida siguiente da falsos fallos. Las mutaciones se corren con
   `python -B`, sin caché de bytecode.
+- Instalación de p60 el 13-nov: regresión 51 Python + 17 PHP en TODO OK; integración `real_config_gate_test` TODO OK (D1/D2 PASS con real=1 paper=1, como tr2); motor reiniciado 17:13:27 UTC, tick de Paper 200, 0 errores; `main` = `origin/main` = `ce21154`. #93 **no** se reparó en los 3 min de espera: el tick de la cuenta 11 se estaba omitiendo (R-14, p61).
 
 Detalle punto por punto, sondas y decisiones pendientes: `docs/VALIDACION_AUDITORIA_13NOV.md`. Base: `7375e5e` (p58).
 Regresión local antes de tocar nada: 49 Python + 17 PHP en TODO OK. Confirmado en producción: FK `users →

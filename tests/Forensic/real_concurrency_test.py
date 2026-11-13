@@ -1,7 +1,8 @@
 """
 N-07: exclusión por cuenta entre el tick Real, el circuit breaker de pérdida máxima y la reconciliación.
 - Los tres corren con el mismo turno exclusivo por cuenta: el circuit breaker y la reconciliación esperan al tick (con
-  un plazo; si se agota, la cuenta se omite), y el tick se omite si otro proceso tiene la cuenta.
+  un plazo; si se agota, la cuenta se omite). El tick también espera su turno (R-14, p61: con espera 0 se omitía minuto
+  tras minuto porque el circuit breaker sale del mismo schedule:run) y, si el plazo se agota, responde 'skipped'.
 - Un cierre se reclama (open -> pending_close) de forma atómica: si otro ya lo reclamó, no se envía una segunda orden.
 - Las UPDATE de estado de los cierres exigen el estado esperado (no pisan un cierre ya registrado).
 - El monitor devuelve a 'open' un 'pending_close' sin confirmar cuya posición sigue viva (los reintentos siguen).
@@ -141,12 +142,28 @@ async def endpoints():
     check('L2: reconciliación de la cuenta 11 empieza después de que termina su tick',
           te is not None and rs is not None and rs >= te, (te, rs))
 
-    # L3. Con el circuit breaker en curso, el tick de esa cuenta se omite (no corre en paralelo)
+    # L3. Con el circuit breaker en curso, el tick ESPERA su turno y corre después (nunca en paralelo, nunca omitido)
     await reset()
     FakeTrader.cb_delay = 0.3
     _, tick = await asyncio.gather(api.circuit_breaker_max_loss(req(11), KEY), later(api.real_tick(req(11), KEY)))
-    check('L3: tick con el circuit breaker en curso -> omitido, sin procesar la cuenta',
-          when('tick_start_11') is None and 'omitido' in str(tick), (when('tick_start_11'), tick.get('results')))
+    ts, ce = when('tick_start_11'), when('cb_end_11')
+    check('L3: tick con el circuit breaker en curso -> espera y corre después de que termina (R-14)',
+          ts is not None and ce is not None and ts >= ce and 'skipped' not in str(tick), (ts, ce, tick.get('results')))
+
+    # L3b. Si el turno no llega dentro del plazo, el tick se omite con estructura ('skipped'), no con texto en 'signals'
+    await reset()
+    FakeTrader.cb_delay = 0.3
+    tw0 = getattr(api, 'TICK_LOCK_WAIT', None)
+    api.TICK_LOCK_WAIT = 0.05
+    try:
+        _, tick = await asyncio.gather(api.circuit_breaker_max_loss(req(11), KEY), later(api.real_tick(req(11), KEY)))
+    finally:
+        if tw0 is not None:
+            api.TICK_LOCK_WAIT = tw0
+    res = (tick.get('results') or {}).get('account_11_bybit') or {}
+    check('L3b: plazo agotado -> tick omitido con skipped (sin procesar la cuenta ni signals de texto)',
+          when('tick_start_11') is None and 'skipped' in res and 'signals' not in res, res)
+    check('L3b: plazo del tick > 0 y menor que el timeout HTTP de su job (60 s)', 0 < (tw0 or 0) < 60, tw0)
 
     # L4. Plazo agotado: el circuit breaker omite la cuenta (no queda esperando más que su job)
     await reset()

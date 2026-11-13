@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
+use App\Support\RealTickResults;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -63,34 +64,9 @@ class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
      */
     public static function logAccountResults(array $results): void
     {
-        foreach ($results as $accountKey => $accountData) {
-            if (isset($accountData['error'])) {
-                Log::error("RealTrading {$accountKey}: {$accountData['error']}");
-                continue;
-            }
-
-            $monitor = $accountData['monitor'] ?? [];
-            if (($monitor['closed'] ?? 0) > 0) {
-                Log::info("RealTrading {$accountKey}: {$monitor['closed']} posicion(es) cerrada(s)");
-            }
-            if (($monitor['errors'] ?? 0) > 0) {
-                Log::warning("RealTrading {$accountKey}: {$monitor['errors']} error(es) al cerrar");
-            }
-
-            // Loguear TODAS las señales para facilitar debugging
-            $signals = $accountData['signals'] ?? [];
-            $opened  = array_filter($signals, fn($r) => str_starts_with((string)$r, 'ABIERTA'));
-            $errors  = array_filter($signals, fn($r) => str_starts_with((string)$r, 'ERROR') || str_starts_with((string)$r, 'EXCEPTION'));
-
-            foreach ($opened as $strategy => $result) {
-                Log::info("RealTrading ABIERTA: {$accountKey} | {$strategy} -> {$result}");
-            }
-            foreach ($errors as $strategy => $result) {
-                Log::error("RealTrading ERROR: {$accountKey} | {$strategy} -> {$result}");
-            }
-            // Log resumen del tick (debug)
-            $sinSenal = count(array_filter($signals, fn($r) => str_contains((string)$r, 'sin señal')));
-            Log::debug("RealTrading tick: {$accountKey} | monitoreadas:" . ($monitor['checked'] ?? 0) . " cerradas:" . ($monitor['closed'] ?? 0) . " nuevas:" . count($opened) . " errores:" . count($errors) . " sin_senal:{$sinSenal}");
+        // Interpretación pura en App\Support\RealTickResults (R-14: un tick omitido llegaba como texto y rompía array_filter)
+        foreach (RealTickResults::lines($results) as [$level, $message]) {
+            Log::log($level, $message);
         }
     }
 }

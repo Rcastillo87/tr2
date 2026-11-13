@@ -290,7 +290,8 @@ Confirmado en producción el 13-nov:
 | R-09 | P3 | El monitor Real busca el closed-pnl desde `updated_at` (no `entry_time`): falso `orphaned` temporal y motivo de salida perdido | Abierto |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Abierto |
 | R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decisión del dueño |
-| **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | Corregido en p60: prueba 7 FALLOS → TODO OK, 7/7 mutaciones. Instalación: se registra al instalar |
+| **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | Corregido e instalado en p60 (`ce21154`): prueba 7 FALLOS → TODO OK, 7/7 mutaciones. **Validación en producción pendiente:** la reparación de #93 no corrió porque el tick estaba omitido (R-14); se valida al instalar p61 |
+| **R-14** | **P1** | El tick Real se omitía cada minuto (sin espera ante el circuit breaker) y el omitido rompía `array_filter` en Laravel: posiciones sin BE/trailing/tiempo. Visto en producción el 13-nov (aviso «Trading real sin gestionar posiciones») | Corregido en p61 (3 FALLOS → TODO OK en Python, PHP nuevo, 6/6 mutaciones) |
 | R-13 | P3 | `real_config_gate_test.php` (integración) desactualizada desde p40b: la sección D falla por la firma de `destroyBacktest` | Corregido en p60; corre en el instalador |
 
 **Código muerto:**
