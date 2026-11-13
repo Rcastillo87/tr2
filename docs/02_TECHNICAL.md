@@ -920,7 +920,7 @@ Si no se pudo obtener el `mark_price` actual (fallo de red puntual), usa los SL/
 
 `CIRCUIT_BREAKER_THRESHOLD = 3` (constante de módulo). `BYBIT_TAKER_FEE = 0.00055` (0.055%): solo cuando Bybit todavía no informó el closed-pnl del cierre; con él, el neto y los costos son los reales de Bybit [V7.2, p37].
 
-**`get_active_subscriptions()`** — query con 3 joins (`real_strategy_subscriptions` + `broker_accounts` + `paper_strategy_configs`) filtrando los tres por su respectivo estado activo simultáneamente. (Nota: este método existe en la clase pero no se observó que sea invocado desde ningún endpoint de la API actual — tanto `/real/tick` como `/real/reconcile` reciben las suscripciones ya armadas como payload desde Laravel, en vez de que Python las consulte directamente; este método parece ser una alternativa de consulta directa no conectada al flujo activo.)
+**`get_active_subscriptions()`** — eliminado en p65 (R-05): era código muerto que leía `api_key`/`api_secret` cifrados de la base. Las suscripciones y las credenciales (ya descifradas) llegan siempre en el payload de Laravel.
 
 **`get_open_trades(account_id)`** — trades con estado `open` o `pending_close` para esa cuenta específica.
 

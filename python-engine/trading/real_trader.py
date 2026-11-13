@@ -716,42 +716,6 @@ class RealTrader:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    # ─────────────────────────────────────────────
-    # Helpers de DB
-    # ─────────────────────────────────────────────
-
-    async def get_active_subscriptions(self) -> list[dict]:
-        """Carga suscripciones activas con la config de paper_strategy_configs."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    rss.id              AS subscription_id,
-                    rss.user_id,
-                    rss.broker_account_id,
-                    rss.paper_strategy_config_id,
-                    rss.strategy,
-                    rss.symbol,
-                    rss.interval,
-                    ba.broker,
-                    ba.account_type,
-                    ba.api_key,
-                    ba.api_secret,
-                    ba.status           AS account_status,
-                    psc.strategy_class,
-                    psc.params          AS config_params,
-                    psc.active          AS config_active
-                FROM real_strategy_subscriptions rss
-                JOIN broker_accounts ba ON ba.id = rss.broker_account_id
-                JOIN paper_strategy_configs psc ON psc.id = rss.paper_strategy_config_id
-                WHERE rss.status = 'active'
-                  AND ba.status  = 'active'
-                  AND psc.active = true
-                ORDER BY rss.id ASC
-                """
-            )
-        return [dict(r) for r in rows]
-
     async def check_max_loss_circuit_breaker(self, account_id: int, client: BybitClient,
                                               max_loss_multiplier: float = 1.2) -> dict:
         """

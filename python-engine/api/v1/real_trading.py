@@ -1,8 +1,8 @@
 """
 Endpoint Real Trading V2
-Recibe las credenciales desencriptadas desde Laravel (que las lee del DB
-y las desencripta usando la APP_KEY de Laravel). Python nunca lee
-credenciales directamente de la DB para evitar el problema de encriptacion.
+Recibe las credenciales ya descifradas desde Laravel (cast `encrypted` del modelo) en cada pedido. El motor nunca lee
+credenciales de la base ni necesita el APP_KEY de Laravel (R-05, p65: se quitó el descifrado propio, que era código
+muerto). Los 422 no repiten el pedido (R-07, main.py).
 """
 
 import asyncio

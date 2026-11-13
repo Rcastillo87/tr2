@@ -282,10 +282,10 @@ Confirmado en producción el 13-nov:
 | R-01 | **P1 → validado en p62 (`140e22b`)** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | Abierto: propuesta = quitar la ruta y bloquear en el controlador (la vista requiere maqueta) |
 | R-02 | P2 (latente) | El rol `consultor` puede implementar, detener y borrar backtests, y su guardado sincroniza Paper → Real. Hoy no hay consultores | Abierto: gate propio para lo que muta Paper/Real |
 | R-03 | **P2 rendimiento** (era P1; corregido con la medición del servidor) | Dashboard: `ROW_NUMBER()` sobre toda la serie de 1m por moneda. Producción: ~0,39 s por moneda (86,8 ms plan + 298,5 ms ejecución) contra ~6 ms acotada; ~4 s por vencimiento de caché con 11 monedas. Local sin TimescaleDB daba 2,2 s (sobreestimado) | Corregido en p63 (`dd9bca6`, 13-nov): 11/11 monedas iguales en producción; 1000PEPE 892 ms → 9 ms |
-| R-04 | P2 | `openTrades()` de la suscripción no incluye `orphaned`, y `BrokerAccountController::destroy` no mira trades vivos: una cuenta se puede borrar con un trade sin reconciliar | Corregido en p64 (pendiente de instalar): las dos pantallas usan `RECONCILE_STATUSES`. Servidor: 0 `orphaned` en la historia (fix defensivo) |
-| R-05 | P2 | `python-engine/.env.example` pide el `APP_KEY` de Laravel para `laravel_crypt.py`, que es código muerto (y depende de `cryptography`, que no está en `requirements.txt`) | Abierto: borrar el módulo, quitar la clave del `.env` del motor |
+| R-04 | P2 | `openTrades()` de la suscripción no incluye `orphaned`, y `BrokerAccountController::destroy` no mira trades vivos: una cuenta se puede borrar con un trade sin reconciliar | Corregido en p64 (`35d9d11`, 13-nov; integración G1–G3 PASS en producción): las dos pantallas usan `RECONCILE_STATUSES`. Servidor: 0 `orphaned` en la historia (fix defensivo) |
+| R-05 | P2 | `python-engine/.env.example` pide el `APP_KEY` de Laravel para `laravel_crypt.py`, que es código muerto (y depende de `cryptography`, que no está en `requirements.txt`) | Corregido en p65 (pendiente de instalar): módulo y método eliminados, `APP_KEY` fuera del ejemplo. El `.env` del servidor aún la tiene (51 caracteres): borrado manual, sin efecto en el motor |
 | R-06 | P2 | `/backtest/run` hace CPU en el event loop del único proceso: frena ticks Real, circuit breaker y conciliación (aprox. 1,7 s local por backtest de 24 m) | Abierto |
-| R-07 | P3 | Un 422 del motor por un campo de cuenta faltante devuelve la cuenta con `api_secret`, y los jobs registran `$response->body()`. Reproducido | Abierto: quitar `input` del 422 |
+| R-07 | P3 | Un 422 del motor por un campo de cuenta faltante devuelve la cuenta con `api_secret`, y los jobs registran `$response->body()`. Reproducido | Corregido en p65 (pendiente de instalar): 422 sin `input` en el motor + `SafeLogBody` en los 3 jobs Real. Servidor: 0 apariciones de claves en los logs (sin fuga previa) |
 | R-08 | P3 | `RealTradingReconcileJob`: `timeout` 120 > `retry_after` 90 | Abierto |
 | R-09 | P3 | El monitor Real busca el closed-pnl desde `updated_at` (no `entry_time`): falso `orphaned` temporal y motivo de salida perdido | Abierto |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Abierto |
@@ -296,8 +296,8 @@ Confirmado en producción el 13-nov:
 | R-13 | P3 | `real_config_gate_test.php` (integración) desactualizada desde p40b: la sección D falla por la firma de `destroyBacktest` | Corregido en p60; corre en el instalador |
 
 **Código muerto:**
-- `RealTrader.get_active_subscriptions` (lee claves cifradas).
-- `laravel_crypt.py`.
+- ~~`RealTrader.get_active_subscriptions` (lee claves cifradas).~~ Eliminado en p65.
+- ~~`laravel_crypt.py`.~~ Eliminado en p65.
 - `RegisteredUserController` y la vista de registro.
 - Validaciones de clave repetidas en los endpoints Real.
 - `CORSMiddleware`, importado sin uso.

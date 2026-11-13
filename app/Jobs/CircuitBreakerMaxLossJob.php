@@ -62,7 +62,7 @@ class CircuitBreakerMaxLossJob implements ShouldQueue
             if (!$response->successful()) {
                 Log::warning('CircuitBreakerMaxLossJob: respuesta no exitosa', [
                     'status' => $response->status(),
-                    'body'   => $response->body(),
+                    'body'   => \App\Support\SafeLogBody::of($response->body()),
                 ]);
                 return;
             }

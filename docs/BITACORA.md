@@ -21,6 +21,33 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-05 y R-07 — Claves del broker: sin APP_KEY en el motor y sin claves en los 422 ni en el log (p65)
+- **Lectura del servidor (13-nov, solo lectura, sin mostrar valores):** md5 de los 8 archivos = repo. El `.env` del
+  motor **tiene** `APP_KEY` con valor (51 caracteres). `api_secret`/`api_key` aparecen **0 veces** en `laravel.log`,
+  `horizon.log` y `engine.log`; 0 respuestas 422 registradas: no hubo fuga.
+- **R-05 (código muerto con acceso a claves):** `trading/laravel_crypt.py` (descifraba con el `APP_KEY` de Laravel) y
+  `RealTrader.get_active_subscriptions` (leía `api_key`/`api_secret` cifrados de la base) no los usaba nadie: Laravel
+  envía las credenciales ya descifradas en cada pedido. Eliminados; `APP_KEY` sale de `python-engine/.env.example`.
+  **El `APP_KEY` que hoy está en el `.env` del motor no se toca desde el instalador** (archivo fuera de git, del
+  dueño): ya no lo lee nadie y puede borrarse a mano.
+- **R-07 (claves en un 422):** el 422 por defecto de FastAPI repite lo recibido en `input`; en un pedido Real con un
+  campo faltante eso es la cuenta completa, con `api_key` y `api_secret`, y los 3 jobs Real escribían la respuesta
+  en `laravel.log`.
+  - `main.py`: manejador de `RequestValidationError` que responde lo mismo (`loc`, `msg`, `type`, `ctx`) sin `input`.
+    Para todo el motor; Laravel no usa `input` en ningún lado.
+  - Defensa en Laravel: `App\Support\SafeLogBody` tapa `api_key`, `api_secret`, `secret`, `password` y `token`
+    (JSON o texto) y recorta a 2000 caracteres; la usan `RealTradingAccountTickJob`, `RealTradingReconcileJob` y
+    `CircuitBreakerMaxLossJob` para el cuerpo de una respuesta no exitosa.
+- **Pruebas:**
+  - `secrets_exposure_test.py` (sin DB ni red, con el `main.app` real): 422 de `/real/tick`, `/real/reconcile` y
+    `/real/circuit-breaker-max-loss` sin la clave ni el secreto y con `loc`/`msg`/`type`; control: con el 422 por
+    defecto el secreto sí salía. R-05: sin el módulo, sin el método, sin `APP_KEY` en el ejemplo y ningún `.py` lee
+    `APP_KEY`. **11 FALLOS** con el código anterior; mutaciones 4/4.
+  - `safe_log_body_test.php` (PHP puro): la forma real del 422 de FastAPI, JSON con espacios y comillas escapadas,
+    texto plano, variantes de nombre, respuesta sin claves intacta, recorte, y que los 3 jobs no registren el cuerpo
+    crudo. Sin la clase, falla; mutaciones 5/5.
+  - Regresión 53 Python + 22 PHP en TODO OK.
+
 ### R-04 — No borrar suscripción ni cuenta con operaciones sin confirmar (p64)
 - **Hallazgo:** `openTrades()` de la suscripción no contaba `orphaned` y `BrokerAccountController::destroy` solo
   exigía que la cuenta no tuviera suscripciones. Secuencia posible: borrar la suscripción con una operación sin
@@ -43,6 +70,11 @@
     habría eliminado). G2: cuenta sin suscripciones con esa operación → no se elimina. G3 (control positivo): sin
     operaciones vivas la cuenta sí se elimina.
   - Regresión 52 Python + 21 PHP en TODO OK.
+- Instalación de p64 el 13-nov (~21:13 UTC): regresión 52 Python + 21 PHP en TODO OK; integración completa TODO OK
+  como tr2 (A–G, Z1 intacta: 8 suscripciones, 15 configs, 28 backtests). G1 con la operación #92 pasada a `orphaned`
+  dentro de la transacción: la suscripción #92 no se elimina (control: con el filtro anterior sí); G2 la cuenta #11
+  no se elimina; G3 sin operaciones vivas sí. Sin reinicios (`opcache.validate_timestamps=1`).
+  `main` = `origin/main` = `35d9d11`.
 
 ### R-03 — Precios del dashboard: consulta acotada al último día (p63)
 - **Hallazgo de la auditoría:** el dashboard pedía las 2 últimas velas de 1m de cada moneda con `ROW_NUMBER()` sobre

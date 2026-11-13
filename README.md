@@ -326,6 +326,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
 | `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
 | `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `secrets_exposure_test.py`, `safe_log_body_test.php` | Las claves del broker no salen en un 422 del motor ni en `laravel.log`; el motor no usa el `APP_KEY` de Laravel (R-05, R-07) |
 | `live_trades_delete_static_test.php`, `real_config_gate_test.php`* (sección G) | No se borra una suscripción ni una cuenta con operaciones abiertas o sin confirmar (`orphaned`) (R-04) |
 | `dashboard_prices_static_test.php` | Precios del dashboard: consulta acotada al último día con respaldo sin límite; mismo resultado que antes (R-03) |
 | `real_sub_entries_test.py`, `user_deactivation_static_test.php`, `real_config_gate_test.php`* (sección E) | Usuario inactivo: nunca abre; sus operaciones vivas terminan su ciclo sin entradas; suscripciones eliminadas al inactivar y al terminar; borrado propio bloqueado |
@@ -353,7 +354,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (52 Python + 21 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (53 Python + 22 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

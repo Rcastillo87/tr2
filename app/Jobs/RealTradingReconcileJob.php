@@ -70,7 +70,7 @@ class RealTradingReconcileJob implements ShouldQueue
             if (!$response->successful()) {
                 Log::warning('RealTradingReconcileJob: respuesta no exitosa', [
                     'status' => $response->status(),
-                    'body'   => $response->body(),
+                    'body'   => \App\Support\SafeLogBody::of($response->body()),
                 ]);
                 return;
             }

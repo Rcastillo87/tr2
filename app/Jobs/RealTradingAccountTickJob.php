@@ -101,7 +101,7 @@ class RealTradingAccountTickJob implements ShouldQueue, ShouldBeUnique
                 Log::warning('RealTradingAccountTickJob: respuesta no exitosa', [
                     'account_id' => $this->accountId,
                     'status'     => $response->status(),
-                    'body'       => $response->body(),
+                    'body'       => \App\Support\SafeLogBody::of($response->body()),
                 ]);
                 return;
             }

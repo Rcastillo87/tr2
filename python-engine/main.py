@@ -54,6 +54,19 @@ async def verify_api_key(request: Request, call_next):
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
+
+
+# R-07 (p65): el 422 por defecto de FastAPI repite en 'input' lo recibido; en los pedidos Real eso incluye las claves
+# del broker, y Laravel registra la respuesta. Se responde lo mismo (loc, msg, type, ctx) sin 'input'.
+from fastapi.encoders import jsonable_encoder  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_without_input(request: Request, exc: RequestValidationError):
+    errors = [{k: v for k, v in e.items() if k != 'input'} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={'detail': jsonable_encoder(errors)})
+
 # Rutas
 app.include_router(collector_router, prefix="/v1")
 app.include_router(regime_router, prefix="/v1")
