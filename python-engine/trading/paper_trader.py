@@ -220,7 +220,6 @@ class PaperTrader:
         El final sin velas es igual a un hueco cuando la serie de 1m de esa fuente está detenida (N-02).
         """
         path, after, rest = [], checkpoint, bars
-        entry_time = _as_utc(trade['entry_time'])
         step = interval_delta(trade['interval'])
         while True:
             run, gap = split_at_minute_gap(rest, after)
@@ -247,17 +246,46 @@ class PaperTrader:
                 return path
             logger.error(f"{label} desde hace más de {MINUTE_GAP_WAIT.total_seconds() / 3600:g} h: evaluado con "
                          f"{len(candles)} vela(s) completa(s) de {trade['interval']} y SL primero (como el backtest sin 1m)")
-            for c in candles:
-                t = _as_utc(c['time'])
-                last_minute = t + step - ONE_MINUTE    # el punto de control queda en el último minuto de la vela
-                path.append((float(c['high']), float(c['low']), float(c['close']), max(t, entry_time),
-                             t + step - timedelta(microseconds=1), last_minute.replace(tzinfo=None)))
+            path.extend(self._candle_path(trade, candles))
             covered = _as_utc(candles[-1]['time']) + step - ONE_MINUTE
             if covered <= after:   # defensa: el respaldo siempre avanza; si no, se detiene en vez de girar sin fin
                 logger.error(f"{label}; el respaldo no avanzó (vela {candles[-1]['time']}): se sigue esperando")
                 return path
             after = covered
             rest = [b for b in rest if _as_utc(b['time']) > after]
+
+    @staticmethod
+    def _candle_path(trade: dict, candles: list) -> list:
+        """Velas completas del intervalo como sub-velas del recorrido (SL vigente primero). El punto de control queda en
+        el último minuto de cada vela; el inicio del tramo nunca antes de la entrada."""
+        entry_time = _as_utc(trade['entry_time'])
+        step = interval_delta(trade['interval'])
+        out = []
+        for c in candles:
+            t = _as_utc(c['time'])
+            out.append((float(c['high']), float(c['low']), float(c['close']), max(t, entry_time),
+                        t + step - timedelta(microseconds=1), (t + step - ONE_MINUTE).replace(tzinfo=None)))
+        return out
+
+    async def _no_minute_source_path(self, trade: dict, checkpoint: datetime, now: datetime) -> list:
+        """
+        La fuente en vivo no tiene NINGUNA vela de 1m del símbolo (auditoría 13-nov §3.5): no hay reparación que
+        esperar. Se evalúan las velas CERRADAS del intervalo operado desde el punto de control, con SL primero (regla del
+        backtest sin 1m, de BP-03 y de N-02). Antes el SL/TP no se evaluaba nunca.
+        """
+        symbol, interval = trade['symbol'], trade['interval']
+        broker = await resolve_live_broker(self.pool, symbol, interval, require_fresh=False)
+        if broker is None:
+            logger.error(f"[PAPER] Trade #{trade['id']} {symbol}: sin serie de 1m ni velas de {interval}; "
+                         f"SL/TP no evaluados este ciclo")
+            return []
+        first_missing = checkpoint.replace(second=0, microsecond=0) + ONE_MINUTE
+        candles = await self._gap_candles(broker, symbol, interval, (first_missing, now), now)
+        if not candles:   # la próxima vela del intervalo todavía no cierra
+            return []
+        logger.error(f"[PAPER] Trade #{trade['id']} {symbol}: sin serie de 1m en la fuente en vivo; evaluado con "
+                     f"{len(candles)} vela(s) completa(s) de {interval} y SL primero (como el backtest sin 1m)")
+        return self._candle_path(trade, candles)
 
     async def get_current_regime(self, df: pd.DataFrame, trending_threshold: float = 25,
                                   ranging_threshold: float = 20, ambiguous_as: str = "RANGING") -> str:
@@ -507,10 +535,12 @@ class PaperTrader:
         """
         Evalua cada trade abierto recorriendo, vela a vela, las velas de 1min
         acumuladas desde el ultimo chequeo (no solo el precio actual). Esto
-        replica la logica del motor de backtest (BE, luego SL con el SL
-        previo a esta vela, luego trailing, luego volatilidad, luego TP, en
-        ese orden por vela) en vez de mirar una sola foto de precio cada 5
-        minutos. Sin esto, una mecha que toca SL/trailing y se recupera antes
+        replica la regla del motor de backtest por sub-vela: SL vigente ->
+        TP1 -> break-even -> trailing (lo adverso primero); la protección por
+        volatilidad va una vez por ciclo con la última vela CERRADA del
+        intervalo, y la duración máxima al final. Sin 1m (hueco > 26 h, serie
+        detenida o inexistente) la sub-vela es la vela completa del intervalo.
+        Sin esto, una mecha que toca SL/trailing y se recupera antes
         del proximo ciclo de paper queda invisible para paper pero SI la
         detecta el trailing nativo de Bybit en real, sesgando a paper hacia
         mejores resultados de forma sistematica, no solo por ruido.
@@ -557,10 +587,10 @@ class PaperTrader:
                     symbol, last_checkpoint, now - timedelta(minutes=1), minute_broker  # solo 1m cerradas
                 ) if minute_broker else []
             bars = sorted_records(bars, f"paper #{trade['id']} {symbol}/1 ({minute_broker})")
-            if minute_broker is None:
-                logger.warning(f"[PAPER] Trade #{trade['id']} {symbol}: sin velas de 1m; SL/TP no evaluados este ciclo")
-            # Minutos seguidos desde el punto de control; un hueco no se salta (BP-03)
-            path = await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if minute_broker else []
+            # Minutos seguidos desde el punto de control; un hueco no se salta (BP-03). Sin serie de 1m: velas del
+            # intervalo con SL primero (auditoría 13-nov §3.5)
+            path = (await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if minute_broker
+                    else await self._no_minute_source_path(trade, last_checkpoint, now))
 
             exit_price    = None
             exit_reason   = None

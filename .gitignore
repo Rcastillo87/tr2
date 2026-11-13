@@ -49,8 +49,9 @@ Homestead.json
 Homestead.yaml
 *.bak_*
 
-# Python cache de pruebas forenses
+# Python cache de pruebas forenses y de las estrategias de docs/
 /tests/**/__pycache__/
+/docs/**/__pycache__/
 
 # Backups locales (no versionar)
 /storage/backups/

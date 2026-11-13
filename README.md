@@ -132,7 +132,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 - Historial con enfoque, modo y monedas probadas; **Eliminar** (solo admin).
 
 ### Paper trading (`/paper-trading`)
-Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela). Decide si una señal ya se usó con la misma regla que el motor y guarda como hora de salida la del evento (minuto de 1m). No salta un hueco del 1m: espera la reparación y, si a las 26 h sigue, usa la vela completa con SL primero; si la serie de 1m entera lleva 26 h detenida, el tramo final también se evalúa así, vela a vela. Paridad verificable con `tools/analysis/compare_paper_vs_backtest.py --config <id>`.
+Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela). Decide si una señal ya se usó con la misma regla que el motor y guarda como hora de salida la del evento (minuto de 1m). No salta un hueco del 1m: espera la reparación y, si a las 26 h sigue, usa la vela completa con SL primero; si la serie de 1m entera lleva 26 h detenida, el tramo final también se evalúa así, vela a vela; si la fuente no tiene ninguna vela de 1m del símbolo, se evalúa así desde el principio (no hay reparación que esperar). Paridad verificable con `tools/analysis/compare_paper_vs_backtest.py --config <id>`.
 
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
@@ -322,6 +322,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `real_reconcile_statuses_test.php`, `real_reconcile_selector_test.php`* | `pending_open` entra en la reconciliación aunque la cuenta esté pausada |
 | `real_concurrency_test.py` | Tick, circuit breaker y reconciliación con turno exclusivo por cuenta; cierre reclamado |
 | `minute_tail_test.py` | Final sin velas de 1m con la serie detenida (Paper) |
+| `paper_no_minute_source_test.py` | Paper con la fuente sin ninguna vela de 1m del símbolo: velas del intervalo con SL primero |
 | `strategy_label_test.php`, `strategy_identity_test.php`* | Configs identificadas por id, no por etiqueta |
 | `flag_normalization_test.py` | Flags booleanos normalizados (`"false"` en texto no activa un filtro) |
 | `backtest_delete_rules_test.php`, `backtest_delete_test.php`* | Borrado seguro de un backtest y su auditoría |
@@ -343,7 +344,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (49 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (50 Python + 17 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

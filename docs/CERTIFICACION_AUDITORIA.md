@@ -139,9 +139,9 @@ contabilidad muestra NUEVO-04/05 como categoría propia: **35 + 14 + 2 + 1 + 2 =
 | N-15 | Backfill con fecha sin zona | Corregido (UTC; servidor ya en UTC: defensa) | p41 `b64b4ce`, p44 | `engine_hardening_test.py` |
 | N-16 | `exit_time` Real = hora de proceso | Corregido (hora del cierre en Bybit o de ejecución de la orden) | p37 `7abfa89` | `real_close_accounting_test.py` |
 
-## Pruebas de la regresión (todas en TODO OK en el servidor; lista al 11-nov, p58)
+## Pruebas de la regresión (todas en TODO OK en el servidor; lista al 13-nov, p59)
 
-49 Python: `opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
+50 Python: `paper_no_minute_source_test opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
 flag_normalization_test real_close_accounting_test real_concurrency_test minute_tail_test real_close_settle_test
 compare_tool_test request_rules_test funding_refresh_test snapshot_code_test exit_time_test volatility_json_test
 end_of_data_test param_search_v3_test minute_coverage_test minute_gap_test signal_reuse_test live_source_test

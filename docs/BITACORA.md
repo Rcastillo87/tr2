@@ -19,6 +19,27 @@
 
 ---
 
+## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
+
+Detalle punto por punto, sondas y decisiones pendientes: `docs/VALIDACION_AUDITORIA_13NOV.md`. Base: `7375e5e` (p58).
+Regresión local antes de tocar nada: 49 Python + 17 PHP en TODO OK. Confirmado en producción: FK `users →
+broker_accounts / real_strategy_subscriptions / real_trades` = CASCADE; 1 admin, 1 inversionista, 0 consultores.
+
+### A-01 — Paper sin ninguna serie de 1m del símbolo (auditoría §3.5, p59)
+- **Antes:** si `resolve_live_broker(símbolo, '1')` devolvía `None` (la fuente no tiene ninguna vela de 1m del símbolo),
+  el monitor dejaba un WARNING y nunca evaluaba SL/TP: la posición quedaba sin gestión salvo el cierre por tiempo. N-02
+  (p35) cubría la serie detenida, no la inexistente.
+- **Ahora:** `_no_minute_source_path()` evalúa las velas CERRADAS del intervalo operado desde el punto de control con SL
+  primero (regla del backtest sin 1m, BP-03 y N-02); sin velas del intervalo, ERROR explícito. La conversión vela →
+  sub-vela queda en `_candle_path()`, compartida con el respaldo de N-02. Docstring de `monitor_open_trades` alineado
+  con el orden real (SL → TP1 → BE → trailing).
+- **Lectura previa (13-nov):** md5 de `paper_trader.py` = el del repo; 0 trades Paper abiertos; ningún símbolo activo
+  sin serie de 1m: el fix es defensivo.
+- **Prueba:** `paper_no_minute_source_test.py` (9 casos; **8 FALLOS** con el código anterior). Mutaciones: sin respaldo
+  (8), ignorar el punto de control (1), `exit_time` antes de la entrada (1), incluir la vela sin cerrar (3).
+  `minute_gap_test` y `minute_tail_test` siguen en TODO OK. Regresión: 50 Python + 17 PHP.
+- **De paso:** `.gitignore` ignora `docs/**/__pycache__/` (la carga de `docs/estrategias/` dejaba `.pyc` sin seguimiento).
+
 ## 2026-11-10 (Bogotá) — RQ-01: gestión de configuraciones y diagnóstico de Paper
 
 ### Validación del requerimiento contra el código (`a0fa1a3`)
