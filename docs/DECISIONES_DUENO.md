@@ -28,6 +28,7 @@
 | D-13 | **SL/TP provisional 2 %/4 % en la orden de apertura**, reemplazado por el de la estrategia tras el fill (Bybit rechazaba aperturas con el SL/TP dentro de la orden) | 03-nov (REAL-02) | `place_market_order` |
 | D-14 | **`max_leverage` limita el tamaño** (nocional ≤ saldo × max_leverage); el apalancamiento de la cuenta lo configura el dueño en Bybit | 03-nov (REAL-07) | `open_trade`, motor `_position_size` |
 | D-15 | **Motivo de salida de cierres recuperados por la conciliación:** se calcula con el precio de salida de Bybit contra SL/TP (stop_loss, trailing_stop, take_profit_1 o closed_other), igual que el monitor; ya no la etiqueta fija `reconciled_sl_tp_bybit`. **Las 6 operaciones históricas con esa etiqueta (#85, #92, #93, #95, #96, #97) se corrigen** con la misma regla, dejando el valor anterior en su historial (PnL y saldo no cambian) | 18-nov (R-09) | `reconcile` 2a, `ops/datafix/2026_11_18_r09_exit_reason.sql` |
+| D-17 | **El motivo de salida de un cierre hecho por Bybit es el que dice su orden de cierre** (TakeProfit, StopLoss, TrailingStop); la comparación de precios queda solo como respaldo. Los `closed_other` históricos se reclasifican con ese dato (sin dato de Bybit no se tocan; PnL y saldo no cambian) | 18-nov (R-16, «procede») | `settle_exchange_close`, `real:reclassify-exits` |
 | D-16 | **R-10 (guardar el tamaño que confirma Bybit al abrir) queda para después**, como preventivo: no ha ocurrido (10 de 10 operaciones coinciden) y toca el código de apertura | 18-nov | Pendiente (no se toca la apertura) |
 
 ## Datos y collector

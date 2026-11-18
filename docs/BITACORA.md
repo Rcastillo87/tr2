@@ -21,6 +21,33 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-16 — Motivo de salida según la orden de cierre de Bybit (p70)
+- **Origen:** la corrección D-15 (p69) dejó 4 de 6 en `closed_other`; con #94 y #98, **6 de 10 cierres** decían
+  `closed_other`. La regla por precio (salida contra SL/TP de la DB) no reconoce TP/SL ejecutados a mercado con
+  deslizamiento (#92 short: salida 0,13080 con TP 0,1307109; #85 short: 0,07026 con SL 0,0702678) ni el trailing
+  nativo de Bybit, cuyo SL móvil no está en la DB (#93, #95). Pedido del dueño: «procede» (18-nov).
+- **Dato de Bybit:** cada tramo del closed-pnl trae el `orderId` de la orden de cierre; en el historial de órdenes esa
+  orden dice qué la disparó (`stopOrderType`: TakeProfit, StopLoss, TrailingStop, Partial…; respaldo `createType`).
+  El closed-pnl y el historial de órdenes responden **7 días** si no se pasa ventana, y aceptan como máximo 7 días.
+- **Cambio:**
+  - `close_trigger_reason()` y `last_close_order_id()` (puras) en `real_trader.py`; `BybitClient.get_close_order()`
+    (historial de órdenes, ventana ±3 días alrededor del cierre); `get_closed_pnl_history(..., end_time_ms=)` con
+    ventana opcional (sin ella, igual que antes).
+  - `settle_exchange_close` (cierres hechos por Bybit: monitor, conciliación, cierre ya hecho) usa primero el motivo
+    de la orden; sin dato, la regla por precio de siempre. Queda `exit_reason_source` (bybit/price, orderId,
+    stopOrderType, createType) en el historial. Un StopLoss cuyo SL había movido el trailing del bot es
+    `trailing_stop`, como en la regla por precio.
+  - Reclasificación de los históricos: endpoint `POST /v1/real/reclassify-exits` (solo lee de Bybit; con
+    `apply` actualiza solo filas que siguen en `closed_other` y deja `exit_reason_corrected`) y comando
+    `php artisan real:reclassify-exits [--apply]` (las claves viajan al motor como en cada tick). Sin dato de Bybit
+    la fila no se toca. PnL y saldo no cambian.
+- **Pruebas:** `real_exit_reason_test.py` (sin DB ni Bybit): tabla de motivos; orden del último tramo; #92 →
+  `take_profit_1` (por precio era `closed_other`) consultando la orden cerca de la hora del cierre; #93 →
+  `trailing_stop`; cierre manual → regla por precio con fuente `price`; cliente sin la consulta → regla por precio;
+  endpoint sin `apply` no escribe, con `apply` solo la fila con dato y con la guarda; ventana ≤ 7 días hasta el
+  cierre; sin ventana igual que antes. Con el código anterior falla (no existen las funciones); mutaciones 5/5.
+  Regresión 57 Python + 23 PHP en TODO OK.
+
 ### R-09 — Cierres de Bybit marcados «huérfanos» y motivo de salida perdido (p69)
 - **Evidencia del servidor (18-nov, solo lectura):** de 10 operaciones Real cerradas, **6 pasaron por `orphaned`**
   (#85, #92, #93, #95, #96, #97): **todos** los cierres hechos por Bybit (SL/TP/trailing) que detectó el monitor. La
@@ -51,6 +78,15 @@
   operación anterior del mismo símbolo y precio no se mezcla; sin tramo todavía → `orphaned`; la conciliación no fija
   la etiqueta, busca desde la apertura y deja `close_recovered`. **5 FALLOS** con el código anterior; mutaciones 4/4.
   Regresión 56 Python + 23 PHP en TODO OK.
+- Instalación de p69 el 18-nov (~21:45 UTC): regresión 56 Python + 23 PHP en TODO OK; motor reiniciado 21:45:35 UTC,
+  tick de Paper 200, 0 errores en `engine.log`; sin operaciones Real abiertas. Corrección D-15 (`UPDATE 6`):
+  #85, #92, #93, #95 → `closed_other`; #96 → `take_profit_1`; #97 → `stop_loss`. Ninguna queda con la etiqueta vieja.
+  `main` = `origin/main` = `6688580`.
+- **Observación (abre R-16):** 4 de las 6 quedaron `closed_other` porque la regla por precio no reconoce cierres
+  cuyo precio de ejecución quedó apenas del lado «equivocado» del nivel: #85 short salió en 0,07026 con SL 0,0702678
+  (0,01 % antes del SL); #92 short salió en 0,13080 con TP 0,1307109 (TP ejecutado a mercado con deslizamiento);
+  #93 y #95, entre SL y TP: casi seguro el trailing nativo de Bybit (su SL móvil no estaba en la DB). La misma regla
+  ya clasificaba así a #94 y #98. El motivo exacto lo tiene Bybit en la orden de cierre (`stopOrderType`).
 
 ### R-08 — La conciliación ya no puede «caducar» en la cola (p68)
 - **Hallazgo:** `RealTradingReconcileJob` tenía `timeout` 120 s y esperaba al motor 90 s, pero la conexión `redis`

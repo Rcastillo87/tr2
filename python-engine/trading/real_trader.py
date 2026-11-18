@@ -180,6 +180,45 @@ def bybit_close_time(history: list[dict]) -> datetime | None:
     return datetime.fromtimestamp(max(stamps) / 1000, tz=timezone.utc).replace(tzinfo=None)
 
 
+# R-16 (p70): qué disparó la orden de cierre según Bybit (historial de órdenes). stopOrderType manda; createType es el
+# respaldo. Lo que no está aquí (cierre manual, liquidación, desconocido) cae a la regla por precio.
+_STOP_ORDER_REASON = {
+    'TakeProfit': 'take_profit_1', 'PartialTakeProfit': 'take_profit_1',
+    'StopLoss': 'stop_loss', 'PartialStopLoss': 'stop_loss',
+    'TrailingStop': 'trailing_stop',
+}
+_CREATE_TYPE_REASON = {
+    'CreateByTakeProfit': 'take_profit_1', 'CreateByPartialTakeProfit': 'take_profit_1',
+    'CreateByStopLoss': 'stop_loss', 'CreateByPartialStopLoss': 'stop_loss',
+    'CreateByTrailingStop': 'trailing_stop',
+}
+
+
+def close_trigger_reason(order: dict | None, trailing_applied: bool = False) -> str | None:
+    """Motivo de salida según la orden de cierre de Bybit; None si Bybit no lo dice (se usa el precio).
+    Un StopLoss cuyo SL había movido el trailing del bot (trailing_applied) es 'trailing_stop', como en la regla por
+    precio."""
+    if not order:
+        return None
+    reason = _STOP_ORDER_REASON.get(order.get('stopOrderType') or '') or _CREATE_TYPE_REASON.get(order.get('createType') or '')
+    if reason == 'stop_loss' and trailing_applied:
+        return 'trailing_stop'
+    return reason
+
+
+def last_close_order_id(history: list[dict]) -> str | None:
+    """orderId del último tramo del closed-pnl (el que terminó de cerrar la posición)."""
+    best, best_ms = None, -1
+    for h in history:
+        try:
+            ms = int(h.get('updatedTime') or h.get('createdTime') or 0)
+        except (TypeError, ValueError):
+            continue
+        if h.get('orderId') and ms >= best_ms:
+            best, best_ms = h['orderId'], ms
+    return best
+
+
 class BybitAPIError(Exception):
     """Error real de comunicacion con la API de Bybit (HTTP/retCode/red).
     Distinto de 'no hay posicion' — nunca debe interpretarse como cierre."""
@@ -194,7 +233,7 @@ class BybitClient:
         self.base_url   = BYBIT_DEMO_URL if account_type == 'demo' else BYBIT_MAINNET
         self.last_order_error: str | None = None   # motivo del último rechazo (para el aviso)
 
-    async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20):
+    async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20, end_time_ms=None):
         """
         Trae el historial de cierres de Bybit para este simbolo, filtrado a
         los que pertenecen a ESTA posicion especifica (mismo precio de
@@ -203,6 +242,10 @@ class BybitClient:
         por iliquidez, en vez de quedarnos solo con el ultimo tramo.
         """
         params = {"category": "linear", "limit": str(limit), "symbol": symbol}
+        if end_time_ms:
+            # Sin ventana Bybit responde solo los últimos 7 días; con ventana, como máximo 7 días hasta end_time_ms (R-16)
+            params.update(startTime=str(max(int(since_time_ms), int(end_time_ms) - 7 * 86_400_000 + 1000)),
+                          endTime=str(int(end_time_ms)))
         query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
         headers = self._sign(params)
         try:
@@ -675,6 +718,22 @@ class BybitClient:
         except Exception as e:
             logger.error(f"[BYBIT] get_order exception: {e}")
         return None
+
+    async def get_close_order(self, symbol: str, order_id: str, around_ms: int) -> dict | None:
+        """Orden de cierre en el historial de Bybit (R-16), con una ventana de ±3 días alrededor del cierre (Bybit
+        limita cada consulta a 7 días; las órdenes ejecutadas se conservan). None si no aparece o falla (se registra)."""
+        params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id,
+                  'startTime': str(around_ms - 3 * 86_400_000), 'endTime': str(around_ms + 3 * 86_400_000)}
+        try:
+            data = (await self._signed_get('/v5/order/history', params)).json()
+            if data.get('retCode') != 0:
+                logger.error(f"[BYBIT] get_close_order error: {data.get('retMsg')} code={data.get('retCode')}")
+                return None
+            items = data.get('result', {}).get('list', [])
+            return items[0] if items else None
+        except Exception as e:
+            logger.error(f"[BYBIT] get_close_order exception: {e}")
+            return None
 
     async def get_open_position(self, symbol: str) -> dict | None:
         """
@@ -1718,6 +1777,30 @@ class RealTrader:
             return False
         return settled
 
+    async def _exchange_close_reason(self, trade: dict, client, history: list[dict], exit_price: float) -> str:
+        """Motivo de un cierre hecho por Bybit. Primero lo que dice la orden de cierre (R-16: TP/SL ejecutados con
+        deslizamiento y el trailing nativo, cuyo SL móvil no está en la DB, quedaban 'closed_other'); si Bybit no lo
+        dice, el precio de salida contra el SL/TP de la DB."""
+        order, order_id = None, last_close_order_id(history)
+        fetch = getattr(client, 'get_close_order', None)
+        close_ms = epoch_ms(bybit_close_time(history) or datetime.now(timezone.utc).replace(tzinfo=None))
+        if order_id and fetch:
+            order = await fetch(trade['symbol'], order_id, close_ms)
+        reason = close_trigger_reason(order, bool(trade.get('trailing_applied')))
+        source = 'bybit'
+        if reason is None:
+            source = 'price'
+            sl, tp = float(trade['sl']), float(trade['tp'])
+            sl_label = 'trailing_stop' if trade.get('trailing_applied') else 'stop_loss'
+            if trade['side'] == 'long':
+                reason = sl_label if exit_price <= sl else 'take_profit_1' if exit_price >= tp else 'closed_other'
+            else:
+                reason = sl_label if exit_price >= sl else 'take_profit_1' if exit_price <= tp else 'closed_other'
+        await self.log_audit(trade['id'], 'exit_reason_source', {
+            'source': source, 'reason': reason, 'order_id': order_id,
+            'stop_order_type': (order or {}).get('stopOrderType'), 'create_type': (order or {}).get('createType')})
+        return reason
+
     async def settle_exchange_close(self, trade: dict, client: BybitClient, account_id: int,
                                     since_time_ms: int, exit_reason: str | None = None) -> bool | None:
         """
@@ -1737,12 +1820,7 @@ class RealTrader:
         if len(history) > 1:
             logger.info(f"[REAL] {trade['symbol']}: cierre dividido en {len(history)} tramos por Bybit")
         if exit_reason is None:
-            sl, tp = float(trade['sl']), float(trade['tp'])
-            sl_label = 'trailing_stop' if trade.get('trailing_applied') else 'stop_loss'
-            if trade['side'] == 'long':
-                exit_reason = sl_label if exit_price <= sl else 'take_profit_1' if exit_price >= tp else 'closed_other'
-            else:
-                exit_reason = sl_label if exit_price >= sl else 'take_profit_1' if exit_price <= tp else 'closed_other'
+            exit_reason = await self._exchange_close_reason(trade, client, history, exit_price)
         return await self.close_trade(trade, exit_reason, client, account_id, exit_price_override=exit_price,
                                       bybit_net_pnl=net_pnl, closed_size=closed_size,
                                       exit_time=bybit_close_time(history))

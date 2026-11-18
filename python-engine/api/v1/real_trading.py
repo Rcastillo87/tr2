@@ -17,7 +17,8 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError,
-                                 ORDER_DEAD_STATUSES, epoch_ms)
+                                 ORDER_DEAD_STATUSES, epoch_ms,
+                                 close_trigger_reason, last_close_order_id)
 from trading.risk_manager import RiskManager
 from trading.broker_events import emit_event
 from trading.bybit_client import api_permission_problems
@@ -618,3 +619,55 @@ async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: fl
         )
     logger.warning(f"[RECONCILE] #{trade['id']} {symbol} adoptado @ {avg_price} sl={sl} tp={tp} be={be} ts={'OK' if ts_ok else 'FALLO'}")
     return True
+
+
+
+class ReclassifyRequest(BaseModel):
+    accounts: list[AccountPayload]
+    apply: bool = False
+
+
+@router.post('/real/reclassify-exits')
+async def reclassify_exits(
+    request: ReclassifyRequest,
+    x_internal_api_key: str = Header(None, alias='X-Internal-API-Key'),
+):
+    """
+    R-16 (p70): motivo de salida de cierres ya registrados como 'closed_other', según la orden de cierre de Bybit
+    (TakeProfit / StopLoss / TrailingStop). Solo LEE de Bybit; con apply=True actualiza exit_reason y deja
+    'exit_reason_corrected' en el historial. Sin dato de Bybit, la fila no se toca. PnL y saldo no cambian.
+    """
+    if x_internal_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    pool, out = await get_json_pool(), []
+    trader = RealTrader(pool)
+    for account in request.accounts:
+        client = _build_broker_client(account)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, symbol, side, entry_price, entry_time, exit_time, exit_price, trailing_applied
+                   FROM real_trades WHERE broker_account_id = $1 AND status = 'closed' AND exit_reason = 'closed_other'
+                   ORDER BY id""", account.id)
+        for r in rows:
+            item = {'trade_id': r['id'], 'symbol': r['symbol'], 'from': 'closed_other', 'to': None}
+            end_ms = epoch_ms(r['exit_time']) + 60_000 if r['exit_time'] else None
+            history = await client.get_closed_pnl_history(r['symbol'], float(r['entry_price']), epoch_ms(r['entry_time']),
+                                                          limit=50, end_time_ms=end_ms)
+            history = [h for h in history if end_ms is None or int(h.get('createdTime') or 0) <= end_ms]
+            order_id = last_close_order_id(history)
+            order = await client.get_close_order(r['symbol'], order_id, end_ms or epoch_ms(r['entry_time'])) if order_id else None
+            reason = close_trigger_reason(order, bool(r['trailing_applied']))
+            item.update(order_id=order_id, stop_order_type=(order or {}).get('stopOrderType'),
+                        create_type=(order or {}).get('createType'), to=reason)
+            if request.apply and reason and reason != 'closed_other':
+                async with pool.acquire() as conn:
+                    done = await conn.execute(
+                        "UPDATE real_trades SET exit_reason = $1, updated_at = now() WHERE id = $2 AND exit_reason = 'closed_other'",
+                        reason, r['id'])
+                if done == 'UPDATE 1':
+                    await trader.log_audit(r['id'], 'exit_reason_corrected', {
+                        'from': 'closed_other', 'to': reason, 'by': 'p70 R-16 (orden de cierre de Bybit)',
+                        'order_id': order_id, 'stop_order_type': item['stop_order_type'], 'create_type': item['create_type']})
+                    item['applied'] = True
+            out.append(item)
+    return {'status': 'ok', 'apply': request.apply, 'results': out}
