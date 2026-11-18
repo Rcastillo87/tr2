@@ -4,6 +4,7 @@ Soporta: rango de fechas, hasta 4 niveles de TP, Trailing Stop,
 Proteccion por volatilidad, y desglose de resultados mes a mes.
 """
 
+import asyncio
 import asyncpg
 from db import get_pool as shared_get_pool
 import pandas as pd
@@ -396,6 +397,53 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
                         funding=funding, btc_macro_df=btc_macro_df, data_problems=data_problems)
 
 
+# R-06: un backtest a la vez (CPU y memoria acotadas en un VPS de 2 núcleos); el siguiente espera su turno
+BACKTEST_SLOT = asyncio.Semaphore(1)
+
+
+def _simulate(request: BacktestRequest, data: BacktestData, start: datetime, end: datetime, warnings: list) -> dict:
+    """Parte de CPU del backtest (estrategia, simulación continua, métricas). Sin I/O: corre en un hilo (R-06)."""
+    df, minute_df = data.df, data.minute_df
+    strategy = load_strategy(request)
+    if request.macro_trend_filter:
+        strategy.macro_df = data.macro_df   # None si no hay H4: con el filtro activo no se opera
+    if strategy.btc_filter_applies():
+        strategy.btc_macro_df = data.btc_macro_df   # None si no hay H4 de BTC: no se opera
+
+    strategy.slippage_pct = float(request.slippage_pct)
+    if request.slippage_pct <= 0:
+        warnings.append("Aviso: slippage en 0%: entradas y salidas al precio exacto (optimista frente a órdenes reales).")
+
+    # Simulación CONTINUA de todo el rango (sin descartar datos)
+    engine = BacktestEngine(
+        strategy=strategy, df=df,
+        initial_balance=request.initial_balance,
+        risk_per_trade_pct=request.risk_per_trade_pct,
+        minute_df=minute_df,
+        trade_from=start,
+        funding=data.funding,
+    )
+    result = engine.run()
+    if result.get('minute_fallback_bars'):
+        warnings.append(f"Aviso: {result['minute_fallback_bars']} vela(s) de {request.symbol} con minutos de 1m "
+                        f"faltantes: evaluadas con vela completa y SL primero (pesimista).")
+    if result.get('closed_at_end'):
+        warnings.append("Aviso: 1 posición seguía abierta al final del rango: se cerró al último cierre "
+                        "(motivo end_of_data, con slippage, comisión y funding) y cuenta en las métricas.")
+    result['aggregate_metrics'] = result['metrics']
+    result['n_windows'] = request.n_windows if request.walk_forward else 1
+    result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)
+                                if request.walk_forward else [])
+    quality = data_quality_issues(float(request.slippage_pct), float(request.commission_pct),
+                                  data.funding is not None, data.data_problems)
+    verdict = evaluate_for_paper(result['metrics'], quality)
+    result.update(passed=verdict['passed'], pass_reasons=verdict['reasons'], quality_ok=verdict['quality_ok'],
+                  quality_reasons=verdict['quality_reasons'], ready_for_paper=verdict['ready_for_paper'])
+    if request.monthly_breakdown:
+        result['monthly_breakdown'] = build_monthly_breakdown(result['trades'], request.initial_balance, start, end)
+    return result
+
+
 @router.post("/backtest/run")
 async def run_backtest(request: BacktestRequest):
     """Backtest continuo de todo el rango, con calentamiento, régimen, slippage y comisiones."""
@@ -412,45 +460,11 @@ async def run_backtest(request: BacktestRequest):
             await pool.close()
         warnings.extend(data.warnings)
         coverage.update(data.coverage)
-        df, minute_df = data.df, data.minute_df
 
-        strategy = load_strategy(request)
-        if request.macro_trend_filter:
-            strategy.macro_df = data.macro_df   # None si no hay H4: con el filtro activo no se opera
-        if strategy.btc_filter_applies():
-            strategy.btc_macro_df = data.btc_macro_df   # None si no hay H4 de BTC: no se opera
-
-        strategy.slippage_pct = float(request.slippage_pct)
-        if request.slippage_pct <= 0:
-            warnings.append("Aviso: slippage en 0%: entradas y salidas al precio exacto (optimista frente a órdenes reales).")
-
-        # Simulación CONTINUA de todo el rango (sin descartar datos)
-        engine = BacktestEngine(
-            strategy=strategy, df=df,
-            initial_balance=request.initial_balance,
-            risk_per_trade_pct=request.risk_per_trade_pct,
-            minute_df=minute_df,
-            trade_from=start,
-            funding=data.funding,
-        )
-        result = engine.run()
-        if result.get('minute_fallback_bars'):
-            warnings.append(f"Aviso: {result['minute_fallback_bars']} vela(s) de {request.symbol} con minutos de 1m "
-                            f"faltantes: evaluadas con vela completa y SL primero (pesimista).")
-        if result.get('closed_at_end'):
-            warnings.append("Aviso: 1 posición seguía abierta al final del rango: se cerró al último cierre "
-                            "(motivo end_of_data, con slippage, comisión y funding) y cuenta en las métricas.")
-        result['aggregate_metrics'] = result['metrics']
-        result['n_windows'] = request.n_windows if request.walk_forward else 1
-        result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)
-                                    if request.walk_forward else [])
-        quality = data_quality_issues(float(request.slippage_pct), float(request.commission_pct),
-                                      data.funding is not None, data.data_problems)
-        verdict = evaluate_for_paper(result['metrics'], quality)
-        result.update(passed=verdict['passed'], pass_reasons=verdict['reasons'], quality_ok=verdict['quality_ok'],
-                      quality_reasons=verdict['quality_reasons'], ready_for_paper=verdict['ready_for_paper'])
-        if request.monthly_breakdown:
-            result['monthly_breakdown'] = build_monthly_breakdown(result['trades'], request.initial_balance, start, end)
+        # R-06: la simulación (CPU) corre en un hilo y de a una; el event loop sigue atendiendo ticks, circuit breaker y
+        # conciliación mientras tanto (producción 13-nov: congelaba 1,64 s; en hilo 0,01 s)
+        async with BACKTEST_SLOT:
+            result = await asyncio.to_thread(_simulate, request, data, start, end, warnings)
 
         return {"status": "ok", "result": result, "warnings": warnings, "data_coverage": coverage}
 

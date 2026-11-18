@@ -21,6 +21,23 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-06 — El backtest ya no congela al motor (p67)
+- **Hallazgo:** `/backtest/run` hacía la simulación (CPU) en el event loop del único proceso del motor: mientras
+  corría, quedaban en espera el tick Real, el circuit breaker, la conciliación y Paper.
+- **Medición en producción (13-nov, proceso aparte, XRP 2h, 24 meses):** congela **1,64 s** seguidos; la misma
+  simulación en un hilo, **0,01 s**. Frecuencia baja (7 backtests en 14 días, todos el 31-oct): **P3**. Los 29
+  timeouts de ese día no eran de backtests sino del dashboard (R-15).
+- **Cambio (`api/v1/backtest.py`):** la parte de CPU (estrategia, simulación continua, métricas, ventanas y desglose
+  mensual) pasa a `_simulate()` y corre con `asyncio.to_thread`; la carga de datos sigue asíncrona. Un backtest a la
+  vez (`BACKTEST_SLOT`, semáforo de 1): si llegan dos, el segundo espera su turno sin bloquear el loop. Resultado y
+  errores (400/500) iguales. Las búsquedas de parámetros ya corrían en un proceso aparte (`cli/param_search.py`).
+- **Pruebas:**
+  - `backtest_offloop_test.py` (sin DB; simulación con ~0,8 s de CPU en Python puro): loop libre (máximo 0,01 s
+    seguidos contra 0,80 s con el código anterior), resultado idéntico al motor normal, dos backtests a la vez corren
+    de a uno, el 400 se mantiene. 2 FALLOS con el código anterior; mutaciones 2/2 (semáforo de 2, sin hilo).
+  - Las pruebas del endpoint ya existentes (`end_of_data_test`, `quality_gate_test`, `bt_compare_test` y demás)
+    siguen en TODO OK: regresión 55 Python + 22 PHP.
+
 ### R-15 — El dashboard se quedaba sin precios en vivo (p66; hallazgo nuevo del 13-nov)
 - **Cómo apareció:** al buscar timeouts del motor para R-06, `laravel.log` (desde el 12-nov 23:58) tenía **29**, todos
   `Dashboard livePrices: cURL error 28 … after 3002 milliseconds`. Ninguno de backtests.
@@ -46,6 +63,10 @@
   - `dashboard_prices_static_test.php` amplía con L1–L3 (sin `Cache::remember`, guarda solo con precios, 3 s). 3
     FALLOS con el código anterior; mutaciones 2/2.
   - Regresión 54 Python + 22 PHP en TODO OK.
+- Instalación de p66 el 18-nov (~19:34 UTC): regresión 54 Python + 22 PHP en TODO OK. `/v1/prices` con las 11
+  monedas: **antes 3,41 / 3,34 / 3,87 s → después 0,39 / 0,35 / 0,34 s**, 11 precios recibidos. Solo se reinició
+  el motor (19:34:38 UTC); tick de Paper 200; 0 errores en `engine.log`. Sin operaciones Real abiertas en ese
+  momento: no aplicaba esperar un tick Real gestionado. `main` = `origin/main` = `2717b91`.
 
 ### R-05 y R-07 — Claves del broker: sin APP_KEY en el motor y sin claves en los 422 ni en el log (p65)
 - **Lectura del servidor (13-nov, solo lectura, sin mostrar valores):** md5 de los 8 archivos = repo. El `.env` del
