@@ -1794,10 +1794,10 @@ class RealTrader:
                 return outcome
 
             if not position or float(position.get("size", 0) or 0) <= 0:
-                ref_time = trade.get("updated_at") or trade.get("entry_time")
-                if ref_time is not None and ref_time.tzinfo is None:
-                    ref_time = ref_time.replace(tzinfo=timezone.utc)
-                since_ms = int(ref_time.timestamp() * 1000) if ref_time else 0
+                # R-09 (p69): el closed-pnl se busca desde la APERTURA, como en los otros 4 puntos de liquidación. Con
+                # updated_at, cualquier escritura posterior al cierre dejaba el tramo fuera y el trade quedaba
+                # 'orphaned' (6 de 6 cierres hechos por Bybit entre el 09 y el 17-nov)
+                since_ms = epoch_ms(trade['entry_time'])
                 settled = await self.settle_exchange_close(trade, client, account_id, since_ms)
                 if settled is None:  # Bybit puede tardar en indexar el cierre
                     await asyncio.sleep(3)

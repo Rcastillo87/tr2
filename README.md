@@ -329,6 +329,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `secrets_exposure_test.py`, `safe_log_body_test.php` | Las claves del broker no salen en un 422 del motor ni en `laravel.log`; el motor no usa el `APP_KEY` de Laravel (R-05, R-07) |
 | `live_trades_delete_static_test.php`, `real_config_gate_test.php`* (sección G) | No se borra una suscripción ni una cuenta con operaciones abiertas o sin confirmar (`orphaned`) (R-04) |
 | `dashboard_prices_static_test.php` | Precios del dashboard: consulta acotada al último día con respaldo sin límite; mismo resultado que antes (R-03); una falla de precios en vivo no se guarda en caché (R-15) |
+| `real_close_detect_test.py` | Cierres hechos por Bybit: el monitor busca el closed-pnl desde la apertura y la conciliación calcula el motivo de salida (R-09) |
 | `queue_timeouts_static_test.php` | En todos los trabajos en cola: espera HTTP < timeout del trabajo < `retry_after` de su conexión (R-08) |
 | `backtest_offloop_test.py` | `/backtest/run` simula en un hilo y de a uno: el motor sigue atendiendo Real y Paper mientras corre un backtest; mismo resultado (R-06) |
 | `live_prices_parallel_test.py` | `/v1/prices` pide las monedas a Bybit en paralelo con una conexión: 11 monedas en ~0,3 s en vez de ~3,3 s (R-15) |
@@ -357,7 +358,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (55 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (56 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

@@ -490,8 +490,10 @@ async def reconcile(
                     trade['status'] = 'open'  # close_trade solo actualiza filas 'open'
                     async with pool.acquire() as conn:
                         await conn.execute("UPDATE real_trades SET status='open' WHERE id=$1 AND status='orphaned'", trade['id'])
-                    settled = await trader.settle_exchange_close(trade, client, account.id, epoch_ms(trade['entry_time']),
-                                                                 exit_reason='reconciled_sl_tp_bybit')
+                    # R-09 (p69): el motivo sale del precio de salida de Bybit contra el SL/TP (la misma regla del
+                    # monitor), no una etiqueta fija; la recuperación queda en el historial del trade
+                    await trader.log_audit(trade['id'], 'close_recovered', {'by': 'reconcile', 'was': 'orphaned'})
+                    settled = await trader.settle_exchange_close(trade, client, account.id, epoch_ms(trade['entry_time']))
                     if settled is None:
                         async with pool.acquire() as conn:
                             await conn.execute("UPDATE real_trades SET status='orphaned' WHERE id=$1 AND status='open'", trade['id'])

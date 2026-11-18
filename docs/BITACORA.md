@@ -21,6 +21,37 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-09 — Cierres de Bybit marcados «huérfanos» y motivo de salida perdido (p69)
+- **Evidencia del servidor (18-nov, solo lectura):** de 10 operaciones Real cerradas, **6 pasaron por `orphaned`**
+  (#85, #92, #93, #95, #96, #97): **todos** los cierres hechos por Bybit (SL/TP/trailing) que detectó el monitor. La
+  conciliación los recuperó 3–4 min después con PnL y saldo correctos (de Bybit), pero con la etiqueta fija
+  `reconciled_sl_tp_bybit`: se perdía el motivo real. Las otras 4: 2 por circuit breaker (cierre del bot) y 2
+  `closed_other` liquidadas por el monitor.
+- **Descartado con datos:** zona horaria (base, sistema y conexión del motor en `Etc/UTC`; columnas `timestamp`
+  sin zona, sin disparadores). En el historial de las 6 no hay eventos en las 2 h previas al cierre.
+- **Causas en el código:**
+  1. El monitor buscaba el closed-pnl desde `updated_at`; los otros 4 puntos de liquidación (cierre del bot, cierre ya
+     hecho, conciliación de abiertas y de `pending_open`) buscan desde `entry_time`. Cualquier escritura posterior al
+     cierre dejaba el tramo fuera.
+  2. El monitor detecta el cierre a los 4–38 s y reintenta una vez a los 3 s; si Bybit aún no publicó el tramo, el
+     trade pasa a `orphaned` (correcto: no se inventa el PnL). La conciliación lo recupera, pero **forzaba** el
+     motivo `reconciled_sl_tp_bybit` en vez de calcularlo.
+- **Cambio:**
+  - `real_trader._monitor_single_trade`: `since_ms = epoch_ms(entry_time)` (como los demás).
+  - `reconcile` 2a: sin etiqueta fija; `settle_exchange_close` calcula el motivo con el precio de salida contra SL/TP
+    (la regla del monitor) y queda `close_recovered` en el historial.
+  - **Decisión del dueño D-15:** se corrigen las 6 históricas con la misma regla
+    (`ops/datafix/2026_11_18_r09_exit_reason.sql`: idempotente, deja `exit_reason_corrected` con el valor anterior,
+    no toca PnL ni saldo). Probado en PostgreSQL local con `audit_log` `json` y `jsonb`: long bajo SL → stop_loss,
+    short sobre SL con trailing → trailing_stop, short bajo TP → take_profit_1, entre SL y TP → closed_other; una
+    segunda corrida no cambia nada.
+  - **R-10 queda para después** (D-16): no ocurrió nunca.
+- **Pruebas:** `real_close_detect_test.py` (sin DB ni Bybit; el cliente falso filtra el closed-pnl por `since` como
+  Bybit): updated_at posterior al cierre → se liquida con `stop_loss`; busca desde la apertura; un tramo de una
+  operación anterior del mismo símbolo y precio no se mezcla; sin tramo todavía → `orphaned`; la conciliación no fija
+  la etiqueta, busca desde la apertura y deja `close_recovered`. **5 FALLOS** con el código anterior; mutaciones 4/4.
+  Regresión 56 Python + 23 PHP en TODO OK.
+
 ### R-08 — La conciliación ya no puede «caducar» en la cola (p68)
 - **Hallazgo:** `RealTradingReconcileJob` tenía `timeout` 120 s y esperaba al motor 90 s, pero la conexión `redis`
   da por perdido un trabajo a los 90 s (`retry_after`). Una conciliación de más de 90 s volvía a la cola mientras
@@ -38,6 +69,8 @@
     código anterior falla la conciliación; mutaciones 2/2 (collector 95 s, HTTP del tick de Paper 70 s). Queda como
     guardia para trabajos futuros.
   - Regresión 55 Python + 23 PHP en TODO OK.
+- Instalación de p68 el 18-nov (~21:01 UTC): regresión 55 Python + 23 PHP en TODO OK; solo se reinició Horizon
+  (21:01:29 UTC); el motor no se tocó. `main` = `origin/main` = `e61119f`.
 
 ### R-06 — El backtest ya no congela al motor (p67)
 - **Hallazgo:** `/backtest/run` hacía la simulación (CPU) en el event loop del único proceso del motor: mientras
