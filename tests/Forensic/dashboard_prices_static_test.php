@@ -1,6 +1,6 @@
 <?php
 /**
- * R-03 (p63): precios del dashboard. La consulta de las 2 últimas velas de 1m por moneda debe ir acotada al último día
+ * R-03 (p63) y R-15 (p66): precios del dashboard. La consulta de las 2 últimas velas de 1m por moneda debe ir acotada al último día
  * (usa el índice; antes ROW_NUMBER recorría toda la serie: ~0,39 s por moneda en producción) y, si en ese día hay
  * menos de 2 velas (collector detenido o recién reanudado), repetir sin límite: resultado idéntico al anterior.
  * PHP puro: extrae lastTwoMinuteCloses() del controlador y la ejecuta contra un DB falso que registra las consultas.
@@ -21,6 +21,18 @@ $p = strpos($code, 'private static function lastTwoMinuteCloses(');
 $check('D1 existe lastTwoMinuteCloses() y la usa el bucle de precios',
     $p !== false && str_contains($code, 'self::lastTwoMinuteCloses($sym)'));
 $check('D2 ya no queda la consulta ROW_NUMBER sobre toda la serie', !preg_match('/ROW_NUMBER\(\)\s+OVER/i', $code));
+// R-15 (p66): precios en vivo del dashboard. Una falla del motor NO se guarda en caché (antes quedaba un minuto sin precios)
+$lp = strpos($code, 'public function livePrices(');
+$lpBody = $lp === false ? '' : substr($code, $lp, (strpos($code, "\n    private function ", $lp) ?: strlen($code)) - $lp);
+$check('L1 livePrices: ya no usa Cache::remember (guardaba también la respuesta vacía de una falla)',
+    $lpBody !== '' && !str_contains($lpBody, 'Cache::remember('), $lpBody === '' ? 'sin método' : '');
+$pPut = strpos($lpBody, 'Cache::put($cacheKey, $prices, 60)');
+$pGuard = strpos($lpBody, 'if ($prices !== [])');
+$check('L2 livePrices: guarda 60 s solo si hay precios', $pPut !== false && $pGuard !== false && $pGuard < $pPut);
+$check('L3 livePrices: con caché vacía o sin precios vuelve a pedir; mantiene el límite de 3 s',
+    str_contains($lpBody, 'Cache::get($cacheKey)') && str_contains($lpBody, "! is_array(\$prices) || \$prices === []")
+    && str_contains($lpBody, 'timeout(3)'));
+
 if ($p === false) {
     echo "RESULTADO: {$fails} FALLO(S)\n";
     exit(1);

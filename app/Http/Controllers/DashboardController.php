@@ -135,20 +135,27 @@ class DashboardController extends Controller
 
         $cacheKey = 'live_prices_' . md5(implode(',', $symbols));
 
-        // Caché de 60 segundos (antes 10s)
-        $prices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($symbols) {
+        // Caché de 60 s SOLO de una respuesta con precios (R-15): antes una falla guardaba [] y la pantalla quedaba un
+        // minuto sin precios aunque el motor ya respondiera.
+        $prices = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        if (! is_array($prices) || $prices === []) {
+            $prices = [];
             try {
                 $response = \Illuminate\Support\Facades\Http::withHeaders([
                     'X-Internal-API-Key' => config('trading.python_internal_api_key'),
                 ])->timeout(3)->get(config('trading.python_engine_url') . '/v1/prices', [
                     'symbols' => implode(',', $symbols),
                 ]);
-                if ($response->successful()) return $response->json('prices', []);
+                if ($response->successful()) {
+                    $prices = (array) $response->json('prices', []);
+                }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('Dashboard livePrices: ' . $e->getMessage());
             }
-            return [];
-        });
+            if ($prices !== []) {
+                \Illuminate\Support\Facades\Cache::put($cacheKey, $prices, 60);
+            }
+        }
 
         return response()->json(['prices' => $prices]);
     }

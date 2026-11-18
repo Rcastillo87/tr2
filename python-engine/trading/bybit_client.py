@@ -2,6 +2,7 @@
 Cliente Bybit — Precios en tiempo real (público, sin auth)
 """
 
+import asyncio
 import hashlib
 import hmac
 import time
@@ -78,33 +79,37 @@ def bybit_sign(api_key, api_secret, payload_str, recv_window='10000'):
     }
 
 
-async def get_current_price(symbol: str) -> float | None:
-    """Obtiene el precio actual (last price) de un símbolo en Bybit."""
+async def _ticker_price(client: httpx.AsyncClient, symbol: str) -> float | None:
+    """Último precio (lastPrice) de un símbolo con el cliente dado; None si falla o no existe (se registra)."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f'{BYBIT_BASE_URL}/v5/market/tickers',
-                params={'category': 'linear', 'symbol': symbol}
-            )
-            r.raise_for_status()
-            data = r.json()
-            tickers = data.get('result', {}).get('list', [])
-
-            if not tickers:
-                return None
-
-            return float(tickers[0]['lastPrice'])
-
+        r = await client.get(f'{BYBIT_BASE_URL}/v5/market/tickers', params={'category': 'linear', 'symbol': symbol})
+        r.raise_for_status()
+        tickers = r.json().get('result', {}).get('list', [])
+        return float(tickers[0]['lastPrice']) if tickers else None
     except Exception as e:
         logger.error(f"Error obteniendo precio de {symbol}: {e}")
         return None
 
 
+async def get_current_price(symbol: str) -> float | None:
+    """Obtiene el precio actual (last price) de un símbolo en Bybit."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        return await _ticker_price(client, symbol)
+
+
+PRICES_TIMEOUT = 5.0   # por pedido; los pedidos van en paralelo (el dashboard espera 3 s en total)
+
+
 async def get_current_prices(symbols: list[str]) -> dict[str, float]:
-    """Obtiene precios actuales para varios símbolos."""
-    prices = {}
-    for symbol in symbols:
-        price = await get_current_price(symbol)
-        if price is not None:
-            prices[symbol] = price
-    return prices
+    """
+    Precios actuales de varios símbolos: un pedido por símbolo, TODOS EN PARALELO y con una sola conexión (R-15).
+    Antes iban de a uno (~0,3 s cada uno: 11 monedas ≈ 3,3–4,9 s medidos el 13-nov) y el dashboard, que espera 3 s,
+    se quedaba sin precios. No se usa el listado completo de Bybit (~700 KB por pedido, hasta 1,6 s medido).
+    Los símbolos que fallan o no existen se omiten, como antes.
+    """
+    unique = list(dict.fromkeys(symbols))
+    if not unique:
+        return {}
+    async with httpx.AsyncClient(timeout=PRICES_TIMEOUT) as client:
+        results = await asyncio.gather(*(_ticker_price(client, s) for s in unique))
+    return {s: p for s, p in zip(unique, results) if p is not None}

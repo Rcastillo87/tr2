@@ -141,7 +141,7 @@ contabilidad muestra NUEVO-04/05 como categoría propia: **35 + 14 + 2 + 1 + 2 =
 
 ## Pruebas de la regresión (todas en TODO OK en el servidor; lista al 13-nov, p62)
 
-53 Python: `secrets_exposure_test real_sub_entries_test real_native_trailing_sync_test paper_no_minute_source_test opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
+54 Python: `live_prices_parallel_test secrets_exposure_test real_sub_entries_test real_native_trailing_sync_test paper_no_minute_source_test opposite_rule_config_test new_strategies_test paper_eval_test broker_limits_scope_test collector_deletion_test is_oos_attribution_test quality_gate_test engine_hardening_test
 flag_normalization_test real_close_accounting_test real_concurrency_test minute_tail_test real_close_settle_test
 compare_tool_test request_rules_test funding_refresh_test snapshot_code_test exit_time_test volatility_json_test
 end_of_data_test param_search_v3_test minute_coverage_test minute_gap_test signal_reuse_test live_source_test

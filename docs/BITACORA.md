@@ -21,6 +21,32 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-15 — El dashboard se quedaba sin precios en vivo (p66; hallazgo nuevo del 13-nov)
+- **Cómo apareció:** al buscar timeouts del motor para R-06, `laravel.log` (desde el 12-nov 23:58) tenía **29**, todos
+  `Dashboard livePrices: cURL error 28 … after 3002 milliseconds`. Ninguno de backtests.
+- **Medición en producción (13-nov, solo lectura):**
+  - `/v1/prices` con las 11 monedas activas, 5 veces: **3,28 / 3,42 / 3,44 / 3,79 / 4,86 s**. El dashboard espera
+    3 s: falla prácticamente siempre.
+  - Bybit directo: 1 moneda ≈ 0,29 s (conexión 3 ms, TLS 28 ms); todas en un pedido 0,30–1,62 s y ~696 KB.
+- **Causa:** `get_current_prices` pedía las monedas **de a una**, con una conexión nueva cada vez: 11 × ~0,3 s.
+  Además `livePrices` guardaba en caché 60 s también la respuesta vacía de una falla: la pantalla quedaba un minuto
+  sin precios aunque el motor ya respondiera.
+- **Cambio:**
+  - `trading/bybit_client.py`: `get_current_prices` hace un pedido por símbolo, **todos en paralelo** con un solo
+    cliente HTTP (timeout 5 s por pedido), sin repetidos; los que fallan se omiten, como antes. No se usa el listado
+    completo (700 KB). `get_current_price` (Paper) igual que antes, con el mismo código de lectura.
+  - `DashboardController::livePrices`: guarda 60 s solo una respuesta con precios; con caché vacía vuelve a pedir.
+    Límite de 3 s sin cambios. La vista no cambia.
+- **Pruebas:**
+  - `live_prices_parallel_test.py` (Bybit simulado, 0,3 s por pedido): 11 monedas en 0,30 s (el código anterior:
+    **3,31 s**, como en producción), 11 pedidos simultáneos con 1 conexión, errores e inexistentes omitidos,
+    repetidos, lista vacía, `get_current_price` intacto. 3 FALLOS con el código anterior. Mutaciones 3 de 4; la
+    cuarta (quitar el `None` de «inexistente») es equivalente: el `IndexError` cae en el mismo `except` y devuelve
+    `None`.
+  - `dashboard_prices_static_test.php` amplía con L1–L3 (sin `Cache::remember`, guarda solo con precios, 3 s). 3
+    FALLOS con el código anterior; mutaciones 2/2.
+  - Regresión 54 Python + 22 PHP en TODO OK.
+
 ### R-05 y R-07 — Claves del broker: sin APP_KEY en el motor y sin claves en los 422 ni en el log (p65)
 - **Lectura del servidor (13-nov, solo lectura, sin mostrar valores):** md5 de los 8 archivos = repo. El `.env` del
   motor **tiene** `APP_KEY` con valor (51 caracteres). `api_secret`/`api_key` aparecen **0 veces** en `laravel.log`,
@@ -47,6 +73,11 @@
     texto plano, variantes de nombre, respuesta sin claves intacta, recorte, y que los 3 jobs no registren el cuerpo
     crudo. Sin la clase, falla; mutaciones 5/5.
   - Regresión 53 Python + 22 PHP en TODO OK.
+- Instalación de p65 el 13-nov (~21:35 UTC): regresión 53 Python + 22 PHP en TODO OK; autoload de `SafeLogBody` OK;
+  integración completa TODO OK como tr2 (A–G, Z1 intacta). Motor 21:35:21 y Horizon 21:35:34 UTC reiniciados; tick
+  de Paper 200; 0 errores en `engine.log`; tick Real 21:36:11 gestionado (2 monitoreadas, 0 errores).
+  Aviso: el `.env` del motor aún tiene `APP_KEY` (sin uso; borrado manual pendiente del dueño).
+  `main` = `origin/main` = `96335d0`.
 
 ### R-04 — No borrar suscripción ni cuenta con operaciones sin confirmar (p64)
 - **Hallazgo:** `openTrades()` de la suscripción no contaba `orphaned` y `BrokerAccountController::destroy` solo
