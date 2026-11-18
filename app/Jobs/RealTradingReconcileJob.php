@@ -14,7 +14,9 @@ class RealTradingReconcileJob implements ShouldQueue
     use Queueable;
 
     public int $tries   = 1;
-    public int $timeout = 120;
+    // R-08 (p68): HTTP 75 s < trabajo 85 s < retry_after 90 s de la conexión redis. Antes 120 s: un trabajo de más de
+    // 90 s volvía a la cola mientras seguía corriendo y la copia terminaba como fallida (MaxAttemptsExceeded).
+    public int $timeout = 85;
 
     public function handle(): void
     {
@@ -65,7 +67,7 @@ class RealTradingReconcileJob implements ShouldQueue
         try {
             $response = Http::withHeaders([
                 'X-Internal-API-Key' => config('trading.python_internal_api_key'),
-            ])->timeout(90)->post($url, $payload);
+            ])->timeout(75)->post($url, $payload);
 
             if (!$response->successful()) {
                 Log::warning('RealTradingReconcileJob: respuesta no exitosa', [

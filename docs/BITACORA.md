@@ -21,6 +21,24 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### R-08 — La conciliación ya no puede «caducar» en la cola (p68)
+- **Hallazgo:** `RealTradingReconcileJob` tenía `timeout` 120 s y esperaba al motor 90 s, pero la conexión `redis`
+  da por perdido un trabajo a los 90 s (`retry_after`). Una conciliación de más de 90 s volvía a la cola mientras
+  seguía corriendo; con `tries = 1` la copia terminaba fallida (`MaxAttemptsExceeded`). No había doble ejecución
+  posible en el motor (turno exclusivo por cuenta), pero sí registros falsos de falla.
+- **Lectura del servidor (18-nov, solo lectura):** md5 = repo; `REDIS_QUEUE_RETRY_AFTER` sin definir (90). Ninguna
+  conciliación fallida ni con tiempo agotado (`failed_jobs`, `horizon.log`, `laravel.log`, 0 cuentas ocupadas en
+  `engine.log`). Sí hay **2 `CollectOhlcvDataJob` con `MaxAttemptsExceeded` del 26-oct**: el mismo mecanismo, en
+  una versión anterior del collector (hoy cumple la regla: 75 < 80 < 90). Fix **preventivo**.
+- **Cambio:** conciliación con trabajo **85 s** y espera HTTP **75 s** (antes 120 y 90): HTTP < trabajo <
+  `retry_after`, como los demás trabajos. El motor tarda mucho menos (espera de turno 20 s + Bybit).
+- **Pruebas:**
+  - `queue_timeouts_static_test.php` (PHP puro, para **todos** los trabajos): lee `retry_after` de cada conexión,
+    reconoce los trabajos de la conexión de búsquedas y verifica HTTP < trabajo < `retry_after` en los 10. Con el
+    código anterior falla la conciliación; mutaciones 2/2 (collector 95 s, HTTP del tick de Paper 70 s). Queda como
+    guardia para trabajos futuros.
+  - Regresión 55 Python + 23 PHP en TODO OK.
+
 ### R-06 — El backtest ya no congela al motor (p67)
 - **Hallazgo:** `/backtest/run` hacía la simulación (CPU) en el event loop del único proceso del motor: mientras
   corría, quedaban en espera el tick Real, el circuit breaker, la conciliación y Paper.
@@ -37,6 +55,9 @@
     de a uno, el 400 se mantiene. 2 FALLOS con el código anterior; mutaciones 2/2 (semáforo de 2, sin hilo).
   - Las pruebas del endpoint ya existentes (`end_of_data_test`, `quality_gate_test`, `bt_compare_test` y demás)
     siguen en TODO OK: regresión 55 Python + 22 PHP.
+- Instalación de p67 el 18-nov (~20:22 UTC): regresión 55 Python + 22 PHP en TODO OK; solo se reinició el motor
+  (20:22:29 UTC); tick de Paper 200; 0 errores en `engine.log`; sin operaciones Real abiertas. `main` = `origin/main`
+  = `cbf06e0`.
 
 ### R-15 — El dashboard se quedaba sin precios en vivo (p66; hallazgo nuevo del 13-nov)
 - **Cómo apareció:** al buscar timeouts del motor para R-06, `laravel.log` (desde el 12-nov 23:58) tenía **29**, todos
