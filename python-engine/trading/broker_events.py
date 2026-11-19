@@ -28,6 +28,7 @@ EVENTS = frozenset({
     'reconcile_closed',     # cerrado en TR2 con los números de Bybit (ya no existía en Bybit)
     'reconcile_adopted',    # posición de Bybit adoptada (sin registro o huérfana)
     'reconcile_discarded',  # apertura huérfana descartada: nunca llegó a Bybit
+    'manual_position_ignored',  # posición abierta a mano en Bybit: el bot no la adopta ni la gestiona (D-18)
     'protection_failed',    # Bybit no aceptó el SL/TP de la estrategia: la posición sigue con el stop provisional
     'protection_restored',  # el SL/TP de la estrategia quedó instalado en Bybit
     'api_permissions_bad',  # la clave no tiene los permisos que TR2 exige (o tiene retiros); la cuenta sigue operando

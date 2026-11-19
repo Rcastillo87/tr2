@@ -21,6 +21,25 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### D-18 y D-19 — Posiciones abiertas a mano en Bybit (p74)
+- **Decisiones del dueño (19-nov):** D-18 se ignoran (ni se adoptan ni se gestionan); D-19 mientras exista una manual
+  en una moneda suscrita el bot no abre en esa moneda; al cerrarse, abre solo si la señal sigue vigente. Los usuarios
+  no operan a mano: es una protección.
+- **Lectura del servidor (19-nov):** md5 = repo; **0** adopciones de posiciones sin registro en toda la historia; 0
+  operaciones Real abiertas; 0 bloqueos de entrada por posición no registrada en `engine.log`.
+- **Antes:** la conciliación (paso 3) creaba una fila `orphaned` para cualquier posición de Bybit sin registro en un
+  símbolo suscrito y la adoptaba con el SL/TP de la estrategia (`reconcile_adopted`, `kind=untracked`).
+- **Cambio:** el paso 3 ya no adopta: registra `manual_position_ignored` (nuevo evento, aviso «Posición manual
+  ignorada» en el panel) **una vez por posición** (símbolo, lado y precio de entrada) y la informa en
+  `results.manual_ignored`. Las posiciones propias del bot sin confirmar (`pending_open`, `orphaned` de apertura)
+  se siguen recuperando como antes: tienen fila desde antes de enviar la orden.
+- **D-19 ya se cumplía** (`check_new_signals`: «posicion abierta en Bybit (no registrada en DB)» antes de mirar la
+  señal; al cerrarse, la señal de la última vela cerrada): queda vigilado por una prueba.
+- **Pruebas:** `broker_events_test.py` D4 (aviso y sin fila en `real_trades`) y D5 (sin aviso repetido): 3 FALLOS con
+  el código anterior; mutación «sin deduplicar» detectada. `manual_position_test.py` (nuevo, D-19): con la manual no
+  abre ni mira la señal; sin ella evalúa la última vela cerrada. `broker_event_messages_test.php`: el evento nuevo
+  tiene texto y nivel. Regresión 60 Python + 23 PHP en TODO OK.
+
 ### D-35 y D-36 — Fin del backtest fuera de las métricas y aviso de huecos (p73)
 - **Decisiones del dueño (19-nov):** D-35 la posición abierta al final del backtest no cuenta en las métricas; D-36
   con huecos el backtest corre igual y el aviso va al «Log de Errores» aunque la completitud supere el 98 %; D-37 se
@@ -46,6 +65,8 @@
   - `engine_speed_parity_test.py`: la comparación con la referencia V3 ya no recorta la curva (el motor no agrega la
     posición final) y exige que las métricas vengan sin ella.
   - Regresión 59 Python + 23 PHP en TODO OK.
+- Instalación de p73 el 19-nov (~15:34 UTC): 13 archivos; regresión 59 Python + 23 PHP en TODO OK; motor reiniciado
+  15:34:28 UTC, tick de Paper 200, 0 errores. `main` = `origin/main` = `819bd39`.
 
 ### p72 — Limpieza y documentación (cierre de la validación del 13-nov)
 - **Código muerto fuera:** `RegisteredUserController`, la vista `auth/register.blade.php` y su prueba Breeze

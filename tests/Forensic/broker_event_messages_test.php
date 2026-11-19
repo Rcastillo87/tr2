@@ -24,7 +24,7 @@ $expect = [   // evento => [nivel, modo]
     'liquidation_risk' => ['error', 'notify'],
     'monthly_limit_reached' => ['error', 'open'], 'monthly_limit_reset' => ['success', 'resolve'],
     'reconcile_closed' => ['warning', 'notify'], 'reconcile_adopted' => ['warning', 'notify'],
-    'reconcile_discarded' => ['info', 'notify'],
+    'reconcile_discarded' => ['info', 'notify'], 'manual_position_ignored' => ['warning', 'notify'],
     'protection_failed' => ['error', 'open'], 'protection_restored' => ['success', 'resolve'],
     'api_permissions_bad' => ['error', 'open'], 'api_permissions_ok' => ['success', 'resolve'],
 ];

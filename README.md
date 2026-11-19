@@ -330,6 +330,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `secrets_exposure_test.py`, `safe_log_body_test.php` | Las claves del broker no salen en un 422 del motor ni en `laravel.log`; el motor no usa el `APP_KEY` de Laravel (R-05, R-07) |
 | `live_trades_delete_static_test.php`, `real_config_gate_test.php`* (sección G) | No se borra una suscripción ni una cuenta con operaciones abiertas o sin confirmar (`orphaned`) (R-04) |
 | `dashboard_prices_static_test.php` | Precios del dashboard: consulta acotada al último día con respaldo sin límite; mismo resultado que antes (R-03); una falla de precios en vivo no se guarda en caché (R-15) |
+| `manual_position_test.py` | Con una posición manual en la moneda el bot no abre; al cerrarse evalúa la señal vigente (D-19). D-18 en `broker_events_test.py` D4–D5 |
 | `backtest_gaps_test.py` | Huecos en las velas: el backtest corre igual y el Log de Errores dice cuántos y el mayor, con fechas (D-36) |
 | `tp_cleanup_test.py` | TP2–TP4 eliminados (D-31): sin residuos, `calculate_tp1` igual al TP1 anterior, JSON y pedidos viejos se ignoran |
 | `real_exit_reason_test.py` | Motivo de salida según la orden de cierre de Bybit (TP/SL con deslizamiento, trailing nativo) y reclasificación de los `closed_other` (R-16) |
@@ -362,7 +363,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (59 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (60 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

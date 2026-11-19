@@ -189,6 +189,9 @@ Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Regla
 - **Usuarios (p62):** inactivo = sin entradas y sin suscripciones (las vivas terminan su ciclo y se eliminan solas); borrado propio deshabilitado.
 - **Rendimiento:** dashboard acotado al último día (R-03, p63); precios en vivo en paralelo y sin cachear fallas (R-15, p66); backtest fuera del event loop (R-06, p67).
 - **Seguridad y orden:** motor sin `APP_KEY` ni descifrado propio (R-05, p65); 422 sin `input` y claves tapadas en logs (R-07, p65); timeouts HTTP < trabajo < `retry_after` en todos los jobs, vigilado por prueba (R-08, p68); TP2–TP4 eliminados, columnas conservadas (D-31, p71); código muerto fuera (p72).
+- **Backtest (p73):** la posición abierta al final (`end_of_data`) se muestra pero **no cuenta en las métricas** (`metrics.counted_trades`, D-35); los huecos de velas van al «Log de Errores» con cuántos y el mayor (`candle_gaps`, D-36); «< 98 % = no apto para Paper» se mantiene (D-37).
+- **Real (p74):** las posiciones de Bybit sin registro (abiertas a mano) ya no se adoptan: aviso `manual_position_ignored` una vez (D-18); sin entradas del bot en esa moneda mientras existan (D-19, ya vigente).
+- **Decisiones del 19-nov:** capital compuesto (D-33), riesgo sin costos (D-34), posiciones manuales ignoradas y sin entradas del bot en esa moneda mientras existan (D-18, D-19), Fase 12 aprobada (D-38).
 
 ---
 

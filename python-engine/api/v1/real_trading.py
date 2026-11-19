@@ -532,7 +532,10 @@ async def reconcile(
                     logger.warning(f"[RECONCILE] Orphaned #{trade['id']} {symbol} → failed (sin posicion en Bybit)")
                     await emit_event(pool, account.id, 'reconcile_discarded', trade['id'], symbol=symbol)
 
-            # 3. Posiciones en Bybit sin registro en DB
+            # 3. Posiciones en Bybit sin registro en DB: abiertas a mano (las del bot siempre tienen fila, desde
+            #    pending_open). D-18 (dueño, 19-nov): se IGNORAN — no se adoptan ni se gestionan. Se avisa una vez por
+            #    posición (símbolo, lado y precio de entrada). Mientras exista, el bot no abre en esa moneda (D-19,
+            #    check_new_signals); al cerrarse, abre solo si la señal sigue vigente.
             symbols_checked = set()
             for sub in account.subscriptions:
                 if sub.symbol in symbols_checked:
@@ -555,39 +558,20 @@ async def reconcile(
                     )
                 if existing:
                     continue
-                pos_size  = float(position.get('size', 0))
-                pos_side  = position.get('side', '')
-                db_side   = 'long' if pos_side == 'Buy' else 'short'
-                avg_price = float(position.get('avgPrice', 0) or position.get('entryPrice', 0))
-                snapshot  = {**(sub.config_params or {}), 'symbol': sub.symbol, 'interval': sub.interval}
-                try:
-                    async with pool.acquire() as conn:
-                        trade_id = await conn.fetchval(
-                            """
-                            INSERT INTO real_trades
-                                (user_id, subscription_id, broker_account_id, paper_strategy_config_id,
-                                 strategy, symbol, broker, interval, side,
-                                 entry_price, entry_price_signal, sl, tp,
-                                 be_level, be_activated, size, original_size, leverage,
-                                 balance_before, regime, entry_time, config_snapshot,
-                                 status, created_at, updated_at)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,0,0,0,false,$11,$11,1,0,'UNKNOWN',now(),$12,
-                                    'orphaned',now(),now())
-                            RETURNING id
-                            """,
-                            sub.user_id, sub.subscription_id, account.id, sub.paper_strategy_config_id,
-                            sub.strategy, sub.symbol, account.broker, sub.interval, db_side,
-                            avg_price, pos_size, snapshot
-                        )
-                    trade = {'id': trade_id, 'symbol': sub.symbol, 'interval': sub.interval, 'config_snapshot': snapshot}
-                    adopted = await _adopt_position(trader, client, trade, avg_price, db_side, sub.symbol)
-                    await emit_event(pool, account.id, 'reconcile_adopted', trade_id, symbol=sub.symbol,
-                                     side=db_side, kind='untracked', protected=adopted)
-                    results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side,
-                                                'reason': 'registrada en DB' if adopted else 'registrada sin config'})
-                except Exception as e:
-                    logger.error(f"[RECONCILE] No se pudo registrar posicion huerfana {sub.symbol}: {e}")
-                    results['orphaned'].append({'symbol': sub.symbol, 'size': pos_size, 'side': pos_side, 'reason': f'ERROR: {e}'})
+                pos_size = float(position.get('size', 0))
+                db_side = 'long' if position.get('side', '') == 'Buy' else 'short'
+                avg_price = str(position.get('avgPrice') or position.get('entryPrice') or '')
+                async with pool.acquire() as conn:
+                    already = await conn.fetchval(
+                        "SELECT 1 FROM broker_events WHERE broker_account_id = $1 AND event = 'manual_position_ignored' "
+                        "AND data->>'symbol' = $2 AND data->>'side' = $3 AND data->>'avg_price' = $4 LIMIT 1",
+                        account.id, sub.symbol, db_side, avg_price)
+                if not already:
+                    logger.warning(f"[RECONCILE] {sub.symbol} {db_side} {pos_size} @ {avg_price}: posición abierta a mano "
+                                   f"en Bybit (cuenta {account.id}); se ignora (D-18)")
+                    await emit_event(pool, account.id, 'manual_position_ignored', None, symbol=sub.symbol,
+                                     side=db_side, avg_price=avg_price, size=pos_size)
+                results.setdefault('manual_ignored', []).append({'symbol': sub.symbol, 'side': db_side, 'size': pos_size})
 
         for account in request.accounts:
             got, _ = await _exclusive(account.id, RECONCILE_LOCK_WAIT, lambda: _reconcile_account(account))

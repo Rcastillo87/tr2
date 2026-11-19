@@ -283,6 +283,8 @@ class ReconcileConn(rp.FakeConn):
     async def fetchval(self, sql, *a):
         if 'INSERT INTO real_trades' in sql:
             return 55
+        if "event = 'manual_position_ignored'" in sql:
+            return 1 if self.s.get('manual_seen') else None
         return await super().fetchval(sql, *a)
 
 
@@ -346,10 +348,17 @@ async def part_d():
     check('D3: huérfana sin posición -> reconcile_discarded', [e[0] for e in events(s)] == ['reconcile_discarded'], events(s))
 
     s = {'exec': []}
-    await run_reconcile(s, [], SeqPositionClient([dict(rp.position(), side='Buy')]))
+    res = await run_reconcile(s, [], SeqPositionClient([dict(rp.position(), side='Buy')]))
     ev = events(s)
-    check('D4: posición en Bybit sin registro -> reconcile_adopted (untracked)',
-          [e[0] for e in ev] == ['reconcile_adopted'] and ev[0][2].get('kind') == 'untracked' and ev[0][1] == 55, ev)
+    check('D4: posición en Bybit sin registro (manual) -> NO se adopta: aviso manual_position_ignored (D-18)',
+          [e[0] for e in ev] == ['manual_position_ignored'] and ev[0][1] is None and ev[0][2].get('side') == 'long'
+          and ev[0][2].get('symbol'), ev)
+    check('D4b: no se crea fila en real_trades ni se le pone SL/TP del bot',
+          not any('INSERT INTO real_trades' in sql for sql, a in s['exec']) and not s.get('tpsl_calls')
+          and (res.get('results') or {}).get('manual_ignored'), ((res.get('results') or {}).get('manual_ignored'), [sql[:40] for sql, a in s['exec']]))
+    s = {'exec': [], 'manual_seen': True}
+    await run_reconcile(s, [], SeqPositionClient([dict(rp.position(), side='Buy')]))
+    check('D5: la misma posición manual en el siguiente ciclo -> sin aviso repetido', events(s) == [], events(s))
 
 
 async def main():

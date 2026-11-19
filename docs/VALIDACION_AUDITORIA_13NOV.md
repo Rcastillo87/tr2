@@ -291,7 +291,7 @@ Confirmado en producción el 13-nov:
 | R-09 | **P2** (era P3; medido 18-nov) | El monitor Real busca el closed-pnl desde `updated_at` (no `entry_time`) y la conciliación fijaba el motivo `reconciled_sl_tp_bybit`. **6 de 10 operaciones cerradas** (todos los cierres de Bybit) perdieron su motivo de salida; PnL y saldo correctos | Corregido en p69 (`6688580`, 18-nov): monitor desde la apertura, conciliación calcula el motivo; las 6 históricas corregidas (D-15): 4 `closed_other`, 1 `take_profit_1`, 1 `stop_loss` |
 | **R-16** | P3 (nuevo, 18-nov) | El motivo por precio (exit vs SL/TP de la DB) no reconoce TP/SL ejecutados con deslizamiento ni el trailing nativo de Bybit: 6 de 10 cierres quedan `closed_other`. El motivo exacto está en la orden de cierre de Bybit (`stopOrderType`) | Corregido en p70 (`b4234dc`, 18-nov; 6 de 6 históricos reclasificados con dato de Bybit, 0 `closed_other`): motivo según la orden de cierre de Bybit (`stopOrderType`), con la regla por precio como respaldo; reclasificación de los `closed_other` históricos |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Preventivo, para después (D-16): 10 de 10 operaciones coinciden |
-| R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decisión del dueño |
+| R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decidido (D-18, D-19): se ignoran; p74 |
 | **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | **Validado** en producción: p60 (`ce21154`); #93 reparado (`sl` 1959,97 = SL de Bybit, `trailing_applied` = f), visto al instalar p61 |
 | **R-14** | **P1** | El tick Real se omitía cada minuto (sin espera ante el circuit breaker) y el omitido rompía `array_filter` en Laravel: posiciones sin BE/trailing/tiempo. Visto en producción el 13-nov (aviso «Trading real sin gestionar posiciones») | **Validado** en producción: p61 (`53be807`); tick gestionado 17:47:11 y 0 `array_filter`. Ocurría desde p36 (09-nov), ~275 ticks omitidos al día |
 | U-1/U-2/U-3 | P1 | Usuario inactivo: la selección Real no miraba `is_active` (inactivar por SQL no bloqueaba nada); pausa fuera de transacción; `ensureSubscriptions` creaba para inactivos. Decisión del dueño: eliminar las suscripciones al inactivar y dejar que las operaciones vivas terminen su ciclo | **Validado** en producción: p62 (`140e22b`, v3), integración completa TODO OK (E1–E7, F1–F4). Reglas en `docs/DECISIONES_DUENO.md` (D-02 a D-05). Dos intentos previos revertidos por errores de la prueba (Z1, A5), base intacta |
@@ -324,10 +324,10 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Tipo | Punto | Qué falta |
 |---|---|---|
 | Decidido 19-nov, sin código | A-1.3a capital (D-33) y WB-05 riesgo (D-34) | Se quedan como hoy: solo documentación (hecho) |
-| Decidido 19-nov, hecho en p73 (pendiente de instalar) | WB-01 fin de muestra (D-35) | La posición `end_of_data` no cuenta en las métricas |
-| Decidido 19-nov, hecho en p73 (pendiente de instalar) | WB-04 huecos (D-36) | El backtest corre igual; huecos (cuántos, el mayor, fechas) en el «Log de Errores» |
-| Decidido 19-nov, **por implementar** | R-11 posiciones manuales (D-18) | La conciliación las ignora |
-| Decidido 19-nov, **por implementar** | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
+| Decidido 19-nov, **hecho en p73** (`819bd39`) | WB-01 fin de muestra (D-35) | La posición `end_of_data` no cuenta en las métricas |
+| Decidido 19-nov, **hecho en p73** (`819bd39`) | WB-04 huecos (D-36) | El backtest corre igual; huecos (cuántos, el mayor, fechas) en el «Log de Errores» |
+| Decidido 19-nov, hecho en p74 (pendiente de instalar) | R-11 posiciones manuales (D-18) | La conciliación las ignora y avisa una vez |
+| Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
 | Decidido 19-nov, **por implementar** | Fase 12 (D-38) | 4A drawdown flotante → 1A tres tramos → 3A renombrar (maqueta) → 2A cartera → 3B walk-forward real; la 5 descartada |
 | Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |

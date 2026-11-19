@@ -133,6 +133,13 @@ final class BrokerEventMessages
                 'body'  => "{$account} · {$ref}{$side}: existe en Bybit pero no se encontró la configuración de su estrategia. "
                     . 'Solo la protege el SL/TP provisional; revísala en Bybit.',
             ],
+            'manual_position_ignored' => [
+                'level' => 'warning', 'mode' => 'notify', 'key' => null,
+                'title' => 'Posición manual ignorada',
+                'body'  => "{$account} · " . ($data['symbol'] ?? '') . $side
+                    . ': hay una posición abierta en Bybit que no abrió TR2. El bot no la gestiona (sin SL/TP del bot) '
+                    . 'y no abre en esa moneda mientras exista.',
+            ],
             'reconcile_discarded' => [
                 'level' => 'info', 'mode' => 'notify', 'key' => null,
                 'title' => 'Apertura descartada',
