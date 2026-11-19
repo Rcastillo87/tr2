@@ -101,7 +101,8 @@ async def main():
 
     # N6. Control: con 1m disponible no se usan velas del intervalo (comportamiento de siempre)
     SOURCES.update({'1': 'bybit', '60': 'bybit'})
-    s = mg.store(mg.minutes(t0 + timedelta(minutes=1), at(2, 11, 59)), candles=hours(t0, at(2, 12), touch={at(2, 11): 98.0}))
+    # 1m al día: el collector ya escribió el minuto en formación (12:00); el 11:59 todavía no es final (R-22)
+    s = mg.store(mg.minutes(t0 + timedelta(minutes=1), at(2, 12)), candles=hours(t0, at(2, 12), touch={at(2, 11): 98.0}))
     await mg.monitor(s, at(2, 12))
     check('N6: con 1m al día -> sin consultas de respaldo, abierto, punto de control 11:58',
           s['backup_queries'] == 0 and s['trade']['status'] == 'open'

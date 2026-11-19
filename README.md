@@ -135,7 +135,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 - Historial con enfoque, modo y monedas probadas; **Eliminar** (solo admin).
 
 ### Paper trading (`/paper-trading`)
-Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela). Decide si una señal ya se usó con la misma regla que el motor y guarda como hora de salida la del evento (minuto de 1m). No salta un hueco del 1m: espera la reparación y, si a las 26 h sigue, usa la vela completa con SL primero; si la serie de 1m entera lleva 26 h detenida, el tramo final también se evalúa así, vela a vela; si la fuente no tiene ninguna vela de 1m del símbolo, se evalúa así desde el principio (no hay reparación que esperar). Paridad verificable con `tools/analysis/compare_paper_vs_backtest.py --config <id>`.
+Tick cada minuto (`PaperTradingTickJob`, único). Misma estrategia, comisión, slippage y **funding** (`paper_trades.funding`) que el backtest. Entra al precio del tick (≤ 1–2 min después del cierre de vela). Decide si una señal ya se usó con la misma regla que el motor y guarda como hora de salida la del evento (minuto de 1m). Vigila SL/TP solo con minutos de 1m ya completos en la base (el siguiente ya está guardado: R-22, p83), y decide entradas solo con la vela completa (D-39, p76). No salta un hueco del 1m: espera la reparación y, si a las 26 h sigue, usa la vela completa con SL primero; si la serie de 1m entera lleva 26 h detenida, el tramo final también se evalúa así, vela a vela; si la fuente no tiene ninguna vela de 1m del símbolo, se evalúa así desde el principio (no hay reparación que esperar). Paridad verificable con `tools/analysis/compare_paper_vs_backtest.py --config <id>`.
 
 ### Trading real (`/trading`)
 - Cuentas Bybit por usuario (claves API con permisos de **Contratos: Órdenes + Posiciones**; nunca retiros). Cuentas demo = Bybit **Demo Trading** (`api-demo.bybit.com`).
@@ -363,7 +363,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (68 Python + 26 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (69 Python + 26 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

@@ -295,6 +295,7 @@ Confirmado en producción el 13-nov:
 | **R-19** | P3 (nuevo, 19-nov) | El resumen del tick Real en `laravel.log` nunca contaba aperturas ni errores («nuevas:0» con dos aperturas) | Corregido en p76 |
 | **R-20** | P3 (nuevo, 19-nov) | Real no registraba por qué una suscripción no abre | Corregido en p76: `[REAL-SEÑAL]` en `engine.log` al cambiar el motivo |
 | **R-21** | **P2** (nuevo, 19-nov; confirmado con datos) | VWAP Tendencia: `vwap_std_dev` con todas las velas del día: el backtest abría operaciones que en vivo no existían (8 en la paridad del 19-nov, 6 ganadoras) | Corregido en p80 (D-42): desviación hasta cada vela; verificado vela a vela contra lo que ve Paper |
+| **R-22** | **P2** (nuevo, 19-nov; confirmado con datos) | El monitor de Paper evalúa el minuto de 1 m recién cerrado aunque el collector todavía no le guardó sus valores finales y lo deja atrás: 7 de 16 cierres por SL/TP salieron 1–27 min tarde y un TP 118 min tarde hizo perder una operación (SOL 10-nov) | Corregido en p83: un minuto se evalúa solo cuando ya existe el siguiente (regla de D-39) |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Preventivo, para después (D-16): 10 de 10 operaciones coinciden |
 | R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decidido (D-18, D-19): se ignoran; p74 |
 | **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | **Validado** en producción: p60 (`ce21154`); #93 reparado (`sl` 1959,97 = SL de Bybit, `trailing_applied` = f), visto al instalar p61 |
@@ -335,7 +336,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
 | Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38, D-41) | 4A drawdown flotante (hecho) · 1A tres tramos (hecho) · 2A cartera **descartada** (D-41: el backtest queda como está; las protecciones solo en Real) · 3A se junta con 3B walk-forward real (las ventanas no se muestran hoy) · la 5 descartada |
-| **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); queda ETH 9-nov. **Herramienta corregida en p81:** termina en el último día completo y compara un tramo por snapshot |
+| **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); ETH 9-nov explicado (era R-21, corrida 5). **Herramienta corregida en p81:** termina en el último día completo y compara un tramo por snapshot |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
 | Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |

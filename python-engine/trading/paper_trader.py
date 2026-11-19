@@ -75,6 +75,19 @@ def split_at_minute_gap(bars: list, after: datetime) -> tuple[list, tuple | None
     return bars, None
 
 
+def final_minutes(bars: list, now: datetime) -> list:
+    """
+    Velas de 1m con sus valores FINALES (R-22, regla de D-39): el collector guarda el minuto en formación y lo completa en
+    la pasada siguiente, que escribe también el minuto nuevo. Un minuto es final cuando la base ya tiene el siguiente;
+    el último de la lista (sin siguiente) se deja para el próximo ciclo. Excepción: si la serie lleva MINUTE_GAP_WAIT
+    detenida, el último ya no va a cambiar (N-02). Antes se evaluaba con `time <= ahora − 1 min` y el punto de control
+    dejaba atrás un minuto incompleto: 7 de 16 cierres por SL/TP salieron 1–27 min tarde (19-nov).
+    """
+    if not bars or now - _as_utc(bars[-1]['time']) >= MINUTE_GAP_WAIT:
+        return bars
+    return bars[:-1]
+
+
 class PaperTrader:
 
     def __init__(self, pool: asyncpg.Pool, default_params: dict, config_map: dict | None = None):
@@ -584,9 +597,9 @@ class PaperTrader:
                     WHERE broker = $4 AND symbol = $1 AND interval = '1' AND time > $2 AND time <= $3
                     ORDER BY time ASC
                     """,
-                    symbol, last_checkpoint, now - timedelta(minutes=1), minute_broker  # solo 1m cerradas
+                    symbol, last_checkpoint, now, minute_broker   # hasta ahora: el siguiente marca el final (R-22)
                 ) if minute_broker else []
-            bars = sorted_records(bars, f"paper #{trade['id']} {symbol}/1 ({minute_broker})")
+            bars = final_minutes(sorted_records(bars, f"paper #{trade['id']} {symbol}/1 ({minute_broker})"), now)
             # Minutos seguidos desde el punto de control; un hueco no se salta (BP-03). Sin serie de 1m: velas del
             # intervalo con SL primero (auditoría 13-nov §3.5)
             path = (await self._minute_path(trade, bars, last_checkpoint, minute_broker, now) if minute_broker

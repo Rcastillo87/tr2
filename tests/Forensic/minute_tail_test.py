@@ -80,13 +80,14 @@ async def main():
     # T4. Las velas de 1m solo vienen con retraso (< 26 h): espera en silencio, no usa las velas H1
     s = mg.store(feed, candles=hours(t0, at(2, 12), touch={at(2, 11): 98.5}))
     await mg.monitor(s, at(2, 12, 30))
-    check('T4: 1m con retraso de 2 h -> no cierra, punto de control en 10:37, sin ERROR ni velas de respaldo',
-          s['trade']['status'] == 'open' and s['trade']['last_monitored_at'] == datetime(2026, 3, 2, 10, 37)
+    # R-22: el último minuto que llegó (10:37) no tiene siguiente: todavía no es final y queda para el próximo ciclo
+    check('T4: 1m con retraso de 2 h -> no cierra, punto de control en 10:36, sin ERROR ni velas de respaldo',
+          s['trade']['status'] == 'open' and s['trade']['last_monitored_at'] == datetime(2026, 3, 2, 10, 36)
           and not mg.errors() and s['backup_queries'] == 0,
           (s['trade']['status'], s['trade']['last_monitored_at'], mg.errors(), s['backup_queries']))
 
     # T5. Caso normal (1m al día): no consulta la última vela de la serie ni el respaldo
-    s = mg.store(mg.minutes(t0 + timedelta(minutes=1), at(2, 11, 59)))
+    s = mg.store(mg.minutes(t0 + timedelta(minutes=1), at(2, 12)))   # con el minuto en formación (R-22)
     await mg.monitor(s, at(2, 12))
     check('T5: 1m al día -> sin consultas extra y punto de control en 11:58',
           s.get('tail_queries', 0) == 0 and s['backup_queries'] == 0

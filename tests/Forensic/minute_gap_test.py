@@ -192,7 +192,7 @@ async def main():
 
     # 4. Hueco permanente (> 26 h): vela H1 completa con SL primero
     late = datetime(2026, 3, 3, 13, 0, tzinfo=UTC)          # 26 h 20 min después del hueco
-    base = minutes(t0 + timedelta(minutes=1), late - timedelta(minutes=1), skip=gap_mins)
+    base = minutes(t0 + timedelta(minutes=1), late, skip=gap_mins)   # con el minuto en formación (12:59, R-22)
     s = store(base, candles=[hour(datetime(2026, 3, 2, 10, 0), low=98.5)])
     await monitor(s, late)
     tr = s['trade']
@@ -236,7 +236,7 @@ async def main():
           (s['trade']['status'], s['trade'].get('exit_time')))
 
     # 5. Sin hueco: el caso normal no cambia (no consulta respaldo, no deja ERROR)
-    s = store(minutes(t0 + timedelta(minutes=1), now - timedelta(minutes=1)))
+    s = store(minutes(t0 + timedelta(minutes=1), now))   # con el minuto en formación (11:59), como el collector (R-22)
     await monitor(s, now)
     check('sin hueco: punto de control en el último minuto cerrado, sin ERROR ni consultas extra',
           s['trade']['last_monitored_at'] == datetime(2026, 3, 2, 11, 58) and not errors() and s['backup_queries'] == 0,

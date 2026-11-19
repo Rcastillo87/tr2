@@ -21,6 +21,45 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Paridad corrida 5 (`lectura_paridad5`, solo lectura, código corregido) y R-22 confirmado — 19-nov
+- **Con el código corregido** (8 configs, 05-nov → ayer): las «solo backtest» de R-21 desaparecen. **ETH 9-nov queda
+  explicado** (era R-21: ahora se empareja con Paper, SL a +1 min). Quedan:
+  - 3 «solo Paper» (DOGE 12-nov, ENA 11-nov, ETH 17-nov): señal solo con la vela incompleta = **D-39** (corregido en p76).
+  - 1 «solo backtest» (SOL 10-nov 12:00): Paper seguía con #357 abierta porque cerró su TP 118 min tarde (R-22).
+  - Horas de salida: Paper sale después que el backtest al mismo nivel en casi todas; antes (−4 a −19 min) solo por
+    la diferencia de precio de entrada (Paper entra al precio vivo: §5.10).
+- **R-22 (P2, confirmado):** de 16 cierres de Paper por SL/TP fijos desde el 05-nov, **7 salieron tarde** respecto del
+  primer minuto de 1 m que toca el nivel en los datos guardados: 3 a +1 min, 3 a +2 min y 1 a +27 min (ZEC #351); más
+  el TP de SOL #357 (+118 min) que hizo perder la operación del 10-nov 12:00. **Causa:** el monitor de Paper toma como
+  cerrado el minuto en cuanto pasa su hora (`time <= now − 1 min`), pero el collector guarda el minuto en formación y lo
+  completa en la pasada siguiente (lo mismo que D-39 con la vela operada). Paper evalúa ese minuto con datos parciales
+  y su punto de control lo deja atrás: el toque de los segundos que faltaban no se ve nunca. Real no se afecta (SL/TP
+  en Bybit; el trailing nativo usa el máximo acumulado de 1 m, que se relee cada minuto).
+- **Arreglo (p83, «procede» del dueño 19-nov):** `paper_trader.final_minutes`: el monitor lee los minutos hasta ahora y
+  evalúa solo los que ya tienen el siguiente en la base (el último se deja para el próximo ciclo; si la serie lleva 26 h
+  detenida, el último ya es final: N-02 sin cambios). Espera máxima: 1 minuto más. La hora de salida sigue siendo la
+  del minuto del toque.
+- **Prueba:** `minute_final_test.py` (nueva): el caso del servidor (minuto del toque llega incompleto → antes quedaba
+  abierta; ahora cierra con la hora del toque), el «+1 min», collector atrasado y caso normal. Con el código anterior:
+  7 FALLOS. Mutaciones 5/5. `paper_no_minute_source_test`, `minute_tail_test` y `minute_gap_test`: sus datos de prueba
+  ahora incluyen el minuto en formación, como lo guarda el collector (T4: el punto de control con el collector atrasado
+  queda un minuto antes, 10:36, porque el 10:37 todavía no es final). Regresión 69 Python + 26 PHP en TODO OK.
+
+### ¿Alguna otra estrategia mira el futuro? y paridad corrida 4 (`lectura_lookahead`, solo lectura) — 19-nov
+- **Prueba** (`tools/analysis/lookahead_probe.py`): misma vela inicial; resultado con todas las velas contra resultado
+  con las velas solo hasta cada una de las últimas 150; se comparan señal y cada columna de la estrategia. **Control**:
+  el código viejo de VWAP Tendencia se detecta (4 señales y `vwap_std_dev`/bandas en 125 de 150 velas).
+- **Resultado:** 19 unidades (11 configs activas y las 7 estrategias sin config activa): **ninguna mira el futuro**.
+  R-21 era el único caso.
+- **Paridad corrida 4** (herramienta de p81, 05-nov → ayer, 8 configs): sigue con «solo backtest» porque los trades de
+  Paper se abrieron antes de p80 y su snapshot trae el código viejo: el comparador repite el backtest con ese código
+  (que mira el futuro). Corrida 5: con el código corregido (en vivo da lo mismo, p80) y la causa de cada diferencia.
+- **Hallazgo nuevo a confirmar (R-22):** en las cerradas emparejadas, Paper sale casi siempre **1 minuto después** que el
+  backtest al mismo nivel (14:41 vs 14:40, 14:25 vs 14:24…). Hipótesis: el monitor de Paper toma como cerrado el minuto
+  de 1 m en cuanto pasa su hora, aunque el collector todavía no haya guardado su versión final (lo mismo que D-39 con la
+  vela operada): ese minuto se evalúa incompleto y el punto de control lo deja atrás. Si el toque solo estaba en los
+  últimos segundos del minuto y el precio no vuelve, Paper no cerraría. Corrida 5 lo mide sobre todos los cierres.
+
 ### Números de VWAP Tendencia recalculados con el código corregido (p82, D-43) — 19-nov
 - **Decisión del dueño (19-nov):** corregir métricas y estrellas guardadas (alcance: los 24 backtests de la estrategia y
   sus 13 configs de Paper); apagar alguna config queda para después de ver los números en pantalla.
@@ -45,6 +84,10 @@
   `tradesPerMonth`, `RatingHelper`), consolidado, reproducción, y de punta a punta en PostgreSQL 16 local (no aplica si
   uno no se reproduce, solo lectura sin `--apply`, aplica, params/estado intactos, respaldo, «YA APLICADO», sin p80 →
   código 2). Mutaciones 8/8. Regresión 68 Python + 26 PHP en TODO OK.
+- Instalación de p82 el 19-nov: 7 archivos; regresión 68 Python + 26 PHP en TODO OK; **24 de 24 backtests reproducen
+  exacto lo guardado** con el código viejo; aplicado: 24 backtests y 13 configs (params y estado sin cambio). Activas,
+  estrellas: DOGE 3,2→1,8 · BTC 2,8→2,4 · LINK 2,6→1,8 · NEAR 2,2→1,4 (−2,65 %) · ENA 2,2→1,8 · ETH 2,6→2,4 · 1000PEPE
+  3,0→2,0 · SOL 3,0→2,0 · XRP 3,2→2,2 · SUI 3,4→2,0 · ZEC 2,2→2,2. `main` = `d5ef724`.
 
 ### Comparador Paper vs backtest: hasta el último día completo y un tramo por snapshot (p81, MEJ-003) — 19-nov
 - **Problema** (corrida 1 de la paridad, 19-nov): `compare_paper_vs_backtest.py` pedía el backtest hasta HOY; con el día
