@@ -643,7 +643,7 @@ async def reclassify_exits(
         client = _build_broker_client(account)
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT id, symbol, side, entry_price, entry_time, exit_time, exit_price, trailing_applied
+                """SELECT id, symbol, side, entry_price, entry_time, exit_time, exit_price, trailing_applied, sl, be_activated
                    FROM real_trades WHERE broker_account_id = $1 AND status = 'closed' AND exit_reason = 'closed_other'
                    ORDER BY id""", account.id)
         for r in rows:
@@ -654,7 +654,7 @@ async def reclassify_exits(
             history = [h for h in history if end_ms is None or int(h.get('createdTime') or 0) <= end_ms]
             order_id = last_close_order_id(history)
             order = await client.get_close_order(r['symbol'], order_id, end_ms or epoch_ms(r['entry_time'])) if order_id else None
-            reason = close_trigger_reason(order, bool(r['trailing_applied']))
+            reason = close_trigger_reason(order, bool(r['trailing_applied']), dict(r))   # D-40: break_even si aplica
             item.update(order_id=order_id, stop_order_type=(order or {}).get('stopOrderType'),
                         create_type=(order or {}).get('createType'), to=reason)
             if request.apply and reason and reason != 'closed_other':

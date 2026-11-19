@@ -19,7 +19,7 @@ namespace App\Services;
 final class BrokerEventMessages
 {
     private const EXIT_REASONS = [
-        'stop_loss' => 'stop loss', 'trailing_stop' => 'trailing stop', 'time_exit' => 'tiempo máximo',
+        'stop_loss' => 'stop loss', 'trailing_stop' => 'trailing stop', 'break_even' => 'break-even', 'time_exit' => 'tiempo máximo',
         'time_exit_profit' => 'tiempo máximo', 'volatility_protection' => 'protección por volatilidad',
         'circuit_breaker_max_loss' => 'pérdida máxima', 'take_profit_1' => 'take profit',
     ];

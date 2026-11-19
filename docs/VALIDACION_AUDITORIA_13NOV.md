@@ -334,13 +334,14 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, **hecho en p74** (`7d16563`) | R-11 posiciones manuales (D-18) | La conciliación las ignora y avisa una vez |
 | Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
-| Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38) | 4A drawdown flotante (hecho) → 1A tres tramos (hecho) → 3A renombrar (maqueta) → 2A cartera → 3B walk-forward real; la 5 descartada |
+| Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38, D-41) | 4A drawdown flotante (hecho) · 1A tres tramos (hecho) · 2A cartera **descartada** (D-41: el backtest queda como está; las protecciones solo en Real) · 3A se junta con 3B walk-forward real (las ventanas no se muestran hoy) · la 5 descartada |
 | Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
 | Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |
 | Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
-| Pantalla (maqueta) | WB-02 / WB-06 | Rotular «Estabilidad por ventanas» y «promedio por moneda» |
+| Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
+| Hecho en p78 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real |
 | Hecho en p76 | R-17 a R-20 (19-nov) | Decimales de Bybit, vela incompleta (D-39), resumen de Real y motivo de no abrir |
 | Decisión | R-21 | Corregir o no la banda de desviación de VWAP Tendencia (mira el futuro en el backtest) |

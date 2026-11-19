@@ -21,6 +21,7 @@ from collectors.broker_resolver import closed_bars, final_closed_bars, interval_
 from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
 from backtesting.strategies.base_strategy import opposite_exit_rule
+from backtesting.exit_reasons import stop_exit_reason
 
 load_dotenv()
 
@@ -611,7 +612,7 @@ class PaperTrader:
                 last_bar_time = checkpoint
 
                 # Mismo orden que el motor V3: SL vigente -> TP1 -> break-even -> trailing
-                sl_label = 'trailing_stop' if trailing_applied else 'stop_loss'
+                sl_label = stop_exit_reason(side, sl, entry, be_activated, trailing_applied)   # D-40
                 if (side == 'long' and low <= sl) or (side == 'short' and high >= sl):
                     exit_price, exit_reason = sl, sl_label
                 elif (side == 'long' and high >= tp) or (side == 'short' and low <= tp):

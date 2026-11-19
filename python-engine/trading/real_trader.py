@@ -41,6 +41,7 @@ from collectors.broker_resolver import closed_bars, final_closed_bars, interval_
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
 from backtesting.strategies.base_strategy import opposite_exit_rule, NATIVE_TRAILING_MIN_BUFFER_PCT
+from backtesting.exit_reasons import STOP_LOSS, stop_exit_reason
 from trading.broker_events import emit_event
 
 load_dotenv()
@@ -198,15 +199,19 @@ _CREATE_TYPE_REASON = {
 }
 
 
-def close_trigger_reason(order: dict | None, trailing_applied: bool = False) -> str | None:
+def close_trigger_reason(order: dict | None, trailing_applied: bool = False, trade: dict | None = None) -> str | None:
     """Motivo de salida según la orden de cierre de Bybit; None si Bybit no lo dice (se usa el precio).
-    Un StopLoss cuyo SL había movido el trailing del bot (trailing_applied) es 'trailing_stop', como en la regla por
-    precio."""
+    Un StopLoss de Bybit se nombra con la regla común (D-40): 'trailing_stop' si el trailing del bot había movido el SL,
+    'break_even' si el break-even lo había llevado a la entrada (o mejor), 'stop_loss' si no."""
     if not order:
         return None
     reason = _STOP_ORDER_REASON.get(order.get('stopOrderType') or '') or _CREATE_TYPE_REASON.get(order.get('createType') or '')
-    if reason == 'stop_loss' and trailing_applied:
-        return 'trailing_stop'
+    if reason == STOP_LOSS:
+        if trade is not None:
+            return stop_exit_reason(trade['side'], trade['sl'], trade['entry_price'], bool(trade.get('be_activated')),
+                                    bool(trade.get('trailing_applied')))
+        if trailing_applied:
+            return 'trailing_stop'
     return reason
 
 
@@ -1803,12 +1808,13 @@ class RealTrader:
         close_ms = epoch_ms(bybit_close_time(history) or datetime.now(timezone.utc).replace(tzinfo=None))
         if order_id and fetch:
             order = await fetch(trade['symbol'], order_id, close_ms)
-        reason = close_trigger_reason(order, bool(trade.get('trailing_applied')))
+        reason = close_trigger_reason(order, bool(trade.get('trailing_applied')), trade)
         source = 'bybit'
         if reason is None:
             source = 'price'
             sl, tp = float(trade['sl']), float(trade['tp'])
-            sl_label = 'trailing_stop' if trade.get('trailing_applied') else 'stop_loss'
+            sl_label = stop_exit_reason(trade['side'], sl, float(trade['entry_price']), bool(trade.get('be_activated')),
+                                        bool(trade.get('trailing_applied')))   # D-40
             if trade['side'] == 'long':
                 reason = sl_label if exit_price <= sl else 'take_profit_1' if exit_price >= tp else 'closed_other'
             else:

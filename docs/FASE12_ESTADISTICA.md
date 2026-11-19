@@ -33,6 +33,9 @@ de configuraciones probadas, alguna pasa el filtro por suerte (sesgo de selecci�
 
 ## 2. Cartera con capital compartido (NUEVO-05)
 
+> **[19-nov] Descartada por el dueño (D-41).** El backtest se queda como está (cada moneda por separado, CONSOLIDADO
+> como hoy); las protecciones de cuenta existen solo en Real.
+
 **Hoy**: cada moneda se backtestea por separado con su propio saldo y los resultados se suman. No hay capital
 compartido, ni límite de posiciones simultáneas, ni exposición total, ni correlación (las cripto suelen caer juntas).
 
@@ -43,6 +46,9 @@ compartido, ni límite de posiciones simultáneas, ni exposición total, ni corr
 | C. Solo advertir | Leyenda «no representa una cartera» en la pantalla. | Ninguno. | No da el número que importa. |
 
 ## 3. Walk forward con recalibración
+
+> **[19-nov]** 3A (renombrar) se junta con 3B: los resultados por ventanas (`window_results`) no se muestran hoy en
+> ninguna pantalla; se nombran «Estabilidad por ventanas» cuando 3B los lleve a pantalla (con maqueta).
 
 **Hoy** (`window_stats`): una sola corrida continua se corta en 5 ventanas y se miden por separado. Mide
 **estabilidad**, pero los parámetros son los mismos en todas las ventanas: no es un walk forward.

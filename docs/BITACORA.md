@@ -21,6 +21,25 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Cierre en break-even con nombre propio (p78, D-40) y backtest sin cartera (D-41) — 19-nov
+- **D-40:** el stop que el break-even dejó en la entrada (o mejor) y nada alejó después se llama `break_even` en
+  backtest, Paper y Real. Regla única `backtesting/exit_reasons.stop_exit_reason(side, sl, entrada, be_activado,
+  trailing)`: trailing manda → `trailing_stop`; BE con el stop en la entrada o mejor → `break_even`; si la protección por
+  volatilidad alejó el stop después del BE, es pérdida real → `stop_loss`. Real: el StopLoss de Bybit pasa por la misma
+  regla (también la regla por precio y `real:reclassify-exits`). El drawdown flotante (p75) también corta la caída en el
+  stop del break-even. Aviso de cierre: «break-even». Las tablas de operaciones lo muestran como «break even» (ya
+  reemplazan «_» por espacio). **No cambia ningún precio ni resultado.**
+- Paridad con la referencia V3: 1714 cierres en break-even se nombran `break_even` (la referencia, `stop_loss`); todo lo
+  demás idéntico. `engine_speed_parity_test` acepta solo ese par, con el BE activado.
+- **D-41:** el dueño decide que el backtest se queda como está (cada moneda por separado, CONSOLIDADO como hoy) y que
+  las protecciones de cuenta existen solo en Real: se descarta el simulador de cartera (Fase 12 · 2A).
+- **Pruebas:** `break_even_reason_test.py` (nuevo: regla común con 8 casos, backtest por los dos caminos del motor,
+  drawdown flotante, Paper con 1 m, Real con la orden de Bybit de ETH #100, reclasificación, aviso) — falla con el código
+  anterior; mutaciones 9/9. Regresión 66 Python + 25 PHP en TODO OK.
+- **Sin tocar:** el texto de ayuda de `trading/index.blade.php` («Razón de cierre — stop_loss · take_profit_1-4 · …
+  reconciled_sl_tp_bybit») está desactualizado desde p69/p71; se corrige con maqueta si el dueño lo pide. Las operaciones
+  ya cerradas conservan su motivo; el instalador cuenta cuántas cumplen la regla (corregirlas es decisión del dueño).
+
 ### Fase 12 · 1A — Búsqueda en tres tramos (p77, D-38)
 - **Qué decidió el dueño (19-nov):** 60 % elegir · 20 % validar (filtra como el «último tercio» de antes) · 20 % prueba
   final que **solo informa**. Maqueta aprobada el 19-nov.
@@ -42,6 +61,8 @@
   `search_three_segments_static_test.php` (nuevo: barra, columnas, colores, KPI, v3 intacta, controlador): fallan con el
   código anterior; mutaciones 8/8. `param_search_v3_test` y `is_oos_attribution_test`: textos/fuente actualizados
   («validación»; `evaluate_segments`).
+- Instalación de p77 el 19-nov: 14 archivos; regresión 65 Python + 25 PHP en TODO OK; vistas Blade compiladas sin
+  errores; sin reinicios (la búsqueda es un proceso aparte). `main` = `origin/main` = `e0e8630`.
 
 ### Cierre en break-even de ETH #100 (19-nov, solo lectura)
 - Venta a 1780,28 (16:00 UTC), SL 1806,98, BE 1753,58, trailing desde 1748,23. 17:06 BE activado (SL → 1780,28); mínimo

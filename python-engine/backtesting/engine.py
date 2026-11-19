@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
+from backtesting.exit_reasons import BREAK_EVEN, STOP_LOSS, TRAILING_STOP, stop_exit_reason
 from backtesting.metrics import calculate_metrics
 from backtesting.strategies.base_strategy import NATIVE_TRAILING_MIN_BUFFER_PCT, BaseStrategy
 from indicators.regime_indicators import calculate_adx, calculate_atr, calculate_bb_width
@@ -186,11 +187,16 @@ class BacktestEngine:
             f_dd = max(f_dd, (f_peak - self.balance) / f_peak)
         return f_peak, f_dd
 
+    @staticmethod
+    def _stop_reason(pos: dict) -> str:
+        """trailing_stop / break_even / stop_loss (D-40): misma regla que Paper y Real."""
+        return stop_exit_reason(pos['side'], pos['sl'], pos['entry_price'], pos['be_activated'], pos['trailing_applied'])
+
     def _step(self, pos: dict, high: float, low: float, atr: float | None) -> tuple[float | None, str | None]:
         """Una sub-vela: SL vigente -> TP1 -> break-even -> trailing. Devuelve (nivel, motivo) o (None, None)."""
         long = pos['side'] == 'long'
         if (long and low <= pos['sl']) or (not long and high >= pos['sl']):
-            return pos['sl'], ('trailing_stop' if pos['trailing_applied'] else 'stop_loss')
+            return pos['sl'], self._stop_reason(pos)
         tp = pos['tp1']
         if tp is not None and ((long and high >= tp) or (not long and low <= tp)):
             return tp, 'take_profit_1'
@@ -242,7 +248,7 @@ class BacktestEngine:
                 high, low = (highs[k], lows[k]) if raw else (float(highs[k]), float(lows[k]))
                 sl = pos['sl']
                 if (long and low <= sl) or (not long and high >= sl):
-                    return k, sl, ('trailing_stop' if pos['trailing_applied'] else 'stop_loss')
+                    return k, sl, self._stop_reason(pos)
                 if tp is not None and ((long and high >= tp) or (not long and low <= tp)):
                     return k, tp, 'take_profit_1'
                 if not pos['be_activated'] and ((long and high >= be_level) or (not long and low <= be_level)):
@@ -497,7 +503,7 @@ class BacktestEngine:
                 worst = self._m_low[a:hi_end].min() if long_pos else self._m_high[a:hi_end].max()
             else:
                 worst = lows[i] if long_pos else highs[i]
-            if reason in ('stop_loss', 'trailing_stop'):   # el stop corta la caída en su nivel
+            if reason in (STOP_LOSS, TRAILING_STOP, BREAK_EVEN):   # el stop corta la caída en su nivel
                 worst = max(worst, level) if long_pos else min(worst, level)
             gross_worst = (worst - pos['entry_price']) * pos['size'] if long_pos else (pos['entry_price'] - worst) * pos['size']
             trough = self.balance + gross_worst

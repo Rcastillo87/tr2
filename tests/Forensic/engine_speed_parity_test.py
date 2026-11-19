@@ -137,8 +137,25 @@ def compare(label, make, df, minute_df, funding, trade_from):
                         trade_from=trade_from, funding=funding).run()
     T_NEW += time.time() - t
     r2['metrics'].pop('max_drawdown_floating_pct', None)   # Fase 12 · 4A: métrica nueva (la referencia V3 no la tiene)
-    d = same(r1, exit_minute_as_bar(without_end_of_data(r2), r1))
+    d = same(r1, break_even_as_stop_loss(exit_minute_as_bar(without_end_of_data(r2), r1), r1))
     return d, len(r1['trades'])
+
+
+BE_MAPPED = [0]   # cierres que el motor nombra 'break_even' y la referencia V3 'stop_loss' (D-40, p78)
+
+
+def break_even_as_stop_loss(r, ref):
+    """D-40: el motor llama 'break_even' al stop que el BE dejó en la entrada; la referencia V3 lo llama 'stop_loss'.
+    Solo se acepta ese par exacto, con el BE activado; todo lo demás se compara tal cual."""
+    if len(r['trades']) != len(ref['trades']):
+        return r
+    out = []
+    for x, y in zip(r['trades'], ref['trades']):
+        if x.get('exit_reason') == 'break_even' and y.get('exit_reason') == 'stop_loss' and x.get('be_activated'):
+            x = dict(x, exit_reason='stop_loss')
+            BE_MAPPED[0] += 1
+        out.append(x)
+    return dict(r, trades=out)
 
 
 MINUTE_EXITS = [0]   # salidas cuya hora pasó de la apertura de la vela al minuto del evento (NUEVO-02)
@@ -257,6 +274,8 @@ if __name__ == '__main__':
     synthetic_suite()
     if '--real' in sys.argv:
         real_suite()
+    check(f'D-40: {BE_MAPPED[0]} cierre(s) en el break-even se nombran break_even (la referencia V3: stop_loss)',
+          BE_MAPPED[0] > 0, BE_MAPPED[0])
     check(f'NUEVO-02: {MINUTE_EXITS[0]} salida(s) con 1m guardan el minuto del evento (dentro de la vela de la '
           f'referencia)', MINUTE_EXITS[0] > 0, MINUTE_EXITS[0])
     check(f'BP-04: {EOD[0]} resultado(s) con posición abierta al final, cerrada con end_of_data como último trade '
