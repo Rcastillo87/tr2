@@ -21,6 +21,36 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Paridad Paper vs backtest con datos reales (MEJ-003) y VWAP Tendencia sin mirar el futuro (p80, R-21, D-42) — 19-nov
+- **Corrida 1** (`lectura_paridad`, 10 configs): inválida. La herramienta pide el backtest hasta HOY; la vela principal
+  en formación deja el rango de 1 m «incompleto» y el backtest usa vela grande y SL primero en TODO el rango (horas de
+  salida en la apertura de la vela, operaciones extra por cierres pesimistas). Los backtests del formulario no se
+  afectan (terminan en el último mes completo). Pendiente: que la herramienta corte en la última vela cerrada y
+  separe por snapshot de parámetros (se hizo a mano en la corrida 2).
+- **Corrida 2** (hasta ayer, solo el último snapshot de cada config): 14 operaciones emparejadas, 14 con el mismo motivo;
+  hora de salida igual o a 1–6 min (Paper revisa por minuto); 4 solo en Paper y 10 solo en el backtest.
+- **Corrida 3** (causas): solo Paper DOGE 12-nov, ENA 11-nov y ETH 17-nov = vela incompleta (D-39, ya corregido en p76);
+  8 solo backtest con «sin señal» en vivo = **R-21**: la banda `vwap_std_dev` usaba todas las velas del día (6 de 8
+  ganadoras); 2 de 1000PEPE = config apagada; ETH 9-nov sin explicar (primer día del rango, antes del registro de
+  Paper). SL del 17-nov 21:00 (ETH, XRP, SOL antes en Paper): el precio tocó el SL de Paper; el del backtest quedó unos
+  centavos más lejos por la diferencia de entrada (0,06 %). Correcto.
+- **Revisión de las 8 estrategias** (`lectura_estrategias`): solo VWAP Tendencia mira el futuro. VWAP Reversión,
+  Reversión a la Media, EMA/Donchian, Cruce de Medias, FSupertrend, Triángulo y BNF usan ventanas móviles, EWM o
+  desplazamientos hacia atrás (EWM/Supertrend dependen del inicio de la ventana: diferencia conocida 5.1, no futuro).
+- **Arreglo (D-42):** `ops/datafix/2026_11_19_r21_vwap_std.py` cambia una línea del código guardado: la desviación
+  del día **hasta cada vela** (`expanding().std()`), con la misma sangría y fin de línea. Antes de aplicar verifica con
+  datos reales que, en cada vela de los últimos días de cada config de Paper con ese código, el backtest nuevo dé la
+  misma señal que Paper/Real; si una sola difiere, no aplica. Aplica en una transacción: tabla `strategies` y la copia
+  de cada config de Paper (historial en `strategy_config_changes`, source `p80 R-21`). Exige la huella `979d8dec`.
+  En vivo no cambia nada; el backtest y la búsqueda de VWAP Tendencia dan desde ahora lo que Paper puede repetir.
+  Los backtests y búsquedas guardados de VWAP Tendencia quedan con el código viejo (las búsquedas ya marcan «el código
+  cambió»): **repetirlos antes de volver a implementar uno** (implementar un backtest viejo devolvería el código viejo
+  a la config de Paper).
+- **Pruebas:** `vwap_no_lookahead_test.py` (nuevo; código del 19-nov en `tests/Forensic/fixtures`): el viejo da señales
+  que en vivo no existen; el nuevo coincide en cada vela con lo que ve Paper; parche de una línea con `\n` y `\r\n`,
+  idempotente; mutaciones 4/4. Datafix probado en PostgreSQL 16 local: verificación, aplicación, historial, huella
+  distinta rechazada y segunda corrida «YA APLICADO».
+
 ### Historial a «break-even» y texto de ayuda de «Razón de cierre» (p79, D-40) — 19-nov
 - **Decisión del dueño (19-nov):** corregir las operaciones ya cerradas que la regla D-40 llama `break_even` (al instalar
   p78: Paper #342 y #379, Real #100) y actualizar el texto de ayuda (maqueta aprobada 19-nov).
@@ -31,6 +61,8 @@
 - **Texto de ayuda** (`trading/index.blade.php`, «Columnas — Historial»): cada motivo actual tal como se ve en la tabla,
   con su significado; sin TP2–TP4 ni `reconciled_sl_tp_bybit`. `exit_reason_help_static_test.php` (nuevo) lee los
   motivos del motor y falla si aparece uno sin explicar; mutaciones 5/5.
+- Instalación de p79 el 19-nov: 8 archivos; regresión 66 Python + 26 PHP en TODO OK; vistas compiladas; corrección:
+  Real #100, Paper #379 (ETHUSDT) y #342 (SUIUSDT) de `stop_loss` a `break_even`; 0 pendientes. `main` = `f1c6eb2`.
 
 ### Cierre en break-even con nombre propio (p78, D-40) y backtest sin cartera (D-41) — 19-nov
 - **D-40:** el stop que el break-even dejó en la entrada (o mejor) y nada alejó después se llama `break_even` en

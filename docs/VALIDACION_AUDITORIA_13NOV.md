@@ -294,7 +294,7 @@ Confirmado en producción el 13-nov:
 | **R-18** | **P2** (nuevo, 19-nov) | Paper y Real decidían con la vela recién cerrada aunque el collector todavía no le hubiera guardado su último minuto: Paper abrió LINK #378 con una señal que con la vela completa no existía | Corregido en p76 (D-39): se decide solo con la vela completa (la siguiente ya está en la base) |
 | **R-19** | P3 (nuevo, 19-nov) | El resumen del tick Real en `laravel.log` nunca contaba aperturas ni errores («nuevas:0» con dos aperturas) | Corregido en p76 |
 | **R-20** | P3 (nuevo, 19-nov) | Real no registraba por qué una suscripción no abre | Corregido en p76: `[REAL-SEÑAL]` en `engine.log` al cambiar el motivo |
-| **R-21** | Decisión (nuevo, 19-nov) | VWAP Tendencia: `vwap_std_dev` con todas las velas del día (mira el futuro en el backtest) | Pendiente de decisión del dueño (código de la estrategia) |
+| **R-21** | **P2** (nuevo, 19-nov; confirmado con datos) | VWAP Tendencia: `vwap_std_dev` con todas las velas del día: el backtest abría operaciones que en vivo no existían (8 en la paridad del 19-nov, 6 ganadoras) | Corregido en p80 (D-42): desviación hasta cada vela; verificado vela a vela contra lo que ve Paper |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Preventivo, para después (D-16): 10 de 10 operaciones coinciden |
 | R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decidido (D-18, D-19): se ignoran; p74 |
 | **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | **Validado** en producción: p60 (`ce21154`); #93 reparado (`sl` 1959,97 = SL de Bybit, `trailing_applied` = f), visto al instalar p61 |
@@ -335,7 +335,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
 | Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38, D-41) | 4A drawdown flotante (hecho) · 1A tres tramos (hecho) · 2A cartera **descartada** (D-41: el backtest queda como está; las protecciones solo en Real) · 3A se junta con 3B walk-forward real (las ventanas no se muestran hoy) · la 5 descartada |
-| Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |
+| **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); queda ETH 9-nov. Pendiente: la herramienta debe cortar en la última vela cerrada y separar por snapshot |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
 | Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |
@@ -344,4 +344,4 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
 | Hecho en p78–p79 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real; historial corregido y texto de ayuda actualizado |
 | Hecho en p76 | R-17 a R-20 (19-nov) | Decimales de Bybit, vela incompleta (D-39), resumen de Real y motivo de no abrir |
-| Decisión | R-21 | Corregir o no la banda de desviación de VWAP Tendencia (mira el futuro en el backtest) |
+| Hecho en p80 | R-21 (D-42) | VWAP Tendencia sin mirar el futuro; repetir sus backtests guardados |
