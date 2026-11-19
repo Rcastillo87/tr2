@@ -70,6 +70,7 @@
 {{-- Resultados v3: por moneda (una pestaña por moneda, cada una con su ranking) o por temporalidad (≥ 3/4 de las monedas) --}}
 <div id="sbResults3" style="display:none">
     <div class="sb-tabs mb-3" id="sbTabs" role="tablist" aria-label="Monedas"></div>
+    <div id="sbBar3" class="mb-3" style="display:none"></div>
     <div class="sb-kpis mb-3" id="sbKpis3"></div>
     <div id="sbEmpty3" class="sb-alert info mb-3" style="display:none"></div>
     <div class="sb-card sb-table" id="sbTable3" style="overflow:hidden"><div style="overflow-x:auto">
@@ -316,8 +317,29 @@
         const c = n.cfg || {};
         return `${SB.LABEL[n.interval] || n.interval} · SL ${c.sl_pct}% / TP ${c.tp_pct}%: ${SB.esc(n.why)}`;
     }
+    // Meses entre dos fechas AAAA-MM-DD (redondeado): largo de cada tramo según el período guardado de la búsqueda
+    const monthsBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / (365.2425 / 12 * 86400000));
+    // v4 (D-38 1A): tres tramos con su largo en meses; null en búsquedas anteriores (dos tramos)
+    function segments3() {
+        const p = state?.period;
+        if (!(data.version >= 4) || !p || !p.test) return null;
+        const choose = monthsBetween(p.start, p.split), val = monthsBetween(p.split, p.test), test = monthsBetween(p.test, p.end);
+        return { choose, val, test, from: [1, choose + 1, choose + val + 1], to: [choose, choose + val, choose + val + test] };
+    }
+    function bar3(g) {
+        const box = (flex, bg, fg, txt) => `<div style="flex:${flex};background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">${txt}</div>`;
+        return `<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;font-size:11px">`
+            + box(g.choose, 'var(--color-surface-raised)', 'var(--color-text-secondary)', `Elegir · meses ${g.from[0]}–${g.to[0]}`)
+            + box(g.val, 'rgba(196,181,253,.18)', '#C4B5FD', `Validar · ${g.from[1]}–${g.to[1]}`)
+            + box(g.test, 'rgba(34,197,94,.15)', 'var(--color-profit)', `Prueba final · ${g.from[2]}–${g.to[2]}`) + `</div>`
+            + `<div class="sb-muted" style="font-size:11px;margin-top:4px">Qué meses se usan para qué: se elige con el primer tramo, se acepta solo si también gana en la validación y la prueba final solo se muestra.</div>`;
+    }
+    const testCell = r => r.test ? `<span class="${SB.cls(r.test.ret)}">${SB.pct(r.test.ret)}</span>` : '—';
     function renderV3() {
         const s = state, symMode = data.mode === 'symbol', months = data.months || 24, late = lateMonths(), first = months - late;
+        const g = segments3();
+        $('sbBar3').style.display = g ? '' : 'none';
+        $('sbBar3').innerHTML = g ? bar3(g) : '';
         const key = { gain: 'total_return_pct', wr: 'win_rate', cons: 'consist_pct' }[data.focus] || 'total_return_pct';
         const syms = s.search_symbols || [];
         if (symMode && !syms.includes(tab)) tab = syms.find(x => rows.some(r => r.symbol === x)) || syms[0];
@@ -330,9 +352,11 @@
         const list = symMode ? rows.filter(r => r.symbol === tab) : rows;
         const near = symMode ? ((data.near || {})[tab] || []) : (Array.isArray(data.near) ? data.near : []);
         const best = list.length ? Math.max(...list.map(r => r.summary.total_return_pct)) : null;
+        const testWins = list.filter(r => r.test && r.test.ret > 0).length;
         $('sbKpis3').innerHTML = [
             ['Probadas', s.tested ?? '—', symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : ''],
-            ['Ganan en los dos tramos', list.length, ''],
+            g ? ['Pasan la validación', list.length, `ganan en los meses ${g.from[1]}–${g.to[1]}`] : ['Ganan en los dos tramos', list.length, ''],
+            ...(g ? [['También ganan en la prueba final', `${testWins} de ${list.length}`, `últimos ${g.test} meses, que no eligieron ni aceptaron`]] : []),
             ['Mejor retorno 24 m', best === null ? '—' : SB.pct(best, 1), ''],
             ['Temporalidades', (s.intervals || []).length, ivs(s)],
             ['Duró', s.elapsed_s ? `${Math.floor(s.elapsed_s / 60)} min ${Math.round(s.elapsed_s % 60)} s` : '—', ''],
@@ -341,11 +365,12 @@
         const H = (label, k, cls = 'r') => `<th class="${cls}${k === key ? ' key' : ''}">${label}${k === key ? ' ↓' : ''}</th>`;
         $('sbHead3').innerHTML = `<tr><th style="width:30px"></th><th>Estrellas</th><th>Configuración</th>${H('Retorno 24 m', 'total_return_pct')}
             ${H('Win rate', 'win_rate')}${H('Consistencia', 'consist_pct')}<th class="r">PF</th><th class="r">Trades</th><th class="r">DD máx</th>
-            <th class="r">Primeros ${first} m</th><th class="r">Últimos ${late} m</th>${symMode ? '' : '<th>Monedas que ganan</th>'}<th></th></tr>`;
+            ${g ? `<th class="r">Elegir ${g.choose} m</th><th class="r">Validación ${g.val} m</th><th class="r">Prueba final ${g.test} m</th>`
+                : `<th class="r">Primeros ${first} m</th><th class="r">Últimos ${late} m</th>`}${symMode ? '' : '<th>Monedas que ganan</th>'}<th></th></tr>`;
         $('sbEmpty3').style.display = list.length ? 'none' : 'block';
         $('sbTable3').style.display = list.length ? '' : 'none';
         $('sbFoot3').style.display = rows.length ? '' : 'none';
-        $('sbEmpty3').innerHTML = `<b>Ninguna configuración gana ${symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : 'en ≥ ¾ de las monedas'} en los dos tramos.</b>`
+        $('sbEmpty3').innerHTML = `<b>Ninguna configuración gana ${symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : 'en ≥ ¾ de las monedas'} ${g ? 'al elegir y en la validación' : 'en los dos tramos'}.</b>`
             + (near.length ? '<div class="sb-near" style="margin-top:8px"><span>Las que más se acercaron:</span>' + near.map(n => `<span>· ${nearText(n)}</span>`).join('') + '</div>'
                            : ' Es un resultado válido: con esta estrategia y temporalidades no apareció una ventaja.');
         const coins3 = r => { const w = r.survivors || [], l = r.discarded || [];
@@ -364,6 +389,7 @@
               <td class="r">${m.total_trades.toLocaleString('es-CO')}</td><td class="r">${SB.num(m.max_drawdown_pct, 1)}%</td>
               <td class="r ${SB.cls(r.is.ret)}">${SB.pct(r.is.ret)}</td>
               <td class="r"><span class="sb-badge late">${SB.pct(r.oos.ret)}</span></td>
+              ${g ? `<td class="r">${testCell(r)}</td>` : ''}
               ${symMode ? '' : `<td class="sb-qd">${coins3(r)}</td>`}
               <td>${createdBadge(r)}</td></tr>`;
         }).join('');
@@ -375,8 +401,9 @@
               ${SB.cfgTags(r.cfg)}<span class="sb-sub" style="margin-top:4px">${SB.LABEL[r.interval] || r.interval}</span>
               <div class="sb-rc-grid"><div><span>Retorno 24 m</span><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></div>
                 <div><span>Win rate</span><b>${SB.num(m.win_rate, 0)}%</b></div><div><span>Consistencia</span><b>${SB.num(m.consist_pct, 0)}%</b></div>
-                <div><span>Primeros ${first} m</span><b class="${SB.cls(r.is.ret)}">${SB.pct(r.is.ret)}</b></div>
-                <div><span>Últimos ${late} m</span><b class="sb-pos">${SB.pct(r.oos.ret)}</b></div><div><span>Trades</span><b>${m.total_trades}</b></div></div>
+                <div><span>${g ? 'Elegir ' + g.choose : 'Primeros ' + first} m</span><b class="${SB.cls(r.is.ret)}">${SB.pct(r.is.ret)}</b></div>
+                <div><span>${g ? 'Validación ' + g.val : 'Últimos ' + late} m</span><b class="sb-pos">${SB.pct(r.oos.ret)}</b></div>
+                ${g ? `<div><span>Prueba final ${g.test} m</span><b>${testCell(r)}</b></div>` : ''}<div><span>Trades</span><b>${m.total_trades}</b></div></div>
               ${symMode ? '' : `<div class="sb-qd" style="margin-top:8px;font-size:12px">${coins3(r)}</div>`}</div>`;
         }).join('');
         document.querySelectorAll('#sbResults3 .sb-chk[data-id]').forEach(c => c.onchange = () => {
@@ -386,8 +413,11 @@
         $('sbFootNote3').textContent = symMode ? 'cada una se crea en el historial con su moneda' : 'cada una se crea en el historial con todas las monedas probadas';
         $('sbCreate3').textContent = selected.size ? `💾 Crear ${selected.size} en historial` : '💾 Crear en historial';
         $('sbCreate3').disabled = !selected.size;
-        $('sbNote3').innerHTML = `<b>Primeros ${first} m</b>: tramo con el que se eligió. <b>Últimos ${late} m</b>: tramo que nunca se usó para elegir; `
-            + `toda configuración de la lista también ganó ahí.` + (data.focus === 'wr' ? ` Enfoque win rate: además profit factor ≥ ${SB.num(data.wr_min_pf ?? 1.2, 1)}.` : '');
+        $('sbNote3').innerHTML = (g
+            ? `<b>Elegir ${g.choose} m</b>: tramo con el que se eligió. <b>Validación ${g.val} m</b>: nunca eligió; toda configuración de la lista también ganó ahí. `
+              + `<b>Prueba final ${g.test} m</b>: no eligió ni aceptó; solo se muestra (verde gana, rojo pierde) y nunca saca a nadie de la lista.`
+            : `<b>Primeros ${first} m</b>: tramo con el que se eligió. <b>Últimos ${late} m</b>: tramo que nunca se usó para elegir; `
+              + `toda configuración de la lista también ganó ahí.`) + (data.focus === 'wr' ? ` Enfoque win rate: además profit factor ≥ ${SB.num(data.wr_min_pf ?? 1.2, 1)}.` : '');
     }
 
     window.sbDelete = async function (id) {

@@ -57,9 +57,11 @@ v = ps.seg_view(is_)
 check("A8: seg_view expone 'cross' (lo guarda la búsqueda con cada tramo)", v.get('cross') == 1, v)
 check("A9: seg_sum suma 'cross' de varias monedas", ps.seg_sum([is_, is_]).get('cross') == 2, ps.seg_sum([is_, is_]))
 
-src = inspect.getsource(ps.evaluate)
+# p77: evaluate (dos tramos) delega en evaluate_segments, que arma los tramos entre cortes con last=True solo en el último
+src = inspect.getsource(getattr(ps, 'evaluate_segments', ps.evaluate))
 check('A10: evaluate usa el corte con last=True solo en el último tramo',
-      'segment_stats(trades, lo, split)' in src and 'segment_stats(trades, split, end, last=True)' in src)
+      ('segment_stats(trades, lo, split)' in src and 'segment_stats(trades, split, end, last=True)' in src)
+      or ('segment_stats(trades, a, b, last=(k == len(edges) - 2))' in src and 'zip(edges, edges[1:])' in src))
 
 # Un trade exactamente en el corte: cierra en el corte -> cruza; abre en el corte -> fuera de muestra
 edge = [T((2, 28, 23), (3, 1, 0), 50.0, 0.5), T((3, 1, 0), (3, 1, 5), 30.0, 0.3)]

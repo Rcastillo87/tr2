@@ -21,6 +21,34 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Fase 12 · 1A — Búsqueda en tres tramos (p77, D-38)
+- **Qué decidió el dueño (19-nov):** 60 % elegir · 20 % validar (filtra como el «último tercio» de antes) · 20 % prueba
+  final que **solo informa**. Maqueta aprobada el 19-nov.
+- **Lectura previa (19-nov):** md5 de `param_search.py`, `ParamSearchService.php` y `param-search/show.blade.php` = repo;
+  61 búsquedas guardadas (todas v3, 2/3 + 1/3), ninguna en curso; 27 backtests creados desde búsquedas (su enlace no
+  depende de los tramos).
+- **Motor (`cli/param_search.py`, modo `--run-id`):** `segment_cuts` (60 % y 80 % del período) y `evaluate_segments`
+  (N tramos sin trades repetidos: el que cruza un corte no cuenta en ninguno, N-03). Se acepta con elegir + validación,
+  como antes; la prueba final se guarda en cada fila (`test`) y en el resultado (`period.test`, `test_ok`), versión 4.
+  Los modos de consola siguen con dos tramos: `evaluate` delega en `evaluate_segments` con un corte (300/300
+  configuraciones idénticas al código anterior con datos sintéticos).
+- **Pantalla:** barra «Elegir · Validar · Prueba final» con los meses; columnas «Elegir 14 m · Validación 5 m · Prueba
+  final 5 m» (la prueba final en verde/rojo; nunca saca a nadie de la lista); KPI «También ganan en la prueba final».
+  Búsquedas anteriores: idénticas a hoy («Primeros 16 m / Últimos 8 m», sin barra), verificado ejecutando la vista con
+  datos v3 y v4. Diferencia con la maqueta: la lista ya mostraba solo las que pasan la validación, así que la columna
+  «Validación» muestra su retorno (como hoy «Últimos 8 m») en vez de «✓ gana».
+- **Pruebas:** `search_three_segments_test.py` (nuevo: cortes, tres tramos sin repetir trades, la prueba final no
+  acepta ni rescata, promedio de todas las monedas, v3 sigue leyéndose, `--run-id` v4) y
+  `search_three_segments_static_test.php` (nuevo: barra, columnas, colores, KPI, v3 intacta, controlador): fallan con el
+  código anterior; mutaciones 8/8. `param_search_v3_test` y `is_oos_attribution_test`: textos/fuente actualizados
+  («validación»; `evaluate_segments`).
+
+### Cierre en break-even de ETH #100 (19-nov, solo lectura)
+- Venta a 1780,28 (16:00 UTC), SL 1806,98, BE 1753,58, trailing desde 1748,23. 17:06 BE activado (SL → 1780,28); mínimo
+  1749,60 a las 17:18 (faltaron 1,37 para el trailing); 17:32 Bybit cerró en el SL a 1780,35: bruto −1,37, neto −43,55
+  USDT (comisiones), −0,08 %. Paper #379 igual (−0,11 %). Correcto; se llama «stop_loss» porque la orden de Bybit es
+  StopLoss y backtest/Paper tampoco distinguen el break-even. Nombre propio: decisión del dueño pendiente.
+
 ### Fase 12 · 4A — Drawdown flotante (p75, D-38)
 - **Qué pidió el dueño (19-nov):** medir también la caída que el capital sufre **con la operación abierta**, no solo
   al cerrarla; se muestran los dos. Maqueta aprobada el 19-nov: columnas «DD cerrado» y «DD flotante» en la tabla
@@ -45,6 +73,8 @@
   ni Real.
 - Primer intento de instalación (19-nov 16:25 UTC) **revertido por el instalador**: errores en `engine.log` de DOGE #99
   (R-17, no de p75). Se instaló p76 primero y p75 se regeneró sin cambios de contenido sobre `dba7ba4`.
+- Instalación de p75 el 19-nov (~17:23 UTC): 14 archivos; regresión 64 Python + 24 PHP en TODO OK; vistas Blade
+  compiladas sin errores; motor reiniciado 17:23:22 UTC, tick de Paper 200, 0 errores. `main` = `origin/main` = `4ae90c2`.
 
 ### Vela incompleta, decimales de Bybit y motivos de Real (p76, D-39) — 19-nov
 - **Origen:** al instalar p75 (19-nov 16:25 UTC) el instalador encontró errores en `engine.log` y **revirtió todo**

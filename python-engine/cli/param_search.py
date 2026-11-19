@@ -4,9 +4,12 @@ Búsqueda de configuraciones con validación fuera de muestra (anti-sobreajuste)
 Para cada estrategia × intervalo × símbolo prueba combinaciones de SL/TP, break-even, trailing, filtros y duración
 con el MOTOR REAL y los MISMOS datos que un backtest de la pantalla (api.v1.backtest.load_backtest_data: fuente,
 calentamiento, velas de 1m, tendencia macro H4) y el MISMO periodo que la pantalla ("24 meses" = 24 meses
-calendario completos hasta el último mes cerrado). El periodo se separa en dos tramos:
-  · EN MUESTRA (primeros 2/3): el único que se usa para ELEGIR configuraciones.
-  · FUERA DE MUESTRA (último 1/3): nunca se usa para elegir; solo para comprobar que lo elegido sigue funcionando.
+calendario completos hasta el último mes cerrado). Módulo Estrategias (--run-id, v4, D-38 1A): tres tramos
+  · ELEGIR (primer 60 %): el único que se usa para elegir configuraciones.
+  · VALIDACIÓN (siguiente 20 %): nunca elige; una configuración se acepta solo si también gana aquí.
+  · PRUEBA FINAL (último 20 %): ni elige ni acepta; solo se informa (el número honesto: con cientos de combinaciones
+    alguna pasa la validación por suerte, y la prueba final no participó en nada).
+Modos de consola: dos tramos de siempre (EN MUESTRA 2/3 · FUERA DE MUESTRA 1/3).
 "ROBUSTA" = gana en muestra en la mayoría de los símbolos Y también fuera de muestra.
 "VALIDADA" = robusta que además gana en monedas que la búsqueda nunca vio.
 
@@ -82,6 +85,7 @@ SPACES = {
 }
 VOLUME_MULTS = (0.8, 1.0, 1.2, 1.5)   # filtro de volumen: el mejor nivel cambia por moneda (auditoría de filtros)
 ALL_REGIMES = frozenset({'TRENDING', 'RANGING', 'VOLATILE'})
+CHOOSE_SHARE, ACCEPT_SHARE = 0.6, 0.2   # tres tramos (D-38 1A): 60 % elegir · 20 % validar · 20 % prueba final
 WR_MIN_PF = 1.2           # enfoque win rate: además profit factor ≥ 1,2 (ganar seguido sin perder plata)
 INTERVAL_MODE_SHARE = 0.75  # modo por temporalidad: debe ganar en ≥ 3/4 de las monedas
 BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult', 'trailing_distance_pct',
@@ -324,14 +328,29 @@ def segment_stats(trades, lo, hi, last=False):
 
 def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
     """
-    Un (estrategia, intervalo, símbolo) con varias configuraciones. Por configuración devuelve los tramos en/fuera
-    de muestra y las métricas del periodo completo tal como las calcula /backtest/run (las de las estrellas).
-    Las señales se calculan una vez por combinación de filtros que las afectan (volumen, macro).
+    Dos tramos (modos de consola): por configuración, (i, en muestra, fuera de muestra, métricas del periodo completo
+    tal como las calcula /backtest/run, las de las estrellas).
+    """
+    out = evaluate_segments(name, code, scfg, sym, iv, configs, start, [split], end, tick=tick)
+    return None if out is None else [(i, segs[0], segs[1], full) for i, segs, full in out]
+
+
+def segment_cuts(start, end) -> list:
+    """Cortes de los tres tramos del módulo Estrategias: 60 % elegir · 20 % validar · 20 % prueba final (D-38 1A)."""
+    lo, hi = naive_utc(start), naive_utc(end)
+    return [lo + (hi - lo) * CHOOSE_SHARE, lo + (hi - lo) * (CHOOSE_SHARE + ACCEPT_SHARE)]
+
+
+def evaluate_segments(name, code, scfg, sym, iv, configs, start, cuts, end, tick=None):
+    """
+    Un (estrategia, intervalo, símbolo) con varias configuraciones. Por configuración: (i, tramos, métricas del periodo
+    completo). Tramos = [start, cuts[0]), [cuts[0], cuts[1]), … , [cuts[-1], end): ningún trade cuenta en dos tramos
+    (segment_stats). Las señales se calculan una vez por combinación de filtros que las afectan (volumen, macro).
     """
     data = DATA.get((sym, iv))
     if data is None:
         return None
-    lo = naive_utc(start)
+    edges = [naive_utc(start), *cuts, end]
     out = []
     for i, cfg in enumerate(configs):
         req = BacktestRequest(strategy=name, strategy_code=code, strategy_config=scfg, symbol=sym, interval=iv,
@@ -358,7 +377,8 @@ def evaluate(name, code, scfg, sym, iv, configs, start, split, end, tick=None):
                     ret=finite(m['total_return_pct'], 2), dd=finite(m['max_drawdown_pct'], 2),
                     gp=finite(m.get('gross_profit', 0.0)), gl=finite(m.get('gross_loss', 0.0)),
                     m=[finite(by_month.get(k, 0.0)) for k in month_keys(start, end)], m1=data.minute_df is not None)
-        out.append((i, segment_stats(trades, lo, split), segment_stats(trades, split, end, last=True), full))
+        segs = [segment_stats(trades, a, b, last=(k == len(edges) - 2)) for k, (a, b) in enumerate(zip(edges, edges[1:]))]
+        out.append((i, segs, full))
         if tick:
             tick(f"{sym} · {iv}")
     return out
@@ -440,15 +460,16 @@ def seg_sum(parts: list) -> dict:
 
 def accept(is_: dict, oos: dict, full: dict, focus: str) -> str | None:
     """
-    None si la configuración GANA en esa moneda; si no, el motivo. Gana = mínimo de operaciones, ganancia en los
-    primeros 2/3 (donde se elige) Y en el último 1/3 (que nunca se usa para elegir); enfoque win rate: además PF ≥ 1,2.
+    None si la configuración GANA en esa moneda; si no, el motivo. Gana = mínimo de operaciones, ganancia en el tramo
+    donde se elige Y en el de validación (que nunca elige); enfoque win rate: además PF ≥ 1,2. La prueba final (v4) no
+    participa: solo se informa.
     """
     if full['n'] < MIN_TRADES:
         return f"solo {full['n']} operaciones (< {MIN_TRADES})"
     if is_['pnl'] <= 0:
         return f"pierde en los primeros meses ({seg_view(is_)['ret']:+.1f}%)"
     if oos['pnl'] <= 0:
-        return f"gana al principio ({seg_view(is_)['ret']:+.1f}%) pero pierde en los últimos meses ({seg_view(oos)['ret']:+.1f}%)"
+        return f"gana al principio ({seg_view(is_)['ret']:+.1f}%) pero pierde en la validación ({seg_view(oos)['ret']:+.1f}%)"
     if focus == 'wr' and (full['pf'] or 0) < WR_MIN_PF:
         return f"profit factor {full['pf']} (< {WR_MIN_PF})"
     return None
@@ -459,15 +480,23 @@ def closeness(is_: dict, oos: dict) -> float:
     return min(seg_view(is_)['ret'], seg_view(oos)['ret'])
 
 
+def parts(v: tuple) -> tuple:
+    """(elegir, validar, completo, prueba final | None): v3 guardaba 3 elementos, v4 agrega la prueba final."""
+    return (v[0], v[1], v[2], v[3] if len(v) > 3 else None)
+
+
 def symbol_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) -> tuple[list, dict]:
     """Modo por moneda: cada moneda por separado. Una fila por (configuración, moneda) que gana; casi-ganadoras por moneda."""
     rows, near = [], {s: [] for s in symbols}
     for (iv, i), by_sym in per_cfg.items():
         cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
-        for sym, (is_, oos, full) in by_sym.items():
+        for sym, v in by_sym.items():
+            is_, oos, full, test = parts(v)
             why = accept(is_, oos, full, focus)
             base = dict(interval=iv, cfg=cfg, symbol=sym, symbols={sym: dict(role='win' if why is None else 'lose', why=why, **full)},
                         **{'is': seg_view(is_), 'oos': seg_view(oos)})
+            if test is not None:   # prueba final: solo informa (no cambia why)
+                base['test'] = seg_view(test)
             if why is None:
                 r = dict(id=f"{sym}-{iv}-{i}", survivors=[sym], discarded=[], oos_ok=True, **base)
                 r['ret_total'], r['consist'] = totals({sym: full})
@@ -489,13 +518,16 @@ def interval_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) 
         if len(by_sym) < len(symbols):   # sin datos en alguna moneda: no se puede juzgar
             continue
         cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
-        why = {s: accept(is_, oos, full, focus) for s, (is_, oos, full) in by_sym.items()}
+        pv = {s: parts(v) for s, v in by_sym.items()}
+        why = {s: accept(is_, oos, full, focus) for s, (is_, oos, full, _) in pv.items()}
         wins = sorted(s for s, w in why.items() if w is None)
         r = dict(id=f"{iv}-{i}", interval=iv, cfg=cfg,
-                 symbols={s: dict(role='win' if why[s] is None else 'lose', why=why[s], **full) for s, (_, _, full) in by_sym.items()},
+                 symbols={s: dict(role='win' if why[s] is None else 'lose', why=why[s], **full) for s, (_, _, full, _) in pv.items()},
                  survivors=wins, discarded=sorted(s for s in by_sym if s not in wins),
-                 **{'is': seg_sum([v[0] for v in by_sym.values()]), 'oos': seg_sum([v[1] for v in by_sym.values()])})
-        r['ret_total'], r['consist'] = totals({s: v[2] for s, v in by_sym.items()})
+                 **{'is': seg_sum([v[0] for v in pv.values()]), 'oos': seg_sum([v[1] for v in pv.values()])})
+        if all(v[3] is not None for v in pv.values()):   # prueba final (v4): de TODAS las monedas, solo informa
+            r['test'] = seg_sum([v[3] for v in pv.values()])
+        r['ret_total'], r['consist'] = totals({s: v[2] for s, v in pv.items()})
         if len(wins) >= need:
             rows.append(dict(r, oos_ok=True))
         else:
@@ -540,7 +572,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
             raise ValueError("La estrategia ya no existe.")
         name, code, scfg = strat[0]
         start, end = ui_period(int(row['months']))
-        split = naive_utc(start) + (naive_utc(end) - naive_utc(start)) * 2 / 3
+        split, test_start = segment_cuts(start, end)   # D-38 1A: elegir | validar | prueba final
         start_n, end_n = naive_utc(start), naive_utc(end)
         samples = int(row['samples'])
         rep.q("""UPDATE param_search_runs SET strategy_code_md5 = $2, period_start = $3, split_date = $4,
@@ -551,7 +583,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
         use_regime = regime_useful(code)
         configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000, focus,
                                       regime=use_regime) for iv in intervals}
-        per_cfg: dict = {}          # (iv, i) -> {símbolo: (is, oos, full)}
+        per_cfg: dict = {}          # (iv, i) -> {símbolo: (elegir, validar, completo, prueba final)}
         rep.set(force=True, phase='busqueda', done=0, total=len(intervals) * len(search) * samples,
                 note='Probando combinaciones')
 
@@ -565,12 +597,12 @@ def run_mode(run_id: int, max_minutes: float) -> int:
             rep.set(force=True, note=f"{sym}: cargando velas")
             loop.run_until_complete(load_data([sym], intervals, start, end, log=lambda *_: None, close=False))
             for iv in intervals:
-                out = evaluate(name, code, scfg, sym, iv, configs[iv], start, split, end_n, tick=tick)
+                out = evaluate_segments(name, code, scfg, sym, iv, configs[iv], start, [split, test_start], end_n, tick=tick)
                 if out is None:
                     rep.set(done=rep.done + samples, note=f"{sym} · {iv}: sin datos")
                     continue
-                for i, is_, oos, full in out:
-                    per_cfg.setdefault((iv, i), {})[sym] = (is_, oos, full)
+                for i, (choose, val, test), full in out:
+                    per_cfg.setdefault((iv, i), {})[sym] = (choose, val, full, test)
             drop_data([sym])
 
         need = None
@@ -580,19 +612,22 @@ def run_mode(run_id: int, max_minutes: float) -> int:
             rows, near, need = interval_mode_rows(per_cfg, configs, focus, search)
         rows.sort(key=lambda r: (-r['ret_total'], -r['consist']))   # Laravel reordena según el enfoque
 
-        results = dict(version=3, strategy=name, focus=focus, mode=mode, need=need, months=month_keys(start, end),
-                       period=dict(start=f"{start_n:%Y-%m-%d}", split=f"{split:%Y-%m-%d}", end=f"{end_n:%Y-%m-%d}"),
+        results = dict(version=4, strategy=name, focus=focus, mode=mode, need=need, months=month_keys(start, end),
+                       period=dict(start=f"{start_n:%Y-%m-%d}", split=f"{split:%Y-%m-%d}", test=f"{test_start:%Y-%m-%d}",
+                                   end=f"{end_n:%Y-%m-%d}"),
+                       shares=dict(choose=CHOOSE_SHARE, accept=ACCEPT_SHARE),
                        intervals=intervals, search_symbols=search, min_trades=MIN_TRADES, wr_min_pf=WR_MIN_PF,
                        tested=len(per_cfg), candidates=len(rows), survivors=len(rows),
-                       oos_ok=len(rows),
+                       oos_ok=len(rows), test_ok=sum(1 for r in rows if (r.get('test') or {}).get('ret', 0) > 0),
                        costs=dict(**COSTS, risk_pct=RISK_PCT, initial_balance=INITIAL),
                        elapsed_s=round(time.time() - t0, 1),
                        peak_mem_mb=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
                        rows=rows, near=near)
         rep.phase, rep.note, rep.done, rep.total = 'fin', 'Terminada', rep.total, rep.total   # 100 %
         finish('done', results)
-        print(f"Búsqueda #{run_id} ({mode}, enfoque {focus}): {len(per_cfg)} configuraciones · {len(rows)} ganan en los "
-              f"dos tramos · {results['elapsed_s']} s · {results['peak_mem_mb']} MB")
+        print(f"Búsqueda #{run_id} ({mode}, enfoque {focus}): {len(per_cfg)} configuraciones · {len(rows)} pasan la "
+              f"validación · {results['test_ok']} ganan también en la prueba final · {results['elapsed_s']} s · "
+              f"{results['peak_mem_mb']} MB")
         return 0
     except Cancelled:
         finish('cancelled', error='Cancelada por el usuario.')

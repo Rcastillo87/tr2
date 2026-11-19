@@ -163,6 +163,8 @@ class ParamSearchController extends Controller
                 'is'         => $row['is'],
                 'oos'        => $row['oos'],
                 'val'        => $row['val'] ?? null,
+                // v4 (D-38 1A): prueba final, el último 20 % que no eligió ni aceptó; solo se muestra
+                'test'       => $row['test'] ?? null,
                 // symbols: lista para la columna "Monedas que ganan" (sobrevivientes + descartadas); las métricas son de las sobrevivientes
                 'summary'    => ['symbols' => array_values(array_unique(array_merge($this->service->symbolsFor($run, $row, $mode), $row['discarded'] ?? [])))]
                                 + $this->service->summarize($row, $this->service->symbolsFor($run, $row, $mode)),

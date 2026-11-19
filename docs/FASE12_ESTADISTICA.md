@@ -11,6 +11,9 @@
 
 ## 1. Holdout independiente (NUEVO-04)
 
+> **[19-nov] Hecho en p77 (opción A).** Búsqueda v4: `segment_cuts` 60 % / 80 %, prueba final en `test` de cada fila; la
+> pantalla muestra «Elegir · Validación · Prueba final». Detalle en `docs/BITACORA.md`.
+
 **Hoy** (`cli/param_search.py`): el rango se parte en 2/3 + 1/3. Una configuración «sobrevive» si gana en los primeros
 2/3 **y** en el último 1/3. Ese último tercio, aunque no se usa para ordenar, **sí decide qué se acepta**: con cientos
 de configuraciones probadas, alguna pasa el filtro por suerte (sesgo de selección múltiple). No es un holdout limpio.

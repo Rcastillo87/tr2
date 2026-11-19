@@ -47,7 +47,7 @@ check('consola (sin enfoque): mismo espacio de siempre', ps.sample_configs(20, 7
 check('gana en los dos tramos con 60 operaciones -> acepta', ps.accept(seg(100), seg(50), full(), 'gain') is None)
 check('pocas operaciones -> rechaza', 'operaciones' in (ps.accept(seg(100), seg(50), full(n=20), 'gain') or ''))
 check('pierde en muestra -> rechaza', 'primeros' in (ps.accept(seg(-10), seg(50), full(), 'gain') or ''))
-check('gana en muestra pero pierde al final -> rechaza', 'últimos' in (ps.accept(seg(100), seg(-5), full(), 'gain') or ''))
+check('gana en muestra pero pierde en la validación -> rechaza (p77: el motivo dice «validación»)', 'validación' in (ps.accept(seg(100), seg(-5), full(), 'gain') or ''))
 check('win rate con PF 1,1 -> rechaza', 'profit factor' in (ps.accept(seg(100), seg(50), full(pf=1.1), 'wr') or ''))
 check('ganancia con PF 1,1 -> acepta (el PF mínimo es solo del enfoque win rate)', ps.accept(seg(100), seg(50), full(pf=1.1), 'gain') is None)
 
@@ -60,7 +60,7 @@ ids = sorted(r['id'] for r in rows)
 check('por moneda: una fila por (configuración, moneda) que gana', ids == ['ENA-60-1', 'SOL-60-0'], ids)
 check('por moneda: cada fila trae solo su moneda', all(list(r['symbols']) == [r['symbol']] and r['survivors'] == [r['symbol']] for r in rows))
 check('por moneda: casi-ganadoras por moneda con el motivo', [n['id'] for n in near['ENA']] == ['ENA-60-0']
-      and 'últimos' in near['ENA'][0]['why'] and near['HYPE'] == [], {k: [n['id'] for n in v] for k, v in near.items()})
+      and 'validación' in near['ENA'][0]['why'] and near['HYPE'] == [], {k: [n['id'] for n in v] for k, v in near.items()})
 check('por moneda: tramos de la fila = los de su moneda', rows and all(r['is']['n'] == 20 and r['oos']['ret'] > 0 for r in rows))
 
 # 4. Modo por temporalidad: ≥ 3/4 de las monedas, métricas de TODAS
