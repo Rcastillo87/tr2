@@ -17,7 +17,7 @@ from trading.bybit_client import get_current_price
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from trading.risk_manager import RiskManager
 from collectors.bars import bars_frame, sorted_records
-from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
+from collectors.broker_resolver import closed_bars, final_closed_bars, interval_delta, pending_text, resolve_live_broker
 from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
 from backtesting.strategies.base_strategy import opposite_exit_rule
@@ -816,7 +816,9 @@ class PaperTrader:
                 continue
 
             now = datetime.now(timezone.utc)
-            df = self._closed_bars(await self.get_bars(symbol, interval), interval, now)
+            df, pending = final_closed_bars(await self.get_bars(symbol, interval), interval, now)
+            if df is None:
+                df = pd.DataFrame()
             ev['bars'] = len(df)
             if len(df):
                 ev['last_bar_time'] = pd.to_datetime(df['time'].iloc[-1], utc=True).to_pydatetime()
@@ -825,6 +827,9 @@ class PaperTrader:
                 continue
             if pd.to_datetime(df['time'].iloc[-1], utc=True) + 2 * interval_delta(interval) <= now:
                 decide('collector_stale', f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera")
+                continue
+            if pending is not None:   # D-39: la vela cerró pero la base aún no tiene sus valores finales
+                decide('candle_pending', pending_text(symbol, pending))
                 continue
             ev['candle_time'] = ev['last_bar_time']
 
@@ -845,10 +850,16 @@ class PaperTrader:
                 decide('regime_blocked', f"{symbol}: regimen no permitido ({regime})")
                 continue
 
-            if strategy.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
-                strategy.macro_df = self._closed_bars(await self.get_bars(symbol, '240'), '240', now)
-            if strategy.btc_filter_applies():  # velas H4 cerradas de BTC para la tendencia de BTC
-                strategy.btc_macro_df = self._closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
+            if strategy.macro_trend_filter:  # velas H4 cerradas (y completas, D-39) para la tendencia macro
+                strategy.macro_df, pending = final_closed_bars(await self.get_bars(symbol, '240'), '240', now)
+                if pending is not None:
+                    decide('candle_pending', pending_text(symbol, pending, 'vela H4 de la tendencia macro'))
+                    continue
+            if strategy.btc_filter_applies():  # velas H4 cerradas (y completas) de BTC para la tendencia de BTC
+                strategy.btc_macro_df, pending = final_closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
+                if pending is not None:
+                    decide('candle_pending', pending_text(symbol, pending, 'vela H4 de BTC'))
+                    continue
             strategy.signal_trace = []   # señal de la última vela tras la estrategia y cada filtro (solo observa)
             df = strategy.compute_signals(df)
 

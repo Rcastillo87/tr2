@@ -88,6 +88,19 @@ def instantiate_strategy(sub: SubscriptionPayload):
 # Estado de las claves por cuenta (en memoria del motor): solo se emite evento en los cambios.
 _auth_state: dict[int, bool] = {}
 
+# Última decisión de señal por suscripción (en memoria del motor). Real devuelve a Laravel el motivo de cada
+# suscripción pero Laravel solo registra conteos: el motivo de no abrir se perdía (19-nov, LINK). Se escribe en
+# engine.log solo cuando cambia (una línea por suscripción y vela, no una por minuto); tras un reinicio, la primera.
+_signal_reason: dict[int, str] = {}
+
+
+def _log_signal_reason(account_id: int, subscription_id: int, strategy: str, result) -> None:
+    text = str(result)
+    if _signal_reason.get(subscription_id) == text:
+        return
+    _signal_reason[subscription_id] = text
+    logger.info(f"[REAL-SEÑAL] cuenta {account_id} · {strategy} (suscripción {subscription_id}): {text}")
+
 
 async def _track_auth(pool, account_id: int, ok: bool | None, reason: str) -> None:
     """Emite api_auth_failed / api_auth_ok solo al cambiar el estado (y el primer OK tras arrancar el motor,
@@ -191,6 +204,7 @@ async def _process_account(trader, account):
                 result   = await trader.check_new_signals(sub_dict, strategy, client,
                                                           entries_allowed=entries_ok and sub.entries_allowed)
                 signal_results[sub.strategy] = result
+                _log_signal_reason(account.id, sub.subscription_id, sub.strategy, result)
             except Exception as e:
                 logger.error(f"[REAL] Error procesando {sub.strategy}: {e}")
                 signal_results[sub.strategy] = f"ERROR: {str(e)}"

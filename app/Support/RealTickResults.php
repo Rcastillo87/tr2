@@ -44,9 +44,11 @@ final class RealTickResults
             if (($monitor['errors'] ?? 0) > 0) {
                 $out[] = ['warning', "RealTrading {$accountKey}: {$monitor['errors']} error(es) al cerrar"];
             }
-            $opened = array_filter($signals, fn ($r) => str_starts_with(self::text($r), 'ABIERTA'));
-            $errors = array_filter($signals, fn ($r) => str_starts_with(self::text($r), 'ERROR')
-                || str_starts_with(self::text($r), 'EXCEPTION'));
+            // El motor responde «SÍMBOLO: ABIERTA …» / «SÍMBOLO: ERROR …» (y «ERROR: …» si falló la suscripción).
+            // Antes se buscaba la palabra al comienzo y nunca se contaban aperturas ni errores (19-nov: nuevas:0
+            // con dos aperturas).
+            $opened = array_filter($signals, fn ($r) => self::verdict($r, ['ABIERTA', 'REVERSA']));
+            $errors = array_filter($signals, fn ($r) => self::verdict($r, ['ERROR', 'EXCEPTION']));
             foreach ($opened as $strategy => $result) {
                 $out[] = ['info', "RealTrading ABIERTA: {$accountKey} | {$strategy} -> " . self::text($result)];
             }
@@ -61,7 +63,13 @@ final class RealTickResults
         return $out;
     }
 
-    private static function text(mixed $v): string
+    /** ¿El resultado de una suscripción empieza (tras el «SÍMBOLO: » opcional) con alguna de estas palabras? */
+    private static function verdict(mixed $r, array $words): bool
+    {
+        return preg_match('/^(?:[A-Z0-9]+: )?(?:' . implode('|', $words) . ')\b/u', self::text($r)) === 1;
+    }
+
+        private static function text(mixed $v): string
     {
         return is_scalar($v) || $v === null ? (string) $v : (json_encode($v, JSON_UNESCAPED_UNICODE) ?: '');
     }

@@ -54,6 +54,32 @@ def closed_bars(df, interval: str, now: datetime | None = None):
     return df[(times + interval_delta(interval)) <= now].reset_index(drop=True)
 
 
+def final_closed_bars(df, interval: str, now: datetime | None = None):
+    """
+    (velas cerradas, hora de la última cerrada si todavía NO tiene sus valores finales | None).
+
+    Cerrada por tiempo no es lo mismo que guardada completa: el collector guarda la vela en formación y la actualiza
+    cada minuto; la que acaba de cerrar recibe su último minuto en la primera pasada del collector DESPUÉS del cierre,
+    y esa misma sentencia escribe la vela siguiente (en formación). Si la siguiente no está en la base, la cerrada
+    puede tener los valores de la pasada anterior (19-nov 16:00: Paper vio LINK H4 sin su último minuto y abrió una
+    venta que con la vela completa no existía). Paper y Real esperan al minuto siguiente (decisión del dueño 19-nov,
+    D-39). Sin velas cerradas devuelve (df, None): los controles de «datos insuficientes» deciden.
+    """
+    closed = closed_bars(df, interval, now)
+    if closed is None or len(closed) == 0:
+        return closed, None
+    import pandas as pd
+    last = pd.to_datetime(closed['time'].iloc[-1], utc=True)
+    if (pd.to_datetime(df['time'], utc=True) > last).any():
+        return closed, None
+    return closed, last.to_pydatetime()
+
+
+def pending_text(symbol: str, when: datetime, what: str = 'vela') -> str:
+    """Motivo común de Paper y Real cuando la última vela cerrada no tiene todavía sus valores finales."""
+    return f"{symbol}: {what} de las {when:%H:%M} UTC aún sin completar en la base (collector), se espera al minuto siguiente"
+
+
 def _utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None

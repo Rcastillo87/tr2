@@ -37,7 +37,7 @@ import pandas as pd
 
 from trading.bybit_client import bybit_sign
 from collectors.bars import bars_frame
-from collectors.broker_resolver import closed_bars, interval_delta, resolve_live_broker
+from collectors.broker_resolver import closed_bars, final_closed_bars, interval_delta, pending_text, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
 from backtesting.strategies.base_strategy import opposite_exit_rule, NATIVE_TRAILING_MIN_BUFFER_PCT
@@ -115,6 +115,10 @@ BYBIT_AUTH_FAIL_CODES = {10003, 10004, 10005, 10010, 33004}
 # Si Bybit falla se usa el último dato real; sin ninguno, no se opera (nunca un valor inventado).
 LOT_CACHE_TTL_SECONDS = 6 * 3600
 _LOT_CACHE: dict[tuple[str, str], tuple[float, float, float]] = {}
+# Paso de precio (priceFilter.tickSize) por (base_url, símbolo); se llena con la misma consulta que el lote.
+_TICK_CACHE: dict[tuple[str, str], float] = {}
+# Bybit responde 34040 «not modified» cuando el SL/TP pedido, redondeado a su paso de precio, ya es el vigente.
+BYBIT_NOT_MODIFIED = 34040
 
 
 def floor_to_step(qty: float, step: float) -> float:
@@ -440,6 +444,9 @@ class BybitClient:
             data = r.json()
             items = (data.get('result') or {}).get('list') or [] if data.get('retCode') == 0 else []
             lot = items[0].get('lotSizeFilter', {}) if items else {}
+            tick = float((items[0].get('priceFilter') or {}).get('tickSize') or 0) if items else 0.0
+            if tick > 0:
+                _TICK_CACHE[key] = tick
             min_qty = float(lot.get('minOrderQty') or 0)
             qty_step = float(lot.get('qtyStep') or min_qty or 0)
             if min_qty > 0 and qty_step > 0:
@@ -453,6 +460,13 @@ class BybitClient:
             logger.warning(f"[BYBIT] {symbol}: se usa el último lote conocido minQty={cached[0]} qtyStep={cached[1]}")
             return cached[0], cached[1]
         return None
+
+    async def get_tick_size(self, symbol: str) -> float | None:
+        """Paso de precio de la moneda (lo trae la consulta del lote, caché de 6 h). None si nunca se obtuvo."""
+        key = (self.base_url, symbol)
+        if key not in _TICK_CACHE:
+            await self.get_lot_size(symbol)
+        return _TICK_CACHE.get(key)
 
     async def get_min_qty(self, symbol: str) -> tuple[float, float]:
         """Solo para los scripts de prueba demo: el lote real o (0.001, 0.001). La operación usa get_lot_size."""
@@ -689,6 +703,11 @@ class BybitClient:
             logger.info(f"[BYBIT] trading-stop response: retCode={data.get('retCode')} msg={data.get('retMsg')} symbol={symbol}")
             if data.get('retCode') == 0:
                 logger.info(f"[BYBIT] SL/TP configurado en Bybit: {symbol} SL={sl} TP={tp}")
+                return True
+            if data.get('retCode') == BYBIT_NOT_MODIFIED:
+                # Lo pedido, redondeado al paso de precio de la moneda, ya es lo vigente en Bybit: la posición tiene
+                # esos niveles. No es un fallo (19-nov, DOGEUSDT #99: falsa «protección fallida» y un ERROR por minuto).
+                logger.info(f"[BYBIT] SL/TP sin cambios en Bybit (ya vigentes al paso de precio): {symbol} SL={sl} TP={tp}")
                 return True
             else:
                 logger.error(f"[BYBIT] set_trading_stop error: {data.get('retMsg')} code={data.get('retCode')} body={body}")
@@ -1921,7 +1940,16 @@ class RealTrader:
             if not (strategy.trailing_mode == "fixed" and trade.get("trailing_applied")):
                 ex_sl = float(position.get("stopLoss") or 0)
                 ex_tp = float(position.get("takeProfit") or 0)
-                mismatch = sl > 0 and (abs(ex_sl - sl) > entry * 1e-4 or abs(ex_tp - tp) > entry * 1e-4)
+                # Bybit guarda los niveles redondeados a su paso de precio: una diferencia menor que un paso no es
+                # desalineación (DOGE: TP 0.0562272 de la estrategia = 0.05622 en Bybit). Un paso entero sí lo es
+                # (0,999: margen del redondeo de coma flotante). Sin paso conocido, la tolerancia de siempre (0,01 %).
+                tick = await client.get_tick_size(symbol)
+                tol = max(entry * 1e-4, tick * 0.999) if tick else entry * 1e-4
+
+                def off(a: float, b: float) -> bool:
+                    return abs(a - b) > tol
+
+                mismatch = sl > 0 and (off(ex_sl, sl) or off(ex_tp, tp))
                 aligned = (await client.set_trading_stop(symbol, sl, tp)) if mismatch else True
                 if mismatch and aligned:
                     logger.warning(f"[MONITOR] {symbol} #{trade_id}: SL/TP en Bybit ({ex_sl}/{ex_tp}) alineados a DB ({sl}/{tp})")
@@ -2098,11 +2126,13 @@ class RealTrader:
 
         # Velas CERRADAS (por tiempo): señal y régimen como en backtest y paper
         now = datetime.now(timezone.utc)
-        df = closed_bars(await self.get_bars(symbol, interval), interval, now)
+        df, pending = final_closed_bars(await self.get_bars(symbol, interval), interval, now)
         if df is None or len(df) < 64:
             return f"{symbol}: datos insuficientes"
         if pd.to_datetime(df['time'].iloc[-1], utc=True) + 2 * interval_delta(interval) <= now:
             return f"{symbol}: falta la última vela cerrada (collector atrasado), no se opera"
+        if pending is not None:   # D-39: la vela cerró pero la base aún no tiene sus valores finales
+            return pending_text(symbol, pending)
 
         regime = await self.get_current_regime(
             df, trending_threshold=strategy_instance.regime_adx_trending,
@@ -2113,10 +2143,14 @@ class RealTrader:
         if not regime_ok and open_row is None:   # la salida por señal opuesta no mira el régimen (igual que el motor)
             return f"{symbol}: regimen no permitido ({regime})"
 
-        if strategy_instance.macro_trend_filter:  # velas H4 cerradas para la tendencia macro
-            strategy_instance.macro_df = closed_bars(await self.get_bars(symbol, '240'), '240', now)
-        if strategy_instance.btc_filter_applies():  # velas H4 cerradas de BTC para la tendencia de BTC
-            strategy_instance.btc_macro_df = closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
+        if strategy_instance.macro_trend_filter:  # velas H4 cerradas (y completas, D-39) para la tendencia macro
+            strategy_instance.macro_df, pending = final_closed_bars(await self.get_bars(symbol, '240'), '240', now)
+            if pending is not None:
+                return pending_text(symbol, pending, 'vela H4 de la tendencia macro')
+        if strategy_instance.btc_filter_applies():  # velas H4 cerradas (y completas) de BTC para la tendencia de BTC
+            strategy_instance.btc_macro_df, pending = final_closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
+            if pending is not None:
+                return pending_text(symbol, pending, 'vela H4 de BTC')
         df = strategy_instance.compute_signals(df)
 
         last_closed = df.iloc[-1]  # df solo contiene velas cerradas

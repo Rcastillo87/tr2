@@ -31,6 +31,7 @@ class PaperDiagnostics
         'reversal'              => ['trade', 'Invirtió posición'],
         'closed_opposite'       => ['trade', 'Cerró por señal opuesta'],
         'no_signal'             => ['quiet', 'Sin señal'],
+        'candle_pending'        => ['quiet', 'Esperando la vela completa'],
     ];
     public const GROUPS = ['problem' => 'Problemas', 'blocked' => 'Bloqueadas por régimen', 'filtered' => 'Señal anulada',
                            'position' => 'Con posición abierta', 'trade' => 'Operaron', 'quiet' => 'Sin señal'];

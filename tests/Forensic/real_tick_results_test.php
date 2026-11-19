@@ -57,10 +57,32 @@ $l = RealTickResults::lines(['account_11_bybit' => [
     'signals' => ['VWAP' => 'ETHUSDT: ABIERTA long @ 1900', 'EMA' => 'BTCUSDT: sin señal', 'X' => 'ERROR: algo', 'Y' => 'SOLUSDT: sin señal'],
 ]]);
 $debug = array_values(array_filter($l, fn ($x) => $x[0] === 'debug'));
-$check('R4 resumen idéntico al de siempre', count($debug) === 1
-    && $debug[0][1] === 'RealTrading tick: account_11_bybit | monitoreadas:2 cerradas:1 nuevas:0 errores:1 sin_senal:2', $debug);
+// p76: «ETHUSDT: ABIERTA …» es una apertura (antes se contaba nuevas:0 porque se buscaba ABIERTA al comienzo)
+$check('R4 resumen: cuenta la apertura con el prefijo del símbolo', count($debug) === 1
+    && $debug[0][1] === 'RealTrading tick: account_11_bybit | monitoreadas:2 cerradas:1 nuevas:1 errores:1 sin_senal:2', $debug);
+$check('R4 la apertura queda como línea info con su suscripción',
+    in_array(['info', 'RealTrading ABIERTA: account_11_bybit | VWAP -> ETHUSDT: ABIERTA long @ 1900'], $l, true), $l);
 $check('R4 cerradas (info) y error de señal (error)', in_array(['info', 'RealTrading account_11_bybit: 1 posicion(es) cerrada(s)'], $l, true)
     && in_array(['error', 'RealTrading ERROR: account_11_bybit | X -> ERROR: algo'], $l, true), $l);
+
+// R7. Formatos reales del motor (check_new_signals, 19-nov 16:00): aperturas, reversa, error y excepción con el
+//     prefijo del símbolo; textos que contienen las palabras en otro lugar NO cuentan
+$l = RealTickResults::lines(['account_11_bybit' => [
+    'monitor' => ['checked' => 0, 'closed' => 0, 'errors' => 0],
+    'signals' => [
+        'D' => 'DOGEUSDT: ABIERTA short @ 0.05856', 'E' => 'ETHUSDT: ABIERTA short @ 1780.57',
+        'R' => 'SOLUSDT: REVERSA long @ 150.1', 'F' => 'NEARUSDT: ERROR long @ 3.27', 'G' => 'ENAUSDT: EXCEPTION short @ 0.1: boom',
+        'B' => 'BTCUSDT: regimen no permitido (TRENDING)', 'L' => 'LINKUSDT: sin señal',
+        'C' => 'ZECUSDT: CERRADA long por señal opuesta; entradas bloqueadas, sin reversa',
+        'Q' => 'XRPUSDT: error consultando Bybit, se omite apertura por seguridad (ERROR x)',
+        'P' => 'SUIUSDT: vela de las 12:00 UTC aún sin completar en la base (collector), se espera al minuto siguiente',
+    ],
+]]);
+$debug = array_values(array_filter($l, fn ($x) => $x[0] === 'debug'));
+$check('R7 resumen: nuevas:3 (2 ABIERTA + 1 REVERSA), errores:2 (ERROR y EXCEPTION), sin_senal:1', count($debug) === 1
+    && $debug[0][1] === 'RealTrading tick: account_11_bybit | monitoreadas:0 cerradas:0 nuevas:3 errores:2 sin_senal:1', $debug);
+$check('R7 «error consultando Bybit…(ERROR x)» no cuenta como error de apertura y «vela … sin completar» no es «sin señal»',
+    ! in_array(['error', 'RealTrading ERROR: account_11_bybit | Q -> XRPUSDT: error consultando Bybit, se omite apertura por seguridad (ERROR x)'], $l, true));
 
 // R5. Error de cuenta y respuesta que no es un objeto
 $l = RealTickResults::lines(['a' => ['error' => 'Bybit rechaza las claves API: x'], 'b' => 'texto suelto']);

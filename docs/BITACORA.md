@@ -21,6 +21,41 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Vela incompleta, decimales de Bybit y motivos de Real (p76, D-39) — 19-nov
+- **Origen:** al instalar p75 (19-nov 16:25 UTC) el instalador encontró errores en `engine.log` y **revirtió todo**
+  (servidor intacto en `7d16563`, motor con el código anterior). Los errores no eran de p75: DOGEUSDT #99. Con las
+  lecturas `lectura_34040`, `lectura_aperturas`, `lectura_link`, `lectura_ventana` y `lectura_vela_final` (solo lectura)
+  aparecieron cuatro problemas, todos anteriores a p75.
+- **R-17 · Decimales de Bybit (DOGE #99):** la estrategia calculó TP 0.0562272; Bybit lo guarda al paso de precio
+  (0.00001) = 0.05622. El monitor lo veía desalineado (tolerancia 0,01 % de la entrada = 0.0000059 < un paso), pedía
+  cambiarlo cada minuto y Bybit respondía 34040 «not modified»; el bot lo tomaba como fallo: falsa «protección
+  fallida» al abrir y **31 ERROR en 31 minutos**. La posición siempre estuvo protegida (SL 0.05974 / TP 0.05622).
+  Arreglo: 34040 = ya vigente (éxito); la alineación usa la tolerancia de un paso de precio (`priceFilter.tickSize`, de
+  la misma consulta del lote, caché 6 h); sin paso conocido, la tolerancia de siempre.
+- **R-18 · Vela incompleta (D-39):** a las 16:00 Paper abrió 5 y Real 2. XRP y ZEC no están suscritas en Real
+  (correcto). **LINK** sí: Paper vio venta y Real «sin señal». Se descartaron posición manual, límite (2 de 3), vela
+  atrasada, régimen y largo de la ventana (la señal es la misma con 200 a 5000 velas). Causa medida: el collector
+  guarda la vela en formación y la completa en su primera pasada **después** del cierre; Paper evaluó a las 16:00:17
+  con la vela H4 12:00 de LINK sin su último minuto (close 9,028 → señal −1) y Real, segundos después, con la vela
+  completa (close 9,019 → señal 0). Rearmada con los minutos guardados: hasta 15:57/15:58/15:59 = venta; completa = sin
+  señal. DOGE y ETH dan venta en todos los cortes (por eso coincidieron). Arreglo (decisión del dueño D-39): Paper y
+  Real deciden solo con la vela completa = cuando la vela **siguiente** ya está en la base (el collector escribe las
+  dos en la misma sentencia); si no, esperan al minuto siguiente. Vale también para las velas H4 de la tendencia
+  macro y de BTC. Motivo en Paper: `candle_pending` («Esperando la vela completa»). El backtest no cambia.
+- **Paper #378 (LINK, venta, 16:00):** abierta con la vela incompleta; **se deja abierta** y sigue su ciclo (decisión
+  del dueño 19-nov). Cuenta en la comparación Paper vs backtest como una diferencia explicada.
+- **R-19 · Resumen de Real en `laravel.log`:** buscaba «ABIERTA»/«ERROR» al comienzo del texto y el motor responde
+  «SÍMBOLO: ABIERTA …»: nunca contó aperturas ni errores (16:00: «nuevas:0» con dos aperturas). La prueba vieja
+  (`real_tick_results_test` R4) tenía el error escrito como esperado; corregida.
+- **R-20 · Motivo de no abrir:** Real lo calculaba y se perdía. Ahora `[REAL-SEÑAL]` en `engine.log`, solo cuando
+  cambia (una línea por suscripción y vela).
+- **Hallazgo sin tocar (R-21, decisión del dueño pendiente):** en el código de la estrategia VWAP Tendencia,
+  `vwap_std_dev = groupby('date')['typical'].transform('std')` usa todas las velas del día; en el backtest incluye
+  velas posteriores a la señal (mira el futuro); en vivo no existen todavía. Puede inflar el backtest.
+- **Pruebas:** `candle_final_test.py` (nuevo; 6 FALLOS con el código anterior), `real_tick_size_test.py` (nuevo; 4),
+  `real_signal_reason_test.py` (nuevo; 2), `real_tick_results_test.php` R4/R7 (3), `paper_diagnostics_test.php` (el
+  motivo nuevo tiene grupo y texto). Mutaciones 10/10 detectadas (incluida «un paso exacto» con coma flotante). Regresión 63 Python + 23 PHP en TODO OK.
+
 ### D-18 y D-19 — Posiciones abiertas a mano en Bybit (p74)
 - **Decisiones del dueño (19-nov):** D-18 se ignoran (ni se adoptan ni se gestionan); D-19 mientras exista una manual
   en una moneda suscrita el bot no abre en esa moneda; al cerrarse, abre solo si la señal sigue vigente. Los usuarios
