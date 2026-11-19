@@ -100,6 +100,7 @@ class BacktestMonthlyExport
             ['Avg win (%)',              $agg['avg_win_pct'] ?? 0],
             ['Avg loss (%)',             $agg['avg_loss_pct'] ?? 0],
             ['Max drawdown (%)',         $agg['max_drawdown_pct'] ?? 0],
+            ['Max drawdown flotante (%)', $agg['max_drawdown_floating_pct'] ?? '—'],
         ];
 
         $row = 9;

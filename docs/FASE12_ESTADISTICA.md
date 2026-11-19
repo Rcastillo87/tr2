@@ -51,6 +51,9 @@ compartido, ni límite de posiciones simultáneas, ni exposición total, ni corr
 
 ## 4. Drawdown con riesgo flotante
 
+> **[19-nov] Hecho en p75 (opción A).** `metrics.max_drawdown_floating_pct`; columnas «DD cerrado» y «DD flotante»
+> en el resumen del backtest. Detalle y pruebas en `docs/BITACORA.md`.
+
 **Hoy** (`metrics.py`): el drawdown se calcula con el saldo tras cada trade **cerrado**. Una posición que estuvo −8 %
 y cerró en −1 % cuenta como −1 %.
 

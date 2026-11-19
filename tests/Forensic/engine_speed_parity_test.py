@@ -136,6 +136,7 @@ def compare(label, make, df, minute_df, funding, trade_from):
     r2 = BacktestEngine(strategy=make(), df=df, initial_balance=10000.0, risk_per_trade_pct=1.0, minute_df=minute_df,
                         trade_from=trade_from, funding=funding).run()
     T_NEW += time.time() - t
+    r2['metrics'].pop('max_drawdown_floating_pct', None)   # Fase 12 · 4A: métrica nueva (la referencia V3 no la tiene)
     d = same(r1, exit_minute_as_bar(without_end_of_data(r2), r1))
     return d, len(r1['trades'])
 

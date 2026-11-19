@@ -128,10 +128,16 @@
                     <th class="px-3 py-2 font-medium text-center whitespace-nowrap">Peor Mes</th>
                     <th class="px-3 py-2 font-medium text-center whitespace-nowrap">Consistencia</th>
                     <th class="px-3 py-2 font-medium text-right whitespace-nowrap">Retorno</th>
+                    <th class="px-3 py-2 font-medium text-right whitespace-nowrap" title="Peor caída del capital contando solo trades cerrados">DD cerrado</th>
+                    <th class="px-3 py-2 font-medium text-right whitespace-nowrap" title="Peor caída del capital contando también lo que bajó un trade mientras estaba abierto">DD flotante</th>
                     <th class="px-3 py-2 font-medium text-right whitespace-nowrap">Prom. Mensual P&L</th>
                 </tr>
             </thead>
             <tbody class="divide-y" style="border-color:var(--color-border-soft);">
+                @php
+                    // Drawdown (Fase 12 · 4A, D-38): null = el backtest no trae el dato (guardados antes de p75)
+                    $fmtDd = fn ($v) => $v === null ? '—' : number_format((float) $v, 2) . '%';
+                @endphp
                 @foreach($symbolsList as $sym)
                 @php
                     $d = $bySymbol[$sym]; $r = $d['rating']; $c = $starColor($r);
@@ -175,6 +181,8 @@
                         <span style="color:var(--color-text-primary); font-weight:600;">{{ $totalM > 0 ? round($winsM / $totalM * 100, 1) : 0 }}%</span>
                     </td>
                     <td class="px-3 py-2 text-right font-mono font-medium whitespace-nowrap" style="color:{{ ($d['agg']['total_return_pct'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ number_format($d['agg']['total_return_pct'] ?? 0, 2) }}%</td>
+                    <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($d['agg']['max_drawdown_pct'] ?? null) }}</td>
+                    <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($d['agg']['max_drawdown_floating_pct'] ?? null) }}</td>
                     <td class="px-3 py-2 text-right font-mono whitespace-nowrap" style="color:{{ ($d['avg_monthly'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ number_format($d['avg_monthly'] ?? 0, 2) }}%</td>
                 </tr>
                 @endforeach
@@ -226,6 +234,8 @@
         $prevRet = (float)($prevM['avg_monthly_pnl'] ?? 0) * count($allMonths);
     }
                         $prevAvgMonthly = (float)($prevM['avg_monthly_pnl'] ?? 0);
+                        $prevDd = isset($prevM['max_drawdown_pct']) ? (float) $prevM['max_drawdown_pct'] : null;
+                        $prevDdFloat = isset($prevM['max_drawdown_floating_pct']) ? (float) $prevM['max_drawdown_floating_pct'] : null;
                         
                         // Extraer mejor/peor mes del guardado
                         $prevBestVal = -999; $prevWorstVal = 999;
@@ -281,6 +291,8 @@
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($aggGlobal['total_return_pct'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         {{ number_format($aggGlobal['total_return_pct'] ?? 0, 2) }}%
                     </td>
+                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($aggGlobal['max_drawdown_pct'] ?? null) }}</td>
+                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($aggGlobal['max_drawdown_floating_pct'] ?? null) }}</td>
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($avgGlobal ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         {{ number_format($avgGlobal ?? 0, 2) }}%
                     </td>
@@ -305,6 +317,8 @@
                     <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">
                         @if($prevRet !== null) {{ number_format($prevRet, 2) }}% @else — @endif
                     </td>
+                    <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($prevDd) }}</td>
+                    <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($prevDdFloat) }}</td>
                     <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap" style="color:var(--color-text-muted);">{{ number_format($prevAvgMonthly, 2) }}%</td>
                 </tr>
 
@@ -355,6 +369,24 @@
                         @if($prevRet !== null)
                             @php $diff = ($aggGlobal['total_return_pct'] ?? 0) - $prevRet; @endphp
                             <span style="color:{{ $diff > 0 ? 'var(--color-profit)' : ($diff < 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</span>
+                        @else
+                            <span style="color:var(--color-text-muted);">—</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap">
+                        @if(isset($aggGlobal['max_drawdown_pct']) && $prevDd !== null)
+                            {{-- en drawdown, bajar es mejorar: verde si el nuevo es menor --}}
+                            @php $diff = (float) $aggGlobal['max_drawdown_pct'] - $prevDd; @endphp
+                            <span style="color:{{ $diff < 0 ? 'var(--color-profit)' : ($diff > 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</span>
+                        @else
+                            <span style="color:var(--color-text-muted);">—</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap">
+                        @if(isset($aggGlobal['max_drawdown_floating_pct']) && $prevDdFloat !== null)
+                            {{-- en drawdown, bajar es mejorar: verde si el nuevo es menor --}}
+                            @php $diff = (float) $aggGlobal['max_drawdown_floating_pct'] - $prevDdFloat; @endphp
+                            <span style="color:{{ $diff < 0 ? 'var(--color-profit)' : ($diff > 0 ? 'var(--color-loss)' : 'var(--color-text-muted)') }};">({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}%)</span>
                         @else
                             <span style="color:var(--color-text-muted);">—</span>
                         @endif

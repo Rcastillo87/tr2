@@ -102,6 +102,8 @@ class BacktestingController extends Controller
         $totalPnl = 0;
         $grossProfit = 0.0;
         $grossLoss = 0.0;
+        $maxDd = null;        // null = el motor no informó drawdown
+        $maxDdFloat = null;
 
         // 1. RESTAURAMOS LA CREACIÓN DEL PAYLOAD POR CADA MONEDA
         $payloads = [];
@@ -210,6 +212,13 @@ class BacktestingController extends Controller
                 $totalPnl += $agg['total_return_pct'] ?? 0;
                 $grossProfit += (float) ($agg['gross_profit'] ?? 0);
                 $grossLoss += (float) ($agg['gross_loss'] ?? 0);
+                // Drawdown consolidado = el peor de las monedas (Fase 12 · 4A, D-38)
+                if (isset($agg['max_drawdown_pct'])) {
+                    $maxDd = max($maxDd ?? 0.0, (float) $agg['max_drawdown_pct']);
+                }
+                if (isset($agg['max_drawdown_floating_pct'])) {
+                    $maxDdFloat = max($maxDdFloat ?? 0.0, (float) $agg['max_drawdown_floating_pct']);
+                }
             } catch (\Throwable $e) {
                 return response()->json(['success' => false, 'error' => "Error procesando $sym: " . $e->getMessage()]);
             }
@@ -264,6 +273,8 @@ class BacktestingController extends Controller
                 'total_return_pct' => round($totalPnl, 2),
                 'sharpe_ratio' => count($resultsData) > 0 ? round(collect($resultsData)->avg('aggregate_metrics.sharpe_ratio'), 2) : 0,
                 'profit_factor' => $profitFactor,
+                'max_drawdown_pct' => $maxDd,
+                'max_drawdown_floating_pct' => $maxDdFloat,
             ],
             'individual_results' => $resultsData,
             'save_payload' => [
@@ -282,6 +293,8 @@ class BacktestingController extends Controller
                     'profit_factor' => $profitFactor,
                     'avg_monthly_pnl' => round($avgGlobal, 2),
                     'consist_pct' => $consistGlobal,
+                    'max_drawdown_pct' => $maxDd,
+                    'max_drawdown_floating_pct' => $maxDdFloat,
                     'trades_by_symbol' => $tradesBySymbol,
                     'closed_at_end' => $closedAtEnd,
                 ]

@@ -331,10 +331,10 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, sin código | A-1.3a capital (D-33) y WB-05 riesgo (D-34) | Se quedan como hoy: solo documentación (hecho) |
 | Decidido 19-nov, **hecho en p73** (`819bd39`) | WB-01 fin de muestra (D-35) | La posición `end_of_data` no cuenta en las métricas |
 | Decidido 19-nov, **hecho en p73** (`819bd39`) | WB-04 huecos (D-36) | El backtest corre igual; huecos (cuántos, el mayor, fechas) en el «Log de Errores» |
-| Decidido 19-nov, hecho en p74 (pendiente de instalar) | R-11 posiciones manuales (D-18) | La conciliación las ignora y avisa una vez |
+| Decidido 19-nov, **hecho en p74** (`7d16563`) | R-11 posiciones manuales (D-18) | La conciliación las ignora y avisa una vez |
 | Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
-| Decidido 19-nov, **por implementar** | Fase 12 (D-38) | 4A drawdown flotante → 1A tres tramos → 3A renombrar (maqueta) → 2A cartera → 3B walk-forward real; la 5 descartada |
+| Decidido 19-nov, **4A hecha en p75** | Fase 12 (D-38) | 4A drawdown flotante (hecho) → 1A tres tramos → 3A renombrar (maqueta) → 2A cartera → 3B walk-forward real; la 5 descartada |
 | Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |

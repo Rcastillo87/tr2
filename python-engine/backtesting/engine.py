@@ -176,6 +176,16 @@ class BacktestEngine:
                 total += cost
         return total
 
+    def _merge_floating(self, f_peak: float, f_dd: float, p_peak, p_dd) -> tuple[float, float]:
+        """Fase 12 · 4A: al cerrar una posición, su caída flotante pasa al total; el saldo ya realizado (con costos)
+        también cuenta contra el máximo."""
+        if p_peak is not None:
+            f_dd, f_peak = max(f_dd, p_dd), max(f_peak, p_peak)
+        f_peak = max(f_peak, self.balance)
+        if f_peak > 0:
+            f_dd = max(f_dd, (f_peak - self.balance) / f_peak)
+        return f_peak, f_dd
+
     def _step(self, pos: dict, high: float, low: float, atr: float | None) -> tuple[float | None, str | None]:
         """Una sub-vela: SL vigente -> TP1 -> break-even -> trailing. Devuelve (nivel, motivo) o (None, None)."""
         long = pos['side'] == 'long'
@@ -400,6 +410,11 @@ class BacktestEngine:
         equity_curve = [self.initial_balance]
         pos = None
         one_ns, one_min = pd.Timedelta(1, 'ns'), pd.Timedelta(minutes=1)
+        # Fase 12 · 4A (D-38): drawdown FLOTANTE = mayor caída desde el máximo del capital (saldo + PnL bruto abierto al
+        # cierre de cada vela) hasta el peor punto con la posición abierta (low/high hasta la salida). Se acumula por
+        # posición y se incorpora al cerrarla: la que queda abierta al final no cuenta (D-35).
+        f_peak, f_dd = self.initial_balance, 0.0
+        p_peak = p_dd = None
 
         for i in range(max(1, first_trade_idx), n):
             prev_signal = signals[i - 1]
@@ -413,6 +428,8 @@ class BacktestEngine:
                     self._close(pos, opens[i], 'opposite_signal', bar_time, i - pos['entry_bar'])
                     pos = None
                     equity_curve.append(self.balance)
+                    f_peak, f_dd = self._merge_floating(f_peak, f_dd, p_peak, p_dd)
+                    p_peak = p_dd = None
                     if not reverse_on_opposite:
                         continue
 
@@ -437,16 +454,19 @@ class BacktestEngine:
 
             if pos is None:
                 continue
+            if p_peak is None:
+                p_peak, p_dd = f_peak, 0.0
 
             # 3. Gestión DURANTE la vela i (incluida la vela de entrada)
             # Trailing durante la vela i: ATR de la vela i-1 (cerrada). El de i incluye su high/low.
             trail_atr = float(atr[i - 1]) if needs_atr and not np.isnan(atr[i - 1]) else None
             bar_atr = float(atr[i]) if needs_atr and not np.isnan(atr[i]) else None  # al cierre de i
-            level = reason = exit_span = None
+            level = reason = exit_span = scan_k = None
             a, b = (int(m_lo[i]), int(m_hi[i])) if m_lo is not None else (0, 0)
             if a < b and m_full[i]:
                 k, level, reason = self._scan(pos, self._m_high[a:b], self._m_low[a:b], trail_atr)
                 if level is not None:
+                    scan_k = k
                     m0 = pd.Timestamp(self._m_time[a + k])
                     exit_span = (m0, m0 + one_min - one_ns)
             else:
@@ -469,6 +489,24 @@ class BacktestEngine:
                 elif in_profit:
                     level, reason = closes[i], 'time_exit_profit'
 
+            # Drawdown flotante de esta vela: peor precio hasta la salida (con 1m, los minutos hasta el que la disparó;
+            # una salida por SL no se vive más allá del nivel de salida)
+            long_pos = pos['side'] == 'long'
+            if a < b and m_full[i]:
+                hi_end = a + scan_k + 1 if scan_k is not None else b
+                worst = self._m_low[a:hi_end].min() if long_pos else self._m_high[a:hi_end].max()
+            else:
+                worst = lows[i] if long_pos else highs[i]
+            if reason in ('stop_loss', 'trailing_stop'):   # el stop corta la caída en su nivel
+                worst = max(worst, level) if long_pos else min(worst, level)
+            gross_worst = (worst - pos['entry_price']) * pos['size'] if long_pos else (pos['entry_price'] - worst) * pos['size']
+            trough = self.balance + gross_worst
+            if p_peak > 0:
+                p_dd = max(p_dd, (p_peak - trough) / p_peak)
+            if level is None:   # sigue abierta: el cierre de la vela puede ser un nuevo máximo
+                mtm = (closes[i] - pos['entry_price']) * pos['size'] if long_pos else (pos['entry_price'] - closes[i]) * pos['size']
+                p_peak = max(p_peak, self.balance + mtm)
+
             if level is not None:
                 at_close = reason in ('volatility_protection', 'time_exit', 'time_exit_profit')
                 if at_close:
@@ -483,6 +521,8 @@ class BacktestEngine:
                 self._close(pos, level, reason, exit_time, bars_held, exit_span)
                 pos = None
                 equity_curve.append(self.balance)
+                f_peak, f_dd = self._merge_floating(f_peak, f_dd, p_peak, p_dd)
+                p_peak = p_dd = None
 
         # BP-04: una posición abierta al final del rango no desaparece del resultado: se valora al cierre de la última
         # vela (con slippage, comisión y funding) y se muestra con exit_reason 'end_of_data'. D-35 (dueño, 19-nov): NO
@@ -497,6 +537,8 @@ class BacktestEngine:
 
         metrics = calculate_metrics(self.trades, self.initial_balance)
         metrics['equity_curve'] = equity_curve
+        # Fase 12 · 4A: nunca menor que el de cierres (el flotante incluye los mismos puntos más los intermedios)
+        metrics['max_drawdown_floating_pct'] = round(max(f_dd * 100, float(metrics.get('max_drawdown_pct') or 0)), 2)
         logger.info(f"Backtest completo: {metrics['total_trades']} trades | WR: {metrics['win_rate']}% | "
                     f"PF: {metrics['profit_factor']} | Sharpe: {metrics['sharpe_ratio']} | DD: {metrics['max_drawdown_pct']}%")
         return {

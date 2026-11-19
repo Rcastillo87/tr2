@@ -21,6 +21,31 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Fase 12 · 4A — Drawdown flotante (p75, D-38)
+- **Qué pidió el dueño (19-nov):** medir también la caída que el capital sufre **con la operación abierta**, no solo
+  al cerrarla; se muestran los dos. Maqueta aprobada el 19-nov: columnas «DD cerrado» y «DD flotante» en la tabla
+  «Resumen por moneda» del backtest, después de «Retorno».
+- **Motor (`backtesting/engine.py`):** mientras hay posición, en cada vela se toma el peor precio contra la posición
+  (low en largos, high en cortos) **solo hasta el minuto de la salida** cuando la salida se resolvió con velas de 1 m;
+  si la salida es por SL o trailing, el peor punto se topa en ese nivel (no se pierde más que el stop). Saldo + PnL en
+  ese punto contra el pico de capital → drawdown flotante. El pico avanza con el cierre de cada vela y con cada saldo
+  cerrado. La posición `end_of_data` no entra (D-35). `metrics.max_drawdown_floating_pct` = max(flotante, cerrado).
+- **Equivalencia:** motor viejo vs nuevo en 190 configuraciones / 38.139 trades: trades y métricas idénticos; la única
+  diferencia es el campo nuevo. Flotante ≥ cerrado en las 190; mayor en 151. Velocidad igual (~11 s).
+- **Pantalla:** CONSOLIDADO = el peor drawdown de las monedas (el controlador lo calcula y lo guarda con el backtest);
+  fila GUARDADO con «—» en backtests guardados antes de p75 (no traen el dato; nunca se muestra 0); COMPARATIVO en
+  verde si el drawdown baja. Excel exportado: fila «Max drawdown flotante (%)».
+- **Pruebas:** `floating_drawdown_test.py` (nuevo: TP tras caída, tope en SL, `end_of_data` fuera, minutos después de
+  la salida fuera, corto, salida por señal opuesta, sin trades) — falla con el código anterior; mutaciones 5/5.
+  `backtest_drawdown_columns_static_test.php` (nuevo: 13 columnas en encabezado y en las 4 filas, origen de cada dato,
+  «—» sin dato, consolidación = máximo, Excel) — 11 FALLOS con el código anterior; mutaciones 6/6.
+  `engine_speed_parity_test.py` ignora solo el campo nuevo al comparar con la referencia V3. Regresión 61 Python +
+  24 PHP en TODO OK.
+- **No cambia:** ningún otro número del backtest, la búsqueda de parámetros («DD máx» sigue siendo el cerrado), Paper
+  ni Real.
+- Primer intento de instalación (19-nov 16:25 UTC) **revertido por el instalador**: errores en `engine.log` de DOGE #99
+  (R-17, no de p75). Se instaló p76 primero y p75 se regeneró sin cambios de contenido sobre `dba7ba4`.
+
 ### Vela incompleta, decimales de Bybit y motivos de Real (p76, D-39) — 19-nov
 - **Origen:** al instalar p75 (19-nov 16:25 UTC) el instalador encontró errores en `engine.log` y **revirtió todo**
   (servidor intacto en `7d16563`, motor con el código anterior). Los errores no eran de p75: DOGEUSDT #99. Con las
@@ -55,6 +80,9 @@
 - **Pruebas:** `candle_final_test.py` (nuevo; 6 FALLOS con el código anterior), `real_tick_size_test.py` (nuevo; 4),
   `real_signal_reason_test.py` (nuevo; 2), `real_tick_results_test.php` R4/R7 (3), `paper_diagnostics_test.php` (el
   motivo nuevo tiene grupo y texto). Mutaciones 10/10 detectadas (incluida «un paso exacto» con coma flotante). Regresión 63 Python + 23 PHP en TODO OK.
+- Instalación de p76 el 19-nov (~17:10 UTC): 17 archivos; regresión 63 Python + 23 PHP en TODO OK; motor reiniciado
+  17:10:28 UTC y Horizon 17:11:35, tick de Paper 200, **0 errores y 0 respuestas 34040** en `engine.log`; primeros
+  `[REAL-SEÑAL]`: ENA/NEAR/LINK sin señal, DOGE/ETH con posición, BTC régimen no permitido. `main` = `origin/main` = `dba7ba4`.
 
 ### D-18 y D-19 — Posiciones abiertas a mano en Bybit (p74)
 - **Decisiones del dueño (19-nov):** D-18 se ignoran (ni se adoptan ni se gestionan); D-19 mientras exista una manual
@@ -74,6 +102,8 @@
   el código anterior; mutación «sin deduplicar» detectada. `manual_position_test.py` (nuevo, D-19): con la manual no
   abre ni mira la señal; sin ella evalúa la última vela cerrada. `broker_event_messages_test.php`: el evento nuevo
   tiene texto y nivel. Regresión 60 Python + 23 PHP en TODO OK.
+- Instalación de p74 el 19-nov (~15:53 UTC): 12 archivos; regresión 60 Python + 23 PHP en TODO OK; motor reiniciado
+  15:53:30 UTC, tick de Paper 200, 0 errores. `main` = `origin/main` = `7d16563`.
 
 ### D-35 y D-36 — Fin del backtest fuera de las métricas y aviso de huecos (p73)
 - **Decisiones del dueño (19-nov):** D-35 la posición abierta al final del backtest no cuenta en las métricas; D-36
