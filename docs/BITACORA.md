@@ -21,6 +21,22 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### p72 — Limpieza y documentación (cierre de la validación del 13-nov)
+- **Código muerto fuera:** `RegisteredUserController`, la vista `auth/register.blade.php` y su prueba Breeze
+  (`tests/Feature/Auth/RegistrationTest.php`): sin ruta desde hace tiempo (`welcome.blade.php` ya pregunta
+  `Route::has('register')`, no cambia nada visible); import `CORSMiddleware` sin uso en `main.py`; `datetime`
+  importado dos veces en `api/v1/collector.py`.
+- **Se conservan a propósito:** las comprobaciones de la clave interna en cada endpoint Real, además del middleware
+  global: defensa en profundidad, sin costo (quitarlas cambiaba firmas usadas por 12 pruebas).
+- **Bybit:** `CreateByTrailingProfit` → `trailing_stop` en el mapa de respaldo de `close_trigger_reason` (es el que
+  manda Bybit, visto en #93); caso agregado a `real_exit_reason_test.py`.
+- **Documentos:** `PROMPT_MAESTRO` V7.4 (p46–p72, fuentes únicas nuevas, 10 lecciones, pendientes);
+  `VALIDACION_AUDITORIA_13NOV.md` con filas viejas corregidas (A-1.2.6 cerrado por evidencia, R-01 corregido,
+  MEJ-001 cumplido, TST-08 a 0,3 %) y la sección «Lo que falta de la auditoría»; `PENDIENTES_AUDITORIA.md` marcado
+  histórico; README: tabla de migraciones en orden y con la de p62; `python-engine/.env.example`: permisos como en
+  el servidor (664 dentro de `/home/tr2` 770, no 600).
+- **Pruebas:** regresión 58 Python + 23 PHP en TODO OK.
+
 ### D-31 — Limpieza de TP2, TP3 y TP4 (p71)
 - **Decisión del dueño (13-nov):** limpiar los residuos; las columnas de la base se conservan. Ejecutada el 19-nov
   («procede»).
@@ -47,6 +63,9 @@
   falla. Regresión 58 Python + 23 PHP en TODO OK.
 - **Lección:** un inventario por texto (`grep tp2`) no ve los usos posicionales (`_, _, _`); la regresión completa
   sí. Al cambiar la forma de una tupla, buscar también las llamadas a la función.
+- Instalación de p71 el 19-nov (~14:27 UTC): 27 archivos; regresión 58 Python + 23 PHP en TODO OK; motor reiniciado
+  14:27:34 UTC (tick de Paper 200, 0 errores en `engine.log`); sin operaciones Real abiertas; Horizon 14:28:40 UTC.
+  `main` = `origin/main` = `d946062`.
 
 ### R-16 — Motivo de salida según la orden de cierre de Bybit (p70)
 - **Origen:** la corrección D-15 (p69) dejó 4 de 6 en `closed_other`; con #94 y #98, **6 de 10 cierres** decían

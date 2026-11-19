@@ -45,6 +45,7 @@ cases = [({'stopOrderType': 'TakeProfit'}, False, 'take_profit_1'),
          ({'stopOrderType': 'TrailingStop'}, False, 'trailing_stop'),
          ({'stopOrderType': 'UNKNOWN', 'createType': 'CreateByTakeProfit'}, False, 'take_profit_1'),
          ({'stopOrderType': '', 'createType': 'CreateByTrailingStop'}, False, 'trailing_stop'),
+         ({'stopOrderType': '', 'createType': 'CreateByTrailingProfit'}, False, 'trailing_stop'),   # el que manda Bybit (#93)
          ({'stopOrderType': 'UNKNOWN', 'createType': 'CreateByUser'}, False, None),
          (None, False, None)]
 bad = [(o, t, ctr(o, t), want) for o, t, want in cases if ctr(o, t) != want]

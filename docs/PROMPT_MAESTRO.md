@@ -1,9 +1,9 @@
-# PROMPT MAESTRO V7.3 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.4 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.3 · 2026-11-10 · Reemplaza a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
+> Versión 7.4 · 2026-11-19 · Reemplaza a la V7.3 (agrega p46–p72: RQ-01, estrategias BNF/Triángulo y la validación de la auditoría del 13-nov con sus lecciones). V7.3 · 2026-11-10 reemplazó a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
 > **Decisiones del dueño (reglas de negocio vigentes): `docs/DECISIONES_DUENO.md`. Consultarlo ANTES de preguntar; no se cambian salvo pedido explícito del dueño (13-nov).**
-> Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría) y `docs/PENDIENTES_AUDITORIA.md` (qué sigue).
+> Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría), `docs/VALIDACION_AUDITORIA_13NOV.md` (auditoría del 13-nov: estado de cada punto y **lo que falta**, al final) y `docs/PENDIENTES_AUDITORIA.md` (histórico hasta p56).
 
 ---
 
@@ -178,6 +178,18 @@ Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `d
 - **Backtest y búsqueda:** `ready_for_paper` = métricas (`passed`) **y** calidad (`quality_ok`: sin slippage 0, comisión menor que la taker, falta de funding ni velas incompletas) (p42); tramos en/fuera de muestra sin trades que cruzan el corte y al capital inicial (p43); JSON de la estrategia validado por tipos (p45).
 - **Collector y motor:** borrado solo por recarga/invalidación con registro (p44); clave interna que falla cerrada, `add-symbol` validado, fechas sin zona = UTC (p41). `ohlcv_data.time` es `timestamptz`: pasar fechas con zona.
 
+### Cambios del 11–12 nov 2026 (p46–p58) **[V7.4]**
+- **RQ-01 (p48–p56):** gestión de configuraciones Paper, diagnóstico de Paper (`paper_eval_log`), origen del backtest, crear desde el historial, historial único con filtros. Tabla en `docs/PENDIENTES_AUDITORIA.md` §0.
+- **p57–p58:** estrategias BNF y Triángulo. Detalle en `docs/BITACORA.md`.
+
+### Cambios del 13–19 nov 2026 (p59–p72, validación de la auditoría del 13-nov) **[V7.4]**
+Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Reglas del dueño: `docs/DECISIONES_DUENO.md` (D-02..D-05, D-15..D-17, D-31).
+- **Fuentes únicas nuevas (usarlas, no duplicar):** `App\Services\UserDeactivation` (inactivar usuarios y purgar suscripciones), `RealStrategySubscription::runnable()/windingDown()` (quién entra y quién solo termina su ciclo; `entries_allowed`), `App\Support\RealTickResults` (resultado del tick por cuenta), `App\Support\SafeLogBody` (cuerpo de respuesta apto para el log), `BrokerAccount::hasLiveTrades()`, `close_trigger_reason()`/`last_close_order_id()` (motivo de salida según la orden de cierre de Bybit), `BACKTEST_SLOT` + `_simulate` (backtest en un hilo, de a uno), `BaseStrategy.calculate_tp1` (único TP).
+- **Real:** trailing nativo solo se sincroniza activado (R-12, p60); el tick espera el turno y Laravel registra el omitido sin romper (R-14, p61); closed-pnl desde la **apertura** en los 5 puntos de liquidación (R-09, p69); motivo de salida = `stopOrderType` de la orden de cierre, precio como respaldo (R-16, p70); no se borran cuenta ni suscripción con operaciones vivas u `orphaned` (R-04, p64).
+- **Usuarios (p62):** inactivo = sin entradas y sin suscripciones (las vivas terminan su ciclo y se eliminan solas); borrado propio deshabilitado.
+- **Rendimiento:** dashboard acotado al último día (R-03, p63); precios en vivo en paralelo y sin cachear fallas (R-15, p66); backtest fuera del event loop (R-06, p67).
+- **Seguridad y orden:** motor sin `APP_KEY` ni descifrado propio (R-05, p65); 422 sin `input` y claves tapadas en logs (R-07, p65); timeouts HTTP < trabajo < `retry_after` en todos los jobs, vigilado por prueba (R-08, p68); TP2–TP4 eliminados, columnas conservadas (D-31, p71); código muerto fuera (p72).
+
 ---
 
 ## 8. Lecciones aprendidas (no repetir)
@@ -216,20 +228,31 @@ Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `d
 | Mutación de un archivo nuevo que no se pudo restaurar | Copiar los archivos nuevos al scratchpad antes de mutarlos (`git checkout` no los restaura). |
 | `DELETE … RETURNING` sobre una hypertable comprimida | Evitarlo: leer con SELECT y borrar con un DELETE simple en la misma transacción. |
 | Candado en memoria con varios procesos | Solo vale con un proceso: el instalador verifica que el motor no tenga `--workers` > 1. |
+| Mutación «no detectada» que sí lo estaba | Correr Python con `-B`: un `.pyc` viejo (mismo tamaño y segundo) ejecutaba el código anterior. |
+| Un uso no apareció al buscar el nombre | Al cambiar la forma de lo que devuelve una función, buscar sus **llamadas** (`_, _, _ = f()` no contiene el nombre del campo); la regresión completa lo encontró. |
+| Bybit «no tenía» el cierre | closed-pnl y el historial de órdenes responden **7 días** sin ventana y como máximo 7 días por consulta: pedir con `startTime`/`endTime` alrededor del evento. |
+| Hipótesis «obvia» equivocada | Medirla antes de corregir: la zona horaria (R-09) y la consulta lenta (R-14) se refutaron con datos; la causa real era otra. |
+| Severidad sobreestimada | Medir en producción: PostgreSQL local sin TimescaleDB daba 2,2 s y el servidor 0,39 s (R-03). |
+| Fallo escondido por el filtro de la salida | El instalador muestra la salida **completa** de la integración y exige código 0 **y** última línea `TODO OK`. |
+| Dos consultas «distintas» por la vela en formación | Comparar consulta vieja y nueva en **una sola sentencia** (misma foto). |
+| Pantalla «sin precios» sin error visible | Revisar `laravel.log` del día: 29 timeouts del dashboard revelaron R-15. |
+| `lectura` que falló por el `.env` | `load_dotenv()` busca desde el archivo del script, no desde `cwd`: pasar la ruta del `.env`. |
 
 ---
 
 ## 9. Pendientes (orden sugerido)
 
-> **Próxima sesión:** la lista vigente es `docs/PENDIENTES_AUDITORIA.md`. Antes, confirmar con el dueño que las
-> instrucciones del proyecto en claude.ai ya son esta V7.3 (si no, pedirle que las reemplace por este documento).
+> **Próxima sesión:** la lista vigente es «Lo que falta de la auditoría» al final de
+> `docs/VALIDACION_AUDITORIA_13NOV.md` y los «Pendientes de decisión» de `docs/DECISIONES_DUENO.md`. Antes, confirmar
+> con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.4 (si no, pedirle que las reemplace).
 
-1. Respaldo de la base fuera del VPS (confirmar que existe y se restaura).
-2. Correr el comparador Paper ↔ backtest sobre las configs activas y registrar el resultado.
-3. Fase 12: elegir opciones en `docs/FASE12_ESTADISTICA.md`.
-4. `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema.
-5. Pantallas con maqueta: `cross` en la búsqueda, separación maestra/config/suscripción, funding, «código desactualizado».
-6. Limpieza: TP2–TP4; reescribir `docs/01–03`.
+1. Decisiones del dueño abiertas (capital del backtest, riesgo bruto/neto, fin de muestra, huecos, posiciones manuales, Fase 12).
+2. Respaldo de la base fuera del VPS (confirmar que existe y se restaura).
+3. Correr el comparador Paper ↔ backtest sobre las configs activas y registrar el resultado (MEJ-003).
+4. Código chico: hash del código en el snapshot (MEJ-002); permiso propio para `consultor` (R-02); libro de ejecuciones (MEJ-004).
+5. `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema.
+6. Pantallas con maqueta: `cross` en la búsqueda, «Estabilidad por ventanas», «promedio por moneda», separación maestra/config/suscripción, funding, «código desactualizado».
+7. Reescribir `docs/01–03` (hoy con avisos de vigencia arriba).
 
 ---
 

@@ -5,7 +5,6 @@ FastAPI server — solo accesible en 127.0.0.1:8002
 
 import logging
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 load_dotenv()

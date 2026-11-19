@@ -24,9 +24,9 @@
 | A-1.2.3 | 5 fallos en 162 comprobaciones del formulario | Ya corregido | F-01 a F-05 (p23, p27, p29, p45). `request_rules_test`, `config_merge_test`, `strategy_config_types_test`, `backtest_payload_volatility_test`: PASS |
 | A-1.2.4 | Problemas del collector e integridad | Ya corregido | C-01 a C-12 (p11–p18, p26, p44). 11 pruebas `collector_*` en la regresión: PASS |
 | A-1.2.5 / P0 | Desactivar una config no impediría entradas Real | Ya corregido | `scopeRunnable` (`5017d2e`) en los dos jobs de tick. Revalidar en `7375e5e` con la prueba de integración (comando abajo) |
-| A-1.2.6 | Anomalía de PnL en un trade ETHUSDT | Pendiente de evidencia | Lectura de la base + closed-pnl de Bybit (comando abajo) |
+| A-1.2.6 | Anomalía de PnL en un trade ETHUSDT | **Cerrado por evidencia** (13-nov) | Trade #91: la «cantidad 36,1998» era la comisión; bruto, comisiones y neto cuadran exactos con Bybit (TR2-REAL-INV-006). La causa del cierre era R-12 |
 | A-1.3a | Capital: «Backtest usa un capital fijo por operación» | **Válido como discrepancia** | El backtest **compone** (usa el saldo acumulado). Decisión del dueño |
-| A-1.3b | TP2–TP4: limpiar residuos | Decisión tomada (limpiar) | **Hecho en p71** (pendiente de instalar): motor, Paper, Real, API, reglas, Laravel y pruebas; columnas de la base conservadas; 38.139 trades idénticos |
+| A-1.3b | TP2–TP4: limpiar residuos | Decisión tomada (limpiar) | **Hecho en p71** (`d946062`, 19-nov): motor, Paper, Real, API, reglas, Laravel y pruebas; columnas de la base conservadas; 38.139 trades idénticos |
 | A-1.4a | Walk-forward no realmente fuera de muestra | Válido | `walk_forward` del backtest solo reparte métricas por ventanas; la búsqueda usa 2/3–1/3 (N-03 ya quitó el cruce). Fase 12 |
 | A-1.4b | Drawdown sin recorrido intratrade | Válido | La curva de capital solo tiene puntos en los cierres. Fase 12 (drawdown flotante) |
 | A-1.4c | Sizing y costos | Válido, medido | Riesgo 1 % y SL 1 % → pérdida real 1,159 % del saldo. Fase 12 (costos en el tamaño) |
@@ -179,7 +179,7 @@ La batería original de 162 no está en el repo; sus 5 fallos tienen hoy prueba 
 | 5.4 Sin 1m | **Corregido (A-01, p59 `904154d`)** | Paper ya no deja de evaluar SL/TP sin broker de 1m |
 | 5.5 Orden intravela | Confirmado + docstring corregido (A-02) | SL → TP1 → BE → trailing en motor y Paper |
 | 5.6 Break-even | Confirmado | Motor y Paper: `max(sl, entry)`; Real: igual + reintento si Bybit rechaza un SL cruzado |
-| 5.7 Trailing | **«Buffer 1 %» refutado** | 0,3 % y solo con buffer ≤ 0. TST-08 debe corregirse a 0,3 % |
+| 5.7 Trailing | **«Buffer 1 %» refutado** | 0,3 % y solo con buffer ≤ 0. **TST-08 queda especificado con 0,3 %** (no 1 %) |
 | 5.8 Volatilidad | Confirmado | ATR de la última vela cerrada, una vez por ciclo en vivo, `vol_widened` una vez por trade en los tres |
 | 5.9 Duración | Diferencia conocida | Backtest cuenta velas; Paper/Real, tiempo desde `entry_time` (≤ 1–2 min después). README §9 |
 | 5.10 Costos | Confirmado | Real mide el slippage contra el precio de mercado al decidir, no contra el open de la vela como el backtest |
@@ -258,7 +258,7 @@ El precio nunca llegó al BE (1,5 %) ni a la activación (1,8 %).
 | ID | Estado | Nota |
 |---|---|---|
 | FIX-PAPER-DOC-01 | **Validado** (A-02, p59 `904154d`) | |
-| TR2-MEJ-001 Trazabilidad | En curso | Este documento fija SHA por punto; falta la foto de versiones (lectura `lectura_BASELINE`) |
+| TR2-MEJ-001 Trazabilidad | **Cumplido** | Foto de versiones del 13-nov (lectura `INV006_BASELINE`) y SHA de cada parche en este documento y en la bitácora |
 | TR2-MEJ-002 Parámetros por operación | Casi cumplido | El snapshot ya trae código y parámetros; falta hash/versión |
 | TR2-MEJ-003 Harness de paridad | Parcial | `compare_paper_vs_backtest.py` (eventos por config) + `paper_eval_log`; falta correrlo sobre las configs vivas |
 | TR2-MEJ-004 Ledger de ejecuciones | Válido | Hoy: `audit_log` + closed-pnl; no se guardan los fills. Necesario para INV-006 y TST-18 |
@@ -279,7 +279,7 @@ Confirmado en producción el 13-nov:
 
 | ID | Prioridad | Hallazgo | Estado |
 |---|---|---|---|
-| R-01 | **P1 → validado en p62 (`140e22b`)** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | Abierto: propuesta = quitar la ruta y bloquear en el controlador (la vista requiere maqueta) |
+| R-01 | **P1 → validado en p62 (`140e22b`)** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | **Corregido**: borrado propio bloqueado en `ProfileController::destroy` (D-02); la vista no cambió |
 | R-02 | P2 (latente) | El rol `consultor` puede implementar, detener y borrar backtests, y su guardado sincroniza Paper → Real. Hoy no hay consultores | Abierto: gate propio para lo que muta Paper/Real |
 | R-03 | **P2 rendimiento** (era P1; corregido con la medición del servidor) | Dashboard: `ROW_NUMBER()` sobre toda la serie de 1m por moneda. Producción: ~0,39 s por moneda (86,8 ms plan + 298,5 ms ejecución) contra ~6 ms acotada; ~4 s por vencimiento de caché con 11 monedas. Local sin TimescaleDB daba 2,2 s (sobreestimado) | Corregido en p63 (`dd9bca6`, 13-nov): 11/11 monedas iguales en producción; 1000PEPE 892 ms → 9 ms |
 | R-04 | P2 | `openTrades()` de la suscripción no incluye `orphaned`, y `BrokerAccountController::destroy` no mira trades vivos: una cuenta se puede borrar con un trade sin reconciliar | Corregido en p64 (`35d9d11`, 13-nov; integración G1–G3 PASS en producción): las dos pantallas usan `RECONCILE_STATUSES`. Servidor: 0 `orphaned` en la historia (fix defensivo) |
@@ -313,8 +313,26 @@ Confirmado en producción el 13-nov:
 
 ---
 
-## Próximos pasos
-1. ~~Recibir las secciones siguientes del informe~~ (entrega 2 validada el 13-nov).
-2. Decisiones del dueño: A-1.3a (capital), R-11 (adopción); confirmar R-01 (bloquear el borrado propio).
-3. Evidencia del servidor: `real_config_gate_test.php` (P0) y las lecturas de ETHUSDT (A-1.2.6).
-4. Instaladores, de a uno y del más crítico al menos (revisado 13-nov tras la evidencia): **R-12** → R-01 → R-03 → A-01 → R-04 → R-05/R-07 → R-06 → R-08/R-09/R-10 → TP2–TP4 → limpieza y documentación (PROMPT V7.4).
+## Cierre de la validación (19-nov) y lo que falta
+
+**Instalado y verificado en producción (13–19 nov):** p59 a p71 — A-01, A-02, R-12, R-13, R-14, U-1..U-3/R-01, R-03,
+R-04, R-05, R-07, R-15 (nuevo), R-06, R-08, R-09, R-16 (nuevo), D-31 (TP2–TP4) y la limpieza de p72. El detalle de
+cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
+
+**Lo que falta de la auditoría**
+
+| Tipo | Punto | Qué falta |
+|---|---|---|
+| Decisión del dueño | A-1.3a / 5.2 capital del backtest | Fijo (como Paper y el informe) o compuesto (como hoy) |
+| Decisión del dueño | WB-05 riesgo por operación | ¿Bruto o neto de costos? (con SL 1 % un SL cuesta ~1,16 %) |
+| Decisión del dueño | WB-01 fin de muestra | ¿La posición cerrada con `end_of_data` cuenta en las métricas? |
+| Decisión del dueño | WB-04 huecos de datos | Desde cuántas velas seguidas faltantes un backtest no es apto (luego: informar huecos y el mayor) |
+| Decisión del dueño | R-11 posiciones manuales | ¿La conciliación las adopta o las ignora? |
+| Decisión del dueño | Fase 12 | Walk-forward real (WB-02), drawdown flotante (WB-03), costos en el tamaño (WB-05), cartera (WB-06) |
+| Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |
+| Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
+| Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
+| Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |
+| Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
+| Pantalla (maqueta) | WB-02 / WB-06 | Rotular «Estabilidad por ventanas» y «promedio por moneda» |
+| Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |

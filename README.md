@@ -207,10 +207,11 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 10-27 03 | Límites de riesgo por cuenta |
 | 10-27 04 | `funding_rates`, `funding_coverage` |
 | 10-27 05 | `paper_trades.funding` |
+| 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
 | 11-10 01 | `ohlcv_deletions`: registro de cada borrado de velas (recarga / invalidación) con las velas borradas |
 | 11-10 02 | `paper_eval_state`, `paper_eval_log`: diagnóstico de Paper (RQ-01.5) |
 | 11-10 03 | `backtests.origin`, `origin_meta`: origen del backtest; recupera los creados desde búsquedas (RQ-01.3) |
-| 10-27 06 | `param_search_runs.focus` y `mode` (búsqueda v3) |
+| 11-13 01 | `real_strategy_subscriptions.retire_on_close`: suscripciones que se eliminan al terminar su operación (D-04, p62) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)

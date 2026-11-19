@@ -190,7 +190,7 @@ _STOP_ORDER_REASON = {
 _CREATE_TYPE_REASON = {
     'CreateByTakeProfit': 'take_profit_1', 'CreateByPartialTakeProfit': 'take_profit_1',
     'CreateByStopLoss': 'stop_loss', 'CreateByPartialStopLoss': 'stop_loss',
-    'CreateByTrailingStop': 'trailing_stop',
+    'CreateByTrailingStop': 'trailing_stop', 'CreateByTrailingProfit': 'trailing_stop',   # Bybit usa este (p70: #93)
 }
 
 

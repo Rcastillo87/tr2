@@ -1,5 +1,9 @@
 # Pendientes — TR2
 
+> **[19-nov] Documento histórico (hasta p56).** La lista vigente es «Lo que falta de la auditoría» al final de
+> `docs/VALIDACION_AUDITORIA_13NOV.md` y los «Pendientes de decisión» de `docs/DECISIONES_DUENO.md`. TP2–TP4 se limpiaron
+> en p71 (D-31).
+
 > Estado al **2026-11-11 (Bogotá)**, `main` = `de37022` (p56). RQ-01 cerrado (ver §0).
 > Estado anterior: 2026-11-10, `main` = `d22b684` (p45). **Las tres rondas de auditoría externa están resueltas en
 > código** (54 hallazgos originales + N-01 a N-16): estado de cada uno en `docs/CERTIFICACION_AUDITORIA.md`, detalle en
