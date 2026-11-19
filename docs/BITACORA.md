@@ -21,6 +21,17 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Historial a «break-even» y texto de ayuda de «Razón de cierre» (p79, D-40) — 19-nov
+- **Decisión del dueño (19-nov):** corregir las operaciones ya cerradas que la regla D-40 llama `break_even` (al instalar
+  p78: Paper #342 y #379, Real #100) y actualizar el texto de ayuda (maqueta aprobada 19-nov).
+- **Corrección:** `ops/datafix/2026_11_19_d40_break_even.sql`, misma regla que `stop_exit_reason`; idempotente; solo
+  `exit_reason`. Real deja `exit_reason_corrected` (de `stop_loss` a `break_even`) en `audit_log`; **Paper no tiene
+  historial por operación**: el valor anterior (`stop_loss`) de #342 y #379 queda registrado aquí y en la salida del
+  instalador. Probado en PostgreSQL 16 local con casos de control (sin BE, BE con stop alejado, trailing, abierta).
+- **Texto de ayuda** (`trading/index.blade.php`, «Columnas — Historial»): cada motivo actual tal como se ve en la tabla,
+  con su significado; sin TP2–TP4 ni `reconciled_sl_tp_bybit`. `exit_reason_help_static_test.php` (nuevo) lee los
+  motivos del motor y falla si aparece uno sin explicar; mutaciones 5/5.
+
 ### Cierre en break-even con nombre propio (p78, D-40) y backtest sin cartera (D-41) — 19-nov
 - **D-40:** el stop que el break-even dejó en la entrada (o mejor) y nada alejó después se llama `break_even` en
   backtest, Paper y Real. Regla única `backtesting/exit_reasons.stop_exit_reason(side, sl, entrada, be_activado,
@@ -39,6 +50,9 @@
 - **Sin tocar:** el texto de ayuda de `trading/index.blade.php` («Razón de cierre — stop_loss · take_profit_1-4 · …
   reconciled_sl_tp_bybit») está desactualizado desde p69/p71; se corrige con maqueta si el dueño lo pide. Las operaciones
   ya cerradas conservan su motivo; el instalador cuenta cuántas cumplen la regla (corregirlas es decisión del dueño).
+- Instalación de p78 el 19-nov: 15 archivos; regresión 66 Python + 25 PHP en TODO OK; motor reiniciado 19:46:34 UTC,
+  tick de Paper 200, 0 errores, tick Real gestionado. `main` = `origin/main` = `58d79b1`. Ya cerradas que la regla
+  llamaría `break_even`: Paper #342 y #379, Real #100 (sin tocar).
 
 ### Fase 12 · 1A — Búsqueda en tres tramos (p77, D-38)
 - **Qué decidió el dueño (19-nov):** 60 % elegir · 20 % validar (filtra como el «último tercio» de antes) · 20 % prueba

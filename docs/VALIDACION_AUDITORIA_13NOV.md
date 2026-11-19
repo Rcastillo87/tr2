@@ -342,6 +342,6 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
 | Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
-| Hecho en p78 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real |
+| Hecho en p78–p79 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real; historial corregido y texto de ayuda actualizado |
 | Hecho en p76 | R-17 a R-20 (19-nov) | Decimales de Bybit, vela incompleta (D-39), resumen de Real y motivo de no abrir |
 | Decisión | R-21 | Corregir o no la banda de desviación de VWAP Tendencia (mira el futuro en el backtest) |

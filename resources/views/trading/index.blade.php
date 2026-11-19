@@ -143,7 +143,16 @@
             </div>
             <div class="space-y-2">
                 <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--color-info);">Columnas — Historial</p>
-                <div><span class="font-medium" style="color:var(--color-text-primary);">Razón de cierre</span> — stop_loss · take_profit_1-4 · time_exit · reconciled_sl_tp_bybit.</div>
+                <div><span class="font-medium" style="color:var(--color-text-primary);">Razón de cierre</span> — <b class="font-medium" style="color:var(--color-text-primary);">stop loss</b>: tocó el stop original ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">break even</b>: el stop ya estaba en la entrada (se pierden solo comisiones) ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">trailing stop</b>: el stop que fue siguiendo la ganancia ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">take profit 1</b>: llegó al objetivo ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">time exit</b> / <b class="font-medium" style="color:var(--color-text-primary);">time exit profit</b>: tiempo máximo ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">opposite signal</b>: señal contraria ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">volatility protection</b>: volatilidad excesiva ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">circuit breaker max loss</b>: pérdida máxima ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">liquidation risk</b>: riesgo de liquidación ·
+                    <b class="font-medium" style="color:var(--color-text-primary);">closed other</b>: Bybit no dijo el motivo.</div>
                 <div><span class="font-medium" style="color:var(--color-text-primary);">Comisión</span> — Costo de la operación (taker fee Bybit ~0.055%).</div>
                 <div><span class="font-medium" style="color:var(--color-text-primary);">P&L neto</span> — Ganancia/pérdida real en USDT después de comisiones.</div>
                 <div><span class="font-medium" style="color:var(--color-text-primary);">Bal. antes/después</span> — Balance de la cuenta antes y después de la operación.</div>
