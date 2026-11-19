@@ -167,7 +167,7 @@ Detalle, pruebas y decisiones en `docs/BITACORA.md`; estado de cada hallazgo en 
 - **Funding (p26):** la reparación diaria (`cli/collector_repair.py`) lo pone al día para las monedas activas; > 30 h (`FUNDING_STALE_HOURS`) abre el aviso `funding_stale`.
 - **Validación de parámetros (p27, p29):** reglas únicas en `python-engine/backtesting/request_rules.json` (rangos, enteros, modos, intervalos del motor, ADX lateral ≤ tendencia, `stepped` necesita `trailing_steps`), aplicadas por `BacktestPayload::validate` (Laravel, mensaje en español) y `BacktestRequest` (Python, 422).
 - **JSON de la estrategia editado (p29):** se fusiona por clave de primer nivel (`BacktestPayload::mergeConfig`); antes reemplazaba todo.
-- **Comparador (p28):** `tools/analysis/compare_paper_vs_backtest.py --config <id>`: parámetros congelados del snapshot, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
+- **Comparador (p28, p81):** `tools/analysis/compare_paper_vs_backtest.py --config <id> [--latest-only]`: hasta el último día completo (ayer UTC), un tramo y un backtest por snapshot de parámetros, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
 
 ### Cambios del 09–10 nov 2026 (p32–p45, auditoría del 07-nov) **[V7.3]**
 Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `docs/CERTIFICACION_AUDITORIA.md`.

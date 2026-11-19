@@ -6,10 +6,15 @@ rango y empareja las operaciones por (lado, vela de entrada). Compara motivo y h
 guardan la hora del evento: p19, p24), precios y PnL en % (el PnL absoluto no es comparable: Paper dimensiona con un
 saldo fijo y el backtest con el acumulado). Una posición abierta en Paper frente a un end_of_data del backtest se
 informa aparte (no es divergencia).
+Rango: termina en el último día COMPLETO (ayer UTC). Con el día en curso, el backtest no tiene el 1m completo de todo el
+rango y evalúa sin él (corrida 1 del 19-nov, inválida); un --end de hoy o posterior se recorta a ayer.
+Cambios de parámetros: un tramo por snapshot (tramos consecutivos de trades con los mismos parámetros congelados). Cada
+tramo corre su propio backtest con sus parámetros y compara solo sus operaciones, desde el cambio de la config
+(`strategy_config_changes`; sin registro, desde el primer trade del tramo) hasta el cambio siguiente.
 
 Uso (desde python-engine/):
   venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config 54 [--start 2026-10-20] [--end 2026-11-06]
-                                                                           [--json-out salida.json]
+                                                                   [--latest-only] [--json-out salida.json]
 Código de salida: 0 = sin divergencias · 1 = hay divergencias · 2 = no se pudo comparar.
 """
 import argparse
@@ -56,13 +61,25 @@ def candle(t, step: timedelta) -> datetime:
     return epoch + ((t - epoch) // step) * step
 
 
-def pick_snapshot(trades: list[dict]) -> tuple[dict | None, int]:
-    """Parámetros congelados del primer trade del rango y cuántos trades tienen otros (cambio de config)."""
-    snaps = [as_dict(t.get('config_snapshot')) for t in trades if t.get('config_snapshot')]
-    if not snaps:
-        return None, 0
-    k = snapshot_key(snaps[0])
-    return snaps[0], sum(1 for s in snaps if snapshot_key(s) != k)
+def snapshot_segments(trades: list[dict], change_times=(), fallback: dict | None = None) -> list[dict]:
+    """Tramos consecutivos de trades con los mismos parámetros congelados, en orden de entrada. Cada tramo:
+    params, key, trades, lo (inicio; None = el del rango) y hi (fin exclusivo; None = el del rango). El límite entre dos
+    tramos es el cambio de la config registrado entre el último trade de uno y el primero del otro (el más reciente); sin
+    registro, la entrada del primer trade del tramo nuevo. Trades sin snapshot usan `fallback` (params de la config)."""
+    segs: list[dict] = []
+    for t in sorted(trades, key=lambda x: naive_utc(x['entry_time'])):
+        params = as_dict(t.get('config_snapshot')) if t.get('config_snapshot') else dict(fallback or {})
+        key = snapshot_key(params)
+        if segs and segs[-1]['key'] == key:
+            segs[-1]['trades'].append(t)
+        else:
+            segs.append(dict(params=params, key=key, trades=[t], lo=None, hi=None))
+    changes = sorted(naive_utc(c) for c in change_times if c is not None)
+    for prev, seg in zip(segs, segs[1:]):
+        last, first = naive_utc(prev['trades'][-1]['entry_time']), naive_utc(seg['trades'][0]['entry_time'])
+        inside = [c for c in changes if last < c <= first]
+        seg['lo'] = prev['hi'] = inside[-1] if inside else first
+    return segs
 
 
 def backtest_payload(cfg: dict, params: dict, start: str, end: str) -> dict:
@@ -72,10 +89,22 @@ def backtest_payload(cfg: dict, params: dict, start: str, end: str) -> dict:
                 monthly_breakdown=False)
 
 
+def last_full_day(end: str | None, today: date) -> tuple[str, str | None]:
+    """Fin del rango (inclusive): el pedido, pero nunca después de ayer (UTC); y el aviso si se recortó."""
+    cap = today - timedelta(days=1)
+    if end is None:
+        return cap.isoformat(), None
+    if date.fromisoformat(end) > cap:
+        return cap.isoformat(), (f"Aviso: --end {end} incluye un día sin terminar: se compara hasta {cap.isoformat()} "
+                                 f"(último día completo, con todas sus velas de 1m).")
+    return end, None
+
+
 def default_range(trades: list[dict], start: str | None, end: str | None, today: date) -> tuple[str, str]:
+    """Desde el primer trade de Paper (o el pedido) hasta el último día completo (o el pedido, si es anterior)."""
     first = min((naive_utc(t['entry_time']) for t in trades), default=None)
     s = start or (first.date().isoformat() if first else (today - timedelta(days=30)).isoformat())
-    return s, end or today.isoformat()
+    return s, last_full_day(end, today)[0]
 
 
 def pct(a, b) -> float | None:
@@ -143,9 +172,9 @@ def summarize(rows: list[dict]) -> dict:
                 divergencias=n['distinta'] + n['solo_paper'] + n['solo_backtest'])
 
 
-def report(cfg: dict, start: str, end: str, rows: list[dict], s: dict, other_snapshots: int) -> str:
+def report(cfg: dict, start: str, end: str, rows: list[dict], s: dict, title: str = '') -> str:
     lines = [f"=== Paridad Paper vs backtest · config #{cfg['id']} {cfg['display_name']} · {cfg['symbol']} {cfg['interval']}"
-             f" · {start} → {end} ===",
+             f" · {start} → {end}{' · ' + title if title else ''} ===",
              f"{'vela de entrada':<17} {'lado':<5} {'resultado':<13} {'Paper':<34} {'backtest':<34} diferencias"]
     for r in rows:
         def side(t):
@@ -161,9 +190,6 @@ def report(cfg: dict, start: str, end: str, rows: list[dict], s: dict, other_sna
               f"Cerradas emparejadas {s['emparejadas_cerradas']}: mismo motivo {s['mismo_motivo']}, misma hora de salida "
               f"{s['misma_hora']} · Δ entrada medio {s['d_entry_medio_pct']} %",
               f"DIVERGENCIAS: {s['divergencias']}"]
-    if other_snapshots:
-        lines.append(f"AVISO: {other_snapshots} trade(s) del rango tienen otros parámetros congelados (la config cambió):"
-                     f" acotar --start/--end a un solo snapshot para una comparación exacta.")
     return '\n'.join(lines)
 
 
@@ -179,6 +205,8 @@ async def load(config_id: int, start: str | None, end: str | None) -> tuple[dict
     try:
         cfg = await conn.fetchrow("SELECT id, display_name, symbol, interval, params FROM paper_strategy_configs"
                                   " WHERE id = $1", config_id)
+        changes = [r['created_at'] for r in await conn.fetch(
+            "SELECT created_at FROM strategy_config_changes WHERE paper_strategy_config_id = $1", config_id)]
         q = ("SELECT id, side, entry_price, exit_price, entry_time, exit_time, exit_reason, pnl_pct, status,"
              " config_snapshot FROM paper_trades WHERE paper_strategy_config_id = $1")
         args = [config_id]
@@ -191,7 +219,7 @@ async def load(config_id: int, start: str | None, end: str | None) -> tuple[dict
         trades = [dict(r) for r in await conn.fetch(q + " ORDER BY entry_time", *args)]
     finally:
         await conn.close()
-    return (dict(cfg) if cfg else None), trades
+    return (dict(cfg, change_times=changes) if cfg else None), trades
 
 
 def run_backtest(payload: dict) -> dict:
@@ -212,37 +240,60 @@ def main(argv=None, loader=load, backtester=run_backtest, today: date | None = N
     ap = argparse.ArgumentParser(description='Paridad Paper vs backtest de una config de Paper')
     ap.add_argument('--config', type=int, required=True, help='id de paper_strategy_configs')
     ap.add_argument('--start', help='YYYY-MM-DD (por defecto: el primer trade de Paper)')
-    ap.add_argument('--end', help='YYYY-MM-DD inclusive (por defecto: hoy UTC)')
+    ap.add_argument('--end', help='YYYY-MM-DD inclusive (por defecto y como máximo: ayer UTC, el último día completo)')
+    ap.add_argument('--latest-only', action='store_true', help='solo el tramo de los parámetros vigentes')
     ap.add_argument('--json-out')
     a = ap.parse_args(argv)
 
-    cfg, trades = asyncio.run(loader(a.config, a.start, a.end))
+    today = today or datetime.now(timezone.utc).date()
+    end, end_note = last_full_day(a.end, today)
+    if end_note:
+        print(end_note)
+    cfg, trades = asyncio.run(loader(a.config, a.start, end))
     if not cfg:
         print(f'No existe la config de Paper #{a.config}')
         return 2
     if not trades:
-        print(f'La config #{a.config} no tiene trades de Paper en el rango')
+        print(f'La config #{a.config} no tiene trades de Paper hasta {end} (último día completo)')
         return 2
-    params, other = pick_snapshot(trades)
-    if params is None:
-        params = as_dict(cfg['params'])
-    start, end = default_range(trades, a.start, a.end, today or datetime.now(timezone.utc).date())
-    out = backtester(backtest_payload(cfg, params, start, end))
-    bt = (out.get('result') or {}).get('trades', [])
+    start, end = default_range(trades, a.start, end, today)
     step = interval_delta(str(cfg['interval']))
-    # el backtest arranca en `start`: solo cuentan sus operaciones desde ahí (y las de Paper del mismo rango)
-    lo = datetime.fromisoformat(start)
-    bt = [t for t in bt if naive_utc(t['entry_time']) >= lo]
-    rows = match_trades(trades, bt, step)
-    s = summarize(rows)
-    print(report(cfg, start, end, rows, s, other))
-    for w in out.get('warnings') or []:
-        print(w)
+    segs = snapshot_segments(trades, cfg.get('change_times') or (), as_dict(cfg.get('params')))
+    if a.latest_only:
+        segs = segs[-1:]
+    if len(segs) > 1:
+        print(f"La config cambió de parámetros en el rango: {len(segs)} tramos, cada uno con su backtest.")
+    all_rows, out_segs = [], []
+    for n, seg in enumerate(segs, 1):
+        lo = seg['lo'] or datetime.fromisoformat(start)
+        hi = seg['hi']
+        s_start = max(datetime.fromisoformat(start), lo).date().isoformat()
+        # el backtest corre hasta el fin del rango (una operación del tramo sigue con sus parámetros, como en Paper);
+        # solo cuentan sus entradas dentro del tramo
+        out = backtester(backtest_payload(cfg, seg['params'], s_start, end))
+        bt = [t for t in (out.get('result') or {}).get('trades', [])
+              if naive_utc(t['entry_time']) >= max(datetime.fromisoformat(start), lo)
+              and (hi is None or naive_utc(t['entry_time']) < hi)]
+        rows = match_trades(seg['trades'], bt, step)
+        for r in rows:
+            r['snapshot'] = seg['key']
+        s = summarize(rows)
+        title = (f"tramo {n}/{len(segs)} · parámetros {seg['key']} · desde {lo:%Y-%m-%d %H:%M}"
+                 f"{' hasta ' + format(hi, '%Y-%m-%d %H:%M') if hi else ''}") if len(segs) > 1 or seg['lo'] else ''
+        print(report(cfg, s_start, end, rows, s, title))
+        for w in out.get('warnings') or []:
+            print(w)
+        all_rows += rows
+        out_segs.append(dict(snapshot=seg['key'], start=s_start, lo=lo, hi=hi, summary=s))
+    total = summarize(all_rows)
+    if len(segs) > 1:
+        print(f"\n=== Total de los {len(segs)} tramos: iguales {total['igual']} · distintas {total['distinta']} · solo Paper "
+              f"{total['solo_paper']} · solo backtest {total['solo_backtest']} · DIVERGENCIAS: {total['divergencias']}")
     if a.json_out:
         with open(a.json_out, 'w', encoding='utf-8') as f:
-            json.dump(dict(config=cfg['id'], start=start, end=end, summary=s, rows=rows,
-                           other_snapshots=other), f, ensure_ascii=False, default=str)
-    return 1 if s['divergencias'] else 0
+            json.dump(dict(config=cfg['id'], start=start, end=end, summary=total, rows=all_rows, segments=out_segs),
+                      f, ensure_ascii=False, default=str)
+    return 1 if total['divergencias'] else 0
 
 
 if __name__ == '__main__':

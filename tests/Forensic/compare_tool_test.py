@@ -2,6 +2,8 @@
 Comparador Paper vs backtest (BP-06): empareja por (lado, vela de entrada) y compara motivo y hora EXACTA de salida,
 precios y PnL %; usa los parámetros congelados del snapshot (DynamicStrategy incluida: manda strategy_code); fechas por
 defecto coherentes; una posición abierta en Paper frente a end_of_data no es divergencia. Sin base de datos ni motor.
+p81 (19-nov): el rango termina en el último día completo (ayer UTC; un --end de hoy se recorta) y un cambio de
+parámetros parte la comparación en tramos, cada uno con su backtest (límite = cambio registrado de la config).
 Uso: cd python-engine && venv/bin/python ../tests/Forensic/compare_tool_test.py
 Antes del parche: FALLA (fechas invertidas, solo clases viejas, PnL absoluto, sin hora de salida).
 """
@@ -101,15 +103,37 @@ check('payload: nombre, símbolo e intervalo de la config; rango; sin walk forwa
       (p['strategy'], p['symbol'], p['interval'], p['start_date'], p['end_date'], p['walk_forward']) ==
       ('Mi estrategia — BTCUSDT H1', 'BTCUSDT', '60', '2026-11-02', '2026-11-06', False), p)
 
-# Fechas por defecto: desde el primer trade hasta hoy (antes: inicio > fin)
-check('rango por defecto: primer trade de Paper → hoy',
-      cmp.default_range(PAPER, None, None, date(2026, 11, 6)) == ('2026-11-02', '2026-11-06'))
-check('rango explícito se respeta', cmp.default_range(PAPER, '2026-10-01', '2026-10-31', date(2026, 11, 6)) == ('2026-10-01', '2026-10-31'))
+# Fechas por defecto: desde el primer trade hasta AYER, el último día completo (p81; antes hoy, con el día sin terminar)
+check('rango por defecto: primer trade de Paper → ayer (último día completo)',
+      cmp.default_range(PAPER, None, None, date(2026, 11, 6)) == ('2026-11-02', '2026-11-05'),
+      cmp.default_range(PAPER, None, None, date(2026, 11, 6)))
+check('rango explícito anterior a hoy se respeta',
+      cmp.default_range(PAPER, '2026-10-01', '2026-10-31', date(2026, 11, 6)) == ('2026-10-01', '2026-10-31'))
+e, note = cmp.last_full_day('2026-11-06', date(2026, 11, 6))
+check('--end de hoy se recorta a ayer, con aviso', e == '2026-11-05' and note and 'último día completo' in note, (e, note))
+check('--end futuro se recorta a ayer', cmp.last_full_day('2026-12-01', date(2026, 11, 6))[0] == '2026-11-05')
+check('--end de ayer no se toca ni avisa', cmp.last_full_day('2026-11-05', date(2026, 11, 6)) == ('2026-11-05', None))
 
-# Cambio de config dentro del rango: se usa el primer snapshot y se avisa
-other = PAPER + [pt(7, 'long', T + 30 * H, T + 31 * H, 'stop_loss', snap=dict(SNAP, sl_pct=2.0))]
-snap, n_other = cmp.pick_snapshot(other)
-check('pick_snapshot: el del primer trade y 1 con otros parámetros', snap['sl_pct'] == 1.5 and n_other == 1, n_other)
+# Tramos por snapshot (p81; antes: un solo backtest con el primer snapshot y un aviso)
+S2 = dict(SNAP, sl_pct=2.0)
+A1 = pt(11, 'long', T, T + H, 'stop_loss')
+A2 = pt(12, 'long', T + 5 * H, T + 6 * H, 'stop_loss')
+B1 = pt(13, 'long', T + 20 * H, T + 21 * H, 'stop_loss', snap=S2)
+A3 = pt(14, 'long', T + 40 * H, T + 41 * H, 'stop_loss')
+CH = T + 9 * H   # cambio de la config registrado entre A2 y B1
+seg = cmp.snapshot_segments([B1, A2, A1], [CH, T - 48 * H, T + 30 * H])
+check('dos snapshots → dos tramos en orden de entrada, con sus trades',
+      [(len(x['trades']), x['params']['sl_pct']) for x in seg] == [(2, 1.5), (1, 2.0)], [(len(x['trades']), x['key']) for x in seg])
+check('límite = el cambio registrado entre el último trade de un tramo y el primero del siguiente',
+      seg[0]['lo'] is None and seg[0]['hi'] == CH and seg[1]['lo'] == CH and seg[1]['hi'] is None, (seg[0]['hi'], seg[1]['lo']))
+seg = cmp.snapshot_segments([A1, A2, B1])
+check('sin cambio registrado: el límite es la entrada del primer trade del tramo nuevo', seg[1]['lo'] == B1['entry_time'])
+seg = cmp.snapshot_segments([A1, A2, B1, A3], [CH, T + 30 * H, T + 35 * H])
+check('A → B → A: tres tramos (los parámetros que vuelven son un tramo nuevo); el último cambio dentro del hueco manda',
+      [x['key'] for x in seg] == [cmp.snapshot_key(SNAP), cmp.snapshot_key(S2), cmp.snapshot_key(SNAP)]
+      and seg[2]['lo'] == T + 35 * H, [(x['lo'], x['hi']) for x in seg])
+seg = cmp.snapshot_segments([dict(A1, config_snapshot=None)], fallback=SNAP)
+check('trade sin snapshot: usa los parámetros de la config', seg[0]['params']['sl_pct'] == 1.5)
 
 # main() de punta a punta con base y motor simulados
 sent = {}
@@ -129,8 +153,8 @@ with redirect_stdout(buf):
     code = cmp.main(['--config', '54'], loader=_load, backtester=_bt, today=date(2026, 11, 6))
 txt = buf.getvalue()
 check('main(): código 1 con divergencias', code == 1, code)
-check('main(): el backtest corrió con el snapshot y el rango por defecto',
-      sent.get('strategy_code') == CODE and sent.get('start_date') == '2026-11-02' and sent.get('end_date') == '2026-11-06', sent)
+check('main(): el backtest corrió con el snapshot y el rango por defecto (hasta ayer)',
+      sent.get('strategy_code') == CODE and sent.get('start_date') == '2026-11-02' and sent.get('end_date') == '2026-11-05', sent)
 check('main(): el informe trae la cuenta de divergencias y los avisos del backtest',
       'DIVERGENCIAS: 4' in txt and 'Aviso: prueba' in txt, txt[-300:])
 check('main(): no compara PnL absoluto (solo PnL %)', 'PnL total' not in txt and 'pnl=' not in txt)
@@ -158,6 +182,54 @@ async def _load_none(cid, start, end):
 with redirect_stdout(io.StringIO()):
     code = cmp.main(['--config', '99'], loader=_load_none, backtester=_bt)
 check('main(): config inexistente -> código 2', code == 2, code)
+
+# main() con un cambio de parámetros: un backtest por tramo, cada uno compara solo sus operaciones
+calls, ends = [], []
+BT_A = [bt('long', T, T + H, 'stop_loss'), bt('long', T + 5 * H, T + 6 * H, 'stop_loss'),
+        bt('long', T + 12 * H, T + 13 * H, 'stop_loss')]    # 12:00 cae después del cambio: no es del tramo A
+BT_B = [bt('long', T + 7 * H, T + 8 * H, 'stop_loss'),      # antes del cambio: no es del tramo B
+        bt('long', T + 20 * H, T + 21 * H, 'stop_loss')]
+
+
+async def _load_seg(cid, start, end):
+    ends.append(end)
+    return dict(CFG, change_times=[CH]), [A1, A2, B1]
+
+
+def _bt_seg(payload):
+    calls.append((payload['sl_pct'], payload['start_date'], payload['end_date']))
+    return {'result': {'trades': BT_A if payload['sl_pct'] == 1.5 else BT_B}}
+
+
+buf = io.StringIO()
+jout = '/tmp/compare_tool_test.json'
+with redirect_stdout(buf):
+    code = cmp.main(['--config', '54', '--end', '2026-11-06', '--json-out', jout], loader=_load_seg, backtester=_bt_seg,
+                    today=date(2026, 11, 6))
+txt = buf.getvalue()
+check('main(): --end de hoy se recorta antes de leer Paper (la carga pide hasta ayer) y se avisa',
+      ends == ['2026-11-05'] and 'último día completo' in txt, (ends, txt[:200]))
+check('main(): un backtest por tramo con sus parámetros, cada uno hasta el fin del rango',
+      calls == [(1.5, '2026-11-02', '2026-11-05'), (2.0, '2026-11-02', '2026-11-05')], calls)
+check('main(): cada tramo compara solo las entradas de su ventana → 0 divergencias, código 0',
+      code == 0 and 'tramo 1/2' in txt and 'tramo 2/2' in txt and 'DIVERGENCIAS: 0' in txt, txt[-400:])
+j = json.load(open(jout))
+check('main(): el JSON trae el total, las filas con su snapshot y los tramos',
+      j['summary']['igual'] == 3 and len(j['segments']) == 2 and {r['snapshot'] for r in j['rows']} ==
+      {cmp.snapshot_key(SNAP), cmp.snapshot_key(S2)}, j['summary'])
+calls.clear()
+with redirect_stdout(io.StringIO()):
+    code = cmp.main(['--config', '54', '--latest-only'], loader=_load_seg, backtester=_bt_seg, today=date(2026, 11, 6))
+check('main(): --latest-only corre solo el tramo vigente', calls == [(2.0, '2026-11-02', '2026-11-05')] and code == 0, calls)
+
+
+async def _load_today(cid, start, end):
+    return CFG, []
+
+
+with redirect_stdout(io.StringIO()):
+    code = cmp.main(['--config', '54'], loader=_load_today, backtester=_bt, today=date(2026, 11, 6))
+check('main(): sin trades hasta ayer -> código 2', code == 2, code)
 
 # De punta a punta con salidas REALES: Paper simulado (monitor + señales con 1m) y el motor sobre el mismo mercado
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

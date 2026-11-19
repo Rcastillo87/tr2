@@ -260,7 +260,7 @@ El precio nunca llegó al BE (1,5 %) ni a la activación (1,8 %).
 | FIX-PAPER-DOC-01 | **Validado** (A-02, p59 `904154d`) | |
 | TR2-MEJ-001 Trazabilidad | **Cumplido** | Foto de versiones del 13-nov (lectura `INV006_BASELINE`) y SHA de cada parche en este documento y en la bitácora |
 | TR2-MEJ-002 Parámetros por operación | Casi cumplido | El snapshot ya trae código y parámetros; falta hash/versión |
-| TR2-MEJ-003 Harness de paridad | Parcial | `compare_paper_vs_backtest.py` (eventos por config) + `paper_eval_log`; falta correrlo sobre las configs vivas |
+| TR2-MEJ-003 Harness de paridad | **Cumplido** (19-nov) | `compare_paper_vs_backtest.py` + `paper_eval_log`; corrido sobre las configs vivas (ver «Cierre»); p81: último día completo y un tramo por snapshot |
 | TR2-MEJ-004 Ledger de ejecuciones | Válido | Hoy: `audit_log` + closed-pnl; no se guardan los fills. Necesario para INV-006 y TST-18 |
 | TR2-MEJ-005 Calidad de datos | = WB-04 | |
 | TR2-MEJ-006 TP2–TP4 | = WB-07 | |
@@ -335,7 +335,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, ya se cumplía (prueba en p74) | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
 | Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
 | Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38, D-41) | 4A drawdown flotante (hecho) · 1A tres tramos (hecho) · 2A cartera **descartada** (D-41: el backtest queda como está; las protecciones solo en Real) · 3A se junta con 3B walk-forward real (las ventanas no se muestran hoy) · la 5 descartada |
-| **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); queda ETH 9-nov. Pendiente: la herramienta debe cortar en la última vela cerrada y separar por snapshot |
+| **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); queda ETH 9-nov. **Herramienta corregida en p81:** termina en el último día completo y compara un tramo por snapshot |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
 | Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |

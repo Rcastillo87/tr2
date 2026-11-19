@@ -392,7 +392,7 @@ Regresión oficial (67 Python + 26 PHP): lista en `docs/CERTIFICACION_AUDITORIA.
 
 **Pendientes**
 - Revisión automática de lotes solapados tras cada compresión.
-- Correr el comparador (`compare_paper_vs_backtest.py --config <id>`) sobre las configs activas de Paper y registrar el resultado.
+- ~~Correr el comparador (`compare_paper_vs_backtest.py --config <id>`) sobre las configs activas de Paper~~: hecho el 19-nov (bitácora, p80); desde p81 termina en el último día completo y separa por snapshot.
 - Fase estadística (holdout, cartera, walk forward, drawdown flotante, tamaño con costos): opciones en `docs/FASE12_ESTADISTICA.md`.
 - `trading2-horizon` corre como root (propuesta: `tr2`).
 - Funding en pantalla (diseño listo).

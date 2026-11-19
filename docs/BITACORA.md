@@ -9,7 +9,7 @@
 ## ▶ Próxima sesión (empezar aquí)
 **Lista vigente: `docs/PENDIENTES_AUDITORIA.md`.** Las tres rondas de auditoría están resueltas en código (estado de los 70 hallazgos en `docs/CERTIFICACION_AUDITORIA.md`).
 1. **Respaldo de la base** fuera del VPS: confirmar que existe y que se puede restaurar.
-2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades; registrar aquí (los trades anteriores al 05-nov tienen la hora de salida vieja).
+2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades (desde p81 termina en ayer y separa por snapshot); registrar aquí. Corridas del 19-nov en la sección de p80.
 3. **Fase 12:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
 4. **Infraestructura:** `trading2-horizon` como `User=tr2` (revisar qué de `storage/` y `bootstrap/cache` quedó con dueño root); revisión automática de lotes solapados tras `policy_compression` (`/root/patches/batches/detect.sql`); regenerar `database/schema/pgsql-schema.sql` (desactualizado).
 5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; decidir si borrar una estrategia debe bloquearse como un backtest (cascada).
@@ -20,6 +20,25 @@
 ---
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
+
+### Comparador Paper vs backtest: hasta el último día completo y un tramo por snapshot (p81, MEJ-003) — 19-nov
+- **Problema** (corrida 1 de la paridad, 19-nov): `compare_paper_vs_backtest.py` pedía el backtest hasta HOY; con el día
+  en curso el 1 m del rango queda incompleto y el backtest evalúa todo el rango con vela grande y SL primero. Además,
+  si la config cambió de parámetros, usaba el snapshot del primer trade para todo el rango y solo avisaba.
+- **Arreglo:** el rango termina en **ayer UTC** (último día completo); un `--end` de hoy o posterior se recorta con aviso,
+  también en la lectura de Paper. **Un tramo por snapshot** (`snapshot_segments`): trades consecutivos con los mismos
+  parámetros congelados; cada tramo corre su propio backtest con sus parámetros hasta el fin del rango (la operación
+  sigue con sus parámetros, como en Paper) y compara solo las entradas de su ventana. Límite entre tramos: el cambio
+  de la config registrado en `strategy_config_changes` entre el último trade de uno y el primero del siguiente (el más
+  reciente); sin registro, la entrada del primer trade del tramo nuevo. Unos parámetros que vuelven forman un tramo
+  nuevo. `--latest-only` compara solo el tramo vigente. El JSON trae el total, las filas con su `snapshot` y los
+  tramos. Solo herramienta de análisis: no cambia el motor, Paper ni Real (sin reinicio).
+- **Prueba:** `compare_tool_test.py` ampliada (fin en ayer, recorte con aviso, tramos con cambio registrado / sin
+  registro / A→B→A, trade sin snapshot, un backtest por tramo con sus ventanas, JSON, `--latest-only`, sin trades
+  hasta ayer → código 2). Con el código anterior: FALLA. Mutaciones 9/9. Regresión 67 Python + 26 PHP en TODO OK.
+- **Lectura `lectura_vwap_rebacktest`** (solo lectura, 19-nov): repite los backtests guardados de VWAP Tendencia con
+  su código viejo y con el corregido (mismos datos y parámetros; sesión de base en solo lectura; funding sin
+  descarga) y compara métricas y estrellas por backtest y por config de Paper. Resultado: pendiente.
 
 ### Paridad Paper vs backtest con datos reales (MEJ-003) y VWAP Tendencia sin mirar el futuro (p80, R-21, D-42) — 19-nov
 - **Corrida 1** (`lectura_paridad`, 10 configs): inválida. La herramienta pide el backtest hasta HOY; la vela principal
@@ -50,6 +69,10 @@
   que en vivo no existen; el nuevo coincide en cada vela con lo que ve Paper; parche de una línea con `\n` y `\r\n`,
   idempotente; mutaciones 4/4. Datafix probado en PostgreSQL 16 local: verificación, aplicación, historial, huella
   distinta rechazada y segunda corrida «YA APLICADO».
+- Instalación de p80 el 19-nov: 9 archivos; regresión 67 Python + 26 PHP en TODO OK. Verificación con datos reales
+  (15 días, 13 configs): **0 diferencias** entre el backtest nuevo y lo que vio Paper en cada vela. En las 11 activas,
+  31 señales reales y **35 señales del backtest viejo que en vivo no existían** (LINK 6, ENA 8; HYPE apagada 10).
+  Huella 979d8dec → 2cf17fbe; 13 configs actualizadas, 0 con el código viejo. `main` = `9e6f568`.
 
 ### Historial a «break-even» y texto de ayuda de «Razón de cierre» (p79, D-40) — 19-nov
 - **Decisión del dueño (19-nov):** corregir las operaciones ya cerradas que la regla D-40 llama `break_even` (al instalar
