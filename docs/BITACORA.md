@@ -21,6 +21,31 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Números de VWAP Tendencia recalculados con el código corregido (p82, D-43) — 19-nov
+- **Decisión del dueño (19-nov):** corregir métricas y estrellas guardadas (alcance: los 24 backtests de la estrategia y
+  sus 13 configs de Paper); apagar alguna config queda para después de ver los números en pantalla.
+- **Por qué tanta diferencia:** la regla de entrada exige que el cierre cruce el VWAP **y** quede dentro de la banda
+  (VWAP ± 1,5 desviaciones del día). Con la desviación de TODO el día, la banda ya «sabía» cuánto se iba a mover el
+  precio en las horas siguientes: en los días que después se movían mucho (días de tendencia, los que ganan en una
+  estrategia de tendencia) la banda era ancha y dejaba entrar. En vivo, al cierre de la vela, la desviación solo tiene
+  las velas del día hasta ese momento (en H4, 1 a 6): en la primera vela del día no existe (una sola vela) y en las
+  siguientes es más chica, así que muchas de esas entradas no pasan. Por eso se van ~40 % de las operaciones y
+  justo las ganadoras (6 de 8 en la paridad del 19-nov).
+- **Buscador de configuraciones:** ya alineado desde p80 (lee el código de la tabla `strategies`). Las búsquedas
+  guardadas de VWAP Tendencia hechas antes se marcan «código desactualizado» y no permiten crear backtests
+  (`ParamSearchRun::isOutdated`); hay que repetirlas para elegir parámetros con el código corregido.
+- **Arreglo:** `ops/datafix/2026_11_19_d43_vwap_metrics.py`. Repite cada backtest guardado con su código viejo y con el
+  corregido (mismos datos, parámetros y funding guardado); exige que el viejo dé exacto lo guardado (si uno no se
+  reproduce, no aplica nada). En una transacción: métricas corregidas en `backtests.metrics` (anteriores en
+  `r21_previous`) y el código corregido en `config_params` y `strategy_snapshot` (implementar un backtest viejo ya no
+  devuelve el código viejo a Paper); en las configs, columnas de métricas, estrellas y trades/mes con la cuenta de
+  `StrategyConfigSync` (sin tocar params, estado ni `strategy_config_changes`, que es el historial de parámetros y lo
+  usa el comparador para cortar tramos). Respaldo JSON en `/root/patches/p82/`.
+- **Prueba:** `vwap_metrics_fix_test.py` (nueva): columnas y estrellas iguales al PHP real (`metricAttributes`,
+  `tradesPerMonth`, `RatingHelper`), consolidado, reproducción, y de punta a punta en PostgreSQL 16 local (no aplica si
+  uno no se reproduce, solo lectura sin `--apply`, aplica, params/estado intactos, respaldo, «YA APLICADO», sin p80 →
+  código 2). Mutaciones 8/8. Regresión 68 Python + 26 PHP en TODO OK.
+
 ### Comparador Paper vs backtest: hasta el último día completo y un tramo por snapshot (p81, MEJ-003) — 19-nov
 - **Problema** (corrida 1 de la paridad, 19-nov): `compare_paper_vs_backtest.py` pedía el backtest hasta HOY; con el día
   en curso el 1 m del rango queda incompleto y el backtest evalúa todo el rango con vela grande y SL primero. Además,
@@ -38,7 +63,16 @@
   hasta ayer → código 2). Con el código anterior: FALLA. Mutaciones 9/9. Regresión 67 Python + 26 PHP en TODO OK.
 - **Lectura `lectura_vwap_rebacktest`** (solo lectura, 19-nov): repite los backtests guardados de VWAP Tendencia con
   su código viejo y con el corregido (mismos datos y parámetros; sesión de base en solo lectura; funding sin
-  descarga) y compara métricas y estrellas por backtest y por config de Paper. Resultado: pendiente.
+  descarga) y compara métricas y estrellas por backtest y por config de Paper. **Resultado (24 backtests, 13 configs):**
+  el código viejo reproduce **exacto** las métricas guardadas en los 24 (la repetición es fiel). Con el corregido, cerca
+  del 40 % de las operaciones de cada backtest desaparecen (no existían en vivo). Configs activas (retorno guardado →
+  corregido · estrellas): DOGE #59 56,9 → 12,3 % · 3,2 → 1,8; BTC #61 25,4 → 14,2 · 2,8 → 2,4; LINK #64 42,3 → 3,6 ·
+  2,6 → 1,8; NEAR #65 32,6 → −2,7 · 2,2 → 1,4; ENA #67 44,9 → 16,9 · 2,2 → 1,8; ETH #68 47,1 → 25,0 · 2,6 → 2,4;
+  1000PEPE #69 34,2 → 7,4 · 3,0 → 2,0; SOL #70 80,4 → 27,9 · 3,0 → 2,0; XRP #71 42,8 → 11,5 · 3,2 → 2,2; SUI #72
+  50,2 → 9,6 · 3,4 → 2,0; ZEC #73 39,8 → 35,2 · 2,2 → 2,2. Inactivas: ETH #62 40,8 → 12,9; HYPE #63 16,4 → −1,2.
+  Paper y Real no cambian de comportamiento (siempre operaron las señales reales); lo inflado eran las métricas y
+  estrellas mostradas. Qué hacer con ellas: decisión del dueño (pendiente).
+- Instalación de p81 el 19-nov: 6 archivos; regresión 67 Python + 26 PHP en TODO OK; sin reinicios. `main` = `ba04199`.
 
 ### Paridad Paper vs backtest con datos reales (MEJ-003) y VWAP Tendencia sin mirar el futuro (p80, R-21, D-42) — 19-nov
 - **Corrida 1** (`lectura_paridad`, 10 configs): inválida. La herramienta pide el backtest hasta HOY; la vela principal
