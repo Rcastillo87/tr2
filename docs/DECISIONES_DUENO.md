@@ -5,6 +5,8 @@
 > decisiones chocan, se le pregunta en palabras simples, sin tecnicismos.
 > Al tomar una decisión nueva se agrega aquí, en el mismo parche, con fecha, origen y dónde se aplica en el código.
 > Si una decisión reemplaza a otra, la anterior queda tachada y con el enlace a la nueva.
+> **Especificación del requerimiento:** cada fila es requisito del sistema; «Pendiente de implementar» significa que la
+> regla ya está decidida y el código todavía no la cumple (no se vuelve a preguntar).
 > Detalle técnico y pruebas: `docs/BITACORA.md`. Estado de las auditorías: `docs/CERTIFICACION_AUDITORIA.md` y
 > `docs/VALIDACION_AUDITORIA_13NOV.md`.
 
@@ -28,6 +30,8 @@
 | D-13 | **SL/TP provisional 2 %/4 % en la orden de apertura**, reemplazado por el de la estrategia tras el fill (Bybit rechazaba aperturas con el SL/TP dentro de la orden) | 03-nov (REAL-02) | `place_market_order` |
 | D-14 | **`max_leverage` limita el tamaño** (nocional ≤ saldo × max_leverage); el apalancamiento de la cuenta lo configura el dueño en Bybit | 03-nov (REAL-07) | `open_trade`, motor `_position_size` |
 | D-15 | **Motivo de salida de cierres recuperados por la conciliación:** se calcula con el precio de salida de Bybit contra SL/TP (stop_loss, trailing_stop, take_profit_1 o closed_other), igual que el monitor; ya no la etiqueta fija `reconciled_sl_tp_bybit`. **Las 6 operaciones históricas con esa etiqueta (#85, #92, #93, #95, #96, #97) se corrigen** con la misma regla, dejando el valor anterior en su historial (PnL y saldo no cambian) | 18-nov (R-09) | `reconcile` 2a, `ops/datafix/2026_11_18_r09_exit_reason.sql` |
+| D-18 | **Las posiciones abiertas a mano en Bybit se ignoran:** la conciliación no las adopta ni las gestiona (sin SL/TP del bot, sin cierre) | 19-nov (R-11) | **Pendiente de implementar** (`reconcile`) |
+| D-19 | **Con una posición manual abierta en una moneda suscrita, el bot no abre en esa moneda.** Cuando la manual se cierra, el bot puede abrir **solo si la señal de apertura sigue vigente** en ese momento (no se recupera una señal vieja). Contexto: los usuarios de la app no operan a mano; es una protección | 19-nov | **Pendiente de implementar** (apertura Real) |
 | D-17 | **El motivo de salida de un cierre hecho por Bybit es el que dice su orden de cierre** (TakeProfit, StopLoss, TrailingStop); la comparación de precios queda solo como respaldo. Los `closed_other` históricos se reclasifican con ese dato (sin dato de Bybit no se tocan; PnL y saldo no cambian) | 18-nov (R-16, «procede») | `settle_exchange_close`, `real:reclassify-exits` |
 | D-16 | **R-10 (guardar el tamaño que confirma Bybit al abrir) queda para después**, como preventivo: no ha ocurrido (10 de 10 operaciones coinciden) y toca el código de apertura | 18-nov | Pendiente (no se toca la apertura) |
 
@@ -46,14 +50,15 @@
 | D-30 | **Tramos de la búsqueda:** un trade que abre antes del corte y cierra después no cuenta en ningún tramo; cada tramo se mide sobre el capital inicial | 10-nov (N-03, opción a) | `segment_stats` |
 | D-31 | **TP2, TP3 y TP4 no se reactivan.** Son lógica antigua: se limpian sus residuos en código, UI, API, pruebas y documentación; las columnas de la base se conservan por el historial | 13-nov (informe de auditoría; antes REAL-05 «fuera de alcance», 10-nov) | Ejecutada en p71 (19-nov): `calculate_tp1`; sin TP2–4 en motor, Paper, Real, reglas, API y Laravel; columnas conservadas |
 | D-32 | **El sistema informa, no recomienda operar:** métricas, estrellas y avisos; la decisión es del dueño | Prompt maestro §1 | — |
+| D-33 | **Capital del backtest: se queda compuesto** (cada operación arriesga sobre el saldo acumulado, como hoy). Paper sigue con capital fijo de referencia; por eso Paper y backtest se comparan operación a operación en %, no en USDT acumulado | 19-nov (A-1.3a) | `BacktestEngine._position_size` (sin cambio) |
+| D-34 | **Riesgo por operación: se queda como hoy** (el % es la distancia al SL, sin costos). Con SL de 1 %, un SL cuesta ~1,16 % del saldo por comisiones y deslizamiento; queda documentado, no se corrige (Fase 12 opción 5 descartada) | 19-nov (WB-05) | `_position_size` en los tres motores (sin cambio) |
+| D-35 | **Fin del backtest: la posición que queda abierta al final NO cuenta en las métricas** (se sigue mostrando, marcada `end_of_data`, pero no suma al retorno, drawdown, Sharpe, estrellas ni aptitud para Paper) | 19-nov (WB-01) | p73: `metrics.counted_trades` (métricas, mensual, ventanas, tramos de la búsqueda) |
+| D-36 | **Huecos de datos: el backtest se hace igual**; al terminar, el aviso con los huecos (cuántos y el mayor, con fechas) aparece en el **«Log de Errores»** de la pantalla del backtest, aunque la completitud supere el 98 % | 19-nov (WB-04) | p73: `candle_gaps`/`gaps_warning` en `load_backtest_data` → `warnings` («Ver Log de Errores») |
+| D-37 | **Se mantiene: completitud < 98 % = backtest «no apto para Paper»** (`quality_ok = false`), además del aviso de D-36 | 19-nov | `MIN_COMPLETENESS` (sin cambio) |
+| D-38 | **Fase 12 aprobada:** (1) búsqueda en **tres tramos** 60 % elegir · 20 % aceptar · 20 % solo informar; (2) **simulador de cartera** con un solo saldo, tope de posiciones abiertas y de exposición; (3) renombrar a «Estabilidad por ventanas» ahora y **walk-forward real** después; (4) **drawdown flotante** además del cerrado (se muestran los dos). La opción 5 (costos en el tamaño) queda descartada (D-34) | 19-nov | **Pendiente de implementar** (ver `docs/FASE12_ESTADISTICA.md`) |
 
 ## Pendientes de decisión (no asumir; preguntar)
 
 | Tema | Pregunta abierta | Contexto |
 |---|---|---|
-| Capital del backtest | ¿Capital fijo por operación (como Paper y como dice el informe de auditoría) o compuesto (como hace hoy el motor)? | `VALIDACION_AUDITORIA_13NOV.md` A-1.3a |
-| Riesgo por operación | ¿`risk_per_trade_pct` es riesgo antes de costos o neto? (hoy, con SL 1 %, un SL cuesta ~1,16 %) | WB-05, Fase 12 |
-| Fin de muestra | ¿La posición abierta al final del backtest (`end_of_data`) cuenta en las métricas? | WB-01 |
-| Huecos de datos | ¿Desde cuántas velas seguidas faltantes un backtest no es apto para Paper? | WB-04 |
-| Posiciones manuales en Bybit | ¿La conciliación adopta las posiciones abiertas a mano en un símbolo suscrito o las ignora? | R-11 |
-| Fase 12 | Opciones estadísticas (drawdown flotante, tramos, costos en el tamaño, cartera, walk-forward) | `docs/FASE12_ESTADISTICA.md` |
+| Fase 12 · cartera | Valores por defecto del simulador: tope de posiciones abiertas a la vez y de exposición total (se preguntan al implementar, con una propuesta) | D-38 |

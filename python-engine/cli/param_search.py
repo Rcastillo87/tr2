@@ -48,6 +48,7 @@ from api.v1.backtest import (  # noqa: E402
     BacktestData, BacktestRequest, build_monthly_breakdown, load_backtest_data, load_strategy, parse_range,
 )
 from backtesting.engine import BacktestEngine  # noqa: E402
+from backtesting.metrics import counted_trades  # noqa: E402
 
 INITIAL = 10000.0
 RISK_PCT = 1.0
@@ -301,12 +302,12 @@ def segment_stats(trades, lo, hi, last=False):
     Tramo [lo, hi) sin contaminación entre tramos (N-03):
     - un trade cuenta solo si ABRE y CIERRA dentro del tramo; el que abre antes del corte y cierra después no cuenta
       en ninguno de los dos (se informa en 'cross' del tramo donde abrió). En el último tramo (last=True) no hay corte
-      posterior: cuentan todos los que abren en él, incluido el cierre end_of_data.
+      posterior: cuentan todos los que abren en él, salvo la posición abierta al final ('end_of_data': D-35, no cuenta).
     - el PnL de cada trade se lleva al capital inicial (pnl_pct × INITIAL): la simulación es continua y, sin esto, el
       tramo posterior heredaba el tamaño del saldo ganado o perdido en el anterior.
     """
     pnl, cross = [], 0
-    for t in trades:
+    for t in counted_trades(trades):
         if not lo <= naive_utc(t['entry_time']) < hi:
             continue
         if not last and naive_utc(t['exit_time']) >= hi:

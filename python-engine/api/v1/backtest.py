@@ -17,13 +17,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, model_validator
 from dotenv import load_dotenv
 from backtesting import request_rules
-from backtesting.metrics import calculate_metrics
+from backtesting.metrics import calculate_metrics, counted_trades
 from backtesting.engine import BacktestEngine
 from collectors.bars import bars_frame
 from collectors.funding_collector import FundingData, load_funding
 from backtesting.strategies.loader import build_strategy
 from collectors.broker_resolver import (
-    coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
+    SESSION_MARKET_BROKERS, coverage_by_broker, interval_delta, pick_best_source, resolve_backtest_source,
 )
 
 load_dotenv()
@@ -193,6 +193,7 @@ def build_monthly_breakdown(trades: list[dict], initial_balance: float,
     pedido: un mes sin operaciones aparece con 0 (antes se omitía e inflaba el promedio
     mensual y la consistencia).
     """
+    trades = counted_trades(trades)   # D-35: sin el 'end_of_data'
     rows: dict[str, dict] = {}
     if start is not None and end is not None:
         for p in pd.period_range(start.replace(tzinfo=None), (end - timedelta(seconds=1)).replace(tzinfo=None), freq='M'):
@@ -238,6 +239,43 @@ def window_stats(trades: list[dict], start: datetime | None, end: datetime | Non
 
 
 BYBIT_TAKER_COMMISSION_PCT = 0.055   # comisión taker real de Bybit (%, por lado)
+
+
+def candle_gaps(times, step: timedelta, lo: datetime | None = None, hi: datetime | None = None) -> list[tuple]:
+    """
+    Huecos internos de una serie de velas: [(primera_faltante, última_faltante, velas_faltantes)], ordenados por
+    tiempo. Solo dentro de [lo, hi) (el rango pedido; el calentamiento y el inicio tardío / final corto se informan
+    aparte, en SourceCoverage.problems()).
+    """
+    def utc(x):
+        x = pd.Timestamp(x)
+        return x.tz_localize('UTC') if x.tzinfo is None else x.tz_convert('UTC')
+
+    t = pd.to_datetime(pd.Series(list(times)), utc=True).sort_values()
+    if lo is not None:
+        t = t[t >= utc(lo)]
+    if hi is not None:
+        t = t[t < utc(hi)]
+    t = t.reset_index(drop=True)
+    if len(t) < 2:
+        return []
+    st = pd.Timedelta(step)
+    out = []
+    for a, b in zip(t[:-1], t[1:]):
+        missing = int(round((b - a) / st)) - 1
+        if missing > 0:
+            out.append((a + st, b - st, missing))
+    return out
+
+
+def gaps_warning(label: str, gaps: list[tuple]) -> str | None:
+    """D-36: texto del aviso de huecos (cuántos, velas faltantes y el mayor, con fechas) para el «Log de Errores»."""
+    if not gaps:
+        return None
+    total = sum(g[2] for g in gaps)
+    a, b, m = max(gaps, key=lambda g: g[2])
+    return (f"Aviso: {label}: {len(gaps)} hueco(s) en las velas, {total} vela(s) faltantes en total; el mayor: {m} "
+            f"vela(s) del {a:%Y-%m-%d %H:%M} al {b:%Y-%m-%d %H:%M} UTC. El backtest se hizo igual (D-36).")
 
 
 def data_quality_issues(slippage_pct: float, commission_pct: float, funding_available: bool,
@@ -324,6 +362,10 @@ async def load_backtest_data(pool: asyncpg.Pool, symbol: str, interval: str, sta
     # Calentamiento: velas previas al inicio solo para indicadores (como paper, 500 velas)
     warm_start = start - interval_delta(interval) * WARMUP_BARS if start else None
     df = await load_ohlcv(pool, symbol, interval, main_src.broker, warm_start, end)
+    if main_src.broker not in SESSION_MARKET_BROKERS:
+        gap_note = gaps_warning(f"{symbol} {interval}", candle_gaps(df['time'], interval_delta(interval), start, end))
+        if gap_note:
+            warnings.append(gap_note)   # D-36: el backtest corre igual; el aviso va al «Log de Errores»
 
     # Tendencia macro H4: velas H4 reales con calentamiento para la EMA (igual que paper/real)
     macro_df = None
@@ -425,8 +467,8 @@ def _simulate(request: BacktestRequest, data: BacktestData, start: datetime, end
         warnings.append(f"Aviso: {result['minute_fallback_bars']} vela(s) de {request.symbol} con minutos de 1m "
                         f"faltantes: evaluadas con vela completa y SL primero (pesimista).")
     if result.get('closed_at_end'):
-        warnings.append("Aviso: 1 posición seguía abierta al final del rango: se cerró al último cierre "
-                        "(motivo end_of_data, con slippage, comisión y funding) y cuenta en las métricas.")
+        warnings.append("Aviso: 1 posición seguía abierta al final del rango: se muestra valorada al último cierre "
+                        "(motivo end_of_data) y NO cuenta en las métricas (D-35).")
     result['aggregate_metrics'] = result['metrics']
     result['n_windows'] = request.n_windows if request.walk_forward else 1
     result['window_results'] = (window_stats(result['trades'], start, end, request.n_windows, request.initial_balance)

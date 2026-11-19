@@ -165,8 +165,9 @@ EOD = [0]   # cuántos resultados terminaron con una posición abierta (cerrada 
 
 
 def without_end_of_data(r):
-    """La referencia V3 (congelada) descarta la posición abierta al final; el motor la cierra con end_of_data (BP-04).
-    Se quita ese único último trade y se recalculan las métricas para comparar el resto exacto."""
+    """La referencia V3 (congelada) descarta la posición abierta al final; el motor la muestra con end_of_data (BP-04)
+    y, desde D-35 (19-nov), no la cuenta en métricas ni en la curva. Se quita ese único último trade para comparar el
+    resto exacto (las métricas y la curva ya vienen sin él)."""
     eod = [k for k, t in enumerate(r['trades']) if t['exit_reason'] == 'end_of_data']
     if not eod:
         return r
@@ -175,7 +176,8 @@ def without_end_of_data(r):
     from backtesting.metrics import calculate_metrics
     trades = r['trades'][:-1]
     m = calculate_metrics(trades, 10000.0)
-    m['equity_curve'] = r['metrics']['equity_curve'][:-1]
+    m['equity_curve'] = r['metrics']['equity_curve']
+    assert m == r['metrics'], 'D-35: las métricas del motor deben venir ya sin el end_of_data'
     return dict(r, trades=trades, metrics=m)
 
 

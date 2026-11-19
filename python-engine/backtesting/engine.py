@@ -484,15 +484,16 @@ class BacktestEngine:
                 pos = None
                 equity_curve.append(self.balance)
 
-        # BP-04: una posición abierta al final del rango no desaparece del resultado: se cierra al cierre de la última
-        # vela (con slippage, comisión y funding, como cualquier salida) y cuenta en trades y métricas.
+        # BP-04: una posición abierta al final del rango no desaparece del resultado: se valora al cierre de la última
+        # vela (con slippage, comisión y funding) y se muestra con exit_reason 'end_of_data'. D-35 (dueño, 19-nov): NO
+        # cuenta en las métricas (counted_trades) ni entra en la curva de capital. Es la última operación: el saldo
+        # interno que la incluye ya no se usa.
         if pos is not None:
             last = n - 1
             t_end = bar_times[last] + step
             self._close(pos, closes[last], 'end_of_data', t_end, last - pos['entry_bar'] + 1, (t_end, t_end))
             self.closed_at_end = 1
             pos = None
-            equity_curve.append(self.balance)
 
         metrics = calculate_metrics(self.trades, self.initial_balance)
         metrics['equity_curve'] = equity_curve

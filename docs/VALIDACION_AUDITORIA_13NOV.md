@@ -323,12 +323,13 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 
 | Tipo | Punto | Qué falta |
 |---|---|---|
-| Decisión del dueño | A-1.3a / 5.2 capital del backtest | Fijo (como Paper y el informe) o compuesto (como hoy) |
-| Decisión del dueño | WB-05 riesgo por operación | ¿Bruto o neto de costos? (con SL 1 % un SL cuesta ~1,16 %) |
-| Decisión del dueño | WB-01 fin de muestra | ¿La posición cerrada con `end_of_data` cuenta en las métricas? |
-| Decisión del dueño | WB-04 huecos de datos | Desde cuántas velas seguidas faltantes un backtest no es apto (luego: informar huecos y el mayor) |
-| Decisión del dueño | R-11 posiciones manuales | ¿La conciliación las adopta o las ignora? |
-| Decisión del dueño | Fase 12 | Walk-forward real (WB-02), drawdown flotante (WB-03), costos en el tamaño (WB-05), cartera (WB-06) |
+| Decidido 19-nov, sin código | A-1.3a capital (D-33) y WB-05 riesgo (D-34) | Se quedan como hoy: solo documentación (hecho) |
+| Decidido 19-nov, hecho en p73 (pendiente de instalar) | WB-01 fin de muestra (D-35) | La posición `end_of_data` no cuenta en las métricas |
+| Decidido 19-nov, hecho en p73 (pendiente de instalar) | WB-04 huecos (D-36) | El backtest corre igual; huecos (cuántos, el mayor, fechas) en el «Log de Errores» |
+| Decidido 19-nov, **por implementar** | R-11 posiciones manuales (D-18) | La conciliación las ignora |
+| Decidido 19-nov, **por implementar** | D-19 | Con posición manual en la moneda el bot no abre; al cerrarse, abre solo si la señal sigue vigente |
+| Decidido 19-nov | D-37 | Se mantiene «< 98 % = no apto para Paper» |
+| Decidido 19-nov, **por implementar** | Fase 12 (D-38) | 4A drawdown flotante → 1A tres tramos → 3A renombrar (maqueta) → 2A cartera → 3B walk-forward real; la 5 descartada |
 | Evidencia | MEJ-003 / TST-01–02 | Correr `compare_paper_vs_backtest.py` sobre las configs vivas (solo lectura) |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |

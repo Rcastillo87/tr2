@@ -1,5 +1,9 @@
 # Fase 12 — Validez estadística de los resultados (opciones para decidir)
 
+> **[19-nov] Decidido (D-38, `docs/DECISIONES_DUENO.md`):** 1A tres tramos · 2A simulador de cartera · 3A renombrar ahora
+> y 3B walk-forward real después · 4A drawdown flotante (los dos se muestran) · **5 descartada** (D-34: el riesgo sigue
+> sin costos). Orden de trabajo: 4A → 1A → 3A (maqueta) → 2A → 3B.
+
 > 2026-11-06 (Bogotá), revisado el 10-nov (N-03 hecho aparte, ver §1). Auditoría del 05-nov: NUEVO-04, NUEVO-05 y
 > «otros riesgos estadísticos». **No son defectos de
 > código: son decisiones de diseño.** Cada una cambia los resultados de búsquedas y backtests, por eso nada se programa

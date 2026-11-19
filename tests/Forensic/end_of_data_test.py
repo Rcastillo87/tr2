@@ -1,7 +1,8 @@
 """
 Posición abierta al final del rango en el backtest (BP-04): antes desaparecía del resultado (ni trade, ni balance, ni
-métricas). Ahora se cierra al cierre de la última vela con motivo end_of_data, con slippage, comisión y funding como
-cualquier salida, y cuenta en trades y métricas. Sin base de datos.
+métricas). Se valora al cierre de la última vela con motivo end_of_data, con slippage, comisión y funding como
+cualquier salida, y se muestra en los trades. D-35 (dueño, 19-nov): NO cuenta en las métricas, ni en el saldo, ni en la
+curva de capital, ni en el desglose mensual, ni en los tramos de la búsqueda. Sin base de datos.
 Uso: cd python-engine && venv/bin/python ../tests/Forensic/end_of_data_test.py
 Antes del parche: FALLAN los casos con posición abierta al final y el aviso.
 """
@@ -68,10 +69,10 @@ def main_sync():
         comm = (last['entry_price'] + last['exit_price']) * last['size'] * 0.00055
         check('comisión de entrada + salida', abs(last['commission'] - round(comm, 4)) < 1e-4, (last['commission'], comm))
         check('bars_open cuenta hasta la última vela (5..11 = 7)', last['bars_open'] == 7, last['bars_open'])
-    check('cuenta en las métricas y el balance (1 trade; equity final = balance)',
-          r['metrics']['total_trades'] == 1 and r.get('closed_at_end') == 1
-          and abs(r['metrics']['equity_curve'][-1] - (10000.0 + (last.get('pnl') or 0))) < 1e-3,
-          (r['metrics']['total_trades'], r.get('closed_at_end')))
+    check('D-35: NO cuenta en las métricas, ni en el saldo ni en la curva (0 trades; equity final = inicial)',
+          r['metrics']['total_trades'] == 0 and r.get('closed_at_end') == 1
+          and abs(r['metrics']['equity_curve'][-1] - 10000.0) < 1e-9 and len(r['metrics']['equity_curve']) == 1,
+          (r['metrics']['total_trades'], r.get('closed_at_end'), r['metrics']['equity_curve'][-3:]))
 
     # 2. Short: slippage al revés (compra más cara)
     r = run(bars(sig={4: -1}, last_close=100.2))
@@ -110,6 +111,18 @@ def main_sync():
     reasons = [x['exit_reason'] for x in r['trades']]
     check('reversa por señal opuesta y el short queda abierto: [opposite_signal, end_of_data]',
           reasons == ['opposite_signal', 'end_of_data'], reasons)
+    first = r['trades'][0] if r['trades'] else {}
+    check('D-35: las métricas cuentan solo el cerrado (1 trade, su PnL; el end_of_data no suma)',
+          r['metrics']['total_trades'] == 1 and abs(r['metrics']['total_pnl'] - first.get('pnl', 0)) < 1e-3
+          and abs(r['metrics']['equity_curve'][-1] - (10000.0 + first.get('pnl', 0))) < 1e-3,
+          (r['metrics']['total_trades'], r['metrics']['total_pnl'], first.get('pnl')))
+    from api.v1.backtest import build_monthly_breakdown
+    mb = build_monthly_breakdown(r['trades'], 10000.0)
+    check('D-35: el desglose mensual tampoco lo cuenta', sum(x['total_trades'] for x in mb) == 1, mb)
+    import cli.param_search as ps
+    seg = ps.segment_stats(r['trades'], pd.Timestamp('2026-01-01').to_pydatetime(), pd.Timestamp('2026-12-31').to_pydatetime(), last=True)
+    n = seg.get('n', seg.get('trades')) if isinstance(seg, dict) else None
+    check('D-35: el último tramo de la búsqueda tampoco lo cuenta', n == 1, seg)
 
 
 async def endpoint():
@@ -133,7 +146,10 @@ async def endpoint():
                               end_date='2026-03-02', walk_forward=False, slippage_pct=0.05)
     out = await api.run_backtest(req)
     w = [x for x in out['warnings'] if 'abierta al final del rango' in x]
-    check('aviso en pantalla: «1 posición seguía abierta al final del rango … end_of_data»', len(w) == 1, out['warnings'])
+    check('aviso en pantalla: «1 posición seguía abierta al final del rango … NO cuenta en las métricas»',
+          len(w) == 1 and 'NO cuenta en las métricas' in w[0], out['warnings'])
+    check('/backtest/run: métricas sin el end_of_data (0 trades)', out['result']['metrics']['total_trades'] == 0,
+          out['result']['metrics']['total_trades'])
     check('/backtest/run: el trade end_of_data está en el resultado',
           [x['exit_reason'] for x in out['result']['trades']][-1:] == ['end_of_data'],
           [x['exit_reason'] for x in out['result']['trades']])

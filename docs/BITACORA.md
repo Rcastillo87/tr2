@@ -21,6 +21,32 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### D-35 y D-36 — Fin del backtest fuera de las métricas y aviso de huecos (p73)
+- **Decisiones del dueño (19-nov):** D-35 la posición abierta al final del backtest no cuenta en las métricas; D-36
+  con huecos el backtest corre igual y el aviso va al «Log de Errores» aunque la completitud supere el 98 %; D-37 se
+  mantiene «< 98 % = no apto para Paper».
+- **D-35:** `metrics.counted_trades()` (todos menos `exit_reason = 'end_of_data'`) en `calculate_metrics` (backtest,
+  ventanas, búsqueda), `build_monthly_breakdown` y `segment_stats` (último tramo de la búsqueda). El motor sigue
+  mostrando la posición valorada al último cierre, pero ya no la agrega a la curva de capital. Aviso: «… NO cuenta en
+  las métricas (D-35)». Trades/mes ya la excluía (p49).
+- **D-36:** `candle_gaps()` (huecos internos dentro del rango pedido: primera y última vela faltante y cuántas) y
+  `gaps_warning()`; `load_backtest_data` agrega el aviso a `warnings` (el botón «Ver Log de Errores»), con cuántos
+  huecos, cuántas velas faltan y el mayor con fechas. Solo fuentes sin sesiones de mercado. No entra en
+  `data_problems`: no cambia la aptitud para Paper (D-37).
+- **Pruebas:**
+  - `end_of_data_test.py` pasa a la regla D-35: 0 trades y curva sin moverse con solo la posición final; con un
+    cierre normal antes, solo ese cuenta; el mensual y el último tramo de la búsqueda tampoco la cuentan; aviso nuevo.
+    6 FALLOS con el código anterior. Mutaciones 3/3 (métricas, mensual, tramo). Una cuarta (dejar que el saldo interno
+    sume la posición final) era **equivalente** (es la última operación; ese saldo ya no se usa): se simplificó el
+    código en vez de agregar una opción.
+  - `backtest_gaps_test.py` (nuevo): 3 huecos con 14 velas faltantes (98,6 % completo) → aviso con «3 hueco(s)»,
+    «14 vela(s)» y el mayor con fechas; sin huecos sin aviso; el calentamiento no cuenta; fechas sin zona = UTC; con
+    `load_backtest_data`: el aviso llega a `warnings`, sin aviso de cobertura (D-37) y los datos completos. Con el
+    código anterior falla; mutaciones 3/3.
+  - `engine_speed_parity_test.py`: la comparación con la referencia V3 ya no recorta la curva (el motor no agrega la
+    posición final) y exige que las métricas vengan sin ella.
+  - Regresión 59 Python + 23 PHP en TODO OK.
+
 ### p72 — Limpieza y documentación (cierre de la validación del 13-nov)
 - **Código muerto fuera:** `RegisteredUserController`, la vista `auth/register.blade.php` y su prueba Breeze
   (`tests/Feature/Auth/RegistrationTest.php`): sin ruta desde hace tiempo (`welcome.blade.php` ya pregunta
@@ -36,6 +62,8 @@
   histórico; README: tabla de migraciones en orden y con la de p62; `python-engine/.env.example`: permisos como en
   el servidor (664 dentro de `/home/tr2` 770, no 600).
 - **Pruebas:** regresión 58 Python + 23 PHP en TODO OK.
+- Instalación de p72 el 19-nov (~14:58 UTC): 13 archivos; regresión 58 Python + 23 PHP en TODO OK; motor reiniciado
+  14:58:33 UTC, tick de Paper 200, 0 errores. `main` = `origin/main` = `b7a24ed`.
 
 ### D-31 — Limpieza de TP2, TP3 y TP4 (p71)
 - **Decisión del dueño (13-nov):** limpiar los residuos; las columnas de la base se conservan. Ejecutada el 19-nov

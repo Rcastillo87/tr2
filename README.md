@@ -118,7 +118,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 
 ### Backtesting (`/backtesting`)
 - 24 meses de calendario completos hasta el último mes cerrado. Velas de 1m para las salidas cuando cubren el rango (≥ 98 %); si no, se descartan (regla de integridad). Una vela a la que le faltan minutos se evalúa como vela completa con SL primero (aviso en pantalla).
-- **Hora de salida = minuto del evento** (con 1m). Una posición abierta al final del rango se cierra al último cierre con motivo `end_of_data` y cuenta en las métricas (aviso).
+- **Hora de salida = minuto del evento** (con 1m). Una posición abierta al final del rango se muestra valorada al último cierre con motivo `end_of_data` y **no cuenta en las métricas** (D-35, aviso). Con huecos en las velas el backtest corre igual y el Log de Errores dice cuántos y el mayor (D-36).
 - **Parámetros validados** con las mismas reglas en Laravel y Python (`python-engine/backtesting/request_rules.json`): se rechaza lo imposible (SL/TP fuera de 0–100 %, saldo o comisión negativos, modos o intervalos que no existen, trailing escalonado sin pasos) con un mensaje en español. El JSON de la estrategia editado en el formulario se **fusiona** con el de la estrategia (lo no escrito se conserva). La protección por volatilidad solo se envía si viene en el request; si no, manda el JSON.
 - **Funding de Bybit** descontado en cada trade (pesimista: paga si la liquidación coincide con la entrada o la salida; cobra solo si cae estrictamente dentro).
 - **Filtros de apertura:** régimen con **regímenes permitidos** (por defecto los de la estrategia; aviso si con la elección el filtro no bloquea nada), volumen mínimo, tendencia macro H4 (EMA 50) y **tendencia de BTC** (EMA 50 H4 de BTC; solo altcoins; sin velas de BTC no opera). Todos sin mirar al futuro.
@@ -330,6 +330,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 | `secrets_exposure_test.py`, `safe_log_body_test.php` | Las claves del broker no salen en un 422 del motor ni en `laravel.log`; el motor no usa el `APP_KEY` de Laravel (R-05, R-07) |
 | `live_trades_delete_static_test.php`, `real_config_gate_test.php`* (sección G) | No se borra una suscripción ni una cuenta con operaciones abiertas o sin confirmar (`orphaned`) (R-04) |
 | `dashboard_prices_static_test.php` | Precios del dashboard: consulta acotada al último día con respaldo sin límite; mismo resultado que antes (R-03); una falla de precios en vivo no se guarda en caché (R-15) |
+| `backtest_gaps_test.py` | Huecos en las velas: el backtest corre igual y el Log de Errores dice cuántos y el mayor, con fechas (D-36) |
 | `tp_cleanup_test.py` | TP2–TP4 eliminados (D-31): sin residuos, `calculate_tp1` igual al TP1 anterior, JSON y pedidos viejos se ignoran |
 | `real_exit_reason_test.py` | Motivo de salida según la orden de cierre de Bybit (TP/SL con deslizamiento, trailing nativo) y reclasificación de los `closed_other` (R-16) |
 | `real_close_detect_test.py` | Cierres hechos por Bybit: el monitor busca el closed-pnl desde la apertura y la conciliación calcula el motivo de salida (R-09) |
@@ -361,7 +362,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (58 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (59 Python + 23 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

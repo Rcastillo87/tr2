@@ -5,10 +5,18 @@ Métricas de evaluación para Backtesting y Paper Trading V2
 import numpy as np
 import pandas as pd
 
+END_OF_DATA = 'end_of_data'
+
+
+def counted_trades(trades: list[dict]) -> list[dict]:
+    """Trades que cuentan en las métricas: todos menos la posición que seguía abierta al final del rango
+    (exit_reason 'end_of_data'). Decisión del dueño D-35 (19-nov): se muestra, marcada, pero no suma."""
+    return [t for t in trades if t.get('exit_reason') != END_OF_DATA]
+
 
 def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> dict:
     """
-    Calcula métricas de rendimiento a partir de una lista de trades cerrados.
+    Calcula métricas de rendimiento a partir de una lista de trades cerrados (sin el 'end_of_data': D-35).
 
     Cada trade debe tener al menos:
         - pnl (float)        -> ganancia/pérdida en moneda
@@ -16,6 +24,7 @@ def calculate_metrics(trades: list[dict], initial_balance: float = 10000.0) -> d
         - regime (str)       -> régimen de mercado al momento de entrada
     """
 
+    trades = counted_trades(trades)
     if not trades:
         return _empty_metrics()
 
