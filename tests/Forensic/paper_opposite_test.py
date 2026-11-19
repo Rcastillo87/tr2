@@ -119,10 +119,10 @@ class FakeConn:
 
     async def execute(self, sql, *a):
         if 'INSERT INTO paper_trades' in sql:
-            (name, cfg, sym, itv, side, entry, sl, tp, tp2, tp3, tp4, be, size, regime, et, snap) = a
+            (name, cfg, sym, itv, side, entry, sl, tp, be, size, regime, et, snap) = a
             self.s.trades.append({'id': self.s.nid, 'strategy': name, 'paper_strategy_config_id': cfg,
                                   'config_snapshot': snap, 'symbol': sym, 'interval': itv, 'side': side,
-                                  'entry_price': entry, 'sl': sl, 'tp': tp, 'tp2': tp2, 'tp3': tp3, 'tp4': tp4,
+                                  'entry_price': entry, 'sl': sl, 'tp': tp,
                                   'be_level': be, 'be_activated': False, 'trailing_applied': False,
                                   'vol_widened': False, 'size': size, 'entry_time': et, 'regime': regime,
                                   'max_profit_pct': 0, 'max_loss_pct': 0, 'last_monitored_at': None,

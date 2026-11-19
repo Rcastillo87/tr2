@@ -136,7 +136,7 @@ def hour(t, low=99.5, high=100.5):
 def store(mins, candles=()):
     trade = {'id': 7, 'strategy': 'T', 'paper_strategy_config_id': 1, 'config_snapshot': json.dumps(P),
              'symbol': 'BTCUSDT', 'interval': '60', 'side': 'long', 'entry_price': 100.0, 'sl': 99.0, 'tp': 102.0,
-             'tp2': None, 'tp3': None, 'tp4': None, 'be_level': 101.5, 'be_activated': False,
+             'be_level': 101.5, 'be_activated': False,
              'trailing_applied': False, 'vol_widened': False, 'size': 1.0, 'entry_time': ENTRY, 'regime': 'RANGING',
              'max_profit_pct': 0, 'max_loss_pct': 0, 'last_monitored_at': None, 'status': 'open'}
     return {'trade': trade, 'minutes': list(mins), 'candles': list(candles), 'backup_queries': 0}

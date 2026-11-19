@@ -76,10 +76,10 @@ for k, v in cfg.items():
 # 4) Opciones que NO están en la UI y que el usuario solo puede fijar en el JSON: ¿se respetan?
 probe = dict(payload)
 probe['strategy_config'] = dict(cfg, allow_short=False, hour_filter=True, hour_filter_start=9, weekend_filter=True,
-                                exit_on_opposite=True, max_leverage=2.0, tp2_pct=4.4, blocked_days=[5, 6])
+                                exit_on_opposite=True, max_leverage=2.0, blocked_days=[5, 6])
 s2 = load_strategy(BacktestRequest(**probe))
 for k, v in [('allow_short', False), ('hour_filter', True), ('hour_filter_start', 9), ('weekend_filter', True),
-             ('exit_on_opposite', True), ('max_leverage', 2.0), ('tp2_pct', 4.4), ('blocked_days', [5, 6])]:
+             ('exit_on_opposite', True), ('max_leverage', 2.0), ('blocked_days', [5, 6])]:
     got = getattr(s2, k, '<<ausente>>')
     check(f"JSON '{k}'={v!r} (no está en la UI) se respeta", got == v,
           '' if got == v else f"la estrategia usa {got!r}: el valor por defecto del request pisa al JSON")

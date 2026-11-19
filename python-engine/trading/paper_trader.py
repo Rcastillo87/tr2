@@ -319,7 +319,7 @@ class PaperTrader:
             rows = await conn.fetch(
                 """
                 SELECT id, strategy, paper_strategy_config_id, config_snapshot, symbol, interval, side,
-                       entry_price, sl, tp, tp2, tp3, tp4, be_level, be_activated, trailing_applied, vol_widened,
+                       entry_price, sl, tp, be_level, be_activated, trailing_applied, vol_widened,
                        size, entry_time, regime, max_profit_pct, max_loss_pct, last_monitored_at
                 FROM paper_trades
                 WHERE status = 'open'
@@ -378,8 +378,7 @@ class PaperTrader:
         else:
             sl, _ = strategy_instance.calculate_sl_tp(entry_price, side)
         be     = strategy_instance.calculate_breakeven(entry_price, side)
-        tp_levels = strategy_instance.calculate_tp_levels(entry_price, side)
-        tp, tp2, tp3, tp4 = tp_levels['tp1'], tp_levels['tp2'], tp_levels['tp3'], tp_levels['tp4']
+        tp     = strategy_instance.calculate_tp1(entry_price, side)
         risk_pct = cfg_params.get('risk_per_trade_pct',
                    self.default_params.get('risk_per_trade_pct', 1.0))
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
@@ -399,13 +398,13 @@ class PaperTrader:
                 await conn.execute(
                     """
                     INSERT INTO paper_trades
-                        (strategy, paper_strategy_config_id, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4,
+                        (strategy, paper_strategy_config_id, symbol, interval, side, entry_price, sl, tp,
                          be_level, be_activated, size, regime, entry_time, status,
                          max_profit_pct, max_loss_pct, config_snapshot, created_at, updated_at)
                     VALUES
-                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13, $14, $15, 'open', 0, 0, $16::jsonb, now(), now())
+                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10, $11, $12, 'open', 0, 0, $13::jsonb, now(), now())
                     """,
-                    display_name, config_id, symbol, interval, side, entry_price, sl, tp, tp2, tp3, tp4, be,
+                    display_name, config_id, symbol, interval, side, entry_price, sl, tp, be,
                     size, regime, datetime.now(timezone.utc).replace(tzinfo=None),
                     json.dumps(cfg_params)
                 )
@@ -415,7 +414,7 @@ class PaperTrader:
 
         logger.info(
             f"[PAPER] OPEN {self._label(cfg)} {symbol} {side.upper()} @ {entry_price} "
-            f"SL={sl} TP1={tp} TP2={tp2} TP3={tp3} TP4={tp4} BE={be} regime={regime} interval={interval}"
+            f"SL={sl} TP={tp} BE={be} regime={regime} interval={interval}"
         )
 
     # ─────────────────────────────────────────────

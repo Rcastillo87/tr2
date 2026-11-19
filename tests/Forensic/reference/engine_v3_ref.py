@@ -189,9 +189,6 @@ class BacktestEngine:
             "exit_level":   level,
             "sl":           pos['sl'],
             "tp1":          pos['tp1'],
-            "tp2":          pos['tp2'],
-            "tp3":          pos['tp3'],
-            "tp4":          pos['tp4'],
             "size":         size,
             "gross_pnl":    round(gross, 4),
             "commission":   round(commission, 4),
@@ -272,13 +269,13 @@ class BacktestEngine:
                     entry = self._fill(opens[i], side, is_entry=True)
                     sl_pct = signal_sl[i - 1] if signal_sl is not None and not np.isnan(signal_sl[i - 1]) else s.sl_pct
                     sl = round(entry * (1 - sl_pct / 100) if side == 'long' else entry * (1 + sl_pct / 100), 8)
-                    levels = s.calculate_tp_levels(entry, side)
+                    tp1 = s.calculate_tp1(entry, side)
                     size = self._position_size(entry, sl)
                     if size > 0:
                         pos = {
                             'side': side, 'entry_price': entry, 'entry_time': bar_time, 'entry_bar': i,
-                            'sl': sl, 'tp1': levels['tp1'], 'tp2': levels.get('tp2'), 'tp3': levels.get('tp3'),
-                            'tp4': levels.get('tp4'), 'be_level': s.calculate_breakeven(entry, side),
+                            'sl': sl, 'tp1': tp1,
+                            'be_level': s.calculate_breakeven(entry, side),
                             'be_activated': False, 'trailing_applied': False, 'size': size, 'regime': regime,
                             'vol_widened': False,
                         }

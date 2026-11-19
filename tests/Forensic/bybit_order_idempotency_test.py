@@ -308,7 +308,7 @@ class _CloseClient:
 
 def _trade():
     return {'id': 9, 'side': 'long', 'symbol': 'BTCUSDT', 'strategy': 'T', 'entry_price': 100.0, 'size': 1.0,
-            'balance_before': 1000.0, 'realized_pnl_partial': 0, 'sl': 98.0, 'tp': 104.0, 'trailing_applied': False}
+            'balance_before': 1000.0, 'sl': 98.0, 'tp': 104.0, 'trailing_applied': False}
 
 
 def close_case(client):

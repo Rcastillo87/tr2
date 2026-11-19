@@ -107,7 +107,7 @@ def trade(params, hours_ago=1.0, entry=100.0, vol_widened=False):
     et = NOW - timedelta(hours=hours_ago)
     return {'id': 1, 'strategy': 'T', 'paper_strategy_config_id': 9, 'config_snapshot': json.dumps(params),
             'symbol': 'BTCUSDT', 'interval': '60', 'side': 'long', 'entry_price': entry,
-            'sl': entry * 0.99, 'tp': entry * 1.02, 'tp2': None, 'tp3': None, 'tp4': None,
+            'sl': entry * 0.99, 'tp': entry * 1.02,
             'be_level': entry * 1.015, 'be_activated': False, 'trailing_applied': False, 'size': 1.0,
             'entry_time': et, 'regime': 'RANGING', 'max_profit_pct': 0, 'max_loss_pct': 0,
             'last_monitored_at': None, 'vol_widened': vol_widened}

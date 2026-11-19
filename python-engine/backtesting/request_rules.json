@@ -24,27 +24,6 @@
       "gt": 0,
       "lt": 100
     },
-    "tp2_pct": {
-      "label": "Take profit 2 (%)",
-      "type": "number",
-      "gt": 0,
-      "lt": 100,
-      "nullable": true
-    },
-    "tp3_pct": {
-      "label": "Take profit 3 (%)",
-      "type": "number",
-      "gt": 0,
-      "lt": 100,
-      "nullable": true
-    },
-    "tp4_pct": {
-      "label": "Take profit 4 (%)",
-      "type": "number",
-      "gt": 0,
-      "lt": 100,
-      "nullable": true
-    },
     "be_pct": {
       "label": "Break-even (%)",
       "type": "number",

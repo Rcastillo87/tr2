@@ -44,9 +44,6 @@ class BacktestRequest(BaseModel):
     risk_per_trade_pct:  float           = 1.0
     sl_pct:              float           = 1.5
     tp_pct:              float           = 3.0
-    tp2_pct:             Optional[float] = None
-    tp3_pct:             Optional[float] = None
-    tp4_pct:             Optional[float] = None
     be_pct:              float           = 2.0
     max_duration:        int             = 24
     regime_filter:       bool            = True
@@ -167,7 +164,7 @@ def strategy_params(request: BacktestRequest) -> dict:
     """
     Parámetros de la estrategia: los mismos que Laravel guarda en config_params (snapshot de paper/real).
     Solo los campos ENVIADOS: un valor por defecto del request no debe pisar una opción escrita en el JSON de la
-    estrategia (allow_short, hour_filter, tp2_pct...), igual que en paper/real (loader.build_strategy).
+    estrategia (allow_short, hour_filter, blocked_days...), igual que en paper/real (loader.build_strategy).
     """
     params = request.model_dump(exclude=_RUN_ONLY_FIELDS, exclude_unset=True)
     params['strategy_config'] = dict(request.strategy_config or {})

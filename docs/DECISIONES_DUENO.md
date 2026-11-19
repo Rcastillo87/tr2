@@ -44,7 +44,7 @@
 | ID | Decisión | Fecha · origen | Dónde se aplica |
 |---|---|---|---|
 | D-30 | **Tramos de la búsqueda:** un trade que abre antes del corte y cierra después no cuenta en ningún tramo; cada tramo se mide sobre el capital inicial | 10-nov (N-03, opción a) | `segment_stats` |
-| D-31 | **TP2, TP3 y TP4 no se reactivan.** Son lógica antigua: se limpian sus residuos en código, UI, API, pruebas y documentación; las columnas de la base se conservan por el historial | 13-nov (informe de auditoría; antes REAL-05 «fuera de alcance», 10-nov) | Pendiente de ejecutar (parche propio) |
+| D-31 | **TP2, TP3 y TP4 no se reactivan.** Son lógica antigua: se limpian sus residuos en código, UI, API, pruebas y documentación; las columnas de la base se conservan por el historial | 13-nov (informe de auditoría; antes REAL-05 «fuera de alcance», 10-nov) | Ejecutada en p71 (19-nov): `calculate_tp1`; sin TP2–4 en motor, Paper, Real, reglas, API y Laravel; columnas conservadas |
 | D-32 | **El sistema informa, no recomienda operar:** métricas, estrellas y avisos; la decisión es del dueño | Prompt maestro §1 | — |
 
 ## Pendientes de decisión (no asumir; preguntar)

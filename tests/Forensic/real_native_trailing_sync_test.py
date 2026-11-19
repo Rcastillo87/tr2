@@ -35,9 +35,9 @@ def check(name, ok, detail=''):
 def t93(sl=1959.97515, trailing=False, be_activated=False):
     """#93: short ETHUSDT @ 1931.01; activePrice 1896.25182, trailingStop 19.3101 (Bybit informó 1915.56)."""
     return {'id': 93, 'subscription_id': 94, 'strategy': 'VWAP Tendencia', 'symbol': 'ETHUSDT', 'interval': '240',
-            'side': 'short', 'entry_price': 1931.01, 'sl': sl, 'tp': 1873.0797, 'tp2': None, 'tp3': None, 'tp4': None,
+            'side': 'short', 'entry_price': 1931.01, 'sl': sl, 'tp': 1873.0797,
             'be_level': 1902.04485, 'be_activated': be_activated, 'size': 15.0, 'original_size': 15.0,
-            'realized_pnl_partial': 0, 'entry_time': datetime.now(timezone.utc) - timedelta(minutes=30),
+            'entry_time': datetime.now(timezone.utc) - timedelta(minutes=30),
             'updated_at': None, 'order_id': 'A', 'balance_before': 49000.0, 'status': 'open',
             'trailing_applied': trailing, 'original_sl': 1959.97515, 'config_snapshot': dict(SNAP),
             'vol_widened': False}

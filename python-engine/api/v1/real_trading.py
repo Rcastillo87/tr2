@@ -608,7 +608,7 @@ async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: fl
     if strategy is None:
         return False
     params = trader._snapshot(trade)
-    sl, tp, _, _, _, be = trader._levels(strategy, avg_price, side, trader._effective_sl_pct(strategy, params))
+    sl, tp, be = trader._levels(strategy, avg_price, side, trader._effective_sl_pct(strategy, params))
     ts_ok = await client.set_trading_stop(symbol, sl, tp)
     async with trader.pool.acquire() as conn:
         await conn.execute(

@@ -126,16 +126,16 @@ def floor_to_step(qty: float, step: float) -> float:
 
 
 def close_figures(side: str, entry: float, exit_price: float, size: float, balance_before: float | None,
-                  bybit_net: float | None, partial_pnl: float = 0.0) -> dict:
+                  bybit_net: float | None) -> dict:
     """
     Cifras de un cierre Real. Con closedPnl de Bybit (bybit_net) el neto es el suyo, que ya descuenta comisiones de
     entrada y salida y funding: costos = bruto - neto. Sin él, comisión taker estimada (entrada + salida).
     pnl_pct es NETO sobre el saldo previo, como en Paper (N-06).
     """
     leg = (exit_price - entry) * size if side == 'long' else (entry - exit_price) * size
-    pnl = leg + partial_pnl
+    pnl = leg
     if bybit_net is not None:
-        net = float(bybit_net) + partial_pnl
+        net = float(bybit_net)
         commission = pnl - net
     else:
         commission = (entry + exit_price) * size * BYBIT_TAKER_FEE
@@ -881,8 +881,8 @@ class RealTrader:
             rows = await conn.fetch(
                 """
                 SELECT rt.id, rt.subscription_id, rt.strategy, rt.symbol, rt.interval, rt.side,
-                       rt.entry_price, rt.sl, rt.tp, rt.tp2, rt.tp3, rt.tp4, rt.be_level, rt.be_activated,
-                       rt.size, rt.original_size, rt.realized_pnl_partial,
+                       rt.entry_price, rt.sl, rt.tp, rt.be_level, rt.be_activated,
+                       rt.size, rt.original_size,
                        rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
                        rt.trailing_applied, rt.original_sl, rt.vol_widened,
                        COALESCE(rt.config_snapshot, psc.params) AS config_snapshot,
@@ -903,8 +903,8 @@ class RealTrader:
             row = await conn.fetchrow(
                 """
                 SELECT rt.id, rt.subscription_id, rt.strategy, rt.symbol, rt.interval, rt.side,
-                       rt.entry_price, rt.sl, rt.tp, rt.tp2, rt.tp3, rt.tp4, rt.be_level, rt.be_activated,
-                       rt.size, rt.original_size, rt.realized_pnl_partial,
+                       rt.entry_price, rt.sl, rt.tp, rt.be_level, rt.be_activated,
+                       rt.size, rt.original_size,
                        rt.entry_time, rt.updated_at, rt.order_id, rt.balance_before, rt.status,
                        rt.trailing_applied, rt.original_sl, rt.vol_widened,
                        COALESCE(rt.config_snapshot, psc.params) AS config_snapshot,
@@ -957,11 +957,10 @@ class RealTrader:
 
     @staticmethod
     def _levels(strategy, price: float, side: str, sl_pct: float) -> tuple:
-        """(sl, tp1, tp2, tp3, tp4, be) desde un precio de referencia."""
+        """(sl, tp, be) desde un precio de referencia."""
         sl = round(price * (1 - sl_pct / 100) if side == 'long' else price * (1 + sl_pct / 100), 8)
-        tps = strategy.calculate_tp_levels(price, side)
         be = round(strategy.calculate_breakeven(price, side), 8)
-        return sl, tps['tp1'], tps.get('tp2'), tps.get('tp3'), tps.get('tp4'), be
+        return sl, strategy.calculate_tp1(price, side), be
 
     async def _minute_extremes_since_entry(self, trade: dict) -> tuple[float | None, float | None]:
         """(máximo, mínimo) de las velas de 1m CERRADAS desde la entrada (mismo dato que usan backtest y paper)."""
@@ -1277,7 +1276,7 @@ class RealTrader:
             logger.warning(f"[REAL] Precio actual ({current_price}) difiere >2% del precio de señal ({entry_signal_price}) para {symbol}")
 
         sl_pct = signal_sl_pct if signal_sl_pct is not None else float(strategy_instance.sl_pct)
-        sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct)
+        sl, tp1, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct)
 
         # 3. Calcular tamaño con balance real y riesgo configurado
         # risk_override_pct de la suscripcion tiene prioridad sobre config
@@ -1338,22 +1337,22 @@ class RealTrader:
                 INSERT INTO real_trades
                     (user_id, subscription_id, broker_account_id, paper_strategy_config_id,
                      strategy, symbol, broker, interval, side,
-                     entry_price, entry_price_signal, sl, tp, tp2, tp3, tp4,
+                     entry_price, entry_price_signal, sl, tp,
                      be_level, be_activated, size, original_size, leverage,
                      balance_before, regime, entry_time, order_link_id, config_snapshot,
                      status, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                     $10, $11, $12, $13, $14, $15, $16,
-                     $17, false, $18, $18, 1,
-                     $19, $20, $21, $22, $23,
+                     $10, $11, $12, $13,
+                     $14, false, $15, $15, 1,
+                     $16, $17, $18, $19, $20,
                      'pending_open', now(), now())
                 RETURNING id
                 """,
                 sub['user_id'], sub['subscription_id'], sub['broker_account_id'],
                 sub['paper_strategy_config_id'],
                 sub['strategy'], symbol, sub['broker'], interval, side,
-                entry_signal_price, entry_signal_price, sl, tp1, tp2, tp3, tp4,
+                entry_signal_price, entry_signal_price, sl, tp1,
                 be, size, balance, regime,
                 datetime.now(timezone.utc).replace(tzinfo=None),
                 link_id,
@@ -1368,7 +1367,7 @@ class RealTrader:
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.005:
             # Precio movio mas de 0.5% — recalcular SL/TP con precio actual
             logger.warning(f"[REAL] Precio movio de {entry_signal_price} a {current_price} — recalculando SL/TP")
-            sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, current_price, side, sl_pct)
+            sl, tp1, be = self._levels(strategy_instance, current_price, side, sl_pct)
             entry_signal_price = current_price
         # Actualizar SL/TP en DB si fueron recalculados
         async with self.pool.acquire() as conn:
@@ -1464,7 +1463,7 @@ class RealTrader:
 
         # 7b. Calcular SL/TP reales con avgPrice real de ejecucion
         avg_price = filled_price
-        sl, tp1, tp2, tp3, tp4, be = self._levels(strategy_instance, avg_price, side, sl_pct)
+        sl, tp1, be = self._levels(strategy_instance, avg_price, side, sl_pct)
         logger.info(f"[REAL] SL/TP reales calculados: sl={sl} tp={tp1} be={be} avg={avg_price}")
         liq_price = float((position or {}).get('liqPrice') or 0)
         leverage = float((position or {}).get('leverage') or 0) or None
@@ -1527,13 +1526,13 @@ class RealTrader:
                         UPDATE real_trades
                         SET status = 'open', order_id = $1,
                             entry_price = $2, slippage_pct = $3,
-                            sl = $4, tp = $5, tp2 = $6, tp3 = $7, tp4 = $8,
-                            be_level = $9, original_sl = $4, leverage = COALESCE($11, leverage),
+                            sl = $4, tp = $5,
+                            be_level = $6, original_sl = $4, leverage = COALESCE($8, leverage),
                             updated_at = now()
-                        WHERE id = $10
+                        WHERE id = $7
                         """,
                         order_id, filled_price, round(slippage_pct, 6),
-                        sl, tp1, tp2, tp3, tp4, be, trade_id, leverage
+                        sl, tp1, be, trade_id, leverage
                     )
                 update_ok = True
                 break
@@ -1646,9 +1645,8 @@ class RealTrader:
             logger.warning(f"[REAL] CLOSE #{trade['id']} {symbol} omitido: ya no está 'open' (otro proceso lo cierra o lo cerró)")
             return False
 
-        # Orden de cierre (lado contrario) - usa el tamano REAL de la posicion
-        # en Bybit (no el guardado en DB), por si ya hubo un cierre parcial
-        # de TP2/TP3/TP4 en este mismo ciclo que dejo el size de la DB desactualizado.
+        # Orden de cierre (lado contrario) - usa el tamano REAL de la posicion en Bybit (no el guardado en DB), por si
+        # difieren (p. ej. un fill parcial al abrir: R-10).
         close_side  = 'Sell' if side == 'long' else 'Buy'
         live_size   = float(position.get('size', 0) or 0)
         size        = live_size if live_size > 0 else float(trade['size'])
@@ -1702,7 +1700,7 @@ class RealTrader:
         balance_after = await client.get_balance()
         fig = close_figures(side, entry_price, exit_price, size,
                             float(trade['balance_before']) if trade.get('balance_before') else None,
-                            bybit_net, float(trade.get('realized_pnl_partial') or 0))
+                            bybit_net)
         pnl, net_pnl, commission, pnl_pct = fig['pnl'], fig['net_pnl'], fig['commission'], fig['pnl_pct']
 
         async with self.pool.acquire() as conn:

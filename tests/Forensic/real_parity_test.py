@@ -139,9 +139,9 @@ class FakeClient:
 def trade(params=P, hours_ago=1.0, sl=99.0, tp=104.0, be_level=101.5, be_activated=False, trailing=False,
           vol_widened=False):
     return {'id': 5, 'subscription_id': 1, 'strategy': 'T', 'symbol': 'BTCUSDT', 'interval': '60', 'side': 'long',
-            'entry_price': 100.0, 'sl': sl, 'tp': tp, 'tp2': None, 'tp3': None, 'tp4': None,
+            'entry_price': 100.0, 'sl': sl, 'tp': tp,
             'be_level': be_level, 'be_activated': be_activated, 'size': 1.0, 'original_size': 1.0,
-            'realized_pnl_partial': 0, 'entry_time': datetime.now(timezone.utc) - timedelta(hours=hours_ago),
+            'entry_time': datetime.now(timezone.utc) - timedelta(hours=hours_ago),
             'updated_at': None, 'order_id': 'A', 'balance_before': 1000.0, 'status': 'open',
             'trailing_applied': trailing, 'original_sl': 99.0, 'config_snapshot': dict(params),
             'vol_widened': vol_widened}

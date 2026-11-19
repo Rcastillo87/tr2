@@ -30,7 +30,7 @@ STRATEGIES = [
     },
     {
         "name": "VWAP Reversión",
-        "params": {"sl_pct": 1.5, "tp_pct": 2.0, "tp2_pct": 3.5, "be_pct": 1.8, "max_duration": 24, "regime_filter": True},
+        "params": {"sl_pct": 1.5, "tp_pct": 2.0, "be_pct": 1.8, "max_duration": 24, "regime_filter": True},
     },
     {
         "name": "Reversión a la Media",

@@ -56,10 +56,8 @@ class BaseStrategy(ABC):
     Parámetros comunes configurables:
         - symbol, interval, sl_pct, tp_pct (TP1), be_pct, max_duration, regime_filter
 
-    Take Profit escalonado (opcional, hasta 4 niveles):
-        - tp2_pct, tp3_pct, tp4_pct: niveles adicionales. El motor evalua con
-          prioridad el nivel mas favorable alcanzado (TP4 > TP3 > TP2 > TP1).
-          None = nivel no usado.
+    Take profit: un solo nivel (tp_pct). TP2–TP4 se quitaron (D-31, p71): nunca se ejecutaban; si un JSON viejo los
+    trae, se ignoran.
 
     Trailing Stop (opcional, mode: None | "fixed" | "stepped"):
         - trailing_mode:        None (desactivado) | "fixed" | "stepped"
@@ -111,11 +109,6 @@ class BaseStrategy(ABC):
         self.blocked_hours          = params.get('blocked_hours', [])
         # Bloquear dias especificos (lista: 0=Lun,1=Mar,...,6=Dom)
         self.blocked_days           = params.get('blocked_days', [])
-
-        # Take profit escalonado — hasta 4 niveles, todos opcionales
-        self.tp2_pct = params.get('tp2_pct', None)
-        self.tp3_pct = params.get('tp3_pct', None)
-        self.tp4_pct = params.get('tp4_pct', None)
 
         # Trailing stop
         self.trailing_mode         = params.get('trailing_mode', None)  # None | "fixed" | "stepped" | "atr"
@@ -314,33 +307,12 @@ class BaseStrategy(ABC):
             tp = entry_price * (1 - self.tp_pct / 100)
         return round(sl, 8), round(tp, 8)
 
-    def calculate_tp_levels(self, entry_price: float, side: str) -> dict:
-        """
-        Calcula todos los niveles de TP definidos (TP1 a TP4).
-        Retorna dict {'tp1': float, 'tp2': float|None, 'tp3': float|None, 'tp4': float|None}
-        """
-        levels = {}
-        pct_map = {'tp1': self.tp_pct, 'tp2': self.tp2_pct, 'tp3': self.tp3_pct, 'tp4': self.tp4_pct}
-
-        for key, pct in pct_map.items():
-            if pct is None:
-                levels[key] = None
-                continue
-            if side == 'long':
-                levels[key] = round(entry_price * (1 + pct / 100), 8)
-            else:
-                levels[key] = round(entry_price * (1 - pct / 100), 8)
-
-        return levels
-
-    def calculate_tp2(self, entry_price: float, side: str) -> float | None:
-        """Retrocompatibilidad: calcula solo TP2."""
-        if self.tp2_pct is None:
+    def calculate_tp1(self, entry_price: float, side: str) -> float | None:
+        """Nivel de take profit (TP1) desde un precio; None si la estrategia no define tp_pct."""
+        if self.tp_pct is None:
             return None
-        if side == 'long':
-            return round(entry_price * (1 + self.tp2_pct / 100), 8)
-        else:
-            return round(entry_price * (1 - self.tp2_pct / 100), 8)
+        pct = self.tp_pct / 100
+        return round(entry_price * (1 + pct) if side == 'long' else entry_price * (1 - pct), 8)
 
     def calculate_breakeven(self, entry_price: float, side: str) -> float:
         """Calcula el precio al que se activa el break-even."""

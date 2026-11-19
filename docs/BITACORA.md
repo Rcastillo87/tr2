@@ -21,6 +21,33 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### D-31 — Limpieza de TP2, TP3 y TP4 (p71)
+- **Decisión del dueño (13-nov):** limpiar los residuos; las columnas de la base se conservan. Ejecutada el 19-nov
+  («procede»).
+- **Lectura del servidor (19-nov, solo lectura):** md5 de los 8 archivos = repo. **0** filas con `tp2/3/4_pct`
+  numérico en todas las columnas JSON/texto de `strategies`, `paper_strategy_configs`, `backtests`,
+  `param_search_runs`, `real_strategy_subscriptions` y `strategy_config_changes`; **0** operaciones (10 Real, 33
+  Paper) con niveles TP2–4 guardados; **0** con PnL parcial; **0** cierres `take_profit_2..4`.
+- **Cambio:**
+  - Motor: `BaseStrategy.calculate_tp1` reemplaza `calculate_tp_levels`/`calculate_tp2` (misma fórmula y redondeo
+    del TP1); sin atributos `tp2_pct…tp4_pct` (un JSON viejo que los traiga se ignora); los trades del backtest ya
+    no llevan `tp2/tp3/tp4`. La referencia V3 de la prueba de paridad recibe la misma limpieza.
+  - `request_rules.json` y `BacktestRequest` sin `tp2/3/4_pct` (un pedido viejo con ellos pasa y se ignora).
+  - Paper y Real: no calculan ni guardan TP2–4; `_levels` devuelve `(sl, tp, be)`; fuera `realized_pnl_partial`
+    (nunca se llenaba) y el parámetro `partial_pnl` de `close_figures`. La regresión encontró un uso que el
+    inventario por texto no veía (`sl, tp, _, _, _, be = trader._levels(...)` en `_adopt_position`): corregido.
+  - Laravel: `RealTrade` sin `tp2/3/4` en fillable/casts; el Excel del backtest sin las filas «Take Profit 2/3/4 %».
+  - Herramientas de análisis y 8 pruebas: fixtures sin TP2–4.
+  - **No se tocan:** las columnas de la base, ni las dos pantallas (solo esconden esas claves de configs viejas).
+- **Equivalencia:** el motor anterior y el nuevo, en las 190 configuraciones sintéticas de la prueba de paridad
+  (con y sin 1m, funding, trailing): **38.139 trades idénticos** salvo las claves quitadas; 0 diferencias.
+- **Pruebas:** `tp_cleanup_test.py`: sin residuos en motor/trading/API/CLI/herramientas/Laravel; reglas y
+  `BaseStrategy` sin TP2–4; `calculate_tp1` = fórmula anterior (long/short, precios chicos y grandes) y None sin
+  `tp_pct`; JSON y pedido viejos se aceptan e ignoran; trades con `tp1` y sin `tp2/3/4`. Con el código anterior
+  falla. Regresión 58 Python + 23 PHP en TODO OK.
+- **Lección:** un inventario por texto (`grep tp2`) no ve los usos posicionales (`_, _, _`); la regresión completa
+  sí. Al cambiar la forma de una tupla, buscar también las llamadas a la función.
+
 ### R-16 — Motivo de salida según la orden de cierre de Bybit (p70)
 - **Origen:** la corrección D-15 (p69) dejó 4 de 6 en `closed_other`; con #94 y #98, **6 de 10 cierres** decían
   `closed_other`. La regla por precio (salida contra SL/TP de la DB) no reconoce TP/SL ejecutados a mercado con
@@ -47,6 +74,14 @@
   endpoint sin `apply` no escribe, con `apply` solo la fila con dato y con la guarda; ventana ≤ 7 días hasta el
   cierre; sin ventana igual que antes. Con el código anterior falla (no existen las funciones); mutaciones 5/5.
   Regresión 57 Python + 23 PHP en TODO OK.
+- Instalación de p70 el 18-nov (~22:16 UTC): regresión 57 Python + 23 PHP en TODO OK; motor reiniciado 22:16:36 UTC,
+  0 errores. Reclasificación (prueba y luego aplicada), **6 de 6 con dato de Bybit**: #85 StopLoss → `stop_loss`;
+  #92, #94, #95 TakeProfit → `take_profit_1`; #93 TrailingStop → `trailing_stop`; #98 StopLoss → `stop_loss`.
+  Motivos de las 10 cerradas: 4 `take_profit_1`, 3 `stop_loss`, 2 `circuit_breaker_max_loss`, 1 `trailing_stop`;
+  ninguna `closed_other`. `main` = `origin/main` = `b4234dc`.
+- **Nota:** Bybit informa `createType = CreateByTrailingProfit` para el trailing (no `CreateByTrailingStop`, que es lo
+  que figura en el mapa de respaldo). No afectó porque `stopOrderType = TrailingStop` manda; se agrega al mapa en el
+  próximo parche.
 
 ### R-09 — Cierres de Bybit marcados «huérfanos» y motivo de salida perdido (p69)
 - **Evidencia del servidor (18-nov, solo lectura):** de 10 operaciones Real cerradas, **6 pasaron por `orphaned`**

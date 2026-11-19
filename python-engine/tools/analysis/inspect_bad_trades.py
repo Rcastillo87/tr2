@@ -46,7 +46,7 @@ async def main():
 
     params = {
         'symbol': SYMBOL, 'interval': INTERVAL, 'mode': 'trend_follow',
-        'sl_pct': 1.0, 'tp_pct': 1.0, 'tp2_pct': 2.0, 'tp3_pct': 3.0, 'tp4_pct': 4.0,
+        'sl_pct': 1.0, 'tp_pct': 1.0,
         'be_pct': 1.8, 'max_duration': 24, 'regime_filter': True,
         'allowed_regimes': ['TRENDING'],
     }

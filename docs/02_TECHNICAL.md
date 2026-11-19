@@ -1,5 +1,7 @@
 # tr-bot V2 — Documentación Técnica
 
+> **[p71, D-31] TP2, TP3 y TP4 eliminados.** Nunca se ejecutaban (motor, Paper y Real cierran solo con TP1). Las menciones a `tp2/tp3/tp4`, `tp2_pct…tp4_pct`, `calculate_tp_levels`, `calculate_tp2`, `_get_active_tp`, `realized_pnl_partial` y cierres `take_profit_2..4` en este documento describen código anterior. Las columnas de la base se conservan por el historial y ya no se llenan.
+
 > ⚠️ **Estado del documento (V7.1, 2026-10-27):** escrito en julio de 2026. En V7.1 se actualizaron solo las secciones marcadas con **[V7.1]**; el resto puede estar desactualizado (rutas, jobs, estrategias, frecuencias). Fuente vigente: `README.md`, `docs/PROMPT_MAESTRO.md` y `docs/BITACORA.md`.
 
 > **[V7.2] 2026-11-06:** cambios de p19–p30 (señal ya operada, hora de salida del evento, huecos de 1m, `end_of_data`, volatilidad, snapshot sin código, funding diario, validación de parámetros, fusión del JSON editado, comparador) resumidos en `docs/PROMPT_MAESTRO.md` §7 «Cambios del 05–06 nov» y en `docs/BITACORA.md`. Donde este documento diga otra cosa, manda aquel.
@@ -767,9 +769,9 @@ Todas estas funciones devuelven el DataFrame sin cambios si su filtro correspond
 
 **`calculate_sl_tp(entry_price, side)`** — fórmula directa: para `long`, SL = entry × (1 - sl_pct/100), TP = entry × (1 + tp_pct/100); para `short`, lo inverso. Redondeado a 8 decimales.
 
-**`calculate_tp_levels(entry_price, side)`** — versión generalizada que calcula los 4 niveles a la vez (TP1 a TP4), devolviendo `None` para los niveles cuyo porcentaje no esté configurado.
+~~**`calculate_tp_levels(entry_price, side)`**~~ — **eliminado en p71 (D-31)**; hoy `calculate_tp1(entry_price, side)` (TP1, misma fórmula; None sin `tp_pct`). Antes: versión generalizada que calcula los 4 niveles a la vez (TP1 a TP4), devolviendo `None` para los niveles cuyo porcentaje no esté configurado.
 
-**`calculate_tp2(entry_price, side)`** — método legado, calcula solo TP2 (usado por compatibilidad donde no se llama a `calculate_tp_levels`).
+~~**`calculate_tp2(entry_price, side)`**~~ — **eliminado en p71 (D-31)**. Antes: método legado, calcula solo TP2 (usado por compatibilidad donde no se llama a `calculate_tp_levels`).
 
 **`calculate_breakeven(entry_price, side)`** — precio al que se activa el movimiento de SL a entrada.
 

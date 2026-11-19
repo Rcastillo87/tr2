@@ -147,10 +147,7 @@ class BacktestMonthlyExport
 
         $labels = [
             'sl_pct'                     => 'Stop Loss %',
-            'tp_pct'                     => 'Take Profit 1 %',
-            'tp2_pct'                    => 'Take Profit 2 %',
-            'tp3_pct'                    => 'Take Profit 3 %',
-            'tp4_pct'                    => 'Take Profit 4 %',
+            'tp_pct'                     => 'Take Profit %',
             'be_pct'                     => 'Break-even %',
             'max_duration'               => 'Máx. duración (velas)',
             'risk_per_trade_pct'         => 'Riesgo por trade %',
