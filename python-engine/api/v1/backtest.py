@@ -568,7 +568,7 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
     if req.run_backtest:
         # p84 (R-21): no se guarda una estrategia que mira el futuro (el backtest mostraría operaciones falsas)
         from backtesting import lookahead
-        pool = await get_pool('backtest')
+        pool = await get_pool()   # ya es el pool de backtests (no recibe parámetros)
         try:
             reason = await lookahead.guard_code(pool, BACKTEST_SLOT, req.code, req.config, req.matrix)
         finally:
@@ -616,7 +616,7 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
 async def strategies_lookahead_audit():
     """Revisión diaria (p84): ¿alguna config activa de Paper o estrategia mira el futuro? Solo lectura."""
     from backtesting import lookahead
-    pool = await get_pool('backtest')
+    pool = await get_pool()   # ya es el pool de backtests (no recibe parámetros)
     try:
         out = await lookahead.audit(pool, BACKTEST_SLOT)
     finally:

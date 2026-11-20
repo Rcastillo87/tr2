@@ -36,6 +36,15 @@
   sin datos / estrategia rota → decide el smoke test; 2 combinaciones; revisión diaria) y
   `lookahead_audit_static_test.php` (nueva). Con el código anterior: FALLA. Mutaciones 6/6. Regresión 70 Python +
   27 PHP en TODO OK.
+- Instalación de p84 el 20-nov 14:31 UTC (`b9cf73d`): regresión y reinicio bien, pero la revisión de punta a punta
+  dio **HTTP 500**. Causa (error mío): en `api/v1/backtest.py` el `get_pool()` local ya es el pool de backtests y no
+  recibe parámetros; lo llamé con `'backtest'` → `TypeError`. Afectaba también al **guardado de estrategias** (el smoke
+  test respondía 500). La prueba no lo vio porque su base simulada aceptaba ese parámetro. Además el instalador lo dejó
+  como aviso en vez de detenerse.
+- **p85 (corrección):** `get_pool()` sin parámetro en los dos puntos; la prueba usa una base simulada con la MISMA firma
+  que la real y lo comprueba (B0): con el código de p84 falla. Verificado contra PostgreSQL local: revisión diaria y
+  rechazo al guardar (400 «mira el futuro»). El instalador ahora comprueba en el servidor el rechazo al guardar
+  (código viejo de VWAP → 400) y que la revisión diaria responda; si no, vuelve al código anterior.
 
 ### Paridad corrida 5 (`lectura_paridad5`, solo lectura, código corregido) y R-22 confirmado — 19-nov
 - **Con el código corregido** (8 configs, 05-nov → ayer): las «solo backtest» de R-21 desaparecen. **ETH 9-nov queda

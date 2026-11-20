@@ -106,7 +106,7 @@ check('A4: el veredicto lo dice en palabras', la.verdict(r_old).startswith('MIRA
 def validate(code, db, config=CFG):
     calls = []
 
-    async def fake_pool(kind='live'):
+    async def fake_pool():   # misma firma que api.get_pool (p84 la llamó con un argumento: 500 en el servidor)
         return db
 
     async def fake_run(req):
@@ -122,6 +122,9 @@ def validate(code, db, config=CFG):
 
 
 orig = (api.get_pool, api.run_backtest)
+import inspect  # noqa: E402
+check('B0: la base simulada tiene la misma firma que la real (si no, la prueba no ve un error de llamada)',
+      str(inspect.signature(orig[0])) == '()', str(inspect.signature(orig[0])))
 try:
     out, err, calls = validate(OLD, FakeDB())
     check('B1: guardar el código viejo: rechazado (400) con el motivo', err is not None and err.status_code == 400
@@ -154,7 +157,7 @@ try:
     st = [dict(id=1, name='VWAP Tendencia', code=NEW, config='{}'), dict(id=4, name='Otra', code=SHIFT, config=json.dumps(CFG))]
     db = FakeDB(configs=[cfg_old, cfg_new], strategies=st)
 
-    async def fake_pool(kind='live'):
+    async def fake_pool():   # misma firma que api.get_pool (p84 la llamó con un argumento: 500 en el servidor)
         return db
     api.get_pool = fake_pool
     out = asyncio.run(api.strategies_lookahead_audit())
