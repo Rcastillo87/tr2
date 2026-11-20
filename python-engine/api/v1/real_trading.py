@@ -6,7 +6,6 @@ muerto). Los 422 no repiten el pedido (R-07, main.py).
 """
 
 import asyncio
-import asyncpg
 from db import get_json_pool
 import logging
 import os

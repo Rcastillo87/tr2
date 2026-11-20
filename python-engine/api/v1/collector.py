@@ -3,7 +3,6 @@ Endpoint Data Collector V2
 """
 import asyncio
 import re
-import asyncpg
 import time
 from datetime import datetime, timezone
 

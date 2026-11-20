@@ -81,7 +81,7 @@ class PaperTradingController extends Controller
         $histSymbols    = (clone $monthTrades)->distinct()->pluck('symbol')->toArray();
         $histIntervals  = (clone $monthTrades)->distinct()->pluck('interval')->toArray();
 
-        $activeConfigs = \App\Models\PaperStrategyConfig::where('active', true)->get();
+        $activeConfigs = PaperStrategyConfig::where('active', true)->get();
         $actStrategiesRaw = $activeConfigs->pluck('display_name')->toArray();
         $actStrategies = array_map($extractBaseName, $actStrategiesRaw);
         

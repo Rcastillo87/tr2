@@ -2,7 +2,6 @@
 Endpoint Market Regime Detector V2
 """
 
-import asyncpg
 from db import get_pool as shared_get_pool
 import redis.asyncio as redis
 import logging

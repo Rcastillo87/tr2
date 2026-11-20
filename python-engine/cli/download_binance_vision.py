@@ -18,10 +18,8 @@ import argparse
 import io
 import logging
 import os
-import sys
 import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
 import httpx
 import pandas as pd
 from dotenv import load_dotenv
@@ -127,7 +125,7 @@ async def insert_rows(pool: asyncpg.Pool, rows: list[tuple]) -> int:
         total = 0
         for i in range(0, len(rows), BATCH_SIZE):
             batch = rows[i:i + BATCH_SIZE]
-            result = await conn.executemany(
+            await conn.executemany(
                 """
                 INSERT INTO ohlcv_data
                     (time, broker, symbol, interval, open, high, low, close, volume)
@@ -194,7 +192,7 @@ async def main():
 
     logger.info("")
     logger.info("═" * 60)
-    logger.info(f"✅ Importación completa")
+    logger.info("✅ Importación completa")
     logger.info(f"   Descargadas: {total_descargados:,} velas")
     if not args.dry_run:
         logger.info(f"   Insertadas:  {total_insertados:,} velas nuevas")

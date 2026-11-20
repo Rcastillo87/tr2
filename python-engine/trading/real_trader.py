@@ -1510,7 +1510,7 @@ class RealTrader:
             # trade con buffer=0.0 (default de config sin el campo) genero
             # activePrice == entry_price exacto, Bybit lo rechazo con
             # 'TrailingProfit... should be less than session_average_price',
-            # dejando la posicion con SL/TP provisional (5%/10%) sin trailing.
+            # dejando la posicion con SL/TP provisional (entonces 5%/10%; hoy 2%/4%, D-13) sin trailing.
             # REAL-10 (revisado 2026-11-03): el mínimo es la constante compartida con el backtest y Paper
             # (NATIVE_TRAILING_MIN_BUFFER_PCT): los tres activan el trailing en el mismo punto con buffer 0.
             buffer_pct = ((configured_buffer if configured_buffer and configured_buffer > 0

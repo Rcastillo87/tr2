@@ -8,7 +8,6 @@ import asyncpg
 import pandas as pd
 import logging
 import json
-import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from collectors.bars import bars_frame

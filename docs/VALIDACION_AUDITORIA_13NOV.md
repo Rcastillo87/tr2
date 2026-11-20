@@ -306,10 +306,12 @@ Confirmado en producción el 13-nov:
 **Código muerto:**
 - ~~`RealTrader.get_active_subscriptions` (lee claves cifradas).~~ Eliminado en p65.
 - ~~`laravel_crypt.py`.~~ Eliminado en p65.
-- `RegisteredUserController` y la vista de registro.
-- Validaciones de clave repetidas en los endpoints Real.
-- `CORSMiddleware`, importado sin uso.
-- `datetime` redefinido en `collector.py:125`.
+- ~~`RegisteredUserController` y la vista de registro.~~ Eliminados en p72.
+- Validaciones de la clave interna en cada endpoint Real: **se conservan a propósito** (p72: defensa en profundidad).
+- ~~`CORSMiddleware`, importado sin uso.~~ Eliminado en p72.
+- ~~`datetime` redefinido en `collector.py:125`.~~ Corregido en p72.
+- p88 (20-nov): 8 imports sin usar en el motor y 3 `use` sin usar en Laravel, quitados; dos pruebas nuevas
+  (`unused_imports_test.py`, `unused_uses_static_test.php`) impiden que vuelvan.
 
 **Documentación desalineada:**
 - `PROMPT_MAESTRO` V7.3 sin p48–p58.

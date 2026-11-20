@@ -21,6 +21,20 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Limpieza de código sin usar (p88) — 20-nov
+- La lista de «código muerto» de la validación del 13-nov estaba desactualizada: p72 ya había quitado el registro de
+  usuarios, `CORSMiddleware` y el `datetime` repetido (corregida la lista).
+- **Medido de nuevo** (pyflakes y revisión de `use` en PHP): motor — `asyncpg` en `api/v1/collector.py`,
+  `real_trading.py` y `regime.py`; `HTTPException` en `main.py`; `os` en `regime_detector.py`; `numpy` en
+  `regime_indicators.py`; `sys` y `Path` en `cli/download_binance_vision.py` (más una variable sin usar y f-strings
+  sin variables en dos herramientas). Laravel — `Auth` en `ProfileController`, `Request` en `DashboardController`, y
+  `PaperTradingController` usaba el nombre completo de `PaperStrategyConfig` aunque lo importaba.
+- Comentario de Real que decía «SL/TP provisional (5%/10%)»: es historia (así era en junio); ahora dice «entonces
+  5%/10%; hoy 2%/4%, D-13».
+- **Pruebas nuevas** para que no vuelvan: `unused_imports_test.py` (AST sobre todo `python-engine/`) y
+  `unused_uses_static_test.php` (app/ y routes/). Con el código anterior: FALLAN. Regresión 72 Python + 29 PHP en
+  TODO OK. Sin cambio de comportamiento.
+
 ### Permisos por rol (p87, R-02, D-46) — 20-nov
 - **Decisión del dueño (20-nov):** Dashboard todos (con sus bloques por permiso); Paper admin y consultor (solo mirar);
   Real admin e inversionista; backtesting, búsquedas, estrategias, collector y usuarios solo admin.
@@ -32,6 +46,7 @@
   (ya no ve Paper).
 - **Prueba:** `role_access_static_test.php` (nueva): matriz completa, rutas protegidas, Paper solo GET, Gates, controlador,
   menú y dashboard. Con el código anterior: 2 FALLOS. Regresión 71 Python + 28 PHP en TODO OK.
+- Instalación de p87 el 20-nov (`a1e9ed6`): 1 admin (todo) y 1 inversionista (Dashboard y Real); 0 consultores.
 
 ### Huella del código en cada operación (p86, MEJ-002) — 20-nov
 - p85 instalado el 20-nov 15:18 UTC (`44736a6`): rechazo al guardar comprobado en el servidor (código viejo de VWAP →

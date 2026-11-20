@@ -74,7 +74,7 @@ async def main():
         reason_counts = month_trades['exit_reason'].value_counts()
         print(f"  Razones de cierre: {dict(reason_counts)}")
 
-        print(f"\n  Detalle de trades:")
+        print("\n  Detalle de trades:")
         for _, t in month_trades.iterrows():
             print(f"    {t['entry_time']} | {t['side'].upper():5} | entry={t['entry_price']:.2f} | "
                   f"exit={t['exit_price']:.2f} | pnl={t['pnl_pct']:+.3f}% | reason={t['exit_reason']}")

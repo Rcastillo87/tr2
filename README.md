@@ -366,7 +366,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (71 Python + 28 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (72 Python + 29 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
