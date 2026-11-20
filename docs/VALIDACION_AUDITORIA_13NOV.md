@@ -259,7 +259,7 @@ El precio nunca llegó al BE (1,5 %) ni a la activación (1,8 %).
 |---|---|---|
 | FIX-PAPER-DOC-01 | **Validado** (A-02, p59 `904154d`) | |
 | TR2-MEJ-001 Trazabilidad | **Cumplido** | Foto de versiones del 13-nov (lectura `INV006_BASELINE`) y SHA de cada parche en este documento y en la bitácora |
-| TR2-MEJ-002 Parámetros por operación | Casi cumplido | El snapshot ya trae código y parámetros; falta hash/versión |
+| TR2-MEJ-002 Parámetros por operación | **Cumplido** (p86) | El snapshot trae código y parámetros; `strategy_code_md5` (columna generada) da la versión del código de cada operación, también de las históricas |
 | TR2-MEJ-003 Harness de paridad | **Cumplido** (19-nov) | `compare_paper_vs_backtest.py` + `paper_eval_log`; corrido sobre las configs vivas (ver «Cierre»); p81: último día completo y un tramo por snapshot |
 | TR2-MEJ-004 Ledger de ejecuciones | Válido | Hoy: `audit_log` + closed-pnl; no se guardan los fills. Necesario para INV-006 y TST-18 |
 | TR2-MEJ-005 Calidad de datos | = WB-04 | |
@@ -338,7 +338,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Decidido 19-nov, **4A en p75 y 1A en p77** | Fase 12 (D-38, D-41) | 4A drawdown flotante (hecho) · 1A tres tramos (hecho) · 2A cartera **descartada** (D-41: el backtest queda como está; las protecciones solo en Real) · 3A se junta con 3B walk-forward real (las ventanas no se muestran hoy) · la 5 descartada |
 | **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); ETH 9-nov explicado (era R-21, corrida 5). **Herramienta corregida en p81:** termina en el último día completo y compara un tramo por snapshot |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
-| Código, chico | MEJ-002 | Hash del código de la estrategia en el snapshot de cada operación |
+| **Hecho en p86** | MEJ-002 | Huella del código de la estrategia en cada operación (`strategy_code_md5`) |
 | Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |
 | Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
 | Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |

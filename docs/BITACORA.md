@@ -21,6 +21,19 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Huella del código en cada operación (p86, MEJ-002) — 20-nov
+- p85 instalado el 20-nov 15:18 UTC (`44736a6`): rechazo al guardar comprobado en el servidor (código viejo de VWAP →
+  400 «mira el futuro»: 5 señales y vwap_std_dev en 95 de 100 velas) y revisión diaria de punta a punta: 18 revisadas,
+  ninguna mira el futuro.
+- **MEJ-002:** columna generada `strategy_code_md5` = md5(`config_snapshot->>'strategy_code'`) en `paper_trades` y
+  `real_trades` (migración `2026_11_20_01_trade_code_md5`, con bajada). La calcula PostgreSQL (también para las
+  históricas) y no la escribe nadie: sin cambio en el motor. El comparador muestra el código de cada tramo
+  («código 979d8dec» = VWAP Tendencia viejo). `lock_timeout` 10 s para no frenar los ticks.
+- **Prueba:** `code_md5_test.py` (nueva): migración, INSERT del motor sin la columna, misma huella en Python y en la base
+  (con acentos), recálculo, NULL, no escribible, idempotente y reversible (transacción revertida). Mutaciones 3/3.
+  Regresión 71 Python + 27 PHP en TODO OK.
+- **D-45 (20-nov):** SL/TP automáticos opcionales (p. ej. por ATR) quedan como requisito a futuro, después de lo pendiente.
+
 ### Protección contra estrategias que miran el futuro (p84, D-44) — 20-nov
 - **Prueba** (`backtesting/lookahead.py`, la de `lectura_lookahead`): misma vela inicial; cada una de las últimas N velas
   calculada con todas las velas y solo con las velas hasta ella; se comparan señal y cada columna numérica (filtros H4

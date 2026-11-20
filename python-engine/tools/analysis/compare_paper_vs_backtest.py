@@ -43,6 +43,12 @@ def as_dict(v) -> dict:
     return json.loads(v) if isinstance(v, str) else dict(v or {})
 
 
+def code_version(params: dict) -> str | None:
+    """md5 del código de la estrategia del snapshot: la misma huella que la columna strategy_code_md5 (MEJ-002)."""
+    code = (params or {}).get('strategy_code')
+    return hashlib.md5(code.encode('utf-8')).hexdigest() if isinstance(code, str) else None
+
+
 def snapshot_key(params: dict) -> str:
     return hashlib.md5(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:10]
 
@@ -278,13 +284,15 @@ def main(argv=None, loader=load, backtester=run_backtest, today: date | None = N
         for r in rows:
             r['snapshot'] = seg['key']
         s = summarize(rows)
-        title = (f"tramo {n}/{len(segs)} · parámetros {seg['key']} · desde {lo:%Y-%m-%d %H:%M}"
-                 f"{' hasta ' + format(hi, '%Y-%m-%d %H:%M') if hi else ''}") if len(segs) > 1 or seg['lo'] else ''
+        code_md5 = code_version(seg['params'])
+        title = ((f"tramo {n}/{len(segs)} · parámetros {seg['key']} · desde {lo:%Y-%m-%d %H:%M}"
+                  f"{' hasta ' + format(hi, '%Y-%m-%d %H:%M') if hi else ''} · ") if len(segs) > 1 or seg['lo'] else '') \
+            + f"código {code_md5[:8] if code_md5 else 'sin código'}"
         print(report(cfg, s_start, end, rows, s, title))
         for w in out.get('warnings') or []:
             print(w)
         all_rows += rows
-        out_segs.append(dict(snapshot=seg['key'], start=s_start, lo=lo, hi=hi, summary=s))
+        out_segs.append(dict(snapshot=seg['key'], code_md5=code_md5, start=s_start, lo=lo, hi=hi, summary=s))
     total = summarize(all_rows)
     if len(segs) > 1:
         print(f"\n=== Total de los {len(segs)} tramos: iguales {total['igual']} · distintas {total['distinta']} · solo Paper "

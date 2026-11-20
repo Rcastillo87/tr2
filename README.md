@@ -213,6 +213,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 11-10 02 | `paper_eval_state`, `paper_eval_log`: diagnóstico de Paper (RQ-01.5) |
 | 11-10 03 | `backtests.origin`, `origin_meta`: origen del backtest; recupera los creados desde búsquedas (RQ-01.3) |
 | 11-13 01 | `real_strategy_subscriptions.retire_on_close`: suscripciones que se eliminan al terminar su operación (D-04, p62) |
+| 11-20 01 | `paper_trades` y `real_trades`.`strategy_code_md5`: huella del código de la estrategia de cada operación, generada desde el snapshot (MEJ-002, p86) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)
@@ -365,7 +366,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (70 Python + 27 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (71 Python + 27 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
