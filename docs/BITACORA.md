@@ -21,7 +21,30 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Comisión y funding de Real por separado (p90, R-24) — 20-nov
+- **Hallazgo** (con el libro de p89): en 6 de 12 operaciones la comisión de Bybit (suma de las partes) no era la
+  registrada (diferencias de −2,72 a +1,30 USDT). La registrada era bruto − neto de Bybit, y el closed-pnl de Bybit
+  también descuenta el **funding**. Demostrado con datos públicos de Bybit (tasa y mark de cada liquidación, cantidad
+  de la operación): las 6 cuadran al centavo; las otras 6 no cruzaron ninguna liquidación (diferencia 0,0000). ENA
+  liquida cada **4 h** (las demás cada 8 h). Funding: pagado 5,00, cobrado 3,24, neto 1,76 USDT pagados (comisiones reales 389,78; registradas 391,53).
+- **Corrección de lo dicho en la conversación:** Paper y el backtest **sí** descuentan funding desde el 27-oct
+  (`paper_trades.funding`); solo Real lo mezclaba con la comisión.
+- **Fix (D-47):** migración `2026_11_20_03` (`real_trades.funding`, positivo = pagado). El libro, al tener las dos
+  patas, confirma el neto con el closed-pnl de Bybit de las órdenes de cierre y guarda `commission` = comisiones
+  de las partes y `funding` = bruto − neto − comisiones; si el neto registrado no es el de Bybit (estimado) no separa
+  y deja el motivo (`costs_split`) en el historial. Neto, PnL y saldo no cambian. Históricas:
+  `php artisan real:costs-split` (vista previa) / `--apply`. Pantallas sin cambio.
+- **Prueba:** `execution_ledger_test.py` +A10–A13, C4–C5, B11–B15 (vista previa, reparto, sin repetir, neto
+  estimado, lectura vieja). Código anterior: FALLA. Mutaciones 7/7 (signo, sin control del neto, sin guarda
+  `funding IS NULL`, closed-pnl sin filtrar por orden, comisión = bruto − neto, sin historial). Regresión 73 Python +
+  29 PHP en TODO OK. Además, la parte B de la prueba solo corre en una base cuyo nombre termina en «test» (aplica
+  DOWN/UP de las migraciones).
+
 ### Libro de ejecuciones de Bybit (p89, MEJ-004) y R-23 — 20-nov
+- **Instalado:** `9b769b2` (20-nov 17:33 UTC): regresión 73 + 29 en el servidor, motor reiniciado, 0 errores. Vista
+  previa y `--apply` del historial: **12/12 coinciden** con Bybit (una parte por pata, cantidad y precio iguales a lo
+  registrado; R-10 sin casos), 10 órdenes de cierre completadas (las 2 restantes ya las tenía: cierres del bot),
+  0 sin orden de cierre; 24 partes guardadas (comisiones 195,92 apertura + 193,85 cierre).
 - **Lectura previa** (`lectura_mej004`, 20-nov): 12 operaciones Real, todas cerradas (09-nov → 19-nov), cuenta 11 demo;
   12/12 con número de orden de apertura, **solo 2/12 con el de cierre** (R-23: los cierres hechos por Bybit no lo
   guardaban); ninguna cerró en varios tramos (`original_size` = `size`).

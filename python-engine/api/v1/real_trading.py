@@ -653,8 +653,7 @@ async def executions_backfill(
         client = _build_broker_client(account)
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT id, symbol, side, status, size, original_size, entry_price, exit_price, entry_time, exit_time,
-                          order_id, close_order_id, executions_status
+                f"""SELECT {execution_ledger.TRADE_COLS}
                    FROM real_trades WHERE broker_account_id = $1 AND executions_status = 'historical'
                      AND status IN ('open', 'closed') ORDER BY id""", account.id)
         for r in rows:
@@ -662,6 +661,38 @@ async def executions_backfill(
                 res = await execution_ledger.record_trade(pool, trader, client, dict(r), apply=request.apply)
             except Exception as e:   # noqa: BLE001
                 res = {'trade_id': r['id'], 'symbol': r['symbol'], 'error': f'{type(e).__name__}: {e}'}
+            out.append(res)
+    return {'status': 'ok', 'apply': request.apply, 'results': out}
+
+
+@router.post('/real/costs/split')
+async def costs_split(
+    request: ExecutionsBackfillRequest,
+    x_internal_api_key: str = Header(None, alias='X-Internal-API-Key'),
+):
+    """
+    R-24 (p90): operaciones Real cerradas con el libro completo ('ok') y sin funding separado. Solo LEE de Bybit (el
+    closed-pnl del cierre, para confirmar el neto); sin apply muestra el reparto; con apply guarda `commission` =
+    comisiones exactas de las partes y `funding` = bruto − neto − comisiones, y deja 'costs_split' en el historial.
+    Neto, PnL y saldo no cambian.
+    """
+    if x_internal_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    pool, out = await get_json_pool(), []
+    trader = RealTrader(pool)
+    for account in request.accounts:
+        client = _build_broker_client(account)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""SELECT {execution_ledger.TRADE_COLS}
+                   FROM real_trades WHERE broker_account_id = $1 AND executions_status = 'ok' AND status = 'closed'
+                     AND funding IS NULL ORDER BY id""", account.id)
+        for r in rows:
+            try:
+                res = await execution_ledger.record_trade(pool, trader, client, dict(r), apply=request.apply)
+            except Exception as e:   # noqa: BLE001
+                res = {'trade_id': r['id'], 'symbol': r['symbol'], 'error': f'{type(e).__name__}: {e}'}
+            res['pnl'], res['net_pnl'] = r['pnl'], r['net_pnl']
             out.append(res)
     return {'status': 'ok', 'apply': request.apply, 'results': out}
 

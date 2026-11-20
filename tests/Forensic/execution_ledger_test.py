@@ -66,6 +66,17 @@ check('A8: precio promedio distinto al registrado: se avisa', len(c) == 1 and 'p
 check('A9: el precio de Bybit redondeado al paso (0,005 %) no es diferencia',
       led.leg_checks(dict(tr, entry_price=10.2 * (1 + 5e-5)), s, None) == [])
 
+# R-24: separar comisión y funding (positivo = pagado). Cifras de #92 ENAUSDT: comisiones 21,1188 y funding cobrado 1,0761
+sp, note = led.split_costs(-10, -30.0427, 21.1188, -30.0427)
+check('A10: separa: comisión = la de las partes y funding = bruto − neto − comisión (cobrado = negativo)',
+      note is None and sp == {'commission': 21.1188, 'funding': -1.0761}, (sp, note))
+sp, note = led.split_costs(-10, -30.0427, 21.1188, -30.5427)
+check('A11: neto registrado distinto del de Bybit: no separa y dice por qué', sp is None and 'neto registrado' in note, note)
+sp, note = led.split_costs(-10, -30.0427, 21.1188, None)
+check('A12: sin closed-pnl de Bybit: no separa', sp is None and 'closed-pnl' in note, note)
+sp, note = led.split_costs(-10, -30.0427, 21.1188, -30.0477)
+check('A13: diferencia de redondeo del neto (0,005): sí separa', sp is not None and note is None, note)
+
 # ── C. Estático ──
 api = (ROOT / 'python-engine' / 'api' / 'v1' / 'real_trading.py').read_text(encoding='utf-8')
 check('C1: el tick lo llama después de las señales, dentro de try/except (nunca frena la gestión)',
@@ -77,6 +88,14 @@ cmd = (ROOT / 'app' / 'Console' / 'Commands' / 'RealExecutionsBackfill.php').rea
     if (ROOT / 'app' / 'Console' / 'Commands' / 'RealExecutionsBackfill.php').exists() else ''
 check('C3: comando real:executions-backfill con --apply y respuesta del motor sin datos sensibles en el log',
       "'real:executions-backfill {--apply" in cmd and "'/v1/real/executions/backfill'" in cmd and 'SafeLogBody::of(' in cmd)
+cs = (ROOT / 'app' / 'Console' / 'Commands' / 'RealCostsSplit.php')
+cs = cs.read_text(encoding='utf-8') if cs.exists() else ''
+check('C4: R-24: endpoint /real/costs/split con vista previa y comando real:costs-split con --apply',
+      "@router.post('/real/costs/split')" in api and "funding IS NULL" in api and "'real:costs-split {--apply" in cs
+      and "'/v1/real/costs/split'" in cs and 'SafeLogBody::of(' in cs)
+check('C5: el tick y los dos endpoints leen las columnas de costos (TRADE_COLS con pnl, net_pnl, commission, funding)',
+      'pnl, net_pnl, commission, funding' in led.TRADE_COLS and api.count('execution_ledger.TRADE_COLS') == 2
+      and 'SELECT {TRADE_COLS}' in (ROOT / 'python-engine' / 'trading' / 'execution_ledger.py').read_text(encoding='utf-8'))
 
 # ── B. Con PostgreSQL ──
 # B aplica DOWN/UP de la migración: solo en una base de pruebas (nombre terminado en «test»), nunca en producción.
@@ -89,6 +108,8 @@ else:
     from db import DB_DSN
     UP = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_02_real_trade_executions.up.sql').read_text(encoding='utf-8')
     DOWN = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_02_real_trade_executions.down.sql').read_text(encoding='utf-8')
+    F_UP = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_03_real_trades_funding.up.sql').read_text(encoding='utf-8')
+    F_DOWN = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_03_real_trades_funding.down.sql').read_text(encoding='utf-8')
 
     class FakeClient:
         def __init__(self, execs, history=(), fail=False):
@@ -114,6 +135,9 @@ else:
         uid = 99089
         try:
             await c.execute(DOWN)
+            await c.execute(F_DOWN)
+            await c.execute(F_UP)
+            await c.execute(F_UP)   # repetir la migración no falla
             await c.execute("DELETE FROM real_trades WHERE user_id = $1", uid)
             await c.execute("DELETE FROM users WHERE id = $1", uid)
             await c.execute("""INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
@@ -221,11 +245,59 @@ else:
                 led.record_trade = orig
             check('B10: el tick toma las pendientes (5, 7 y la abierta 8), no las «historical» (1) ni las resueltas',
                   picked == [5, 7, 8], picked)
+
+            # R-24: cierre del bot con neto de Bybit: separa comisión y funding
+            async def full(tid):
+                return dict(await c.fetchrow(f"SELECT {led.TRADE_COLS} FROM real_trades WHERE id = $1", tid))
+            ex9 = {k: [dict(e, execId=e['execId'] + '-9') for e in v] for k, v in execs.items()}   # comisiones 0,01 × 3
+            # bruto (10,2 − 9,8) × 10 = 4; funding pagado 0,2; neto de Bybit 4 − 0,03 − 0,2 = 3,77; registrado: comisión 0,23
+            await trade(9, close_oid='o-close')
+            await c.execute("UPDATE real_trades SET pnl = 4, net_pnl = 3.77, commission = 0.23 WHERE id = 9")
+            h9 = [{'orderId': 'o-close', 'closedPnl': '3.77', 'createdTime': str(MS(T0 + timedelta(hours=2)))},
+                  {'orderId': 'otra', 'closedPnl': '99', 'createdTime': str(MS(T0 + timedelta(hours=2)))}]
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex9, h9), await full(9), apply=False)
+            r9 = await full(9)
+            check('B11: vista previa de R-24: muestra el reparto y no escribe', out['split'] == {
+                'commission': 0.03, 'funding': 0.2, 'commission_before': 0.23} and r9['funding'] is None
+                and float(r9['commission']) == 0.23, (out['split'], r9['funding']))
+            trd9 = FakeTrader()
+            out = await led.record_trade(pool, trd9, FakeClient(ex9, h9), await full(9))
+            r9 = await full(9)
+            check('B12: separa: comisión 0,03 (la de las partes) y funding 0,2 pagado; bruto y neto sin cambio; en el historial',
+                  float(r9['commission']) == 0.03 and float(r9['funding']) == 0.2 and float(r9['pnl']) == 4
+                  and float(r9['net_pnl']) == 3.77 and ('costs_split' in [a[1] for a in trd9.audit]), (dict(r9), trd9.audit))
+            trd9b = FakeTrader()
+            await led.record_trade(pool, trd9b, FakeClient(ex9, h9), await full(9))
+            check('B13: repetir no vuelve a separar ni repite el historial', trd9b.audit == [] and float((await full(9))['funding']) == 0.2,
+                  trd9b.audit)
+
+            # neto estimado (sin closed-pnl al cerrar): no se separa
+            await trade(10, close_oid='o-close')
+            await c.execute("UPDATE real_trades SET pnl = 4, net_pnl = 3.9889, commission = 0.0111 WHERE id = 10")
+            ex10 = {k: [dict(e, execId=e['execId'] + '-10') for e in v] for k, v in execs.items()}
+            trd10 = FakeTrader()
+            out = await led.record_trade(pool, trd10, FakeClient(ex10, h9), await full(10))
+            r10 = await full(10)
+            check('B14: neto registrado distinto del de Bybit: no toca comisión ni funding y lo deja en el historial',
+                  r10['funding'] is None and float(r10['commission']) == 0.0111 and 'neto registrado' in (out['split_note'] or '')
+                  and any(a[1] == 'costs_split' and 'neto registrado' in (a[2]['note'] or '') for a in trd10.audit), out['split_note'])
+
+            # lectura vieja (funding NULL en memoria, ya separado en la base): no se pisa
+            await trade(11, close_oid='o-close')
+            await c.execute("UPDATE real_trades SET pnl = 4, net_pnl = 3.77, commission = 0.23 WHERE id = 11")
+            stale = await full(11)
+            await c.execute("UPDATE real_trades SET commission = 0.05, funding = 0.18 WHERE id = 11")
+            ex11 = {k: [dict(e, execId=e['execId'] + '-11') for e in v] for k, v in execs.items()}
+            await led.record_trade(pool, FakeTrader(), FakeClient(ex11, h9), stale)
+            r11 = await full(11)
+            check('B15: con una lectura vieja no pisa un reparto ya guardado (UPDATE solo si funding IS NULL)',
+                  float(r11['commission']) == 0.05 and float(r11['funding']) == 0.18, (r11['commission'], r11['funding']))
         finally:
             for q in ("DELETE FROM real_trades WHERE user_id = $1", "DELETE FROM broker_accounts WHERE user_id = $1",
                       "DELETE FROM users WHERE id = $1"):
                 await c.execute(q, uid)
             await c.execute(DOWN)
+            await c.execute(F_DOWN)
             await pool.release(c)
             await pool.close()
 

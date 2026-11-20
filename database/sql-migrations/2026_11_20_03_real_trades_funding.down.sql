@@ -1,0 +1,1 @@
+ALTER TABLE real_trades DROP COLUMN IF EXISTS funding;

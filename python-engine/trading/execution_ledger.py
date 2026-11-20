@@ -5,8 +5,12 @@ apertura y la(s) de cierre: precio, cantidad, comisión, maker/taker y hora. Sol
 Controles en cada operación (van al historial `audit_log`, acción `executions_recorded`):
   - cantidad llenada = tamaño registrado (apertura y cierre): cubre R-10 sin tocar la apertura (D-16);
   - precio promedio de las partes = precio de entrada / salida registrado;
-  - comisiones de las partes (informativo: la comisión registrada incluye el funding).
+  - neto registrado = closedPnl de Bybit de las órdenes de cierre.
 También completa `close_order_id` cuando falta (R-23: los cierres hechos por Bybit no lo guardaban).
+
+R-24 (p90): con las dos patas y el neto de Bybit, separa los costos como Paper: `commission` = comisiones exactas de
+las partes y `funding` = bruto − neto − comisiones (positivo = pagado). El neto y el saldo no cambian. Si el neto
+registrado no es el de Bybit, no se separa: queda como control en el historial (acción `costs_split`).
 
 Estados (`real_trades.executions_status`): NULL pendiente (lo toma el tick) · 'open_ok' apertura registrada ·
 'ok' apertura y cierre · 'missing' Bybit no las dio 24 h después del cierre · 'historical' anterior a p89 (lo toma
@@ -24,6 +28,9 @@ PRICE_TOL = 1e-4      # relativa: 0,01 % (Bybit redondea el avgPrice al paso de 
 WINDOW_MS = 3_600_000  # ± 1 h alrededor de la hora conocida de la orden
 GIVE_UP = timedelta(hours=24)
 PENDING_PER_TICK = 2
+NET_TOL = 0.01      # USDT: el neto se guarda con 4 decimales
+TRADE_COLS = ('id, symbol, side, status, size, original_size, entry_price, exit_price, entry_time, exit_time, '
+              'order_id, close_order_id, executions_status, pnl, net_pnl, commission, funding')
 
 
 def _f(v) -> float | None:
@@ -81,6 +88,29 @@ def leg_checks(trade: dict, open_s: dict | None, close_s: dict | None) -> list[s
     return out
 
 
+def split_costs(pnl, net_pnl, fees, bybit_net) -> tuple[dict | None, str | None]:
+    """R-24: ({commission, funding}, None) o (None, motivo por el que no se separa)."""
+    pnl, net_pnl, fees, bybit_net = _f(pnl), _f(net_pnl), _f(fees), _f(bybit_net)
+    if pnl is None or net_pnl is None or fees is None:
+        return None, 'sin bruto, neto o comisiones'
+    if bybit_net is None:
+        return None, 'Bybit no dio el closed-pnl del cierre'
+    if abs(net_pnl - bybit_net) > NET_TOL:
+        return None, f'neto registrado {net_pnl:g} y de Bybit {bybit_net:g}'
+    return {'commission': round(fees, 8), 'funding': round(pnl - net_pnl - fees, 8)}, None
+
+
+async def bybit_close_net(client, trade: dict, order_ids: list[str]) -> float | None:
+    """closedPnl de Bybit de las órdenes de cierre del trade (suma de tramos). None si no aparece ninguno."""
+    exit_ms = _ms(trade['exit_time']) + 60_000
+    history = await client.get_closed_pnl_history(trade['symbol'], float(trade['entry_price']), _ms(trade['entry_time']),
+                                                  limit=50, end_time_ms=exit_ms)
+    got = [_f(h.get('closedPnl')) for h in history
+           if str(h.get('orderId')) in set(order_ids) and int(_f(h.get('createdTime')) or 0) <= exit_ms]
+    got = [g for g in got if g is not None]
+    return round(sum(got), 8) if got else None
+
+
 async def close_orders(client, trade: dict) -> list[tuple[str, int]] | None:
     """Órdenes de cierre y su hora (ms). Con close_order_id (cierre del bot) es esa; si no, las de cada tramo del
     closed-pnl (cierres de Bybit: SL/TP/trailing). None si el trade no tiene hora de cierre."""
@@ -117,7 +147,7 @@ async def record_trade(pool, trader, client, trade: dict, apply: bool = True, no
         have = {r['leg']: r['n'] for r in await conn.fetch(
             "SELECT leg, count(*) AS n FROM real_trade_executions WHERE real_trade_id = $1 GROUP BY leg", trade['id'])}
     res = dict(trade_id=trade['id'], symbol=trade['symbol'], open=None, close=None, checks=[], status=None,
-               close_order_id=None, error=None)
+               close_order_id=None, error=None, split=None, split_note=None)
     new_rows = []
     if not have.get('open') and trade.get('order_id'):
         rows = await _fetch(client, trade['symbol'], [(str(trade['order_id']), _ms(trade['entry_time']))], 'open')
@@ -156,6 +186,13 @@ async def record_trade(pool, trader, client, trade: dict, apply: bool = True, no
         res['status'] = 'missing'
     elif not closed and open_s:
         res['status'] = 'open_ok'
+    if res['status'] == 'ok' and trade.get('funding') is None and 'pnl' in trade:
+        net_b = await bybit_close_net(client, trade, close_s['orders'])
+        split, note = split_costs(trade.get('pnl'), trade.get('net_pnl'), open_s['fee'] + close_s['fee'], net_b)
+        if split:
+            res['split'] = dict(split, commission_before=_f(trade.get('commission')))
+        else:
+            res['split_note'] = note
     if not apply:
         return res
     fresh = [r for r in new_rows if r['exec_id'] not in known]
@@ -174,7 +211,12 @@ async def record_trade(pool, trader, client, trade: dict, apply: bool = True, no
                                    res['close_order_id'], trade['id'])
             if res['status']:
                 await conn.execute("UPDATE real_trades SET executions_status = $1 WHERE id = $2", res['status'], trade['id'])
-    if res['status'] in ('ok', 'missing') or (res['status'] == 'open_ok' and fresh):
+            if res['split']:
+                await conn.execute("UPDATE real_trades SET commission = $1, funding = $2 WHERE id = $3 AND funding IS NULL",
+                                   res['split']['commission'], res['split']['funding'], trade['id'])
+    if res['split'] or res['split_note']:
+        await trader.log_audit(trade['id'], 'costs_split', {**(res['split'] or {}), 'note': res['split_note']})
+    if res['status'] and (fresh or res['status'] != trade.get('executions_status')):
         await trader.log_audit(trade['id'], 'executions_recorded' if res['status'] != 'missing' else 'executions_missing', {
             'open': open_s, 'close': close_s, 'checks': res['checks'], 'close_order_id_filled': res['close_order_id']})
         if res['checks']:
@@ -186,8 +228,7 @@ async def process_pending(pool, trader, client, account_id: int, limit: int = PE
     """Del tick: hasta `limit` operaciones de la cuenta con partes por registrar (no las 'historical')."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id, symbol, side, status, size, original_size, entry_price, exit_price, entry_time, exit_time,
-                      order_id, close_order_id, executions_status
+            f"""SELECT {TRADE_COLS}
                FROM real_trades
                WHERE broker_account_id = $1 AND order_id IS NOT NULL
                  AND ((executions_status IS NULL AND status IN ('open', 'closed'))
