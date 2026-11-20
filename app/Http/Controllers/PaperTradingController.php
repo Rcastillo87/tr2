@@ -170,10 +170,7 @@ class PaperTradingController extends Controller
 
     private function earliestAllowedMonth(): Carbon
     {
-        $user = auth()->user();
-        if ($user && $user->isInversionista()) {
-            return now()->startOfMonth()->subMonths(8);
-        }
+        // (el límite de 8 meses del inversionista se quitó en p87: el inversionista ya no ve Paper, D-46)
         $firstTrade = PaperTrade::orderBy('entry_time', 'asc')->first();
         return $firstTrade
             ? Carbon::parse($firstTrade->entry_time)->startOfMonth()

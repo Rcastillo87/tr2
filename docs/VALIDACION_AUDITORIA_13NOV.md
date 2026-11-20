@@ -280,7 +280,7 @@ Confirmado en producción el 13-nov:
 | ID | Prioridad | Hallazgo | Estado |
 |---|---|---|---|
 | R-01 | **P1 → validado en p62 (`140e22b`)** | `DELETE /profile` (Breeze) permite a cualquier usuario borrarse. Con CASCADE se borran sus cuentas, suscripciones y **todos sus `real_trades`**; las posiciones abiertas en Bybit quedan sin gestión. **Confirmado con las FK reales** | **Corregido**: borrado propio bloqueado en `ProfileController::destroy` (D-02); la vista no cambió |
-| R-02 | P2 (latente) | El rol `consultor` puede implementar, detener y borrar backtests, y su guardado sincroniza Paper → Real. Hoy no hay consultores | Abierto: gate propio para lo que muta Paper/Real |
+| R-02 | P2 (latente) | El rol `consultor` puede implementar, detener y borrar backtests, y su guardado sincroniza Paper → Real. Hoy no hay consultores | Corregido en p87 (D-46): backtesting, búsquedas y estrategias solo admin; el consultor ve Paper (solo mirar) y no Real; el inversionista ve Real y no Paper |
 | R-03 | **P2 rendimiento** (era P1; corregido con la medición del servidor) | Dashboard: `ROW_NUMBER()` sobre toda la serie de 1m por moneda. Producción: ~0,39 s por moneda (86,8 ms plan + 298,5 ms ejecución) contra ~6 ms acotada; ~4 s por vencimiento de caché con 11 monedas. Local sin TimescaleDB daba 2,2 s (sobreestimado) | Corregido en p63 (`dd9bca6`, 13-nov): 11/11 monedas iguales en producción; 1000PEPE 892 ms → 9 ms |
 | R-04 | P2 | `openTrades()` de la suscripción no incluye `orphaned`, y `BrokerAccountController::destroy` no mira trades vivos: una cuenta se puede borrar con un trade sin reconciliar | Corregido en p64 (`35d9d11`, 13-nov; integración G1–G3 PASS en producción): las dos pantallas usan `RECONCILE_STATUSES`. Servidor: 0 `orphaned` en la historia (fix defensivo) |
 | R-05 | P2 | `python-engine/.env.example` pide el `APP_KEY` de Laravel para `laravel_crypt.py`, que es código muerto (y depende de `cryptography`, que no está en `requirements.txt`) | Corregido en p65 (`96335d0`, 13-nov): módulo y método eliminados, `APP_KEY` fuera del ejemplo. El `.env` del servidor aún la tiene (51 caracteres): borrado manual, sin efecto en el motor |
@@ -339,7 +339,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | **Hecho 19-nov** | MEJ-003 / TST-01–02 | Paridad con datos reales: 14/14 emparejadas con el mismo motivo; las diferencias se explican por D-39 (p76) y R-21 (p80); ETH 9-nov explicado (era R-21, corrida 5). **Herramienta corregida en p81:** termina en el último día completo y compara un tramo por snapshot |
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | **Hecho en p86** | MEJ-002 | Huella del código de la estrategia en cada operación (`strategy_code_md5`) |
-| Código, chico | R-02 (latente) | Permiso propio para lo que el rol `consultor` cambia en Paper/Real (hoy 0 consultores) |
+| **Hecho en p87** | R-02 (D-46) | Permisos por rol según el dueño |
 | Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
 | Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |

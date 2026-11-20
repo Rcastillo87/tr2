@@ -21,6 +21,18 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Permisos por rol (p87, R-02, D-46) — 20-nov
+- **Decisión del dueño (20-nov):** Dashboard todos (con sus bloques por permiso); Paper admin y consultor (solo mirar);
+  Real admin e inversionista; backtesting, búsquedas, estrategias, collector y usuarios solo admin.
+- **Antes:** Paper = admin + inversionista; backtesting = admin + consultor (el consultor podía implementar, detener,
+  borrar y editar backtests, y su guardado sincronizaba Paper → Real: R-02); el menú mostraba «Estrategias» al
+  consultor aunque la ruta era solo admin (403).
+- **Cambio:** `User::canViewPaperTrading` = admin, consultor; `canViewAnalysisTools` = solo admin. Rutas, Gates, menú y
+  dashboard ya usaban esos métodos (sin cambio de vistas). Se quita el límite de 8 meses de Paper del inversionista
+  (ya no ve Paper).
+- **Prueba:** `role_access_static_test.php` (nueva): matriz completa, rutas protegidas, Paper solo GET, Gates, controlador,
+  menú y dashboard. Con el código anterior: 2 FALLOS. Regresión 71 Python + 28 PHP en TODO OK.
+
 ### Huella del código en cada operación (p86, MEJ-002) — 20-nov
 - p85 instalado el 20-nov 15:18 UTC (`44736a6`): rechazo al guardar comprobado en el servidor (código viejo de VWAP →
   400 «mira el futuro»: 5 señales y vwap_std_dev en 95 de 100 velas) y revisión diaria de punta a punta: 18 revisadas,
@@ -33,6 +45,10 @@
   (con acentos), recálculo, NULL, no escribible, idempotente y reversible (transacción revertida). Mutaciones 3/3.
   Regresión 71 Python + 27 PHP en TODO OK.
 - **D-45 (20-nov):** SL/TP automáticos opcionales (p. ej. por ATR) quedan como requisito a futuro, después de lo pendiente.
+- Instalación de p86 el 20-nov (`ebe2e75`): migración aplicada, 0 huellas distintas. Versiones: Paper 979d8dec (VWAP
+  Tendencia viejo, ya no está en Estrategias) 37 operaciones 28-oct → 19-nov; dcaf7991 (Tendencia EMA/Donchian) 1; Real
+  979d8dec 12 operaciones 09-nov → 19-nov. Todas las de VWAP Tendencia se abrieron con el código viejo (en vivo opera
+  igual que el corregido: p80); las primeras con el corregido aparecerán con otra huella.
 
 ### Protección contra estrategias que miran el futuro (p84, D-44) — 20-nov
 - **Prueba** (`backtesting/lookahead.py`, la de `lectura_lookahead`): misma vela inicial; cada una de las últimas N velas

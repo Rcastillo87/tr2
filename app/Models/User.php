@@ -63,16 +63,20 @@ class User extends Authenticatable
     }
 
     /**
-     * Modulos del paper trading / herramientas de analisis (backtesting, data collector).
+     * Permisos por rol (D-46, decisión del dueño 20-nov; R-02):
+     *   Dashboard: todos (bloque de Real solo admin e inversionista; bloque de administración solo admin).
+     *   Paper: admin y consultor (solo mirar). Real: admin e inversionista. Backtesting, búsquedas, estrategias,
+     *   collector y usuarios: solo admin. Antes el consultor podía implementar, detener, borrar y editar backtests
+     *   (y su guardado sincronizaba Paper → Real), y el inversionista veía Paper.
      */
     public function canViewPaperTrading(): bool
     {
-        return in_array($this->role, ['admin', 'inversionista'], true);
+        return in_array($this->role, ['admin', 'consultor'], true);
     }
 
     public function canViewAnalysisTools(): bool
     {
-        return in_array($this->role, ['admin', 'consultor'], true);
+        return $this->isAdmin();
     }
 
     /**

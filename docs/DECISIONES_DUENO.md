@@ -20,6 +20,12 @@
 | D-05 | **Config Paper apagada («Detener» en Paper) con operación Real abierta:** la operación sigue con SL/TP, break-even, trailing y tiempo, **sin** salida por señal opuesta (igual que Paper, que deja de evaluar esa config) y sin entradas | 03-nov (BP-02), ratificada el 13-nov | `windingDown()` exige config activa; Paper: `config_map` solo con configs activas |
 | ~~D-03-ant~~ | ~~Con la suscripción pausada no se aplica la salida por señal opuesta~~ → reemplazada por **D-03** (13-nov) | 03-nov (BP-02) | — |
 
+## Roles y permisos
+
+| ID | Decisión | Fecha · origen | Dónde se aplica |
+|---|---|---|---|
+| D-46 | **Permisos por rol.** Dashboard: todos (bloque de Real solo admin e inversionista; bloque de administración solo admin). **Paper:** admin y consultor (solo mirar). **Real (Trading):** admin e inversionista; el consultor no lo ve. **Backtesting, búsquedas, estrategias, collector y usuarios:** solo admin. El inversionista no ve Paper | 20-nov · el dueño (R-02) | p87: `User::canViewPaperTrading` / `canViewAnalysisTools` (rutas, Gates, menú y dashboard usan esos métodos) |
+
 ## Real / Bybit
 
 | ID | Decisión | Fecha · origen | Dónde se aplica |
