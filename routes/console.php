@@ -30,6 +30,9 @@ Schedule::command('collector:watchdog')->everyFiveMinutes()->withoutOverlapping(
 Schedule::job(new \App\Jobs\ValidateCollectorDataJob(repair: true), \App\Services\ParamSearchService::QUEUE,
     \App\Services\ParamSearchService::QUEUE_CONNECTION)
     ->dailyAt('04:00')->timezone('America/Bogota')->name('collector-validate-daily');
+// p84 (R-21): ¿alguna estrategia o config activa mira el futuro? Aviso al admin (Validación) si aparece una
+Schedule::command('strategies:lookahead-audit')->dailyAt('04:15')->timezone('America/Bogota')
+    ->name('strategies-lookahead-audit')->withoutOverlapping(60)->runInBackground();
 Schedule::call(fn () => app(\App\Services\SystemAlerts::class)->prune())
     ->dailyAt('04:30')->timezone('America/Bogota')->name('alerts-prune');
 

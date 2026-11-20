@@ -21,6 +21,22 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Protección contra estrategias que miran el futuro (p84, D-44) — 20-nov
+- **Prueba** (`backtesting/lookahead.py`, la de `lectura_lookahead`): misma vela inicial; cada una de las últimas N velas
+  calculada con todas las velas y solo con las velas hasta ella; se comparan señal y cada columna numérica (filtros H4
+  de la plataforma apagados). La CPU va en un hilo y de a una con los backtests (`BACKTEST_SLOT`, R-06).
+- **Al guardar:** `/v1/strategies/validate` (smoke test, el que llama `StrategyController` con 120 s) corre la prueba en
+  BTCUSDT H1 y H4 (100 velas) **antes** de los backtests; si mira el futuro → 400 con el motivo (la pantalla lo muestra
+  en «Falló el Smoke Test: …»: sin cambio de vista). Sin velas o si la estrategia falla, decide el smoke test.
+- **A diario:** `/v1/strategies/lookahead-audit` (configs activas con su código congelado + estrategias sin config activa
+  con ese código, 150 velas) y el comando `strategies:lookahead-audit` (04:15 Bogotá): incidente en «Validación» (categoría
+  existente) al aparecer una y aviso de recuperado al resolverse; si el motor no responde, solo se registra.
+- **A mano:** `tools/analysis/lookahead_probe.py [--control …]` (usa el mismo módulo).
+- **Pruebas:** `lookahead_guard_test.py` (nueva: viejo VWAP, shift(-1), corregido; rechazo al guardar sin correr el backtest;
+  sin datos / estrategia rota → decide el smoke test; 2 combinaciones; revisión diaria) y
+  `lookahead_audit_static_test.php` (nueva). Con el código anterior: FALLA. Mutaciones 6/6. Regresión 70 Python +
+  27 PHP en TODO OK.
+
 ### Paridad corrida 5 (`lectura_paridad5`, solo lectura, código corregido) y R-22 confirmado — 19-nov
 - **Con el código corregido** (8 configs, 05-nov → ayer): las «solo backtest» de R-21 desaparecen. **ETH 9-nov queda
   explicado** (era R-21: ahora se empareja con Paper, SL a +1 min). Quedan:
@@ -44,6 +60,9 @@
   7 FALLOS. Mutaciones 5/5. `paper_no_minute_source_test`, `minute_tail_test` y `minute_gap_test`: sus datos de prueba
   ahora incluyen el minuto en formación, como lo guarda el collector (T4: el punto de control con el collector atrasado
   queda un minuto antes, 10:36, porque el 10:37 todavía no es final). Regresión 69 Python + 26 PHP en TODO OK.
+- Instalación de p83 el 19-nov 22:26 UTC: 10 archivos; regresión 69 Python + 26 PHP en TODO OK; motor reiniciado,
+  /health y tick de Paper 200, 0 errores en `engine.log`; 4 posiciones de Paper vigiladas (punto de control 2,6 min
+  atrás: el minuto final más el ciclo); tick Real gestionado. `main` = `3a289e1`.
 
 ### ¿Alguna otra estrategia mira el futuro? y paridad corrida 4 (`lectura_lookahead`, solo lectura) — 19-nov
 - **Prueba** (`tools/analysis/lookahead_probe.py`): misma vela inicial; resultado con todas las velas contra resultado

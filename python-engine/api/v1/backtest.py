@@ -566,6 +566,15 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
         raise HTTPException(status_code=400, detail=f"Error de sintaxis Python: {e.msg} (línea {e.lineno})")
 
     if req.run_backtest:
+        # p84 (R-21): no se guarda una estrategia que mira el futuro (el backtest mostraría operaciones falsas)
+        from backtesting import lookahead
+        pool = await get_pool('backtest')
+        try:
+            reason = await lookahead.guard_code(pool, BACKTEST_SLOT, req.code, req.config, req.matrix)
+        finally:
+            await pool.close()
+        if reason:
+            raise HTTPException(status_code=400, detail=reason[:1].upper() + reason[1:])
         end = datetime.now(timezone.utc).date() - timedelta(days=1)   # último día completo
         start = end - timedelta(days=req.days - 1)
         tried, errors = [], []
@@ -602,3 +611,14 @@ async def validate_strategy_code(req: ValidateStrategyRequest):
 
     return {"status": "ok", "message": "Sintaxis Python válida"}
 
+
+@router.post("/strategies/lookahead-audit")
+async def strategies_lookahead_audit():
+    """Revisión diaria (p84): ¿alguna config activa de Paper o estrategia mira el futuro? Solo lectura."""
+    from backtesting import lookahead
+    pool = await get_pool('backtest')
+    try:
+        out = await lookahead.audit(pool, BACKTEST_SLOT)
+    finally:
+        await pool.close()
+    return {"status": "ok", **out}

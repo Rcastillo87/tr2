@@ -345,4 +345,4 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
 | Hecho en p78–p79 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real; historial corregido y texto de ayuda actualizado |
 | Hecho en p76 | R-17 a R-20 (19-nov) | Decimales de Bybit, vela incompleta (D-39), resumen de Real y motivo de no abrir |
-| Hecho en p80 y p82 | R-21 (D-42, D-43) | VWAP Tendencia sin mirar el futuro (p80); números guardados de sus 24 backtests y 13 configs recalculados con el código corregido (p82) |
+| Hecho en p80, p82 y p84 | R-21 (D-42, D-43, D-44) | VWAP Tendencia sin mirar el futuro (p80); números guardados de sus 24 backtests y 13 configs recalculados con el código corregido (p82); las 8 estrategias revisadas: ninguna otra mira el futuro; protección al guardar y revisión diaria (p84) |

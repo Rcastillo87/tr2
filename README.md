@@ -122,6 +122,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 - **Parámetros validados** con las mismas reglas en Laravel y Python (`python-engine/backtesting/request_rules.json`): se rechaza lo imposible (SL/TP fuera de 0–100 %, saldo o comisión negativos, modos o intervalos que no existen, trailing escalonado sin pasos) con un mensaje en español. El JSON de la estrategia editado en el formulario se **fusiona** con el de la estrategia (lo no escrito se conserva). La protección por volatilidad solo se envía si viene en el request; si no, manda el JSON.
 - **Funding de Bybit** descontado en cada trade (pesimista: paga si la liquidación coincide con la entrada o la salida; cobra solo si cae estrictamente dentro).
 - **Filtros de apertura:** régimen con **regímenes permitidos** (por defecto los de la estrategia; aviso si con la elección el filtro no bloquea nada), volumen mínimo, tendencia macro H4 (EMA 50) y **tendencia de BTC** (EMA 50 H4 de BTC; solo altcoins; sin velas de BTC no opera). Todos sin mirar al futuro.
+- **Estrategias que miran el futuro** (R-21, p84): al crear o editar una estrategia, el smoke test compara cada vela calculada con todo el historial contra la misma vela calculada solo con las velas hasta ella (BTCUSDT H1 y H4, 100 velas); si cambia la señal o algún indicador, no se guarda y se muestra el motivo. Revisión diaria de todas las estrategias y configs activas (`backtesting/lookahead.py`; a mano: `tools/analysis/lookahead_probe.py --control tests/Forensic/fixtures/vwap_tendencia_19nov.py`).
 - Estrellas = `RatingHelper::calculate(win rate, Sharpe, PF, retorno mensual, consistencia)` por moneda, promediadas.
 - **Guardar** guarda en el historial. **Implementar en Paper** es la aprobación. Editar un backtest implementado sincroniza su config en Paper y Real (`StrategyConfigSync`); las posiciones abiertas conservan su `config_snapshot` hasta cerrar.
 
@@ -251,6 +252,7 @@ php artisan collector:watchdog --dry # "motor OK · series atrasadas 0"
 | cada 5 min | `RealTradingReconcileJob`, `collector:watchdog` (en segundo plano, sin Horizon), `inactive-users-purge` (elimina las suscripciones de usuarios inactivos cuyas operaciones ya terminaron) |
 | cada 15 min | `DetectMarketRegimeJob` |
 | 09:00 UTC (04:00 Bogotá) | `collector-validate-daily` (valida y repara) |
+| 09:15 UTC (04:15 Bogotá) | `strategies-lookahead-audit`: ¿alguna estrategia o config activa mira el futuro? (p84; aviso en «Validación») |
 | 09:30 UTC | `alerts-prune` (borra avisos de más de 30 días) |
 | 04:35 Bogotá | `broker-events-prune` |
 
@@ -363,7 +365,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (69 Python + 26 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (70 Python + 27 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
