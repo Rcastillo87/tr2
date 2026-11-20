@@ -267,7 +267,7 @@ El precio nunca llegó al BE (1,5 %) ni a la activación (1,8 %).
 | TR2-MEJ-007 Mark-to-market | = WB-03 | |
 | TR2-MEJ-008 Contrato único | **Cumplido** | `request_rules.json` es la fuente única UI/Laravel/Python (p27) |
 | TR2-MEJ-009 Observabilidad 1m | Parcial | Diagnóstico de Paper (RQ-01.5) registra motivos; el modo de gestión (1m / respaldo / espera) solo va al log |
-| TR2-MEJ-010 Máquina de estados de cierre | Implementada, sin documentar | Estados `pending_open → open → pending_close → closed`, `orphaned`, `failed`, UPDATE con estado esperado (N-07). Falta el diagrama en `02_TECHNICAL` |
+| TR2-MEJ-010 Máquina de estados de cierre | **Cumplido** (p91) | Diagrama y reglas de cada transición en `docs/02_TECHNICAL.md` §12, leídos del código del 20-nov |
 | TST-01 a TST-25 | Cobertura | Con prueba en la regresión: 03–06, 09–11, 16, 17, 19, 21–24. Parcial: 07 (BE cubierto por las pruebas de paridad, sin caso de gap que lo atraviese). Sin prueba: 12, 13, 14 (dependen de Fase 12), 18 y 20 (DEMO), 25 (limpieza), 01–02 (paridad con datos reales). **TST-08 mal especificado** (1 % → 0,3 %) |
 | §12 Freqtrade | No iniciado | Fase posterior; no se toca `/root/freqtrade` sin autorización |
 
@@ -315,11 +315,11 @@ Confirmado en producción el 13-nov:
 - p88 (20-nov): 8 imports sin usar en el motor y 3 `use` sin usar en Laravel, quitados; dos pruebas nuevas
   (`unused_imports_test.py`, `unused_uses_static_test.php`) impiden que vuelvan.
 
-**Documentación desalineada:**
-- `PROMPT_MAESTRO` V7.3 sin p48–p58.
-- `PENDIENTES` (p56, 47+17) frente a `CERTIFICACION`/README (p58, 49+17).
-- Orden de la tabla de migraciones del README.
-- Permisos del `.env`: el ejemplo dice 600 y la bitácora dice «no 600».
+**Documentación desalineada** (revisada el 20-nov, p91):
+- ~~`PROMPT_MAESTRO` V7.3 sin p48–p58.~~ Ya estaba en V7.4 (p59–p80); p91 la lleva a **V7.5** (p81–p90 y sus lecciones).
+- ~~`PENDIENTES` (p56, 47+17) frente a `CERTIFICACION`/README.~~ Marcado histórico desde el 19-nov; p91 le agrega la regresión vigente (73 + 29).
+- ~~Orden de la tabla de migraciones del README.~~ Ya estaba en orden (21 migraciones, 10-26 01 → 11-20 03).
+- ~~Permisos del `.env`: el ejemplo dice 600.~~ El ejemplo ya dice «NO poner 600», igual que la bitácora.
 
 ---
 
@@ -345,7 +345,8 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | **Hecho en p86** | MEJ-002 | Huella del código de la estrategia en cada operación (`strategy_code_md5`) |
 | **Hecho en p87** | R-02 (D-46) | Permisos por rol según el dueño |
 | **Hecho en p89** (`9b769b2`) | MEJ-004 y R-23 | Libro de ejecuciones de Bybit por operación; los cierres hechos por Bybit completan su número de orden de cierre. Historial: 12/12 coinciden con Bybit (cantidad, precio y comisiones) y 0 sin orden de cierre |
-| **Hecho en p90** | R-24 (D-47) | Comisión y funding de Real por separado, como Paper |
+| **Hecho en p90** (`e81d01c`) | R-24 (D-47) | Comisión y funding de Real por separado, como Paper |
+| **Hecho en p91** | Documentación y MEJ-010 | Prompt V7.5, diagrama de estados de Real; respaldo fuera del VPS descartado (D-48) |
 | Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
 | Hecho en p78–p79 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real; historial corregido y texto de ayuda actualizado |

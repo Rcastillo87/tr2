@@ -71,6 +71,12 @@
 | D-45 | **SL/TP automáticos, opcionales, a futuro.** Además del SL/TP fijo en % de hoy (que se mantiene), un modo opcional en que el sistema los estima en cada operación (p. ej. SL = k × ATR de la última vela cerrada y TP = R × la distancia del SL). Igual en backtest, Paper y Real; probado primero con backtests y el buscador contra el modo fijo. **Después de terminar lo pendiente**; requiere maqueta del formulario | 20-nov · el dueño | Pendiente de implementar (no se vuelve a preguntar si se quiere: sí, opcional y después) |
 | D-41 | **El backtest se queda como está:** cada moneda se simula por separado y la fila CONSOLIDADO las junta como hoy. Las protecciones de cuenta (máximo de operaciones abiertas, una por moneda, pérdida máxima del mes) **solo existen en Real**. Se descarta el simulador de cartera de la Fase 12 (punto 2 de D-38) | 19-nov · el dueño, tras la explicación con ejemplo | Sin cambio de código |
 
+## Infraestructura
+
+| ID | Decisión | Fecha · origen | Dónde se aplica |
+|---|---|---|---|
+| D-48 | **Respaldo de la base fuera del VPS: no se hace** («olvídate de esto»). No se vuelve a proponer salvo pedido del dueño | 20-nov · el dueño | Sin cambio |
+
 ## Pendientes de decisión (no asumir; preguntar)
 
 | Tema | Pregunta abierta | Contexto |

@@ -2,7 +2,8 @@
 
 > **[19-nov] Documento histórico (hasta p56).** La lista vigente es «Lo que falta de la auditoría» al final de
 > `docs/VALIDACION_AUDITORIA_13NOV.md` y los «Pendientes de decisión» de `docs/DECISIONES_DUENO.md`. TP2–TP4 se limpiaron
-> en p71 (D-31).
+> en p71 (D-31). El respaldo fuera del VPS (§1.1) lo descartó el dueño el 20-nov (D-48). Regresión vigente:
+> 73 Python + 29 PHP (`docs/CERTIFICACION_AUDITORIA.md`).
 
 > Estado al **2026-11-11 (Bogotá)**, `main` = `de37022` (p56). RQ-01 cerrado (ver §0).
 > Estado anterior: 2026-11-10, `main` = `d22b684` (p45). **Las tres rondas de auditoría externa están resueltas en

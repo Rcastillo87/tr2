@@ -991,6 +991,47 @@ Nota: a diferencia del monitor de Paper Trading (que evalúa Stop Loss y Take Pr
 3. Genera señales, lee la penúltima barra (mismo patrón de retraso de una barra que en Paper Trading y en el motor de backtesting).
 4. Si hay señal, obtiene el precio actual real de mercado (respetando el entorno demo/mainnet de la cuenta vía `client.get_market_price`, a diferencia de Paper Trading que siempre usa mainnet) y llama `open_trade()`, envolviendo la llamada en un `try/except` adicional que captura cualquier excepción no prevista dentro del flujo completo de apertura y la reporta como string descriptivo en vez de dejar que se propague y rompa el procesamiento del resto de suscripciones de la cuenta.
 
+
+### Estados de una operación Real (`real_trades.status`) **[V7.5, MEJ-010, leído del código el 20-nov]**
+
+```
+                 open_trade: fila ANTES de la orden (order_link_id idempotente)
+                                   │
+                                   ▼
+          ┌──────────────── pending_open ────────────────┐
+  Bybit: Rejected/Cancelled/     │  fill confirmado            sin confirmar tras 3
+  Deactivated, o la conciliación │  (open_trade o la            verificaciones (38 s)
+  ve que la orden no se ejecutó  │  conciliación: avgPrice)            │
+          ▼                      ▼                                     ▼
+       failed  ◄──────────────  open  ◄─────────────────────────── orphaned
+  (sin posición en Bybit:        │  ▲   conciliación 2a/2b: hay        ▲   │
+   orphaned de apertura)         │  │   posición, o falta el pnl       │   │
+                                 │  │   de un cierre y se reintenta    │   │
+              cierre del bot:    │  │                                  │   │
+              UPDATE … WHERE     │  │ Bybit no confirmó y la posición  │   │
+              status='open'      ▼  │ sigue viva (vuelve a open)       │   │
+                           pending_close ─────────────────────────────┘   │
+                                 │      posición cerrada en Bybit sin       │
+                                 │      closed-pnl tras reintentos          │
+                                 ▼                                          │
+                              closed  ◄─────────────────────────────────────┘
+                                         conciliación 2a: closed-pnl encontrado
+```
+
+- **open → closed directo:** cierre hecho por Bybit (SL/TP/trailing nativos) que el monitor o la conciliación liquidan
+  con el closed-pnl (`close_trade` con `exit_price_override`, `WHERE status IN ('open','pending_close')`).
+- **open / pending_close → orphaned:** la posición ya no está en Bybit y el closed-pnl no aparece tras los reintentos
+  (monitor o conciliación); la conciliación la recupera cuando Bybit lo indexa.
+- **Toda transición es un UPDATE con el estado esperado** (`… AND status = '<anterior>'`, N-07): si dos procesos ven el
+  mismo evento, gana el primero y el otro no encuentra la fila (`UPDATE 0`). El tick, el circuit breaker y la
+  conciliación corren además con el turno exclusivo por cuenta (`_exclusive`).
+- **Estados que la conciliación revisa y que bloquean borrar cuenta o suscripción:** `RealTrade::RECONCILE_STATUSES`
+  (`pending_open`, `open`, `pending_close`, `orphaned`).
+- **Nunca se inventa un PnL:** sin closed-pnl de Bybit el trade queda `orphaned` y lo resuelve la conciliación.
+- **Después del cierre** (p89–p90): el libro de ejecuciones (`executions_status`: NULL → `open_ok` → `ok` / `missing`;
+  `historical` = anterior a p89) registra las partes de Bybit, completa `close_order_id` y separa `commission` y
+  `funding` (D-47).
+
 ---
 
 *(Continúa en sección 13 con Risk Manager, Circuit Breaker, Collectors e Indicadores)*

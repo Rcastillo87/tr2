@@ -1,7 +1,7 @@
-# PROMPT MAESTRO V7.4 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.5 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.4 · 2026-11-19 · Reemplaza a la V7.3 (agrega p46–p72: RQ-01, estrategias BNF/Triángulo y la validación de la auditoría del 13-nov con sus lecciones). V7.3 · 2026-11-10 reemplazó a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
+> Versión 7.5 · 2026-11-20 · Reemplaza a la V7.4 (agrega p81–p90: paridad por snapshot, VWAP corregido, protección contra estrategias que miran el futuro, R-22, huella del código, permisos por rol, libro de ejecuciones y funding de Real, con sus lecciones). V7.4 · 2026-11-19 reemplazó a la V7.3 (agrega p46–p72: RQ-01, estrategias BNF/Triángulo y la validación de la auditoría del 13-nov con sus lecciones). V7.3 · 2026-11-10 reemplazó a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
 > **Decisiones del dueño (reglas de negocio vigentes): `docs/DECISIONES_DUENO.md`. Consultarlo ANTES de preguntar; no se cambian salvo pedido explícito del dueño (13-nov).**
 > Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría), `docs/VALIDACION_AUDITORIA_13NOV.md` (auditoría del 13-nov: estado de cada punto y **lo que falta**, al final) y `docs/PENDIENTES_AUDITORIA.md` (histórico hasta p56).
 
@@ -61,7 +61,7 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Horizon: `systemctl restart trading2-horizon` — ⚠️ **mata la búsqueda que esté corriendo**. El servicio corre como **root**: `php artisan horizon:terminate` lanzado como `tr2` no le llega (sin error). Verificar con `systemctl show trading2-horizon -p ActiveEnterTimestamp`. Antes, comprobar:
   `bash ops/dbsql.sh -c "SELECT id, status FROM param_search_runs WHERE status IN ('queued','running');"`
 
-**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`, `strategy_config_changes` (auditoría de configs), `ohlcv_deletions` (registro de velas borradas), `funding_rates`. **El volcado `database/schema/pgsql-schema.sql` está desactualizado:** para FK, CHECK y columnas, consultar `pg_constraint` / `information_schema`.
+**Base de datos:** `bash ops/dbsql.sh [-c "SQL"]` (lee las credenciales del `.env` sin imprimirlas). Para lo que requiere superusuario (`ALTER DATABASE`, `ALTER SYSTEM`, `compress_chunk`): `runuser -u postgres -- psql -d trading2`; **`postgres` no puede leer archivos en `/root/`**: pasar el SQL por la entrada estándar (`psql < archivo`), nunca `-f /root/…`. Tablas principales: `ohlcv_data`, `collector_configs`, `strategies`, `backtests`, `paper_strategy_configs`, `paper_trades`, `broker_accounts`, `real_strategy_subscriptions`, `real_trades`, `risk_controls`, `param_search_runs`, `notifications`, `strategy_config_changes` (auditoría de configs), `ohlcv_deletions` (registro de velas borradas), `funding_rates`, `real_trade_executions` (partes de Bybit de cada operación Real, p89). **El volcado `database/schema/pgsql-schema.sql` está desactualizado:** para FK, CHECK y columnas, consultar `pg_constraint` / `information_schema`.
 
 ---
 
@@ -167,8 +167,7 @@ Detalle, pruebas y decisiones en `docs/BITACORA.md`; estado de cada hallazgo en 
 - **Funding (p26):** la reparación diaria (`cli/collector_repair.py`) lo pone al día para las monedas activas; > 30 h (`FUNDING_STALE_HOURS`) abre el aviso `funding_stale`.
 - **Validación de parámetros (p27, p29):** reglas únicas en `python-engine/backtesting/request_rules.json` (rangos, enteros, modos, intervalos del motor, ADX lateral ≤ tendencia, `stepped` necesita `trailing_steps`), aplicadas por `BacktestPayload::validate` (Laravel, mensaje en español) y `BacktestRequest` (Python, 422).
 - **JSON de la estrategia editado (p29):** se fusiona por clave de primer nivel (`BacktestPayload::mergeConfig`); antes reemplazaba todo.
-- **Estrategias que miran el futuro (p84):** `backtesting/lookahead.py` (misma vela inicial; con todas las velas vs solo hasta cada vela; señal y columnas). Bloquea el guardado (smoke test) y corre a diario (`strategies:lookahead-audit`, aviso en «Validación»). A mano: `tools/analysis/lookahead_probe.py [--control <código que mira el futuro>]`.
-- **Comparador (p28, p81):** `tools/analysis/compare_paper_vs_backtest.py --config <id> [--latest-only]`: hasta el último día completo (ayer UTC), un tramo y un backtest por snapshot de parámetros, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
+- **Comparador (p28; ver p81 abajo):** `tools/analysis/compare_paper_vs_backtest.py --config <id> [--latest-only]`: hasta el último día completo (ayer UTC), un tramo y un backtest por snapshot de parámetros, emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2.
 
 ### Cambios del 09–10 nov 2026 (p32–p45, auditoría del 07-nov) **[V7.3]**
 Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `docs/CERTIFICACION_AUDITORIA.md`.
@@ -183,7 +182,7 @@ Detalle en `docs/BITACORA.md` (sección «Auditoría del 07-nov»); estado en `d
 - **RQ-01 (p48–p56):** gestión de configuraciones Paper, diagnóstico de Paper (`paper_eval_log`), origen del backtest, crear desde el historial, historial único con filtros. Tabla en `docs/PENDIENTES_AUDITORIA.md` §0.
 - **p57–p58:** estrategias BNF y Triángulo. Detalle en `docs/BITACORA.md`.
 
-### Cambios del 13–19 nov 2026 (p59–p72, validación de la auditoría del 13-nov) **[V7.4]**
+### Cambios del 13–19 nov 2026 (p59–p80, validación de la auditoría del 13-nov) **[V7.4]**
 Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Reglas del dueño: `docs/DECISIONES_DUENO.md` (D-02..D-05, D-15..D-17, D-31).
 - **Fuentes únicas nuevas (usarlas, no duplicar):** `App\Services\UserDeactivation` (inactivar usuarios y purgar suscripciones), `RealStrategySubscription::runnable()/windingDown()` (quién entra y quién solo termina su ciclo; `entries_allowed`), `App\Support\RealTickResults` (resultado del tick por cuenta), `App\Support\SafeLogBody` (cuerpo de respuesta apto para el log), `BrokerAccount::hasLiveTrades()`, `close_trigger_reason()`/`last_close_order_id()` (motivo de salida según la orden de cierre de Bybit), `BACKTEST_SLOT` + `_simulate` (backtest en un hilo, de a uno), `BaseStrategy.calculate_tp1` (único TP).
 - **Real:** trailing nativo solo se sincroniza activado (R-12, p60); el tick espera el turno y Laravel registra el omitido sin romper (R-14, p61); closed-pnl desde la **apertura** en los 5 puntos de liquidación (R-09, p69); motivo de salida = `stopOrderType` de la orden de cierre, precio como respaldo (R-16, p70); no se borran cuenta ni suscripción con operaciones vivas u `orphaned` (R-04, p64).
@@ -198,6 +197,18 @@ Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Regla
 - **Backtest (p75, Fase 12 · 4A):** `metrics.max_drawdown_floating_pct` (caída con la operación abierta; topada en el SL; sin `end_of_data`) junto al cerrado; columnas «DD cerrado»/«DD flotante» en el resumen; CONSOLIDADO = el peor de las monedas; backtests anteriores muestran «—».
 - **Paper y Real (p76, D-39):** deciden solo con la vela completa (`final_closed_bars`: la siguiente ya está en la base; si no, motivo «vela … sin completar», se espera al minuto siguiente). Real: 34040 de Bybit = SL/TP ya vigente y alineación con tolerancia de un paso de precio (`get_tick_size`); motivo de no abrir en `engine.log` como `[REAL-SEÑAL]` (solo al cambiar); el resumen del tick en `laravel.log` cuenta aperturas y errores.
 - **Decisiones del 19-nov:** capital compuesto (D-33), riesgo sin costos (D-34), posiciones manuales ignoradas y sin entradas del bot en esa moneda mientras existan (D-18, D-19), Fase 12 aprobada (D-38).
+
+### Cambios del 19–20 nov 2026 (p81–p90) **[V7.5]**
+Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES_DUENO.md` (D-43 a D-47).
+- **Fuentes únicas nuevas (usarlas, no duplicar):** `backtesting/lookahead.py` (`guard_code`, `audit`: si una estrategia mira el futuro), `paper_trader.final_minutes` (minuto de 1m final), `trading/execution_ledger.py` (`record_trade`, `split_costs`, `TRADE_COLS`), `User::canViewPaperTrading` / `canViewAnalysisTools` (permisos por rol), columna generada `strategy_code_md5`.
+- **Comparador (p81):** `tools/analysis/compare_paper_vs_backtest.py --config <id> [--latest-only]`: hasta el último día completo (ayer UTC), un tramo y un backtest por snapshot de parámetros (límite = último cambio en `strategy_config_changes`), emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2; muestra el código de la estrategia («código XXXXXXXX», p86).
+- **VWAP Tendencia (p82, D-43):** métricas y estrellas guardadas de sus 24 backtests y 13 configs recalculadas con el código corregido (el viejo reproducía exacto lo guardado; anteriores en `metrics.r21_previous`).
+- **Estrategias que miran el futuro (p84–p85, D-44):** `lookahead.guard_code` en `/v1/strategies/validate` (400 «mira el futuro» al guardar) y revisión diaria de estrategias y configs activas (`strategies:lookahead-audit` 04:15 Bogotá, aviso en «Validación»). A mano: `tools/analysis/lookahead_probe.py [--control <código>]`. Las 8 estrategias actuales: limpias.
+- **Paper (p83, R-22):** un minuto de 1m se evalúa solo cuando la base ya tiene el siguiente (regla de D-39); antes 7 de 16 cierres SL/TP salían tarde.
+- **Huella del código (p86, MEJ-002):** `paper_trades` y `real_trades`.`strategy_code_md5` = md5 del código del snapshot (generada, también para las históricas).
+- **Permisos (p87, D-46):** Paper admin y consultor (solo mirar); Real admin e inversionista; backtesting, búsquedas, estrategias, collector y usuarios solo admin.
+- **Limpieza (p88):** imports y `use` sin usar fuera; `unused_imports_test.py` y `unused_uses_static_test.php` impiden que vuelvan.
+- **Real (p89–p90, MEJ-004, R-23, R-24, D-47):** libro `real_trade_executions` (partes de Bybit de apertura y cierre; controles de cantidad y precio; `close_order_id` de los cierres de Bybit); el tick registra hasta 2 pendientes por cuenta. `commission` = comisiones de las partes y `funding` aparte (positivo = pagado, como Paper), solo si el neto es el closed-pnl de Bybit. Comandos: `real:executions-backfill`, `real:costs-split` (vista previa / `--apply`).
 
 ---
 
@@ -246,6 +257,13 @@ Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Regla
 | Dos consultas «distintas» por la vela en formación | Comparar consulta vieja y nueva en **una sola sentencia** (misma foto). |
 | Pantalla «sin precios» sin error visible | Revisar `laravel.log` del día: 29 timeouts del dashboard revelaron R-15. |
 | `lectura` que falló por el `.env` | `load_dotenv()` busca desde el archivo del script, no desde `cwd`: pasar la ruta del `.env`. |
+| HTTP 500 al guardar estrategias tras p84 (`get_pool('backtest')`) | El doble de prueba debe tener la **firma real** de lo que reemplaza (prueba B0 de `lookahead_guard_test`); el instalador verifica el endpoint de verdad y revierte si falla, no lo toma como aviso. |
+| Prueba que aplica DOWN/UP de una migración | Solo en una base cuyo nombre termina en `test` (`execution_ledger_test` parte B): nunca en producción. |
+| Fechas de Bybit del año equivocado | Las épocas en milisegundos se calculan con `date -u -d … +%s`, no a mano. |
+| Totales dados de memoria | Sumar con código antes de escribir una cifra (R-24: los totales de funding salieron mal la primera vez). |
+| «Lista de pendientes» con puntos ya resueltos | Verificar cada punto contra el código y los documentos antes de proponerlo (código muerto de p72, versión del prompt, orden del README y permisos del `.env` ya estaban bien). |
+| Funding «sin liquidaciones» que sí las tenía | El intervalo de funding depende de la moneda (`instruments-info.fundingInterval`; ENA cada 4 h). `/v5/market/funding/history` incluye la liquidación de `startTime`: una operación abierta en ese segundo no la paga. |
+| La comisión Real incluía el funding | El closed-pnl de Bybit descuenta comisiones **y** funding: bruto − neto no es la comisión (R-24). |
 
 ---
 
@@ -253,14 +271,14 @@ Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Regla
 
 > **Próxima sesión:** la lista vigente es «Lo que falta de la auditoría» al final de
 > `docs/VALIDACION_AUDITORIA_13NOV.md` y los «Pendientes de decisión» de `docs/DECISIONES_DUENO.md`. Antes, confirmar
-> con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.4 (si no, pedirle que las reemplace).
+> con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.5 (si no, pedirle que las reemplace).
 
-1. Decisiones del dueño abiertas (capital del backtest, riesgo bruto/neto, fin de muestra, huecos, posiciones manuales, Fase 12).
-2. Respaldo de la base fuera del VPS (confirmar que existe y se restaura).
-3. Correr el comparador Paper ↔ backtest sobre las configs activas y registrar el resultado (MEJ-003).
-4. Código chico: hash del código en el snapshot (MEJ-002); permiso propio para `consultor` (R-02); libro de ejecuciones (MEJ-004).
-5. `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema.
-6. Pantallas con maqueta: `cross` en la búsqueda, «Estabilidad por ventanas», «promedio por moneda», separación maestra/config/suscripción, funding, «código desactualizado».
+1. **Del dueño:** nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43). Después, informe por config (backtest corregido + Paper real + búsqueda nueva).
+2. **SL/TP automáticos opcionales (D-45):** plan presentado el 20-nov; se construye cuando el dueño lo apruebe (maqueta del formulario primero).
+3. **Walk-forward real (D-38 3B):** maqueta primero.
+4. **Infraestructura:** `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema. Respaldo fuera del VPS: **descartado por el dueño** (D-48).
+5. **Pantallas con maqueta:** funding en Paper y Real, `cross` en la búsqueda, «promedio por moneda», separación maestra/config/suscripción, «código desactualizado».
+6. **Preventivo:** R-10 (D-16) — el libro de ejecuciones ya avisa un llenado parcial.
 7. Reescribir `docs/01–03` (hoy con avisos de vigencia arriba).
 
 ---

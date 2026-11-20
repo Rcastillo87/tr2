@@ -8,20 +8,34 @@
 
 ## ▶ Próxima sesión (empezar aquí)
 **Lista vigente: `docs/PENDIENTES_AUDITORIA.md`.** Las tres rondas de auditoría están resueltas en código (estado de los 70 hallazgos en `docs/CERTIFICACION_AUDITORIA.md`).
-1. **Respaldo de la base** fuera del VPS: confirmar que existe y que se puede restaurar.
+1. ~~Respaldo de la base fuera del VPS~~: descartado por el dueño (D-48, 20-nov).
 2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades (desde p81 termina en ayer y separa por snapshot); registrar aquí. Corridas del 19-nov en la sección de p80.
 3. **Fase 12:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
 4. **Infraestructura:** `trading2-horizon` como `User=tr2` (revisar qué de `storage/` y `bootstrap/cache` quedó con dueño root); revisión automática de lotes solapados tras `policy_compression` (`/root/patches/batches/detect.sql`); regenerar `database/schema/pgsql-schema.sql` (desactualizado).
 5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; decidir si borrar una estrategia debe bloquearse como un backtest (cascada).
 6. **Limpieza:** TP2–TP4 (REAL-05); reescribir `docs/01–03`; slippage de altcoins en demo.
 7. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
-- **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por `docs/PROMPT_MAESTRO.md` (**V7.3**, 10-nov). No se puede hacer por script.
+- **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por `docs/PROMPT_MAESTRO.md` (**V7.5**, 20-nov). No se puede hacer por script.
 
 ---
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Documentación alineada y estados de Real (p91) — 20-nov
+- La lista «Documentación desalineada» de la validación estaba vieja en 3 de 4 puntos (verificado: el prompt ya era
+  V7.4, la tabla de migraciones del README ya estaba en orden y el `.env.example` ya dice «NO poner 600»).
+- `PROMPT_MAESTRO` → **V7.5**: cambios p81–p90, fuentes únicas nuevas, 8 lecciones nuevas y pendientes al día (se
+  quitó el p84 que había quedado en la sección de V7.2).
+- **MEJ-010:** diagrama de estados de `real_trades.status` y reglas de cada transición en `docs/02_TECHNICAL.md` §12,
+  leídos del código (`open_trade`, monitor, cierre reclamado, conciliación 0/1/2a/2b).
+- **D-48:** el dueño descarta el respaldo de la base fuera del VPS.
+- Solo documentación: sin pruebas nuevas ni reinicios.
+
 ### Comisión y funding de Real por separado (p90, R-24) — 20-nov
+- **Instalado:** `e81d01c` (20-nov 19:44 UTC): regresión 73 + 29 en el servidor, motor reiniciado, 0 errores. Vista
+  previa: 12/12 con el neto confirmado por Bybit; funding de las 6 que cruzaron liquidaciones igual a lo medido
+  (redondeo ≤ 0,0001), las otras 6 en 0; funding neto 1,7575 USDT pagados. `--apply` corrido por el dueño el 20-nov;
+  el instalador de p91 lo verifica (operaciones con funding y descuadre bruto − comisión − funding − neto).
 - **Hallazgo** (con el libro de p89): en 6 de 12 operaciones la comisión de Bybit (suma de las partes) no era la
   registrada (diferencias de −2,72 a +1,30 USDT). La registrada era bruto − neto de Bybit, y el closed-pnl de Bybit
   también descuenta el **funding**. Demostrado con datos públicos de Bybit (tasa y mark de cada liquidación, cantidad
