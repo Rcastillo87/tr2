@@ -21,6 +21,23 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Libro de ejecuciones de Bybit (p89, MEJ-004) y R-23 — 20-nov
+- **Lectura previa** (`lectura_mej004`, 20-nov): 12 operaciones Real, todas cerradas (09-nov → 19-nov), cuenta 11 demo;
+  12/12 con número de orden de apertura, **solo 2/12 con el de cierre** (R-23: los cierres hechos por Bybit no lo
+  guardaban); ninguna cerró en varios tramos (`original_size` = `size`).
+- **Libro:** tabla `real_trade_executions` (cada parte de Bybit: precio, cantidad, comisión, maker/taker, hora) y
+  `real_trades.executions_status`. `trading/execution_ledger.py`: pide a `/v5/execution/list` las partes de la orden
+  de apertura y de las de cierre (la guardada o las de cada tramo del closed-pnl), con ventana ± 1 h; controla
+  cantidad = tamaño (R-10, sin tocar la apertura: D-16) y precio promedio = entrada/salida; deja
+  `executions_recorded` (o `executions_missing` si 24 h después del cierre Bybit no las dio) en el historial y
+  completa `close_order_id` si falta (R-23). Solo lectura de Bybit; nunca frena el tick (try/except).
+- **Cuándo:** el tick Real registra hasta 2 operaciones pendientes por cuenta y ciclo (las nuevas al abrir y al
+  cerrar). Las anteriores a p89 quedan `historical` y las registra `php artisan real:executions-backfill`
+  (vista previa) / `--apply`.
+- **Prueba:** `execution_ledger_test.py` (nueva): lectura de partes, resumen, controles, y en PostgreSQL con Bybit
+  simulado los dos tipos de cierre, llenado parcial, sin respuesta, `missing`, sin duplicados, vista previa,
+  selección del tick y migración. Con el código anterior: FALLA. Mutaciones 6/6. Regresión 73 Python + 29 PHP en TODO OK.
+
 ### Limpieza de código sin usar (p88) — 20-nov
 - La lista de «código muerto» de la validación del 13-nov estaba desactualizada: p72 ya había quitado el registro de
   usuarios, `CORSMiddleware` y el `datetime` repetido (corregida la lista).
@@ -34,6 +51,8 @@
 - **Pruebas nuevas** para que no vuelvan: `unused_imports_test.py` (AST sobre todo `python-engine/`) y
   `unused_uses_static_test.php` (app/ y routes/). Con el código anterior: FALLAN. Regresión 72 Python + 29 PHP en
   TODO OK. Sin cambio de comportamiento.
+- Instalación de p88 el 20-nov 16:32 UTC (`30800eb`): 18 archivos; motor reiniciado, /health y tick de Paper 200, 0
+  errores en `engine.log`.
 
 ### Permisos por rol (p87, R-02, D-46) — 20-nov
 - **Decisión del dueño (20-nov):** Dashboard todos (con sus bloques por permiso); Paper admin y consultor (solo mirar);

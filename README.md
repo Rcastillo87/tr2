@@ -214,6 +214,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 11-10 03 | `backtests.origin`, `origin_meta`: origen del backtest; recupera los creados desde búsquedas (RQ-01.3) |
 | 11-13 01 | `real_strategy_subscriptions.retire_on_close`: suscripciones que se eliminan al terminar su operación (D-04, p62) |
 | 11-20 01 | `paper_trades` y `real_trades`.`strategy_code_md5`: huella del código de la estrategia de cada operación, generada desde el snapshot (MEJ-002, p86) |
+| 11-20 02 | `real_trade_executions` (partes de Bybit de cada operación Real) y `real_trades.executions_status` (MEJ-004, p89) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)
@@ -278,6 +279,7 @@ bash ops/dbsql.sh                        # psql con las credenciales del .env (s
 bash ops/dbsql.sh -c "SELECT id, status FROM param_search_runs WHERE status IN ('queued','running');"
 
 php artisan collector:watchdog --dry                       # diagnóstico del collector
+php artisan real:executions-backfill [--apply]             # ejecuciones de Bybit de operaciones Real anteriores a p89 (sin --apply: vista previa)
 cd python-engine
 venv/bin/python cli/collector_validate.py [--solo BTCUSDT]   # validar contra Bybit
 venv/bin/python cli/collector_repair.py --dry-run            # qué repararía (sin escribir)
@@ -366,7 +368,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (72 Python + 29 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (73 Python + 29 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

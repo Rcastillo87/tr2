@@ -261,7 +261,7 @@ El precio nunca llegó al BE (1,5 %) ni a la activación (1,8 %).
 | TR2-MEJ-001 Trazabilidad | **Cumplido** | Foto de versiones del 13-nov (lectura `INV006_BASELINE`) y SHA de cada parche en este documento y en la bitácora |
 | TR2-MEJ-002 Parámetros por operación | **Cumplido** (p86) | El snapshot trae código y parámetros; `strategy_code_md5` (columna generada) da la versión del código de cada operación, también de las históricas |
 | TR2-MEJ-003 Harness de paridad | **Cumplido** (19-nov) | `compare_paper_vs_backtest.py` + `paper_eval_log`; corrido sobre las configs vivas (ver «Cierre»); p81: último día completo y un tramo por snapshot |
-| TR2-MEJ-004 Ledger de ejecuciones | Válido | Hoy: `audit_log` + closed-pnl; no se guardan los fills. Necesario para INV-006 y TST-18 |
+| TR2-MEJ-004 Ledger de ejecuciones | **Cumplido** (p89) | `real_trade_executions`: cada parte de Bybit de la apertura y el cierre; controles de cantidad (R-10) y precio en el historial de cada operación; historial con `real:executions-backfill` |
 | TR2-MEJ-005 Calidad de datos | = WB-04 | |
 | TR2-MEJ-006 TP2–TP4 | = WB-07 | |
 | TR2-MEJ-007 Mark-to-market | = WB-03 | |
@@ -296,6 +296,7 @@ Confirmado en producción el 13-nov:
 | **R-20** | P3 (nuevo, 19-nov) | Real no registraba por qué una suscripción no abre | Corregido en p76: `[REAL-SEÑAL]` en `engine.log` al cambiar el motivo |
 | **R-21** | **P2** (nuevo, 19-nov; confirmado con datos) | VWAP Tendencia: `vwap_std_dev` con todas las velas del día: el backtest abría operaciones que en vivo no existían (8 en la paridad del 19-nov, 6 ganadoras) | Corregido en p80 (D-42): desviación hasta cada vela; verificado vela a vela contra lo que ve Paper |
 | **R-22** | **P2** (nuevo, 19-nov; confirmado con datos) | El monitor de Paper evalúa el minuto de 1 m recién cerrado aunque el collector todavía no le guardó sus valores finales y lo deja atrás: 7 de 16 cierres por SL/TP salieron 1–27 min tarde y un TP 118 min tarde hizo perder una operación (SOL 10-nov) | Corregido en p83: un minuto se evalúa solo cuando ya existe el siguiente (regla de D-39) |
+| **R-23** | P3 (nuevo, 20-nov; medido) | Los cierres hechos por Bybit (SL/TP/trailing nativos) no guardan `close_order_id`: 10 de 12 operaciones Real cerradas sin él | Corregido en p89: el libro de ejecuciones lo completa con el último tramo del closed-pnl (también las históricas, con el comando) |
 | R-10 | P3 | Tras el fill no se guarda el tamaño real de la posición | Preventivo, para después (D-16): 10 de 10 operaciones coinciden |
 | R-11 | Decisión | La conciliación adopta cualquier posición del símbolo suscrito, incluidas las manuales | Decidido (D-18, D-19): se ignoran; p74 |
 | **R-12** | **P1** | Trailing nativo `fixed` «sincronizado» antes de activarse: SL ficticio en la DB y circuit breaker prematuro (#86, #91; #93 abierto y afectado el 13-nov). Ver «Evidencia del servidor» | **Validado** en producción: p60 (`ce21154`); #93 reparado (`sl` 1959,97 = SL de Bybit, `trailing_applied` = f), visto al instalar p61 |
@@ -342,7 +343,7 @@ cada uno, con su evidencia, pruebas y mutaciones, está en `docs/BITACORA.md`.
 | Evidencia | A-1.2.2 | Los «siete hallazgos iniciales de caja blanca» nunca llegaron en el informe |
 | **Hecho en p86** | MEJ-002 | Huella del código de la estrategia en cada operación (`strategy_code_md5`) |
 | **Hecho en p87** | R-02 (D-46) | Permisos por rol según el dueño |
-| Código, mediano | MEJ-004 | Libro de ejecuciones (fills) de Bybit por operación |
+| **Hecho en p89** | MEJ-004 y R-23 | Libro de ejecuciones de Bybit por operación; los cierres hechos por Bybit completan su número de orden de cierre |
 | Pantalla | WB-02 / WB-06 | WB-02: las ventanas no se muestran en ninguna pantalla; se nombra al construir 3B. WB-06: el dueño decide dejar el CONSOLIDADO como está (D-41) |
 | Preventivo | R-10 | Tamaño confirmado por Bybit al abrir (D-16: para después) |
 | Hecho en p78–p79 | D-40 (19-nov) | Cierre en break-even con nombre propio en backtest, Paper y Real; historial corregido y texto de ayuda actualizado |

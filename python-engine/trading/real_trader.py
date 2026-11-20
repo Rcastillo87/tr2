@@ -286,6 +286,33 @@ class BybitClient:
             logger.error(f"[BYBIT] get_closed_pnl_history exception: {e}")
             return []
 
+    async def get_executions(self, symbol: str, order_id: str, start_ms: int, end_ms: int) -> list[dict] | None:
+        """
+        MEJ-004 (p89): ejecuciones (fills) de UNA orden, de GET /v5/execution/list (solo lectura). La ventana
+        start_ms..end_ms (≤ 7 días, la máxima que acepta Bybit) debe contener la orden; se pagina con cursor.
+        None = no se pudo consultar (se reintenta después); [] = Bybit no tiene ejecuciones de esa orden en la ventana.
+        """
+        out, cursor = [], None
+        for _ in range(10):   # 10 páginas de 100: una orden nunca tiene tantas partes
+            params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id, 'limit': '100',
+                      'startTime': str(int(start_ms)), 'endTime': str(int(min(end_ms, start_ms + 7 * 86_400_000 - 1000)))}
+            if cursor:
+                params['cursor'] = cursor
+            try:
+                data = (await self._signed_get('/v5/execution/list', params)).json()
+            except Exception as e:   # noqa: BLE001
+                logger.warning(f"[BYBIT] get_executions {symbol} {order_id}: {e}")
+                return None
+            if data.get('retCode') != 0:
+                logger.warning(f"[BYBIT] get_executions {symbol} {order_id}: {data.get('retMsg')}")
+                return None
+            result = data.get('result') or {}
+            out += [e for e in (result.get('list') or []) if e.get('orderId') == order_id]
+            cursor = result.get('nextPageCursor')
+            if not cursor:
+                break
+        return out
+
     async def get_market_price(self, symbol: str) -> float | None:
         """Obtiene precio actual usando la URL de la cuenta (Demo Trading o real)."""
         try:

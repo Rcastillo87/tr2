@@ -19,6 +19,7 @@ from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESH
                                  ORDER_DEAD_STATUSES, epoch_ms,
                                  close_trigger_reason, last_close_order_id)
 from trading.risk_manager import RiskManager
+from trading import execution_ledger
 from trading.broker_events import emit_event
 from trading.bybit_client import api_permission_problems
 
@@ -209,6 +210,11 @@ async def _process_account(trader, account):
                 signal_results[sub.strategy] = f"ERROR: {str(e)}"
 
         account_results["signals"] = signal_results
+        # MEJ-004 (p89): partes de Bybit de las operaciones recién abiertas o cerradas (solo lectura; nunca frena el tick)
+        try:
+            account_results["executions"] = len(await execution_ledger.process_pending(trader.pool, trader, client, account.id))
+        except Exception as e:   # noqa: BLE001
+            logger.warning(f"[REAL] Cuenta {account.id}: libro de ejecuciones no disponible: {type(e).__name__}: {e}")
         return account_key, account_results
 
     except Exception as e:
@@ -622,6 +628,42 @@ async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: fl
 class ReclassifyRequest(BaseModel):
     accounts: list[AccountPayload]
     apply: bool = False
+
+
+class ExecutionsBackfillRequest(BaseModel):
+    accounts: list[AccountPayload]
+    apply: bool = False
+
+
+@router.post('/real/executions/backfill')
+async def executions_backfill(
+    request: ExecutionsBackfillRequest,
+    x_internal_api_key: str = Header(None, alias='X-Internal-API-Key'),
+):
+    """
+    MEJ-004 (p89): partes (fills) de Bybit de las operaciones Real anteriores al libro ('historical'). Solo LEE de
+    Bybit; sin apply muestra lo que guardaría; con apply guarda las partes, completa close_order_id si falta (R-23) y
+    deja 'executions_recorded' en el historial. PnL, saldo y motivos no cambian.
+    """
+    if x_internal_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    pool, out = await get_json_pool(), []
+    trader = RealTrader(pool)
+    for account in request.accounts:
+        client = _build_broker_client(account)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, symbol, side, status, size, original_size, entry_price, exit_price, entry_time, exit_time,
+                          order_id, close_order_id, executions_status
+                   FROM real_trades WHERE broker_account_id = $1 AND executions_status = 'historical'
+                     AND status IN ('open', 'closed') ORDER BY id""", account.id)
+        for r in rows:
+            try:
+                res = await execution_ledger.record_trade(pool, trader, client, dict(r), apply=request.apply)
+            except Exception as e:   # noqa: BLE001
+                res = {'trade_id': r['id'], 'symbol': r['symbol'], 'error': f'{type(e).__name__}: {e}'}
+            out.append(res)
+    return {'status': 'ok', 'apply': request.apply, 'results': out}
 
 
 @router.post('/real/reclassify-exits')
