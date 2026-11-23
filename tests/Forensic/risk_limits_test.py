@@ -3,6 +3,7 @@ Límites de riesgo por cuenta (pérdida del mes y trades abiertos), sin DB ni By
 Uso: cd python-engine && venv/bin/python ../tests/Forensic/risk_limits_test.py
 """
 import asyncio
+from pathlib import Path
 import json
 import os
 import sys
@@ -120,11 +121,27 @@ async def main():
     r = await reason(s)
     check('L4: 3 de 3 trades abiertos -> bloquea, sin aviso', r is not None and 'trades abiertos (3/3)' in r and not events(s), r)
 
-    # L5. Sin saldo inicial del mes (aún no tomado) -> no evalúa el mensual, sí los abiertos
+    # L5. C5-18 / D-51 (p96): sin saldo inicial del mes el límite mensual no se puede aplicar -> no abre
+    #     (antes dejaba abrir sin límite mensual hasta que Bybit diera el patrimonio)
     s = {'exec': [], 'acc': acc(base=None, month=None), 'open': 0, 'pnl': -999.0, 'clear': True}
-    check('L5: sin saldo inicial -> no bloquea por el mensual', await reason(s) is None and 'sum_args' not in s)
-    s = {'exec': [], 'acc': acc(month=date(2026, 1, 1)), 'open': 0, 'pnl': -999.0, 'clear': True}
-    check('L5: saldo inicial de otro mes -> no se usa', await reason(s) is None and 'sum_args' not in s)
+    r = await reason(s)
+    check('L5: sin saldo inicial del mes -> no abre y lo explica', r is not None and 'sin saldo inicial del mes' in r
+          and 'sum_args' not in s, r)
+    s = {'exec': [], 'acc': acc(month=date(2026, 1, 1)), 'open': 0, 'pnl': 0.0, 'clear': True}
+    r = await reason(s)
+    check('L5: saldo inicial de otro mes -> no se usa y no abre', r is not None and 'sin saldo inicial del mes' in r
+          and 'sum_args' not in s, r)
+    s = {'exec': [], 'acc': acc(base=0.0), 'open': 0, 'pnl': 0.0, 'clear': True}
+    check('L5: saldo inicial en 0 (inválido) -> no abre', (await reason(s) or '').startswith('sin saldo inicial del mes'))
+    s = {'exec': [], 'acc': acc(max_loss=0.0, base=None, month=None), 'open': 0, 'pnl': 0.0, 'clear': True}
+    check('L7: sin límite mensual (0 %) -> no exige saldo inicial y puede abrir', await reason(s) is None)
+    s = {'exec': [], 'acc': None, 'open': 0, 'pnl': 0.0, 'clear': True}
+    r = await reason(s)
+    check('L8: cuenta que no está en la base -> no abre (antes: podía)', r is not None and 'cuenta no encontrada' in r, r)
+    wd = (Path(__file__).resolve().parents[2] / 'app' / 'Console' / 'Commands' / 'CollectorWatchdog.php').read_text(encoding='utf-8')
+    check('L9: el vigilante avisa si una cuenta activa con límite mensual sigue sin saldo inicial pasados 10 min del día 1',
+          "openIncident('real_month_baseline'" in wd and "resolveIncident('real_month_baseline'" in wd
+          and "'real_baseline_grace_min'] ?? 10" in wd and "now('America/Bogota')->startOfMonth()" in wd)
 
     # L6. Límite editado por el dueño (10 %)
     s = {'exec': [], 'acc': acc(max_loss=10.0), 'open': 0, 'pnl': -60.0, 'clear': True}

@@ -1300,8 +1300,6 @@ class RealTrader:
             acc = await conn.fetchrow(
                 "SELECT max_monthly_loss_pct, max_open_trades, month_start_balance, month_start_at"
                 " FROM broker_accounts WHERE id = $1", account_id)
-            if acc is None:
-                return None
             # C5-16: las 'orphaned' cuentan (pueden estar vivas en Bybit)
             open_count = await conn.fetchval(
                 "SELECT count(*) FROM real_trades WHERE broker_account_id = $1"
@@ -1310,11 +1308,22 @@ class RealTrader:
                 f"SELECT id, symbol, status FROM real_trades WHERE broker_account_id = $1 AND {UNRESOLVED_SQL}"
                 " ORDER BY id LIMIT 1", account_id)
             month_pnl = None
-            if acc['month_start_at'] == month and acc['month_start_balance']:
+            if acc is not None and acc['month_start_at'] == month and acc['month_start_balance']:
                 month_pnl = await conn.fetchval(
                     "SELECT COALESCE(SUM(COALESCE(net_pnl, pnl, 0)), 0) FROM real_trades"
                     " WHERE broker_account_id = $1 AND status = 'closed' AND exit_time >= $2", account_id, since)
 
+        if acc is None:   # C5-18 (p96): una cuenta que no está en la base no abre
+            return "cuenta no encontrada en la base: sin entradas"
+        limit_pct = float(acc['max_monthly_loss_pct'] or 0)
+        if limit_pct > 0 and not (acc['month_start_at'] == month and acc['month_start_balance']):
+            # C5-18 / D-51: sin el saldo inicial del mes el límite de pérdida mensual no se puede aplicar: no se abre
+            # hasta que ensure_month_baseline lo guarde (lo reintenta cada tick); las abiertas se siguen gestionando
+            key = (account_id, month, 'baseline')
+            if key not in _MONTHLY_NOTIFIED:
+                _MONTHLY_NOTIFIED.add(key)
+                logger.error(f"[RISK] cuenta {account_id}: sin saldo inicial de {month:%Y-%m}: sin entradas hasta tenerlo")
+            return f"sin saldo inicial del mes ({month:%Y-%m}): el límite de pérdida mensual no se puede aplicar"
         if unresolved is not None:   # D-50: con una operación en estado dudoso no se abre nada
             return (f"operación #{unresolved['id']} {unresolved['symbol']} sin confirmar ({unresolved['status']}): "
                     "sin entradas nuevas hasta que la conciliación la resuelva")

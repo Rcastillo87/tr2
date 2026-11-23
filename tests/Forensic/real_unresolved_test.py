@@ -180,8 +180,8 @@ class LimitConn:
 
     async def fetchrow(self, sql, *a):
         if 'FROM broker_accounts' in sql:
-            return {'max_monthly_loss_pct': 10, 'max_open_trades': self.s.get('max', 3), 'month_start_balance': None,
-                    'month_start_at': None}
+            return {'max_monthly_loss_pct': 10, 'max_open_trades': self.s.get('max', 3), 'month_start_balance': 1000.0,
+                    'month_start_at': RealTrader._month_start()[0]}   # saldo del mes vigente (C5-18 aparte)
         if "status = 'orphaned'" in sql:
             self.s['unresolved_sql'] = sql
             return self.s.get('unresolved')

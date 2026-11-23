@@ -21,7 +21,19 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-18: sin saldo inicial del mes no se abre (p96, D-51) — 23-nov
+- **Validado:** `ensure_month_baseline` no guarda el saldo si Bybit no da el patrimonio (reintenta cada tick) y,
+  mientras tanto, `entry_limit_reason` dejaba abrir sin aplicar el límite mensual; también con la cuenta ausente de la
+  base. Hoy la cuenta 11 tiene saldo del mes: afecta a los primeros minutos de un mes o a una cuenta nueva si Bybit falla.
+- **Fix (D-51):** sin saldo inicial válido del mes vigente (límite > 0) → sin entradas; cuenta ausente → sin entradas;
+  aviso del vigilante a los 10 min del día 1. Las abiertas siguen gestionándose.
+- **Prueba:** `risk_limits_test` L5 actualizado (fijaba lo anterior) + L7–L9; código anterior 5 FALLOS; mutaciones 4/4;
+  regresión 75 + 30 en TODO OK.
+
 ### Ciclo 5 · P0 de Real: parciales canceladas, apertura sin guardar y huérfanas (p95, C5-14..17, D-50) — 23-nov
+- **Instalado:** `859f817` (23-nov 16:10 UTC). Lectura previa: cuenta 11 (demo, máx. 3, mensual 5 %, con saldo del mes);
+  12 cerradas y 1 abierta; nunca hubo `failed`/`orphaned`/`pending_*` ni adopciones o descartes (fix preventivo); 3
+  `protection_failed` del 19-nov (R-17) y 8 `reconcile_closed`. Tras instalar: 0 operaciones dudosas.
 - **Inicio del ciclo 5.** Informe recibido el 23-nov (base p91). Validación punto por punto en
   `docs/VALIDACION_AUDITORIA_CICLO5.md` (pendientes y resueltos en listas separadas).
 - **C5-14 (válido en parte):** la apertura ya miraba la posición antes que el estado de la orden; la recuperación

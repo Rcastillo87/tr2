@@ -190,6 +190,7 @@ class CollectorWatchdog extends Command
         }
         $this->line('trading real: ' . count($accounts) . ' cuenta(s) con posiciones · sin gestionar ' . count($late));
         $this->checkUnresolvedTrades();
+        $this->checkMonthBaseline();
         if ($late) {
             $this->alerts->openIncident('real_tick_stalled', 'error', 'broker', 'Trading real sin gestionar posiciones',
                 count($late) . ' cuenta(s) con posiciones abiertas sin tick reciente: ' . implode(', ', $late)
@@ -219,6 +220,31 @@ class CollectorWatchdog extends Command
         } else {
             $this->alerts->resolveIncident('real_unresolved', 'broker', 'Operaciones Real confirmadas',
                 'No quedan operaciones en estado dudoso.', '/trading');
+        }
+    }
+
+    /**
+     * C5-18 / D-51 (p96): cuenta activa con límite mensual y sin saldo inicial del mes pasados real_baseline_grace_min
+     * minutos del día 1 (Bogotá): no abre operaciones hasta que Bybit dé el patrimonio. Aviso al admin hasta que se guarde.
+     */
+    private function checkMonthBaseline(): void
+    {
+        $start = now('America/Bogota')->startOfMonth();
+        if (now('America/Bogota')->diffInMinutes($start, true) < (int) ($this->cfg['real_baseline_grace_min'] ?? 10)) {
+            return;
+        }
+        $missing = \App\Models\BrokerAccount::query()->where('status', 'active')->where('max_monthly_loss_pct', '>', 0)
+            ->where(fn ($q) => $q->whereNull('month_start_at')->orWhere('month_start_at', '<', $start->toDateString())
+                ->orWhereNull('month_start_balance'))
+            ->orderBy('id')->pluck('id');
+        if ($missing->isNotEmpty()) {
+            $this->alerts->openIncident('real_month_baseline', 'error', 'broker', 'Cuenta Real sin saldo inicial del mes',
+                'Cuenta(s) ' . $missing->map(fn ($id) => "#{$id}")->implode(', ') . ' sin saldo inicial de '
+                . $start->format('Y-m') . ': no abren operaciones nuevas porque el límite de pérdida mensual no se puede '
+                . 'aplicar. Se reintenta cada minuto; revisa la conexión con Bybit.', '/trading');
+        } else {
+            $this->alerts->resolveIncident('real_month_baseline', 'broker', 'Saldo inicial del mes registrado',
+                'Todas las cuentas activas tienen su saldo inicial del mes.', '/trading');
         }
     }
 
