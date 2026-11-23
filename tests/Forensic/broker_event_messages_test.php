@@ -27,6 +27,7 @@ $expect = [   // evento => [nivel, modo]
     'reconcile_discarded' => ['info', 'notify'], 'manual_position_ignored' => ['warning', 'notify'],
     'protection_failed' => ['error', 'open'], 'protection_restored' => ['success', 'resolve'],
     'api_permissions_bad' => ['error', 'open'], 'api_permissions_ok' => ['success', 'resolve'],
+    'executions_mismatch' => ['warning', 'notify'],
 ];
 foreach ($expect as $e => [$level, $mode]) {
     $r = $m($e, ['symbol' => 'BTCUSDT'], 5);
@@ -82,5 +83,8 @@ $check('adoptada tras apertura interrumpida', str_contains($r['body'], 'se inter
 $r = $m('monthly_limit_reached', ['pct' => -5.2, 'limit' => 5.0]);
 $check('límite mensual: porcentaje y máximo', str_contains($r['body'], '-5,20 %') && str_contains($r['body'], 'máximo −5 %'), $r['body']);
 $check('límite mensual: mismo incidente para abrir y cerrar', $r['key'] === $m('monthly_limit_reset')['key']);
+$r = $m('executions_mismatch', ['symbol' => 'LINKUSDT', 'checks' => ['apertura: Bybit llenó 6 y la operación registra 10']], 104);
+$check('C5-01: ejecuciones que no cuadran: operación, diferencia y que el neto no cambia', $r['level'] === 'warning'
+    && str_contains($r['body'], 'LINKUSDT #104') && str_contains($r['body'], 'llenó 6') && str_contains($r['body'], 'no cambian'), $r['body']);
 echo "\nRESULTADO: " . ($fails ? "{$fails} FALLO(S)" : 'TODO OK') . "\n";
 exit($fails ? 1 : 0);

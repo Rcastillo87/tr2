@@ -52,6 +52,7 @@ DB_DSN = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.ge
 
 BYBIT_MAINNET = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
 BYBIT_DEMO_URL = os.getenv('BYBIT_DEMO_URL', 'https://api-demo.bybit.com')  # Bybit Demo Trading (precios reales)
+MAX_PAGES = 10   # páginas de Bybit por consulta paginada (C5-01: si quedan más, la respuesta es «no sé»)
 
 
 def compute_native_trailing_params(entry_price, side, trailing_distance_pct,
@@ -255,14 +256,20 @@ class BybitClient:
         self.base_url   = BYBIT_DEMO_URL if account_type == 'demo' else BYBIT_MAINNET
         self.last_order_error: str | None = None   # motivo del último rechazo (para el aviso)
 
-    async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20, end_time_ms=None):
+    async def get_closed_pnl_history(self, symbol, entry_price_hint, since_time_ms, limit=20, end_time_ms=None,
+                                     strict=False):
         """
         Trae el historial de cierres de Bybit para este simbolo, filtrado a
         los que pertenecen a ESTA posicion especifica (mismo precio de
         entrada, cerrados despues de since_time_ms). Usado para capturar
         TODOS los tramos cuando Bybit divide el cierre en varias ordenes
         por iliquidez, en vez de quedarnos solo con el ultimo tramo.
+
+        strict=True (C5-01, libro de ejecuciones): recorre todas las páginas (cursor) y devuelve None si Bybit falla o
+        quedan páginas sin leer, para no confundir un error con «no hay cierres». Sin strict, como siempre ([] si falla).
         """
+        if strict:
+            return await self._closed_pnl_all(symbol, entry_price_hint, since_time_ms, limit, end_time_ms)
         params = {"category": "linear", "limit": str(limit), "symbol": symbol}
         if end_time_ms:
             # Sin ventana Bybit responde solo los últimos 7 días; con ventana, como máximo 7 días hasta end_time_ms (R-16)
@@ -282,31 +289,58 @@ class BybitClient:
                 logger.error(f"[BYBIT] get_closed_pnl_history error: {retmsg_hist}")
                 return []
 
-            matching = []
-            for item in data.get("result", {}).get("list", []):
-                try:
-                    item_entry = float(item.get("avgEntryPrice", 0))
-                    item_time  = int(item.get("createdTime", 0))
-                except (TypeError, ValueError):
-                    continue
-                if item_time < since_time_ms:
-                    continue
-                if entry_price_hint > 0 and abs(item_entry - entry_price_hint) / entry_price_hint > 0.0005:
-                    continue
-                matching.append(item)
-            return matching
+            return [i for i in data.get("result", {}).get("list", [])
+                    if self._closed_pnl_match(i, entry_price_hint, since_time_ms)]
         except Exception as e:
             logger.error(f"[BYBIT] get_closed_pnl_history exception: {e}")
             return []
+
+    @staticmethod
+    def _closed_pnl_match(item: dict, entry_price_hint, since_time_ms) -> bool:
+        """El cierre es de esta posición: misma entrada (± 0,05 %) y creado desde since_time_ms."""
+        try:
+            item_entry = float(item.get("avgEntryPrice", 0))
+            item_time = int(item.get("createdTime", 0))
+        except (TypeError, ValueError):
+            return False
+        return item_time >= since_time_ms and not (
+            entry_price_hint > 0 and abs(item_entry - entry_price_hint) / entry_price_hint > 0.0005)
+
+    async def _closed_pnl_all(self, symbol, entry_price_hint, since_time_ms, limit, end_time_ms) -> list[dict] | None:
+        """C5-01: closed-pnl con todas las páginas; None = no se pudo saber (error o páginas sin leer)."""
+        out, cursor = [], None
+        for _ in range(MAX_PAGES):
+            params = {'category': 'linear', 'limit': str(min(int(limit), 100)), 'symbol': symbol}
+            if end_time_ms:
+                params.update(startTime=str(max(int(since_time_ms), int(end_time_ms) - 7 * 86_400_000 + 1000)),
+                              endTime=str(int(end_time_ms)))
+            if cursor:
+                params['cursor'] = cursor
+            try:
+                data = (await self._signed_get('/v5/position/closed-pnl', params)).json()
+            except Exception as e:   # noqa: BLE001
+                logger.warning(f"[BYBIT] closed-pnl {symbol}: {e}")
+                return None
+            if data.get('retCode') != 0:
+                logger.warning(f"[BYBIT] closed-pnl {symbol}: {data.get('retMsg')}")
+                return None
+            result = data.get('result') or {}
+            out += [i for i in (result.get('list') or []) if self._closed_pnl_match(i, entry_price_hint, since_time_ms)]
+            cursor = result.get('nextPageCursor')
+            if not cursor:
+                return out
+        logger.warning(f"[BYBIT] closed-pnl {symbol}: más de {MAX_PAGES} páginas; respuesta incompleta")
+        return None
 
     async def get_executions(self, symbol: str, order_id: str, start_ms: int, end_ms: int) -> list[dict] | None:
         """
         MEJ-004 (p89): ejecuciones (fills) de UNA orden, de GET /v5/execution/list (solo lectura). La ventana
         start_ms..end_ms (≤ 7 días, la máxima que acepta Bybit) debe contener la orden; se pagina con cursor.
-        None = no se pudo consultar (se reintenta después); [] = Bybit no tiene ejecuciones de esa orden en la ventana.
+        None = no se pudo consultar o quedaron páginas sin leer (se reintenta después); [] = Bybit no tiene ejecuciones
+        de esa orden en la ventana.
         """
         out, cursor = [], None
-        for _ in range(10):   # 10 páginas de 100: una orden nunca tiene tantas partes
+        for _ in range(MAX_PAGES):   # 10 páginas de 100: una orden nunca tiene tantas partes
             params = {'category': 'linear', 'symbol': symbol, 'orderId': order_id, 'limit': '100',
                       'startTime': str(int(start_ms)), 'endTime': str(int(min(end_ms, start_ms + 7 * 86_400_000 - 1000)))}
             if cursor:
@@ -323,8 +357,9 @@ class BybitClient:
             out += [e for e in (result.get('list') or []) if e.get('orderId') == order_id]
             cursor = result.get('nextPageCursor')
             if not cursor:
-                break
-        return out
+                return out
+        logger.warning(f"[BYBIT] get_executions {symbol} {order_id}: más de {MAX_PAGES} páginas; respuesta incompleta")
+        return None   # C5-01: quedó cursor: incompleto = «no sé», nunca «completo»
 
     async def get_market_price(self, symbol: str) -> float | None:
         """Obtiene precio actual usando la URL de la cuenta (Demo Trading o real)."""

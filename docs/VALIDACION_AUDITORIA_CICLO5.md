@@ -13,8 +13,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 8 | C5-20 | P1 | Riesgo por suscripción y modo One-Way | Implementado en p98 (D-52) |
-| 9 | C5-01 | P1 | Integridad del libro de ejecuciones y costos | Pendiente de validar |
+| 9 | C5-01 | P1 | Integridad del libro de ejecuciones y costos | Implementado en p99 (D-53) |
 | 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Pendiente de validar |
 | 11 | C5-02 | P1 | Protección lookahead ante errores | Pendiente de validar |
 | 12 | C5-09 | P1 | Matriz dinámica de permisos y aislamiento | Pendiente de validar |
@@ -30,10 +29,36 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-20 · Riesgo por suscripción y modo One-Way (P1) — **One-Way: ya corregido · riesgo propio: válido en parte (latente)** · Implementado en p98 (D-52)
+### C5-01 · Integridad del libro de ejecuciones de Bybit (P1) — **Válido (5 de 5 en código; latente)** · Implementado en p99 (D-53)
+1. **«ok» con diferencias:** confirmado. `record_trade` ponía `ok` con las dos patas aunque `leg_checks` tuviera
+   diferencias de cantidad o precio, y con eso separaba comisión y funding.
+2. **No volvía a pedir partes:** confirmado. Con alguna parte guardada de una pata (`have[leg]`) no se consultaba más.
+3. **10 páginas:** confirmado. `get_executions` cortaba en 10 páginas y devolvía lo leído como completo.
+4. **closed-pnl:** confirmado. Una sola página y, si Bybit fallaba, `[]` = «no hay cierres»: un cierre de Bybit podía
+   terminar en `missing` por un error.
+5. **Comisión sin `execFee`:** confirmado: `exec_fee or 0`.
+- **Servidor (lectura 23-nov 19:45 UTC):** 13 operaciones, todas `ok` con funding separado; 1 parte por orden; cantidad
+  y precio exactos (0,0000 %); 26 partes, todas con comisión; 0 diferencias y 0 errores de Bybit en el log. **Nunca
+  ocurrió.** Detalle aparte: las cantidades quedaron guardadas con ruido binario (15.9100000000000001421…), sin efecto en
+  los controles.
+- **Fix (D-53, «Procede» 23-nov):** `leg_ok` (cantidad = tamaño y todas las comisiones conocidas); una pata guardada
+  incompleta se vuelve a pedir (sin duplicar; la comisión que llega después completa la parte); `ok` solo sin
+  diferencias; 24 h después del cierre con diferencias → `mismatch` + aviso `executions_mismatch` (una vez) y sin
+  separar costos; si falta una pata → `missing` (como antes). `get_executions` y `get_closed_pnl_history(strict=True)`
+  devuelven None (= «no sé») con error de Bybit o páginas sin leer; closed-pnl recorre todas las páginas. Lo que queda
+  sin verificar espera 10 min (`RETRY_EVERY`) antes de volver a pedirse, para no acaparar el tick. Los números van a la
+  base como los dio Bybit. Los demás usos de closed-pnl (cierres, conciliación) no cambian.
+- **Prueba:** `execution_ledger_test` A14–A17, K1–K6 (cliente de Bybit con páginas y errores simulados) y B16–B24
+  (PostgreSQL); B5 fijaba el defecto (precio de salida 9,8 contra 9,78 de los tramos y esperaba «ok»): se corrigió el
+  dato. `broker_event_messages_test`: texto del aviso. Código anterior: FALLA (A14, A15 y excepción). Mutaciones 19/19
+  (una vigésima mostró una condición redundante: se quitó). Regresión 76 Python + 30 PHP en TODO OK.
+
+### C5-20 · Riesgo por suscripción y modo One-Way (P1) — **One-Way: ya corregido · riesgo propio: válido en parte (latente)** · Instalado en p98 (`3853d5d`, D-52)
 - **One-Way:** D-11 / REAL-08 (03-nov, p07). La orden de apertura no lleva `positionIdx`: en Hedge Bybit la rechaza
   entera (nunca queda una posición a medias) y el aviso `open_rejected` explica cómo pasar a One-Way. El bot no cambia
   el modo. Servidor: 0 `open_rejected` en la historia y 0 rechazos por modo en `engine.log`.
+  La cuenta 11 **está en One-Way**: sus 13 aperturas se aceptaron sin `positionIdx` (en Hedge Bybit las rechaza).
+  El control previo del informe (punto 5) es este rechazo seguro, decidido así en D-11.
 - **Riesgo propio (`real_strategy_subscriptions.risk_override_pct`):** reemplaza el `risk_per_trade_pct` de la
   configuración sin validar nada (ni en Laravel ni en el motor ni en la base: solo el CHECK de `status`). No tiene
   pantalla: solo se fija a mano en la base. Con 0 o negativo la suscripción deja de abrir en silencio (solo un warning
@@ -142,3 +167,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-18 | Sin saldo inicial del mes no se abre (D-51); aviso a los 10 min | p96 `038e8d9` | Cuenta 11 con saldo de 2026-11 (178.118,23): sin bloqueo. Falta DEMO-08 |
 | C5-19 | Tamaño recalculado con el último precio y saldo si el precio se movió > 0,5 %; riesgo previsto y real en el historial | p97 `3478b66` | Regresión en el servidor; impacto histórico medido 0,9989–1,0013 % (13 trades). Revisar `risk_real_pct` en las próximas aperturas |
 | C5-10 | Tras 34040 se lee la posición y solo se acepta si SL/TP coinciden | p97 `3478b66` | Regresión en el servidor. Falta DEMO-03 |
+| C5-20 | Riesgo de la suscripción validado (0 < r ≤ 100) antes de Bybit; CHECK en la base (D-52). One-Way: ya corregido (D-11) | p98 `3853d5d` | 6 suscripciones activas con 1 %; 0 riesgos propios. Sin prueba Demo necesaria |

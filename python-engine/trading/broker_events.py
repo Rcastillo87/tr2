@@ -33,6 +33,7 @@ EVENTS = frozenset({
     'protection_restored',  # el SL/TP de la estrategia quedó instalado en Bybit
     'api_permissions_bad',  # la clave no tiene los permisos que TR2 exige (o tiene retiros); la cuenta sigue operando
     'api_permissions_ok',   # la clave vuelve a tener los permisos correctos
+    'executions_mismatch',  # C5-01: 24 h después del cierre, lo que llenó Bybit no cuadra con lo registrado
 })
 
 

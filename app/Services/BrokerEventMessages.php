@@ -173,6 +173,14 @@ final class BrokerEventMessages
                     . (isset($data['sl']) ? ' (SL ' . self::num($data['sl']) . (isset($data['tp']) ? ' / TP ' . self::num($data['tp']) : '') . ')' : '')
                     . '.',
             ],
+            'executions_mismatch' => [
+                'level' => 'warning', 'mode' => 'notify', 'key' => null,
+                'title' => 'Ejecuciones de Bybit que no cuadran',
+                'body'  => "{$account} · {$ref}: 24 h después del cierre, lo que llenó Bybit no cuadra con lo registrado ("
+                    . self::clip(implode('; ', array_map('strval', is_array($data['checks'] ?? null) ? $data['checks'] : [])))
+                    . '). El neto y el saldo vienen de Bybit y no cambian; la comisión y el funding de esta operación no se'
+                    . ' separan. Revísala en el historial de la operación.',
+            ],
             default => null,
         };
     }

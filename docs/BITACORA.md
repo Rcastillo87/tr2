@@ -21,7 +21,19 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-01: libro de ejecuciones de Bybit solo «ok» si todo cuadra (p99, D-53) — 23-nov
+- **Validado:** los 5 puntos del informe están en el código («ok» con diferencias; no se volvían a pedir partes; 10
+  páginas sin confirmar el cursor; closed-pnl de una página y error = «no hay»; comisión faltante = 0). Lectura: 13 de
+  13 operaciones cuadran exactas, 26 partes con comisión, 0 errores: nunca ocurrió (fix preventivo).
+- **Fix:** `ok` solo con cantidad, precio y comisiones verificados; se vuelve a pedir lo incompleto (cada 10 min); error
+  o respuesta incompleta de Bybit = «no sé»; 24 h con diferencias → `mismatch` y aviso `executions_mismatch`; sin
+  verificar no se separan los costos. Neto y saldo sin cambio. Vuelta atrás: `p99_revertir.sh`.
+- **Prueba:** `execution_ledger_test` (+19 casos), `broker_event_messages_test`; código anterior falla; mutaciones 19/19;
+  regresión 76 + 30 en TODO OK.
+
 ### Ciclo 5 · C5-20: riesgo por suscripción blindado y modo One-Way (p98, D-52) — 23-nov
+- **Instalado:** `3853d5d` (23-nov ~19:20 UTC; la SSH se cortó durante la regresión pero el instalador terminó: TODO OK,
+  CHECK en la base, motor y Horizon activos, 6 suscripciones activas con 1 %).
 - **One-Way:** ya corregido (D-11, REAL-08): Hedge = apertura rechazada entera + aviso; 0 rechazos en la historia.
 - **Riesgo propio por suscripción:** sin validación ni pantalla; 0 o negativo = deja de abrir en silencio. Lectura: 0 de
   11 suscripciones lo usan; todas las configuraciones activas con 1 %. Latente.

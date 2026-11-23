@@ -77,6 +77,72 @@ check('A12: sin closed-pnl de Bybit: no separa', sp is None and 'closed-pnl' in 
 sp, note = led.split_costs(-10, -30.0427, 21.1188, -30.0477)
 check('A13: diferencia de redondeo del neto (0,005): sí separa', sp is not None and note is None, note)
 
+# C5-01 (p99): comisión desconocida ≠ 0; pata completa
+rows_nf = [led.parse_execution(ex('n1', 'o1', 10.0, 6, T0), 'open'),
+           led.parse_execution(dict(ex('n2', 'o1', 10.0, 4, T0), execFee=None), 'open')]
+s_nf = led.leg_summary(rows_nf)
+check('A14: una parte sin comisión: la comisión de la pata es desconocida (None), no 0,006',
+      s_nf['fee'] is None and s_nf['fee_unknown'] == 1, s_nf)
+c = led.leg_checks(dict(tr, entry_price=10.0), s_nf, None)
+check('A15: y queda como diferencia («no informó la comisión»)', any('no informó la comisión de 1' in x for x in c), c)
+check('A16: pata completa = cantidad del tamaño y comisiones conocidas', led.leg_ok(tr, s) and not led.leg_ok(tr, s_nf)
+      and not led.leg_ok(dict(tr, size=12), s) and not led.leg_ok(tr, None))
+check('A17: a la base va el número como lo dio Bybit (15.91, no 15.910000000000000142…)',
+      str(led._dec(15.91)) == '15.91' and led._dec(None) is None)
+
+
+# Cliente de Bybit (C5-01): paginación que se agota y «no sé» ≠ «no hay»
+def client_cases():
+    import trading.real_trader as rt
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+    def mk(pages, fail_at=None):
+        cl = rt.BybitClient('k', 's', 'demo')
+        calls = []
+
+        async def signed_get(path, params, timeout=10):
+            calls.append((path, dict(params)))
+            i = len(calls) - 1
+            if fail_at is not None and i == fail_at:
+                return Resp({'retCode': 10006, 'retMsg': 'Too many visits'})
+            lst, cur = pages[min(i, len(pages) - 1)]
+            return Resp({'retCode': 0, 'result': {'list': lst, 'nextPageCursor': cur}})
+        cl._signed_get = signed_get
+        return cl, calls
+    e = lambda i: {'execId': f'x{i}', 'orderId': 'o1'}   # noqa: E731
+    cl, calls = mk([([e(1)], 'c1'), ([e(2)], '')])
+    got = asyncio.run(cl.get_executions('LINKUSDT', 'o1', 0, 1000))
+    check('K1: execution/list en 2 páginas: junta las dos y manda el cursor', [x['execId'] for x in got] == ['x1', 'x2']
+          and calls[1][1].get('cursor') == 'c1', (got, calls))
+    cl, calls = mk([([e(1)], 'sigue')])
+    got = asyncio.run(cl.get_executions('LINKUSDT', 'o1', 0, 1000))
+    check('K2: execution/list con cursor después de 10 páginas: «no sé» (None), no una lista incompleta',
+          got is None and len(calls) == rt.MAX_PAGES, (got, len(calls)))
+    h = lambda t, o: {'orderId': o, 'avgEntryPrice': '10.0', 'createdTime': str(t), 'closedPnl': '1'}   # noqa: E731
+    cl, calls = mk([([h(5000, 't1')], 'c1'), ([h(6000, 't2'), dict(h(6000, 'otra'), avgEntryPrice='20')], '')])
+    got = asyncio.run(cl.get_closed_pnl_history('LINKUSDT', 10.0, 1000, limit=100, end_time_ms=9000, strict=True))
+    check('K3: closed-pnl estricto en 2 páginas: junta las dos y filtra los de otra entrada',
+          [x['orderId'] for x in got] == ['t1', 't2'] and calls[0][0] == '/v5/position/closed-pnl'
+          and calls[1][1].get('cursor') == 'c1' and 'cursor' not in calls[0][1], (got, calls))
+    cl, calls = mk([([h(5000, 't1')], 'c1'), ([], '')], fail_at=1)
+    got = asyncio.run(cl.get_closed_pnl_history('LINKUSDT', 10.0, 1000, limit=100, end_time_ms=9000, strict=True))
+    check('K4: closed-pnl estricto con error de Bybit en la página 2: «no sé» (None), no «no hay cierres»', got is None, got)
+    cl, calls = mk([([h(5000, 't1')], 'sigue')])
+    got = asyncio.run(cl.get_closed_pnl_history('LINKUSDT', 10.0, 1000, limit=100, end_time_ms=9000, strict=True))
+    check('K5: closed-pnl estricto con páginas sin leer: None', got is None and len(calls) == rt.MAX_PAGES, len(calls))
+    src = (ROOT / 'python-engine' / 'trading' / 'execution_ledger.py').read_text(encoding='utf-8')
+    check('K6: el libro pide el closed-pnl siempre en modo estricto', src.count('get_closed_pnl_history(') == 2
+          and src.count('strict=True') == 2, src.count('strict=True'))
+
+
+client_cases()
+
 # ── C. Estático ──
 api = (ROOT / 'python-engine' / 'api' / 'v1' / 'real_trading.py').read_text(encoding='utf-8')
 check('C1: el tick lo llama después de las señales, dentro de try/except (nunca frena la gestión)',
@@ -113,14 +179,14 @@ else:
 
     class FakeClient:
         def __init__(self, execs, history=(), fail=False):
-            self.execs, self.history, self.fail, self.windows = execs, list(history), fail, []
+            self.execs, self.history, self.fail, self.windows = execs, None if history is None else list(history), fail, []
 
         async def get_executions(self, symbol, oid, start_ms, end_ms):
             self.windows.append((oid, start_ms, end_ms))
             return None if self.fail else [e for e in self.execs.get(oid, []) if start_ms <= int(e['execTime']) <= end_ms]
 
-        async def get_closed_pnl_history(self, symbol, entry, since_ms, limit=20, end_time_ms=None):
-            return self.history
+        async def get_closed_pnl_history(self, symbol, entry, since_ms, limit=20, end_time_ms=None, strict=False):
+            return None if self.history is None else self.history
 
     class FakeTrader:
         def __init__(self):
@@ -182,7 +248,7 @@ else:
             check('B4: repetir no duplica partes', n2 == 3, n2)
 
             # cierre de Bybit en dos tramos, sin close_order_id (R-23)
-            await trade(3, close_oid=None)
+            await trade(3, close_oid=None, exit_=9.78)   # precio promedio de los 2 tramos (C5-01: «ok» solo si cuadra)
             ex3 = {'o-open': execs['o-open'], 't1': [ex('y1', 't1', 9.9, 4, T0 + timedelta(hours=1), stop='TakeProfit')],
                    't2': [ex('y2', 't2', 9.7, 6, T0 + timedelta(hours=2), stop='TakeProfit')]}
             hist3 = [{'orderId': 't1', 'createdTime': str(MS(T0 + timedelta(hours=1)))},
@@ -292,7 +358,103 @@ else:
             r11 = await full(11)
             check('B15: con una lectura vieja no pisa un reparto ya guardado (UPDATE solo si funding IS NULL)',
                   float(r11['commission']) == 0.05 and float(r11['funding']) == 0.18, (r11['commission'], r11['funding']))
+
+            # ── C5-01 (p99) ──
+            async def full_b(tid):
+                return dict(await c.fetchrow(f"SELECT {led.TRADE_COLS} FROM real_trades WHERE id = $1", tid))
+            recent = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+            old_t = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=2)
+
+            def close_at(eid, t, **kw):   # la parte del cierre a la hora del cierre del trade
+                return dict(ex(eid, 'o-close', 9.8, 10, t), **kw)
+            # llenado parcial reciente: no queda «ok» ni separa costos; sigue pendiente
+            await trade(12, close_oid='o-close', exit_t=recent)
+            await c.execute("UPDATE real_trades SET broker_account_id = $1, pnl = 4, net_pnl = 3.77, commission = 0.23 WHERE id = 12", ba)
+            ex12 = {'o-open': [dict(execs['o-open'][0], execId='z1')], 'o-close': [close_at('z3', recent)]}
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex12, h9), await full_b(12))
+            r12 = await full_b(12)
+            check('B16: cantidad que no cuadra (6 de 10), cierre reciente: NO queda «ok», no separa costos y sigue pendiente',
+                  r12['executions_status'] is None and r12['funding'] is None and out['split'] is None and out['checks'], (r12['executions_status'], out['checks']))
+            # Bybit entrega después la parte que faltaba: se vuelve a pedir la apertura y queda «ok» con costos
+            ex12b = {'o-open': [dict(execs['o-open'][0], execId='z1'), dict(execs['o-open'][1], execId='z2')],
+                     'o-close': ex12['o-close']}
+            cl12 = FakeClient(ex12b, h9)
+            out = await led.record_trade(pool, FakeTrader(), cl12, await full_b(12))
+            r12 = await full_b(12)
+            n12 = await c.fetchval("SELECT count(*) FROM real_trade_executions WHERE real_trade_id = 12")
+            check('B17: la pata guardada incompleta se vuelve a pedir: 3 partes sin duplicar, «ok» y costos separados',
+                  r12['executions_status'] == 'ok' and n12 == 3 and float(r12['funding']) == 0.2
+                  and any(w[0] == 'o-open' for w in cl12.windows) and not any(w[0] == 'o-close' for w in cl12.windows),
+                  (r12['executions_status'], n12, cl12.windows))
+            ev12 = await c.fetchval("SELECT count(*) FROM broker_events WHERE trade_id = 12")
+            check('B17b: una que termina cuadrando no avisa al dueño', ev12 == 0, ev12)
+            # 24 h después sigue sin cuadrar: «mismatch», historial y aviso al dueño (una vez)
+            await trade(13, close_oid='o-close', exit_t=old_t)
+            await c.execute("UPDATE real_trades SET broker_account_id = $1 WHERE id = 13", ba)
+            ex13 = {'o-open': [dict(execs['o-open'][0], execId='m1')], 'o-close': [close_at('m3', old_t)]}
+            trd13 = FakeTrader()
+            await led.record_trade(pool, trd13, FakeClient(ex13, h9), await full_b(13))
+            ev = await c.fetch("SELECT event, data FROM broker_events WHERE trade_id = 13")
+            await led.record_trade(pool, FakeTrader(), FakeClient(ex13, h9), await full_b(13))
+            ev2 = await c.fetchval("SELECT count(*) FROM broker_events WHERE trade_id = 13")
+            check('B18: 24 h sin cuadrar: «mismatch», «executions_mismatch» en el historial y un solo aviso con la diferencia',
+                  (await full_b(13))['executions_status'] == 'mismatch' and trd13.audit[-1][1] == 'executions_mismatch'
+                  and [r['event'] for r in ev] == ['executions_mismatch'] and 'llenó 6' in str(ev[0]['data']) and ev2 == 1,
+                  ((await full_b(13))['executions_status'], [a[1] for a in trd13.audit], [dict(r) for r in ev], ev2))
+            # cierre de Bybit (sin close_order_id) y closed-pnl con error: «no sé», ni «missing» aunque pasaron 24 h
+            await trade(14, close_oid=None, exit_t=old_t)
+            ex14 = {'o-open': [dict(e, execId=e['execId'] + '-14') for e in execs['o-open']]}
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex14, None), await full_b(14))
+            check('B19: closed-pnl con error: error y sigue pendiente (no «missing», no «no hay cierres»)',
+                  out['error'] and 'órdenes de cierre' in out['error'] and (await full_b(14))['executions_status'] is None, out)
+            # comisión que Bybit no informa: no «ok» ni costos; cuando la informa, se completa la parte guardada
+            await trade(15, close_oid='o-close', exit_t=recent)
+            await c.execute("UPDATE real_trades SET pnl = 4, net_pnl = 3.77, commission = 0.23 WHERE id = 15")
+            ex15 = {'o-open': [dict(e, execId=e['execId'] + '-15') for e in execs['o-open']],
+                    'o-close': [close_at('x3-15', recent, execFee=None)]}
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex15, h9), await full_b(15))
+            r15 = await full_b(15)
+            check('B20: sin comisión de Bybit: no «ok», no separa costos (antes contaba 0)',
+                  r15['executions_status'] is None and r15['funding'] is None and out['close']['fee'] is None, (r15['executions_status'], out['close']))
+            ex15['o-close'] = [close_at('x3-15', recent)]
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex15, h9), await full_b(15))
+            r15 = await full_b(15)
+            fee15 = await c.fetchval("SELECT exec_fee FROM real_trade_executions WHERE exec_id = 'x3-15'")
+            n15 = await c.fetchval("SELECT count(*) FROM real_trade_executions WHERE real_trade_id = 15")
+            check('B21: Bybit informa la comisión después: se completa la parte (sin duplicar), «ok» y costos separados',
+                  r15['executions_status'] == 'ok' and fee15 is not None and float(fee15) == 0.01 and n15 == 3
+                  and float(r15['funding']) == 0.2, (r15['executions_status'], fee15, n15))
+            # todo cuadra pero closed-pnl con error al separar: no queda «ok» todavía
+            await trade(16, close_oid='o-close', exit_t=recent)
+            await c.execute("UPDATE real_trades SET pnl = 4, net_pnl = 3.77, commission = 0.23 WHERE id = 16")
+            ex16 = {'o-open': [dict(e, execId=e['execId'] + '-16') for e in execs['o-open']], 'o-close': [close_at('x3-16', recent)]}
+            out = await led.record_trade(pool, FakeTrader(), FakeClient(ex16, None), await full_b(16))
+            check('B22: partes completas pero closed-pnl con error: sigue pendiente (se reintenta), sin costos',
+                  (await full_b(16))['executions_status'] is None and out['error'] and 'closed-pnl' in out['error']
+                  and (await full_b(16))['funding'] is None, out)
+            n16 = await c.fetchval("SELECT count(*) FROM real_trade_executions WHERE real_trade_id = 16")
+            check('B23: y las partes ya leídas quedan guardadas (no se vuelven a pedir)', n16 == 3, n16)
+            # el tick no vuelve a pedir antes de 10 min una que quedó sin verificar
+            await c.execute("UPDATE real_trades SET broker_account_id = $1 WHERE id IN (14, 16)", ba)
+            led._RETRY_AT.clear()
+            seen = []
+            orig = led.record_trade
+
+            async def spy2(pool_, trader_, client_, t, apply=True, now=None):
+                seen.append(t['id'])
+                return {'error': 'x', 'status': None} if t['id'] in (14, 16) else {'status': 'ok'}
+            led.record_trade = spy2
+            try:
+                await led.process_pending(pool, FakeTrader(), FakeClient({}), ba, limit=10)
+                first = list(seen)
+                seen.clear()
+                await led.process_pending(pool, FakeTrader(), FakeClient({}), ba, limit=10)
+            finally:
+                led.record_trade = orig
+            check('B24: una sin verificar espera 10 min (el tick no la repite cada minuto ni acapara el turno)',
+                  14 in first and 16 in first and 14 not in seen and 16 not in seen, (first, seen))
         finally:
+            await c.execute("DELETE FROM broker_events WHERE broker_account_id IN (SELECT id FROM broker_accounts WHERE user_id = $1)", uid)
             for q in ("DELETE FROM real_trades WHERE user_id = $1", "DELETE FROM broker_accounts WHERE user_id = $1",
                       "DELETE FROM users WHERE id = $1"):
                 await c.execute(q, uid)
