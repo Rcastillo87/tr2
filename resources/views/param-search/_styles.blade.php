@@ -79,6 +79,7 @@
     .sb-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border-strong);
               color: var(--color-text-secondary); white-space: nowrap; }
     .sb-tag.y { border-color: #1E4A2E; color: var(--color-profit); background: #132A1B; }
+    .sb-tag.b { border-color: rgba(77, 143, 232, .45); color: #9DC0F2; background: rgba(77, 143, 232, .12); }   /* D-45 */
     .sb-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
     .sb-badge.ok { background: #16331F; color: var(--color-profit); }
     .sb-badge.no { background: #3A1A1C; color: var(--color-loss); }
@@ -119,6 +120,9 @@
     .sb-focus button small { font-size: 11px; color: var(--color-text-muted); line-height: 1.35; }
     .sb-focus button.on { border-color: #8B5CF6; background: rgba(139, 92, 246, .14); }
     .sb-focus button.on b { color: #DDD6FE; }
+    .sb-sltp-box { border: 1px solid rgba(77, 143, 232, .45); border-radius: 12px; padding: 12px; background: rgba(77, 143, 232, .05); }
+    .sb-sltp button.on { border-color: #4D8FE8; background: rgba(77, 143, 232, .16); }
+    .sb-sltp button.on b { color: #CFE0F8; }
     .sb-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border-soft); }
     .sb-tab { border: 0; border-bottom: 2px solid transparent; background: none; padding: 10px 14px; font-size: 13px; font-weight: 600;
               color: var(--color-text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }

@@ -24,6 +24,8 @@ class ParamSearchService
     /** Enfoque (v3): qué combinaciones se prueban (cli/param_search.py SPACES) y cómo se ordenan los resultados. */
     public const FOCUSES = ['gain' => 'Mayor ganancia', 'wr' => 'Win rate alto', 'cons' => 'Consistencia alta'];
     /** Orden de los resultados por enfoque: métrica principal de summarize() (desempate: retorno total, estrellas). */
+    /** D-45 (p93): qué SL/TP se prueban. 'fixed' = como siempre (default). */
+    public const SLTPS = ['fixed' => 'Fijos (como hoy)', 'auto' => 'Automáticos', 'both' => 'Los dos y comparar'];
     public const FOCUS_SORT = ['gain' => 'total_return_pct', 'wr' => 'win_rate', 'cons' => 'consist_pct'];
     /** Modo "por moneda": de 1 a MAX_SYMBOLS_SYMBOL_MODE monedas × todas las temporalidades con datos. */
     public const MAX_SYMBOLS_SYMBOL_MODE = 5;
@@ -65,7 +67,7 @@ class ParamSearchService
      * @throws DomainException con un mensaje para el usuario
      */
     public function start(Strategy $strategy, string $mode, array $intervals, array $symbols, ?int $userId,
-                          string $focus = 'gain'): ParamSearchRun
+                          string $focus = 'gain', string $sltp = 'fixed'): ParamSearchRun
     {
         $symbols = array_values(array_unique(array_map('strval', $symbols)));
         $intervals = array_values(array_unique(array_map('strval', $intervals)));
@@ -74,6 +76,9 @@ class ParamSearchService
         }
         if (! array_key_exists($focus, self::FOCUSES)) {
             throw new DomainException('Enfoque de búsqueda no válido.');
+        }
+        if (! array_key_exists($sltp, self::SLTPS)) {
+            throw new DomainException('Opción de SL/TP no válida.');
         }
         if ($symbols === []) {
             throw new DomainException('Elige al menos una moneda.');
@@ -108,6 +113,7 @@ class ParamSearchService
                 'status'             => 'queued',
                 'mode'               => $mode,
                 'focus'              => $focus,
+                'sltp'               => $sltp,
                 'intervals'          => $intervals,
                 'search_symbols'     => $symbols,
                 'validation_symbols' => [],
@@ -133,12 +139,13 @@ class ParamSearchService
      *
      * @return array{created: array<int, string>, skipped: array<string, string>}
      */
-    public function startAll(string $mode, array $intervals, array $symbols, ?int $userId, string $focus = 'gain'): array
+    public function startAll(string $mode, array $intervals, array $symbols, ?int $userId, string $focus = 'gain',
+                             string $sltp = 'fixed'): array
     {
         $created = $skipped = [];
         foreach (Strategy::where('active', true)->orderBy('name')->get() as $s) {
             try {
-                $created[$this->start($s, $mode, $intervals, $symbols, $userId, $focus)->id] = $s->name;
+                $created[$this->start($s, $mode, $intervals, $symbols, $userId, $focus, $sltp)->id] = $s->name;
             } catch (DomainException $e) {
                 $skipped[$s->name] = $e->getMessage();
             }

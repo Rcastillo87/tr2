@@ -102,9 +102,15 @@
     @php
         $cfg = $implementParams ?? [];
         $cfgParts = [];
-        if(isset($cfg['sl_pct'])) $cfgParts[] = "SL={$cfg['sl_pct']}%";
-        if(isset($cfg['tp_pct'])) $cfgParts[] = "TP1={$cfg['tp_pct']}%";
-        if(isset($cfg['be_pct'])) $cfgParts[] = "BE={$cfg['be_pct']}%";
+        if(\App\Support\LevelsLabel::isAuto($cfg)) {   // D-45: SL/TP automáticos
+            $cfgParts[] = 'SL=' . \App\Support\LevelsLabel::sl($cfg);
+            $cfgParts[] = 'TP1=' . \App\Support\LevelsLabel::tp($cfg);
+            $cfgParts[] = 'BE=' . \App\Support\LevelsLabel::be($cfg);
+        } else {
+            if(isset($cfg['sl_pct'])) $cfgParts[] = "SL={$cfg['sl_pct']}%";
+            if(isset($cfg['tp_pct'])) $cfgParts[] = "TP1={$cfg['tp_pct']}%";
+            if(isset($cfg['be_pct'])) $cfgParts[] = "BE={$cfg['be_pct']}%";
+        }
         if(isset($cfg['max_duration'])) $cfgParts[] = "Dur={$cfg['max_duration']} velas";
         if(isset($cfg['risk_per_trade_pct'])) $cfgParts[] = "Riesgo={$cfg['risk_per_trade_pct']}%";
     @endphp

@@ -173,7 +173,11 @@
 
             {{-- Fila 3: configuración --}}
             <div class="px-3 py-1 border-t text-[10px] font-mono" style="border-color:var(--color-border-soft); background:var(--color-base); color:var(--color-text-muted);">
-                SL {{ $param($p['sl'], '%') }} · TP {{ $param($p['tp'], '%') }} · BE {{ $param($p['be'], '%') }} · Dur {{ $param($p['dur'], ' velas') }} · Riesgo {{ $param($p['risk'], '%') }}
+                @if($p['auto'] ?? false)
+                SL {{ $p['sl_label'] }} · TP {{ $p['tp_label'] }} · BE {{ $p['be_label'] }} · Dur
+                @else
+                SL {{ $param($p['sl'], '%') }} · TP {{ $param($p['tp'], '%') }} · BE {{ $param($p['be'], '%') }} · Dur
+                @endif {{ $param($p['dur'], ' velas') }} · Riesgo {{ $param($p['risk'], '%') }}
                 · {{ $r['trades'] }} trades · Ret. total <span style="color:{{ $r['ret_total'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">{{ number_format($r['ret_total'], 2) }}%</span>
             </div>
         </div>

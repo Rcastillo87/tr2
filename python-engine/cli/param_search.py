@@ -93,6 +93,20 @@ BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult',
              'volume_filter_period', 'volume_filter_mult', 'max_duration', 'max_duration_profit', 'close_on_opposite',
              'regime_adx_trending', 'regime_adx_ranging', 'regime_ambiguous_as', 'btc_trend_filter')
 
+# D-45 (p93): SL/TP automáticos en la búsqueda. 'fixed' = como siempre (mismo sorteo); 'auto' = todas automáticas;
+# 'both' = una de cada dos automática (las fijas salen del mismo sorteo de siempre). Topes del SL: los de auto_levels.
+SLTP_CHOICES = ('fixed', 'auto', 'both')
+AUTO_KEYS = ('sl_mode', 'tp_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult', 'tp_atr_mult')
+NO_BE_R = 20.0            # break-even a 20 veces el SL = nunca (equivale al «sin BE» de 99 % del modo fijo)
+AUTO_SPACES = {
+    'gain': dict(sl_k=(1.5, 2.0, 2.5, 3.0), tp=(('r', 2.0), ('r', 3.0), ('atr', 4.0), ('atr', 6.0), ('fixed', None)),
+                 be_r=(NO_BE_R, 1.0)),
+    'wr':   dict(sl_k=(1.5, 2.0, 2.5, 3.0), tp=(('r', 1.0), ('r', 1.5), ('atr', 2.0), ('atr', 3.0)),
+                 be_r=(0.5, 1.0, NO_BE_R)),
+    'cons': dict(sl_k=(1.5, 2.0, 2.5), tp=(('r', 1.5), ('r', 2.0), ('atr', 3.0), ('fixed', None)),
+                 be_r=(1.0, NO_BE_R)),
+}
+
 DATA: dict = {}           # (símbolo, intervalo) -> BacktestData | None
 SIGNAL_CACHE: dict = {}
 
@@ -113,13 +127,28 @@ def regime_useful(code: str) -> bool:
         return True   # si no compila aquí, fallará igual en evaluate(); no se decide nada
 
 
-def sample_configs(n: int, seed: int, focus: str | None = None, regime: bool = True) -> list[dict]:
+def with_auto_levels(cfg: dict, rng: random.Random, focus: str | None) -> dict:
+    """D-45: la misma configuración con SL automático y un TP de AUTO_SPACES (sl_pct / tp_pct / be_pct quedan de
+    respaldo, como en el formulario)."""
+    sp = AUTO_SPACES.get(focus or 'gain', AUTO_SPACES['gain'])
+    tp_mode, mult = rng.choice(sp['tp'])
+    out = dict(cfg, sl_mode='atr', sl_atr_mult=rng.choice(sp['sl_k']), sl_min_pct=0.8, sl_max_pct=5.0,
+               be_r_mult=rng.choice(sp['be_r']), tp_mode=tp_mode)
+    if tp_mode == 'r':
+        out['tp_r_mult'] = mult
+    elif tp_mode == 'atr':
+        out['tp_atr_mult'] = mult
+    return out
+
+
+def sample_configs(n: int, seed: int, focus: str | None = None, regime: bool = True, sltp: str = 'fixed') -> list[dict]:
     """
     n configuraciones distintas. focus=None: espacio de los modos de consola; 'gain'|'wr'|'cons': SPACES.
     regime=False: la estrategia no limita regímenes -> filtro de régimen siempre apagado (no tendría efecto).
     En los enfoques se prueba además el nivel del filtro de volumen (VOLUME_MULTS).
     """
     rng = random.Random(seed)
+    auto_rng = random.Random(seed * 7919 + 1)   # sorteo aparte: las fijas salen idénticas a las de siempre
     sp = SPACES.get(focus) if focus else None
     seen, out = set(), []
     while len(out) < n and len(seen) < 5000:
@@ -150,6 +179,8 @@ def sample_configs(n: int, seed: int, focus: str | None = None, regime: bool = T
                    regime_adx_trending=25.0, regime_adx_ranging=20.0, regime_ambiguous_as='RANGING',
                    # tendencia de BTC (altcoins): solo en los enfoques y al final del sorteo (consola reproducible)
                    btc_trend_filter=bool(sp) and rng.random() < f * 0.5)
+        if sltp == 'auto' or (sltp == 'both' and len(out) % 2 == 1):
+            cfg = with_auto_levels(cfg, auto_rng, focus)
         key = json.dumps(cfg, sort_keys=True)
         if key not in seen:
             seen.add(key)
@@ -485,11 +516,16 @@ def parts(v: tuple) -> tuple:
     return (v[0], v[1], v[2], v[3] if len(v) > 3 else None)
 
 
+def row_cfg(config: dict) -> dict:
+    """Lo que se guarda de una configuración en los resultados: BASE_KEYS y, si es automática (D-45), sus claves."""
+    return {**{k: config[k] for k in BASE_KEYS}, **{k: config[k] for k in AUTO_KEYS if k in config}}
+
+
 def symbol_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) -> tuple[list, dict]:
     """Modo por moneda: cada moneda por separado. Una fila por (configuración, moneda) que gana; casi-ganadoras por moneda."""
     rows, near = [], {s: [] for s in symbols}
     for (iv, i), by_sym in per_cfg.items():
-        cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
+        cfg = row_cfg(configs[iv][i])
         for sym, v in by_sym.items():
             is_, oos, full, test = parts(v)
             why = accept(is_, oos, full, focus)
@@ -517,7 +553,7 @@ def interval_mode_rows(per_cfg: dict, configs: dict, focus: str, symbols: list) 
     for (iv, i), by_sym in per_cfg.items():
         if len(by_sym) < len(symbols):   # sin datos en alguna moneda: no se puede juzgar
             continue
-        cfg = {k: configs[iv][i][k] for k in BASE_KEYS}
+        cfg = row_cfg(configs[iv][i])
         pv = {s: parts(v) for s, v in by_sym.items()}
         why = {s: accept(is_, oos, full, focus) for s, (is_, oos, full, _) in pv.items()}
         wins = sorted(s for s, w in why.items() if w is None)
@@ -563,6 +599,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
         intervals = [str(x) for x in json.loads(row['intervals'])]
         search = [str(x) for x in json.loads(row['search_symbols'])]
         focus = row['focus'] if row['focus'] in FOCUSES else 'gain'
+        sltp = row.get('sltp') if row.get('sltp') in SLTP_CHOICES else 'fixed'   # D-45 (columna de p93)
         mode = row['mode'] if row['mode'] in ('interval', 'symbol') else 'interval'
         bad = [iv for iv in intervals if iv not in ALLOWED_INTERVALS]
         if bad or not intervals or not search:
@@ -582,7 +619,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
         deadline = t0 + max_minutes * 60
         use_regime = regime_useful(code)
         configs = {iv: sample_configs(samples, int(row['seed']) + zlib.crc32(f'{name}|{iv}'.encode()) % 1000, focus,
-                                      regime=use_regime) for iv in intervals}
+                                      regime=use_regime, sltp=sltp) for iv in intervals}
         per_cfg: dict = {}          # (iv, i) -> {símbolo: (elegir, validar, completo, prueba final)}
         rep.set(force=True, phase='busqueda', done=0, total=len(intervals) * len(search) * samples,
                 note='Probando combinaciones')
@@ -612,7 +649,7 @@ def run_mode(run_id: int, max_minutes: float) -> int:
             rows, near, need = interval_mode_rows(per_cfg, configs, focus, search)
         rows.sort(key=lambda r: (-r['ret_total'], -r['consist']))   # Laravel reordena según el enfoque
 
-        results = dict(version=4, strategy=name, focus=focus, mode=mode, need=need, months=month_keys(start, end),
+        results = dict(version=4, strategy=name, focus=focus, sltp=sltp, mode=mode, need=need, months=month_keys(start, end),
                        period=dict(start=f"{start_n:%Y-%m-%d}", split=f"{split:%Y-%m-%d}", test=f"{test_start:%Y-%m-%d}",
                                    end=f"{end_n:%Y-%m-%d}"),
                        shares=dict(choose=CHOOSE_SHARE, accept=ACCEPT_SHARE),

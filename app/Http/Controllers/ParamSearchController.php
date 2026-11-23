@@ -64,6 +64,7 @@ class ParamSearchController extends Controller
             'queued'            => $queued,
             'fixed'             => ['commission_pct' => 0.055, 'slippage_pct' => 0.05, 'risk_pct' => 1.0],
             'focuses'           => ParamSearchService::FOCUSES,
+            'sltps'             => ParamSearchService::SLTPS,
             'active'            => $active ? $this->state($active) : null,
         ]);
     }
@@ -73,7 +74,7 @@ class ParamSearchController extends Controller
         $data = $this->validateStart($request);
         try {
             $run = $this->service->start($strategy, $data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id,
-                $data['focus']);
+                $data['focus'], $data['sltp']);
         } catch (DomainException $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 422);
         }
@@ -85,7 +86,8 @@ class ParamSearchController extends Controller
     public function startAll(Request $request): JsonResponse
     {
         $data = $this->validateStart($request);
-        $out = $this->service->startAll($data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id, $data['focus']);
+        $out = $this->service->startAll($data['mode'], $data['intervals'] ?? [], $data['symbols'], $request->user()?->id, $data['focus'],
+            $data['sltp']);
 
         return response()->json(['success' => $out['created'] !== [], 'created' => $out['created'], 'skipped' => $out['skipped'],
                                  'error' => $out['created'] === [] ? 'No se encoló ninguna búsqueda.' : null]);
@@ -100,6 +102,7 @@ class ParamSearchController extends Controller
         $data = $request->validate([
             'mode'        => ['sometimes', 'in:interval,symbol'],
             'focus'       => ['sometimes', 'in:' . implode(',', array_keys(ParamSearchService::FOCUSES))],
+            'sltp'        => ['sometimes', 'in:' . implode(',', array_keys(ParamSearchService::SLTPS))],
             'intervals'   => ['sometimes', 'array', 'max:5'],
             'intervals.*' => ['string'],
             'symbols'     => ['required', 'array', 'min:1', 'max:50'],
@@ -107,6 +110,7 @@ class ParamSearchController extends Controller
         ]);
         $data['mode'] ??= count($data['intervals'] ?? []) === 1 ? 'interval' : 'symbol';
         $data['focus'] ??= 'gain';
+        $data['sltp'] ??= 'fixed';   // D-45: sin elegir, como siempre
 
         return $data;
     }

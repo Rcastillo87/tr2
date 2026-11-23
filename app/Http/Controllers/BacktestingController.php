@@ -151,6 +151,8 @@ class BacktestingController extends Controller
             ];
             // Protección por volatilidad: solo si vino en el request (no está en el formulario); si no, manda el JSON (F-01)
             $payloads[$sym] += \App\Services\BacktestPayload::volatility($request->all());
+            // D-45: SL y TP automáticos (solo si alguno no es «fijo»; si no, el payload queda como siempre)
+            $payloads[$sym] += \App\Services\BacktestPayload::levels($request->all());
             // Los valores de la UI SIEMPRE sobrescriben el JSON
             $payloads[$sym]['macro_trend_filter'] = $request->has('macro_trend_filter');
             $payloads[$sym]['volume_filter'] = $request->has('volume_filter');
@@ -226,7 +228,12 @@ class BacktestingController extends Controller
 
         $bePct = (float) $request->input('be_pct', 2.0);
         $tpPct = (float) $request->input('tp_pct', 3.0);
-        if ($bePct > 0 && $tpPct > 0 && $bePct >= $tpPct) {
+        $autoLevels = \App\Services\BacktestPayload::levels($request->all()) !== [];   // D-45: niveles por operación
+        if ($autoLevels && ($request->input('sl_mode') === 'atr') && ($request->input('tp_mode', 'fixed') === 'fixed')) {
+            $warnings[] = 'AVISO: SL automático con TP fijo: en las operaciones donde el SL sale más grande que el TP '
+                . 'se arriesga más de lo que se puede ganar. Revisa el resultado.';
+        }
+        if (! $autoLevels && $bePct > 0 && $tpPct > 0 && $bePct >= $tpPct) {
             $warnings[] = "AVISO: el break-even nunca se activa (BE {$bePct}% >= TP {$tpPct}%). El TP cierra toda la "
                 . 'posición antes de llegar al nivel de BE. Usa un BE menor que el TP (p. ej. la mitad) o desactívalo.';
         }

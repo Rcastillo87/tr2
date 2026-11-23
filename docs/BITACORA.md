@@ -21,7 +21,30 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### SL y TP automáticos por separado: formulario, búsqueda y pantallas (p93, D-45) — 23-nov
+- **Decisión (23-nov):** SL y TP independientes («sepáralos»: un solo modo confundía). Maquetas aprobadas: formulario
+  con dos menús (Stop Loss: Fijo / Automático; Take Profit: Fijo / Veces el SL / Automático) y bloque «SL y TP a
+  probar» en la búsqueda (Fijos por defecto, Automáticos, Los dos y comparar).
+- **Motor:** `auto_levels` con `sl_mode` y `tp_mode`. TP «veces el SL» sobre el SL que usa la operación (automático,
+  de la estrategia o el fijo: también sin ATR); TP automático = `tp_atr_mult` × ATR; BE en veces el SL solo con SL
+  automático. `sl_tp_mode: 'atr'` de p92 sigue valiendo (= SL automático + TP veces el SL); ninguna config lo usaba.
+- **Laravel:** `BacktestPayload::levels` agrega al payload solo lo que usan los modos elegidos (Fijo + Fijo = payload y
+  hash idénticos a antes); de ahí `config_params` → Paper y Real. Formulario con los dos menús (los % de hoy pasan a
+  «respaldo» en modo automático) y aviso «SL automático con TP fijo». `LevelsLabel` muestra «ATR ×2 (0.8–5%)»,
+  «2 × SL», «1 × SL» en cuentas de Real, historial y resultados de backtest, y el Excel nombra los campos nuevos. Un
+  backtest creado desde la búsqueda conserva sus claves (`BacktestFromSearch`).
+- **Búsqueda:** migración `2026_11_23_01` (`param_search_runs.sltp`, default `fixed`). `param_search.sample_configs`
+  con `sltp`: «fixed» sortea exactamente igual que antes; «auto» / «both» usan un sorteo aparte (las fijas no cambian);
+  resultados con las claves automáticas y etiquetas azules.
+- **Prueba:** `auto_levels_test.py` (36 casos: +SL/TP por separado, compatibilidad p92, búsqueda) y
+  `levels_laravel_test.php` (nueva, 21 casos: payload, etiquetas, formulario, búsqueda, migración). Código de p92:
+  FALLA. Mutaciones 11/11 (una más resultó equivalente y se quitó la condición que sobraba). Regresión **74 Python +
+  30 PHP** en TODO OK.
+
 ### SL/TP automáticos por ATR, fase 1 (p92, D-45, D-49) — 20-nov
+- **Instalado:** `bd75f53` (23-nov 14:34 UTC; el primer intento se detuvo en una consulta informativa del instalador
+  con una columna mal escrita, `config_params` en vez de `params`, sin reiniciar ni hacer commit; el instalador
+  corregido retomó). 0 estrategias y 0 configs con el modo; motor reiniciado, 0 errores.
 - **Decisiones (D-45):** SL % = k × ATR(14)/cierre de la vela de la señal, topes mínimo/máximo ajustables; TP = R × SL;
   break-even en «veces el SL»; orden automático → SL de la estrategia → fijo. Lectura previa: de las 8 estrategias,
   solo TrianguloRuptura propone su SL (`signal_sl_pct`).

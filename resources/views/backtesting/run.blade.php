@@ -27,6 +27,16 @@
     .bt-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .bt-grid-1 { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
     .bt-span-2 { grid-column: span 2 / span 2; }
+    /* D-45: SL y TP por separado */
+    .bt-levels { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); margin-bottom: .75rem; }
+    @media (min-width: 768px) { .bt-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .bt-level-box { display: flex; flex-direction: column; gap: .6rem; border: 1px solid var(--color-border-strong); border-radius: .6rem; padding: .75rem; }
+    .bt-level-box.auto { border-color: var(--color-info); background: rgba(77, 143, 232, .05); }
+    .bt-level-auto { display: none; }
+    .bt-level-auto.on { display: block; }
+    .bt-level-warn { display: none; margin-bottom: .75rem; padding: .6rem .75rem; border-radius: .5rem; font-size: 12px; line-height: 1.5;
+                     background: #2A2113; border: 1px solid #6B4E1A; color: #F5D9A8; }
+    .bt-level-warn.on { display: block; }
     .bt-market { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
     .bt-pair { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     @media (min-width: 640px) {
@@ -205,15 +215,68 @@
 
             <section class="bt-section">
                 <p class="bt-section-title">Riesgo y costos</p>
+                @php
+                    // D-45: SL y TP por separado (Fijo como siempre, o automático). Sin claves guardadas = Fijo + Fijo.
+                    $lvCp = (array) ($backtestToLoad->config_params ?? []);
+                    [$lvSl, $lvTp] = \App\Support\LevelsLabel::modes($lvCp);
+                    $lvSl = old('sl_mode', $lvSl);
+                    $lvTp = old('tp_mode', $lvTp);
+                    $lvVal = fn (string $k, string $d) => old($k, $lvCp[$k] ?? $d);
+                @endphp
+                <div class="bt-levels">
+                    <div class="bt-level-box">
+                        <label class="bt-label" for="sl_mode_select" style="font-weight:600;color:var(--color-text-primary);">Stop Loss</label>
+                        <select name="sl_mode" id="sl_mode_select" onchange="toggleLevelInputs()" class="bt-input">
+                            <option value="fixed" @selected($lvSl === 'fixed')>Fijo (%) — como hoy</option>
+                            <option value="atr" @selected($lvSl === 'atr')>Automático (según el ATR)</option>
+                        </select>
+                        <div class="bt-level-auto" data-level="sl-atr">
+                            <div class="bt-grid-1 sm-3">
+                                <div>
+                                    <label class="bt-label" for="sl_atr_mult">Veces el ATR</label>
+                                    <input type="number" step="0.1" min="0.1" id="sl_atr_mult" name="sl_atr_mult" value="{{ $lvVal('sl_atr_mult', '2.0') }}" class="bt-input num">
+                                </div>
+                                <div>
+                                    <label class="bt-label" for="sl_min_pct">Mínimo %</label>
+                                    <input type="number" step="0.1" min="0.1" id="sl_min_pct" name="sl_min_pct" value="{{ $lvVal('sl_min_pct', '0.8') }}" class="bt-input num">
+                                </div>
+                                <div>
+                                    <label class="bt-label" for="sl_max_pct">Máximo %</label>
+                                    <input type="number" step="0.1" min="0.1" id="sl_max_pct" name="sl_max_pct" value="{{ $lvVal('sl_max_pct', '5.0') }}" class="bt-input num">
+                                </div>
+                            </div>
+                            <span class="bt-hint">ATR de 14 velas de la temporalidad. Ej.: ETH a 3.000 con ATR 30 → SL a 2 × 30 = 60 (2 %).</span>
+                        </div>
+                        <div>
+                            <label class="bt-label" for="sl_pct" id="sl_pct_label">Stop Loss %</label>
+                            <input type="number" step="0.1" id="sl_pct" name="sl_pct" value="{{ old('sl_pct', $backtestToLoad->config_params['sl_pct'] ?? '1.5') }}" class="bt-input num">
+                        </div>
+                    </div>
+                    <div class="bt-level-box">
+                        <label class="bt-label" for="tp_mode_select" style="font-weight:600;color:var(--color-text-primary);">Take Profit</label>
+                        <select name="tp_mode" id="tp_mode_select" onchange="toggleLevelInputs()" class="bt-input">
+                            <option value="fixed" @selected($lvTp === 'fixed')>Fijo (%) — como hoy</option>
+                            <option value="r" @selected($lvTp === 'r')>Veces el SL</option>
+                            <option value="atr" @selected($lvTp === 'atr')>Automático (según el ATR)</option>
+                        </select>
+                        <div class="bt-level-auto" data-level="tp-r">
+                            <label class="bt-label" for="tp_r_mult">Veces el SL</label>
+                            <input type="number" step="0.1" min="0.1" id="tp_r_mult" name="tp_r_mult" value="{{ $lvVal('tp_r_mult', '2.0') }}" class="bt-input num">
+                            <span class="bt-hint">2 = gana el doble de lo que arriesga. Con SL de 2 % → TP 4 %.</span>
+                        </div>
+                        <div class="bt-level-auto" data-level="tp-atr">
+                            <label class="bt-label" for="tp_atr_mult">Veces el ATR</label>
+                            <input type="number" step="0.1" min="0.1" id="tp_atr_mult" name="tp_atr_mult" value="{{ $lvVal('tp_atr_mult', '4.0') }}" class="bt-input num">
+                            <span class="bt-hint">Ej.: ETH a 3.000 con ATR 30 → TP a 4 × 30 = 120 (4 %).</span>
+                        </div>
+                        <div>
+                            <label class="bt-label" for="tp_pct" id="tp_pct_label">Take Profit %</label>
+                            <input type="number" step="0.1" id="tp_pct" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="bt-input num">
+                        </div>
+                    </div>
+                </div>
+                <div class="bt-level-warn" id="level_warn" role="note">Con SL automático y TP fijo, el SL puede salir más grande que el TP (por ejemplo SL 4 % y TP 3 %): en esas operaciones arriesgas más de lo que puedes ganar. Se permite, pero revisa el resultado.</div>
                 <div class="bt-grid lg-5">
-                    <div>
-                        <label class="bt-label">Stop Loss %</label>
-                        <input type="number" step="0.1" name="sl_pct" value="{{ old('sl_pct', $backtestToLoad->config_params['sl_pct'] ?? '1.5') }}" class="bt-input num">
-                    </div>
-                    <div>
-                        <label class="bt-label">Take Profit %</label>
-                        <input type="number" step="0.1" name="tp_pct" value="{{ old('tp_pct', $backtestToLoad->config_params['tp_pct'] ?? '3.0') }}" class="bt-input num">
-                    </div>
                     <div>
                         <label class="bt-label">Riesgo / trade %</label>
                         <input type="number" step="0.1" name="risk_per_trade_pct" value="{{ old('risk_per_trade_pct', $backtestToLoad->config_params['risk_per_trade_pct'] ?? '1.0') }}" class="bt-input num">
@@ -356,10 +419,15 @@
                         <label class="bt-label">Duración máxima (velas)</label>
                         <input type="number" name="max_duration" value="{{ old('max_duration', $backtestToLoad->config_params['max_duration'] ?? '24') }}" class="bt-input num">
                     </div>
-                    <div>
-                        <label class="bt-label">Break-even %</label>
-                        <input type="number" step="0.1" name="be_pct" value="{{ old('be_pct', $backtestToLoad->config_params['be_pct'] ?? '2.0') }}" class="bt-input num">
-                        <span class="bt-hint">Debe ser menor que el TP</span>
+                    <div id="div_be_pct">
+                        <label class="bt-label" for="be_pct" id="be_pct_label">Break-even %</label>
+                        <input type="number" step="0.1" id="be_pct" name="be_pct" value="{{ old('be_pct', $backtestToLoad->config_params['be_pct'] ?? '2.0') }}" class="bt-input num">
+                        <span class="bt-hint" id="be_pct_hint">Debe ser menor que el TP</span>
+                    </div>
+                    <div class="bt-level-auto" data-level="sl-atr">
+                        <label class="bt-label" for="be_r_mult">Break-even · veces el SL</label>
+                        <input type="number" step="0.1" min="0.1" id="be_r_mult" name="be_r_mult" value="{{ $lvVal('be_r_mult', '1.0') }}" class="bt-input num">
+                        <span class="bt-hint">1 = «sin riesgo» al ganar lo que arriesga</span>
                     </div>
                     <div class="bt-span-2">
                         <label class="bt-label">Trailing stop</label>
@@ -497,6 +565,26 @@ function updateRegimeNotes() {
     document.getElementById('regime-note-noeffect').style.display = on && n === 3 && amb !== 'ignorar' ? 'flex' : 'none';
     document.getElementById('regime-note-none').style.display = on && n === 0 ? 'flex' : 'none';
 }
+
+// D-45: muestra los campos de cada modo de SL / TP; los fijos pasan a «respaldo» si el modo es automático
+function toggleLevelInputs() {
+    const sl = document.getElementById('sl_mode_select').value;
+    const tp = document.getElementById('tp_mode_select').value;
+    document.querySelectorAll('.bt-level-auto').forEach(el => {
+        const k = el.dataset.level;
+        el.classList.toggle('on', (k === 'sl-atr' && sl === 'atr') || (k === 'tp-r' && tp === 'r') || (k === 'tp-atr' && tp === 'atr'));
+    });
+    const [slBox, tpBox] = document.querySelectorAll('.bt-level-box');
+    slBox.classList.toggle('auto', sl === 'atr');
+    tpBox.classList.toggle('auto', tp !== 'fixed');
+    document.getElementById('sl_pct_label').textContent = sl === 'atr' ? 'Stop Loss % si no hay ATR (respaldo)' : 'Stop Loss %';
+    document.getElementById('tp_pct_label').textContent = tp === 'fixed' ? 'Take Profit %' : 'Take Profit % si no hay ATR (respaldo)';
+    document.getElementById('tp_pct').closest('div').style.display = tp === 'r' ? 'none' : '';
+    document.getElementById('be_pct_label').textContent = sl === 'atr' ? 'Break-even % (respaldo)' : 'Break-even %';
+    document.getElementById('be_pct_hint').textContent = sl === 'atr' ? 'Si no hay ATR' : 'Debe ser menor que el TP';
+    document.getElementById('level_warn').classList.toggle('on', sl === 'atr' && tp === 'fixed');
+}
+document.addEventListener('DOMContentLoaded', toggleLevelInputs);
 
 function toggleTrailingInputs() {
     const mode = document.getElementById('trailing_mode_select').value;

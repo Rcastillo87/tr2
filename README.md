@@ -123,7 +123,7 @@ Los parches ya no dejan `.bak` dentro del proyecto: los originales quedan en `/r
 - **Funding de Bybit** descontado en cada trade (pesimista: paga si la liquidación coincide con la entrada o la salida; cobra solo si cae estrictamente dentro).
 - **Filtros de apertura:** régimen con **regímenes permitidos** (por defecto los de la estrategia; aviso si con la elección el filtro no bloquea nada), volumen mínimo, tendencia macro H4 (EMA 50) y **tendencia de BTC** (EMA 50 H4 de BTC; solo altcoins; sin velas de BTC no opera). Todos sin mirar al futuro.
 - **Estrategias que miran el futuro** (R-21, p84): al crear o editar una estrategia, el smoke test compara cada vela calculada con todo el historial contra la misma vela calculada solo con las velas hasta ella (BTCUSDT H1 y H4, 100 velas); si cambia la señal o algún indicador, no se guarda y se muestra el motivo. Revisión diaria de todas las estrategias y configs activas (`backtesting/lookahead.py`; a mano: `tools/analysis/lookahead_probe.py --control tests/Forensic/fixtures/vwap_tendencia_19nov.py`).
-- **SL/TP automáticos (D-45, p92; opcional):** con `"sl_tp_mode": "atr"` en el JSON de la estrategia, cada operación abre con SL % = `sl_atr_mult` × ATR(14) / cierre de la vela de la señal, acotado a [`sl_min_pct`, `sl_max_pct`]; TP = `tp_r_mult` × SL; break-even = `be_r_mult` × SL (defaults 2 · 2 · 1 · 0,8 % · 5 %). Mismo cálculo en backtest, Paper y Real (`backtesting/auto_levels.py`). Sin ATR, el SL de la estrategia o el fijo. Apagado general: `SLTP_AUTO_ENABLED=false` en `python-engine/.env` + reiniciar el motor (D-49). Ejemplo: `{"sl_tp_mode": "atr", "sl_atr_mult": 2, "tp_r_mult": 2, "sl_min_pct": 0.8, "sl_max_pct": 5}`.
+- **SL y TP automáticos (D-45, p92–p93; opcionales y por separado):** en el formulario, «Stop Loss»: Fijo (%) o Automático (`sl_atr_mult` × ATR(14) / cierre de la vela de la señal, acotado a [`sl_min_pct`, `sl_max_pct`]); «Take Profit»: Fijo (%), Veces el SL (`tp_r_mult`) o Automático (`tp_atr_mult` × ATR). Con SL automático el break-even va en veces el SL (`be_r_mult`). Los % fijos quedan de respaldo (sin ATR). Mismo cálculo en backtest, Paper y Real (`backtesting/auto_levels.py`); la búsqueda puede probar Fijos (default), Automáticos o Los dos. Apagado general: `SLTP_AUTO_ENABLED=false` en `python-engine/.env` + reiniciar el motor (D-49).
 - Estrellas = `RatingHelper::calculate(win rate, Sharpe, PF, retorno mensual, consistencia)` por moneda, promediadas.
 - **Guardar** guarda en el historial. **Implementar en Paper** es la aprobación. Editar un backtest implementado sincroniza su config en Paper y Real (`StrategyConfigSync`); las posiciones abiertas conservan su `config_snapshot` hasta cerrar.
 
@@ -217,6 +217,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 11-20 01 | `paper_trades` y `real_trades`.`strategy_code_md5`: huella del código de la estrategia de cada operación, generada desde el snapshot (MEJ-002, p86) |
 | 11-20 02 | `real_trade_executions` (partes de Bybit de cada operación Real) y `real_trades.executions_status` (MEJ-004, p89) |
 | 11-20 03 | `real_trades.funding`: funding de Bybit separado de la comisión, como Paper (positivo = pagado; R-24, p90) |
+| 11-23 01 | `param_search_runs.sltp`: qué SL/TP prueba cada búsqueda (fixed · auto · both; D-45, p93) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)
@@ -371,7 +372,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (74 Python + 29 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (74 Python + 30 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

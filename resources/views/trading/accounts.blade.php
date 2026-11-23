@@ -198,15 +198,15 @@
                                     <div style="display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--color-border-soft);">
                                         <div style="text-align: center; padding: 8px 0; border-right: 1px solid var(--color-border-soft);">
                                             <p class="text-[10px]" style="color:var(--color-text-muted);">Stop Loss</p>
-                                            <p class="text-sm font-mono">{{ $params['sl_pct'] ?? '-' }}%</p>
+                                            <p class="text-sm font-mono">@if(\App\Support\LevelsLabel::isAuto((array) $params)){{ \App\Support\LevelsLabel::sl((array) $params) }}@else{{ $params['sl_pct'] ?? '-' }}%@endif</p>
                                         </div>
                                         <div style="text-align: center; padding: 8px 0; border-right: 1px solid var(--color-border-soft);">
                                             <p class="text-[10px]" style="color:var(--color-text-muted);">Take Profit 1</p>
-                                            <p class="text-sm font-mono">{{ $params['tp_pct'] ?? '-' }}%</p>
+                                            <p class="text-sm font-mono">@if(\App\Support\LevelsLabel::isAuto((array) $params)){{ \App\Support\LevelsLabel::tp((array) $params) }}@else{{ $params['tp_pct'] ?? '-' }}%@endif</p>
                                         </div>
                                         <div style="text-align: center; padding: 8px 0; border-right: 1px solid var(--color-border-soft);">
                                             <p class="text-[10px]" style="color:var(--color-text-muted);">Break-even</p>
-                                            <p class="text-sm font-mono">{{ $params['be_pct'] ?? '-' }}%</p>
+                                            <p class="text-sm font-mono">@if(\App\Support\LevelsLabel::isAuto((array) $params)){{ \App\Support\LevelsLabel::be((array) $params) }}@else{{ $params['be_pct'] ?? '-' }}%@endif</p>
                                         </div>
                                         <div style="text-align: center; padding: 8px 0; border-right: 1px solid var(--color-border-soft);">
                                             <p class="text-[10px]" style="color:var(--color-text-muted);">Duración</p>
@@ -396,6 +396,8 @@ function showConfigModal(params, title) {
         sl_pct: 'Stop Loss %', tp_pct: 'Take Profit 1 %', tp2_pct: 'Take Profit 2 %',
         tp3_pct: 'Take Profit 3 %', tp4_pct: 'Take Profit 4 %', be_pct: 'Break-even %',
         max_duration: 'Máx. duración (velas)', risk_per_trade_pct: 'Riesgo/trade %',
+        sl_mode: 'Stop Loss: modo', tp_mode: 'Take Profit: modo', sl_atr_mult: 'SL: veces el ATR', sl_min_pct: 'SL mínimo %',
+        sl_max_pct: 'SL máximo %', be_r_mult: 'Break-even: veces el SL', tp_r_mult: 'TP: veces el SL', tp_atr_mult: 'TP: veces el ATR',
         mode: 'Modo', regime_filter: 'Filtro régimen', allowed_regimes: 'Regímenes permitidos', macro_trend_filter: 'Filtro macro H4',
         btc_trend_filter: 'Filtro tendencia BTC',
         trailing_mode: 'Trailing Stop', volatility_protection_mode: 'Protección volatilidad',

@@ -275,7 +275,7 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 > con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.5 (si no, pedirle que las reemplace).
 
 1. **Del dueño:** nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43). Después, informe por config (backtest corregido + Paper real + búsqueda nueva).
-2. **SL/TP automáticos opcionales (D-45):** fase 1 hecha en p92 (cálculo en los tres motores, desde el JSON de la estrategia). Falta: maqueta del formulario, el buscador probando k y R, y la comparación con el fijo.
+2. **SL/TP automáticos opcionales (D-45):** hechos en p92–p93 (SL y TP por separado, formulario, búsqueda y etiquetas). Falta: el dueño compara automático vs fijo en backtest.
 3. **Walk-forward real (D-38 3B):** maqueta primero.
 4. **Infraestructura:** `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema. Respaldo fuera del VPS: **descartado por el dueño** (D-48).
 5. **Pantallas con maqueta:** funding en Paper y Real, `cross` en la búsqueda, «promedio por moneda», separación maestra/config/suscripción, «código desactualizado».

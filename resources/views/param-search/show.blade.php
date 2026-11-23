@@ -315,7 +315,10 @@
     }
     function nearText(n) {
         const c = n.cfg || {};
-        return `${SB.LABEL[n.interval] || n.interval} · SL ${c.sl_pct}% / TP ${c.tp_pct}%: ${SB.esc(n.why)}`;
+        const lv = c.sl_mode === 'atr' || (c.tp_mode && c.tp_mode !== 'fixed')   // D-45
+            ? `SL ${c.sl_mode === 'atr' ? 'ATR ×' + c.sl_atr_mult : c.sl_pct + '%'} / TP ${c.tp_mode === 'r' ? c.tp_r_mult + ' × SL' : (c.tp_mode === 'atr' ? 'ATR ×' + c.tp_atr_mult : c.tp_pct + '%')}`
+            : `SL ${c.sl_pct}% / TP ${c.tp_pct}%`;
+        return `${SB.LABEL[n.interval] || n.interval} · ${lv}: ${SB.esc(n.why)}`;
     }
     // Meses entre dos fechas AAAA-MM-DD (redondeado): largo de cada tramo según el período guardado de la búsqueda
     const monthsBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / (365.2425 / 12 * 86400000));

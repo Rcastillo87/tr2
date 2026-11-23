@@ -69,12 +69,12 @@ def frame(n=120, seed=7, start='2026-01-01'):
 
 df = frame()
 atr = calculate_atr(df, 14).to_numpy()
-AUTO = dict(sl_tp_mode='atr', sl_atr_mult=2.0, tp_r_mult=3.0, be_r_mult=1.0, sl_min_pct=0.5, sl_max_pct=5.0)
+AUTO = dict(sl_mode='atr', tp_mode='r', sl_atr_mult=2.0, tp_r_mult=3.0, be_r_mult=1.0, sl_min_pct=0.5, sl_max_pct=5.0)
 
 # ── A. Cálculo ──
 s_fixed = strat()
 check('A1: modo fijo (default): el df no cambia (mismo objeto, sin columnas nuevas)',
-      s_fixed.sl_tp_mode == 'fixed' and al.apply(df, s_fixed) is df)
+      (s_fixed.sl_mode, s_fixed.tp_mode) == ('fixed', 'fixed') and al.apply(df, s_fixed) is df)
 s = strat(**AUTO)
 out = s.with_levels(s.compute_signals(df.copy()))
 i = 60
@@ -89,13 +89,13 @@ check('A4: topes: con mínimo 4 % y máximo 4,5 % todos los SL quedan dentro', o
 s_sw = strat(**dict(AUTO, sl_min_pct=4.5, sl_max_pct=4.0))
 o3 = s_sw.with_levels(s_sw.compute_signals(df.copy()))
 check('A5: mínimo y máximo invertidos: se ordenan (no rompe)', o3['signal_sl_pct'][14:].between(4.0, 4.5).all())
-check('A6: sin 14 velas no hay ATR: la vela queda sin niveles automáticos (fijo)',
-      out['signal_sl_pct'][:14].isna().all() and out['signal_tp_pct'][:14].isna().all())
+check('A6: sin 14 velas no hay ATR: SL y BE fijos; el TP «veces el SL» se calcula sobre el SL fijo (3 × 1 %)',
+      out['signal_sl_pct'][:14].isna().all() and out['signal_be_pct'][:14].isna().all() and (out['signal_tp_pct'][:14] == 3.0).all())
 s_own = strat(own_sl=1.7, **AUTO)
 o4 = s_own.with_levels(s_own.compute_signals(df.copy()))
 check('A7: orden automático → estrategia: con ATR manda el automático; sin ATR, el SL de la estrategia (1,7)',
       abs(o4['signal_sl_pct'][i] - exp_sl) < 1e-12 and (o4['signal_sl_pct'][:14] == 1.7).all()
-      and o4['signal_tp_pct'][:14].isna().all())
+      and (o4['signal_tp_pct'][:14].round(6) == 5.1).all() and o4['signal_be_pct'][:14].isna().all())
 os.environ['SLTP_AUTO_ENABLED'] = 'false'
 o5 = s.with_levels(s.compute_signals(df.copy()))
 check('A8: interruptor general SLTP_AUTO_ENABLED=false (D-49): sin niveles automáticos aunque la config diga «atr»',
@@ -108,13 +108,64 @@ check('A10: row_levels lee los tres % de una vela; vela sin niveles = None',
       al.row_levels(out.iloc[i]) == {'sl': out['signal_sl_pct'][i], 'tp': out['signal_tp_pct'][i], 'be': out['signal_be_pct'][i]}
       and al.row_levels(s_fixed.compute_signals(df.copy()).iloc[i]) == {'sl': None, 'tp': None, 'be': None})
 
+# ── A2. SL y TP por separado (p93) ──
+def lv(**kw):
+    st = strat(**kw)
+    return st.with_levels(st.compute_signals(df.copy()))
+
+
+pct = atr[i] / df['close'][i] * 100
+o = lv(sl_mode='fixed', tp_mode='atr', tp_atr_mult=4.0)
+check('S1: SL fijo + TP automático: sin SL de la señal (fijo) y TP = 4 × ATR / cierre; sin ATR, TP fijo',
+      np.isnan(o['signal_sl_pct'][i]) and abs(o['signal_tp_pct'][i] - round(4 * pct, 6)) < 1e-12
+      and o['signal_tp_pct'][:14].isna().all() and o['signal_be_pct'].isna().all())
+o = lv(sl_mode='atr', tp_mode='fixed', sl_atr_mult=2.0, sl_min_pct=0.5, sl_max_pct=5.0, be_r_mult=1.0)
+check('S2: SL automático + TP fijo: SL y BE de la señal, TP fijo (sin TP de la señal)',
+      abs(o['signal_sl_pct'][i] - exp_sl) < 1e-12 and o['signal_tp_pct'].isna().all() and abs(o['signal_be_pct'][i] - exp_sl) < 1e-12)
+o = lv(sl_mode='fixed', tp_mode='r', tp_r_mult=2.0)
+check('S3: SL fijo + TP veces el SL: TP = 2 × 1 % (el SL fijo) en todas las velas, también sin ATR',
+      (o['signal_tp_pct'] == 2.0).all() and o['signal_sl_pct'].isna().all())
+o = lv(own_sl=1.7, sl_mode='fixed', tp_mode='r', tp_r_mult=2.0)
+check('S4: estrategia con SL propio + TP veces el SL: TP = 2 × 1,7', (o['signal_tp_pct'] == 3.4).all() and (o['signal_sl_pct'] == 1.7).all())
+st92 = strat(sl_tp_mode='atr')
+check('S5: compatibilidad p92 («sl_tp_mode»: «atr» = SL automático + TP veces el SL)', (st92.sl_mode, st92.tp_mode) == ('atr', 'r'))
+t_mix = BacktestEngine(strategy=strat(fire=[i], sl_mode='fixed', tp_mode='atr', tp_atr_mult=4.0), df=df.copy(),
+                       initial_balance=10000, risk_per_trade_pct=1.0).run()['trades']
+em = t_mix[0]['entry_price']
+check('S6: backtest SL fijo + TP automático: SL 1 % y TP = 4 × ATR del precio de entrada',
+      abs(t_mix[0]['sl'] - round(em * 0.99, 8)) < 1e-6 and abs(t_mix[0]['tp1'] - round(em * (1 + round(4 * pct, 6) / 100), 8)) < 1e-6,
+      (t_mix[0]['sl'], t_mix[0]['tp1']))
+
+# ── A3. Búsqueda (p93) ──
+from cli import param_search as ps  # noqa: E402
+
+fx = ps.sample_configs(40, 11, 'gain')
+fx2 = ps.sample_configs(40, 11, 'gain', sltp='fixed')
+au = ps.sample_configs(40, 11, 'gain', sltp='auto')
+bo = ps.sample_configs(40, 11, 'gain', sltp='both')
+check('P1: «Fijos»: las mismas configuraciones de siempre, sin claves automáticas',
+      fx == fx2 and not any(k in c for c in fx for k in ps.AUTO_KEYS))
+check('P2: «Automáticos»: todas con SL automático (topes 0,8–5 %) y un TP de la lista',
+      all(c['sl_mode'] == 'atr' and c['sl_min_pct'] == 0.8 and c['sl_max_pct'] == 5.0 and c['tp_mode'] in ('r', 'atr', 'fixed') for c in au))
+check('P3: «Los dos»: alternan fija / automática y la primera es la de siempre',
+      bo[0] == fx[0] and all(('sl_mode' in c) == (k % 2 == 1) for k, c in enumerate(bo)))
+base = lambda c: {k: c[k] for k in ps.BASE_KEYS}   # noqa: E731
+check('P3b: «Los dos»: cada configuración parte de la misma base que en «Fijos» (las fijas no cambian de sorteo)',
+      [base(c) for c in bo] == [base(c) for c in fx])
+rc = ps.row_cfg(au[0])
+check('P4: los resultados guardan el modo y sus multiplicadores (para crear el backtest desde la búsqueda)',
+      all(k in rc for k in ('sl_mode', 'tp_mode', 'sl_atr_mult', 'be_r_mult')) and ps.row_cfg(fx[0]).keys() == set(ps.BASE_KEYS))
+from api.v1.backtest import BacktestRequest as _BR  # noqa: E402
+okreq = all(_BR(strategy='x', strategy_code='c', symbol='BTCUSDT', interval='60', **c) for c in au[:10])
+check('P5: toda configuración automática del buscador pasa la validación del motor', bool(okreq))
+
 # ── B. Backtest ──
 def run(st):
     return BacktestEngine(strategy=st, df=df.copy(), initial_balance=10000, risk_per_trade_pct=1.0).run()['trades']
 
 
 t_fixed = run(strat(fire=[i]))
-t_fixed2 = run(strat(fire=[i], sl_tp_mode='fixed'))
+t_fixed2 = run(strat(fire=[i], sl_mode='fixed', tp_mode='fixed'))
 check('B1: modo fijo: mismas operaciones con o sin la clave (como antes)', t_fixed == t_fixed2 and len(t_fixed) == 1)
 e = t_fixed[0]['entry_price']
 check('B2: modo fijo: SL 1 % y TP 2 % del precio de entrada',
@@ -213,7 +264,7 @@ def rejects(cfg):
 
 check('D4: validación (Laravel y Python): modo desconocido, mínimo > máximo y multiplicadores ≤ 0 se rechazan, '
       'también dentro del JSON de la estrategia',
-      rejects({'sl_tp_mode': 'atx'}) and rejects({'sl_min_pct': 6, 'sl_max_pct': 5}) and rejects({'tp_r_mult': 0})
+      rejects({'sl_mode': 'atx'}) and rejects({'tp_mode': 'zz'}) and rejects({'tp_atr_mult': -1}) and rejects({'sl_min_pct': 6, 'sl_max_pct': 5}) and rejects({'tp_r_mult': 0})
       and not rejects(dict(AUTO)))
 
 # ── E. Códigos de salida de la regresión ──

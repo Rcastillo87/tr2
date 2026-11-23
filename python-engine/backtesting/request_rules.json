@@ -162,8 +162,34 @@
         "widen"
       ]
     },
+    "sl_mode": {
+      "label": "Stop Loss: modo",
+      "type": "enum",
+      "values": [
+        null,
+        "fixed",
+        "atr"
+      ]
+    },
+    "tp_mode": {
+      "label": "Take Profit: modo",
+      "type": "enum",
+      "values": [
+        null,
+        "fixed",
+        "r",
+        "atr"
+      ]
+    },
+    "tp_atr_mult": {
+      "label": "TP automático: veces el ATR",
+      "type": "number",
+      "gt": 0,
+      "le": 50,
+      "nullable": true
+    },
     "sl_tp_mode": {
-      "label": "SL/TP",
+      "label": "SL/TP (p92: atr = SL automático y TP veces el SL)",
       "type": "enum",
       "values": [
         null,

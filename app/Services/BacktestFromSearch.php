@@ -58,6 +58,12 @@ class BacktestFromSearch
             'volume_filter_mult'             => (string) $cfg['volume_filter_mult'],
             // Sin volatility_*: el formulario no los tiene; manda el JSON de la estrategia, como en la búsqueda (F-01)
         ];
+        // D-45: SL/TP automáticos de la configuración encontrada (las búsquedas «fijas» no los traen)
+        foreach (\App\Services\BacktestPayload::LEVEL_KEYS as $k) {
+            if (isset($cfg[$k])) {
+                $f[$k] = (string) $cfg[$k];
+            }
+        }
         foreach (['max_duration_profit', 'close_on_opposite', 'regime_filter', 'macro_trend_filter', 'volume_filter',
                   'btc_trend_filter'] as $cb) {
             if (! empty($cfg[$cb])) {

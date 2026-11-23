@@ -148,6 +148,9 @@ class SavedBacktests
                 'trades'      => (int) ($m['total_trades'] ?? 0),
                 'ret_total'   => (float) ($m['total_return_pct'] ?? 0),
                 'params'      => ['sl' => $cp['sl_pct'] ?? null, 'tp' => $cp['tp_pct'] ?? null, 'be' => $cp['be_pct'] ?? null,
+                                  // D-45: cómo se calcula cada nivel (fijo «1.5%» o automático «ATR ×2 (0.8–5%)»)
+                                  'sl_label' => \App\Support\LevelsLabel::sl($cp), 'tp_label' => \App\Support\LevelsLabel::tp($cp),
+                                  'be_label' => \App\Support\LevelsLabel::be($cp), 'auto' => \App\Support\LevelsLabel::isAuto($cp),
                                   'dur' => $cp['max_duration'] ?? null, 'risk' => $cp['risk_per_trade_pct'] ?? null],
                 'tpm'         => $tpm->all(),
                 'tpm_sort'    => $tpm->filter(fn ($v) => $v !== null)->sum(),

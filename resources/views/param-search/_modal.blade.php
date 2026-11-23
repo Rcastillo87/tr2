@@ -14,6 +14,11 @@
                 <div class="sb-focus" id="sbFocus"></div>
                 <div class="sb-help">En los tres enfoques solo se aceptan configuraciones que ganan. El enfoque decide qué combinaciones se prueban y el orden de los resultados.</div>
             </div>
+            <div style="order:0" class="sb-sltp-box">
+                <span class="sb-t">SL y TP a probar</span>
+                <div class="sb-focus sb-sltp" id="sbSltp"></div>
+                <div class="sb-help" id="sbSltpHelp"></div>
+            </div>
             <div style="order:0">
                 <span class="sb-t">¿Cómo quieres buscar?</span>
                 <div class="sb-mode" id="sbModes">
@@ -59,7 +64,15 @@
                'Además exige profit factor ≥ 1,2, para que ganar seguido no signifique perder plata.'],
         cons: ['Ordena por % de meses en positivo.', 'Prueba filtros de régimen, macro y volumen.', 'Se ordena por meses en positivo; empates, por retorno.'],
     };
-    let opt = null, target = null, mode = 'interval', iv = null, coins = new Set(), focus = 'gain';
+    let opt = null, target = null, mode = 'interval', iv = null, coins = new Set(), focus = 'gain', sltp = 'fixed';
+    // D-45 (p93): qué SL/TP se prueban. 'fixed' = como siempre (default)
+    const SLTP = {
+        fixed: ['SL y TP en %: 1 % / 2 %, 1,5 % / 3 %…', 'Prueba solo SL y TP fijos, exactamente como hasta ahora.'],
+        auto:  ['SL 1,5 a 3 veces el ATR; TP veces el SL, veces el ATR o fijo',
+                'Prueba SL automático (topes 0,8 % y 5 %) con los distintos tipos de TP.'],
+        both:  ['Mitad fijos y mitad automáticos; gana el que mejor rinda',
+                'Reparte la búsqueda entre fijos y automáticos y los ordena juntos con la misma regla de siempre: se ve con números cuál conviene en cada moneda.'],
+    };
 
     const $ = id => document.getElementById(id);
     const short = s => s.replace('USDT', '');
@@ -75,6 +88,10 @@
             class="${k === focus ? 'on' : ''}" aria-pressed="${k === focus}"><b>${SB.esc(label)}</b><small>${SB.esc(FOCUS[k][0])}</small>
             <small class="sb-sub">${SB.esc(FOCUS[k][1])}</small></button>`).join('');
         document.querySelectorAll('#sbFocus button').forEach(b => b.onclick = () => { focus = b.dataset.focus; render(); });
+        $('sbSltp').innerHTML = Object.entries(opt.sltps || {}).map(([k, label]) => `<button type="button" data-sltp="${k}"
+            class="${k === sltp ? 'on' : ''}" aria-pressed="${k === sltp}"><b>${SB.esc(label)}</b><small>${SB.esc((SLTP[k] || [''])[0])}</small></button>`).join('');
+        document.querySelectorAll('#sbSltp button').forEach(b => b.onclick = () => { sltp = b.dataset.sltp; render(); });
+        $('sbSltpHelp').textContent = (SLTP[sltp] || ['', ''])[1];
         $('sbRule').innerHTML = `Una configuración se acepta solo si <b>gana en los primeros 16 meses</b> (donde se elige) <b>y también en los
             últimos 8</b> (que nunca se usan para elegir), con <b>${opt.limits.min_trades ?? 30} o más operaciones</b>`
             + (mode === 'interval' ? ', en al menos <b>¾ de las monedas</b> elegidas (las métricas son de todas).' : ', en cada moneda por separado.')
@@ -134,7 +151,7 @@
         coins = new Set(b.dataset.all === '1' ? available() : []); render(); });
 
     async function open(t, optionsId) {
-        target = t; opt = null; mode = 'interval'; iv = '240'; coins = new Set(); focus = 'gain';
+        target = t; opt = null; mode = 'interval'; iv = '240'; coins = new Set(); focus = 'gain'; sltp = 'fixed';
         $('sbTitle').textContent = t.all ? '🔍 Buscar en todas las estrategias' : '🔍 Buscar configuración';
         $('sbSub').textContent = 'Cargando opciones…';
         $('sbStart').textContent = t.all ? `Buscar en las ${t.all} estrategias` : 'Iniciar búsqueda';
@@ -163,7 +180,7 @@
 
     window.sbStart = async function () {
         $('sbStart').disabled = true;
-        const body = JSON.stringify({ mode, focus, intervals: mode === 'interval' ? [iv] : [], symbols: [...coins] });
+        const body = JSON.stringify({ mode, focus, sltp, intervals: mode === 'interval' ? [iv] : [], symbols: [...coins] });
         try {
             if (target.all) {
                 const r = await SB.api(URL_START_ALL, { method: 'POST', body });

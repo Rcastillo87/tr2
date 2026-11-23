@@ -146,9 +146,9 @@ class BaseStrategy(ABC):
         self.volatility_atr_multiplier  = params.get('volatility_atr_multiplier', 2.5)
         self.volatility_widen_pct       = params.get('volatility_widen_pct', 1.0)
 
-        # D-45: SL/TP/BE automáticos por ATR (opcional; 'fixed' o ausente = el SL/TP/BE fijo en % de siempre)
+        # D-45: SL y TP automáticos, por separado (opcionales; 'fixed' o ausente = el SL/TP/BE fijo en % de siempre)
         from backtesting import auto_levels
-        self.sl_tp_mode = params.get('sl_tp_mode') or 'fixed'
+        self.sl_mode, self.tp_mode = auto_levels.modes(params)
         for k, v in auto_levels.DEFAULTS.items():
             setattr(self, k, params.get(k) if params.get(k) is not None else v)
 

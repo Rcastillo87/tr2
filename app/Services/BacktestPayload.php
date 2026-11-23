@@ -34,6 +34,39 @@ final class BacktestPayload
         return $out;
     }
 
+    /** D-45: claves del SL/TP automático que viajan al motor (y al config_params guardado). */
+    public const LEVEL_KEYS = ['sl_mode', 'tp_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult',
+        'tp_atr_mult'];
+
+    /**
+     * D-45 (p93): SL y TP por separado. Con los dos en «fijo» (o sin los campos) devuelve [] y el payload queda idéntico
+     * al de siempre (mismo hash de backtest). Si no, solo los modos y los multiplicadores que usa cada modo.
+     *
+     * @param array<string, mixed> $input  $request->all() o los campos de un backtest creado desde la búsqueda
+     * @return array<string, mixed>
+     */
+    public static function levels(array $input): array
+    {
+        $sl = in_array($input['sl_mode'] ?? null, ['fixed', 'atr'], true) ? $input['sl_mode'] : 'fixed';
+        $tp = in_array($input['tp_mode'] ?? null, ['fixed', 'r', 'atr'], true) ? $input['tp_mode'] : 'fixed';
+        if ($sl === 'fixed' && $tp === 'fixed') {
+            return [];
+        }
+        $num = static fn (string $k, float $default): float => is_numeric($input[$k] ?? null) ? (float) $input[$k] : $default;
+        $out = ['sl_mode' => $sl, 'tp_mode' => $tp];
+        if ($sl === 'atr') {
+            $out += ['sl_atr_mult' => $num('sl_atr_mult', 2.0), 'sl_min_pct' => $num('sl_min_pct', 0.8),
+                     'sl_max_pct' => $num('sl_max_pct', 5.0), 'be_r_mult' => $num('be_r_mult', 1.0)];
+        }
+        if ($tp === 'r') {
+            $out['tp_r_mult'] = $num('tp_r_mult', 2.0);
+        } elseif ($tp === 'atr') {
+            $out['tp_atr_mult'] = $num('tp_atr_mult', 4.0);
+        }
+
+        return $out;
+    }
+
     /**
      * F-03: primer error de un payload de /v1/backtest/run según backtesting/request_rules.json (las mismas reglas
      * que valida Python en BacktestRequest), o null si es válido. Solo se validan los campos presentes.

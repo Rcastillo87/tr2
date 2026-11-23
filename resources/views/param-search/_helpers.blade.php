@@ -12,8 +12,14 @@ window.SB = window.SB || (function () {
     const pfCls = v => v >= 1 ? 'sb-pos' : 'sb-neg';
     function cfgTags(c) {
         const t = [];
-        t.push(['SL ' + c.sl_pct + '%'], ['TP ' + c.tp_pct + '%']);
-        t.push([Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%']);
+        if (c.sl_mode === 'atr' || (c.tp_mode && c.tp_mode !== 'fixed')) {   // D-45: SL/TP automáticos (azul)
+            t.push([c.sl_mode === 'atr' ? 'SL ATR ×' + c.sl_atr_mult + ' (' + c.sl_min_pct + '–' + c.sl_max_pct + '%)' : 'SL ' + c.sl_pct + '%', c.sl_mode === 'atr' ? 2 : 0]);
+            t.push([c.tp_mode === 'r' ? 'TP ' + c.tp_r_mult + ' × SL' : (c.tp_mode === 'atr' ? 'TP ATR ×' + c.tp_atr_mult : 'TP ' + c.tp_pct + '%'), c.tp_mode !== 'fixed' ? 2 : 0]);
+            t.push([c.sl_mode === 'atr' ? (Number(c.be_r_mult) >= 20 ? 'Sin BE' : 'BE ' + c.be_r_mult + ' × SL') : (Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%'), c.sl_mode === 'atr' ? 2 : 0]);
+        } else {
+            t.push(['SL ' + c.sl_pct + '%'], ['TP ' + c.tp_pct + '%']);
+            t.push([Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%']);
+        }
         if (c.trailing_mode === 'fixed') t.push(['Trailing fijo ' + c.trailing_distance_pct + '% · act. ' + c.trailing_activation_buffer_pct + '%']);
         else if (c.trailing_mode === 'atr') t.push(['Trailing ATR ×' + c.trailing_atr_mult + ' · act. ' + c.trailing_activation_buffer_pct + '%']);
         else t.push(['Sin trailing']);
@@ -23,7 +29,7 @@ window.SB = window.SB || (function () {
         if (c.volume_filter) t.push(['Volumen ' + c.volume_filter_period + ' ×' + c.volume_filter_mult, 1]);
         if (c.close_on_opposite) t.push(['Señal opuesta', 1]);
         t.push([Number(c.max_duration) > 0 ? 'Máx ' + c.max_duration + ' velas' : 'Sin límite de duración']);
-        return '<div class="sb-cfg">' + t.map(([s, y]) => '<span class="sb-tag' + (y ? ' y' : '') + '">' + esc(s) + '</span>').join('') + '</div>';
+        return '<div class="sb-cfg">' + t.map(([s, y]) => '<span class="sb-tag' + (y === 2 ? ' b' : (y ? ' y' : '')) + '">' + esc(s) + '</span>').join('') + '</div>';
     }
     function ago(iso) {
         if (!iso) return '';
