@@ -101,6 +101,18 @@ LIQ_BUFFER = 0.005
 
 # Estados finales de una orden sin ejecución
 ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
+# C5-16 (p95): operaciones en estado dudoso (la posición puede estar viva en Bybit sin que TR2 lo sepa con certeza).
+# Mientras la cuenta tenga una, no abre nada (D-50); las abiertas se siguen gestionando.
+UNRESOLVED_SQL = ("(status = 'orphaned' OR (status = 'pending_open' AND created_at < now() - interval '3 minutes'))")
+
+
+def executed_qty(order: dict | None) -> float:
+    """C5-14 (p95): cantidad que Bybit ya ejecutó de una orden (cumExecQty). Una orden 'Cancelled' puede tenerla
+    (market parcialmente llena y cancelado el resto): entonces SÍ hubo posición."""
+    try:
+        return float((order or {}).get('cumExecQty') or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 # Rechazos de /v5/order/create con tratamiento propio (confirmados en Bybit Demo)
 ORDER_LINK_DUPLICATE = 110072    # el orderLinkId ya existe: la orden se creó antes, se devuelve esa
@@ -1290,15 +1302,22 @@ class RealTrader:
                 " FROM broker_accounts WHERE id = $1", account_id)
             if acc is None:
                 return None
+            # C5-16: las 'orphaned' cuentan (pueden estar vivas en Bybit)
             open_count = await conn.fetchval(
                 "SELECT count(*) FROM real_trades WHERE broker_account_id = $1"
-                " AND status IN ('pending_open', 'open', 'pending_close')", account_id)
+                " AND status IN ('pending_open', 'open', 'pending_close', 'orphaned')", account_id)
+            unresolved = await conn.fetchrow(
+                f"SELECT id, symbol, status FROM real_trades WHERE broker_account_id = $1 AND {UNRESOLVED_SQL}"
+                " ORDER BY id LIMIT 1", account_id)
             month_pnl = None
             if acc['month_start_at'] == month and acc['month_start_balance']:
                 month_pnl = await conn.fetchval(
                     "SELECT COALESCE(SUM(COALESCE(net_pnl, pnl, 0)), 0) FROM real_trades"
                     " WHERE broker_account_id = $1 AND status = 'closed' AND exit_time >= $2", account_id, since)
 
+        if unresolved is not None:   # D-50: con una operación en estado dudoso no se abre nada
+            return (f"operación #{unresolved['id']} {unresolved['symbol']} sin confirmar ({unresolved['status']}): "
+                    "sin entradas nuevas hasta que la conciliación la resuelva")
         if month_pnl is not None:
             base, limit = float(acc['month_start_balance']), float(acc['max_monthly_loss_pct'])
             pct = float(month_pnl) / base * 100
@@ -1492,7 +1511,13 @@ class RealTrader:
                     filled = True
                     logger.warning(f"[REAL] Confirmado en verificación {check + 1}: {symbol} @ {filled_price}")
                     break
-                if status in ('Rejected', 'Cancelled', 'Deactivated'):
+                if status in ORDER_DEAD_STATUSES and executed_qty(order) > 0:
+                    # C5-14: llenada en parte y cancelado el resto: hay posición aunque Bybit aún no la muestre. Nunca
+                    # 'failed': se sigue verificando y, si no aparece, queda 'orphaned' para la conciliación.
+                    logger.error(f"[REAL] Orden {order_id} {symbol} terminó en {status} con {executed_qty(order)} "
+                                 f"ejecutado: se espera la posición")
+                    continue
+                if status in ORDER_DEAD_STATUSES:
                     logger.error(f"[REAL] Orden {order_id} {symbol} terminó en {status}: no hay posición")
                     async with self.pool.acquire() as conn:
                         await conn.execute(
@@ -1605,6 +1630,13 @@ class RealTrader:
                 f"[REAL] CRITICO: trade #{trade_id} {symbol} abierto en Bybit "
                 f"order_id={order_id} pero no se pudo actualizar en DB tras 4 intentos."
             )
+            # C5-15 (p95): no se informa «abierta». La fila sigue 'pending_open' (bloquea entradas nuevas, D-50) y la
+            # conciliación la adopta con la posición de Bybit apenas pasen 3 min (el tick la adelanta). El SL/TP ya
+            # está en Bybit.
+            await emit_event(self.pool, sub['broker_account_id'], 'open_unconfirmed', trade_id, symbol=symbol,
+                             side=side, strategy=sub['strategy'],
+                             reason='ejecutada en Bybit; no se pudo guardar en la base: la conciliación la recupera')
+            return False
 
         await self.log_audit(trade_id, 'opened', {
             'order_id': order_id,

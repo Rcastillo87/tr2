@@ -16,7 +16,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError,
-                                 ORDER_DEAD_STATUSES, epoch_ms,
+                                 ORDER_DEAD_STATUSES, epoch_ms, executed_qty,
                                  close_trigger_reason, last_close_order_id)
 from trading.risk_manager import RiskManager
 from trading import execution_ledger
@@ -380,7 +380,9 @@ async def _recover_pending_opens(trader, client, account, pool, results) -> None
         try:
             if link:
                 order = await client.get_order_by_link_id(symbol, link)   # None = no existe; lanza si no se sabe
-            executed = (order is not None and order.get('orderStatus') not in ORDER_DEAD_STATUSES) if link else None
+            # C5-14: también se ejecutó si Bybit la canceló después de llenarla en parte (cumExecQty > 0)
+            executed = (order is not None and (order.get('orderStatus') not in ORDER_DEAD_STATUSES
+                                               or executed_qty(order) > 0)) if link else None
             position = await client.get_open_position(symbol) if executed is not False else None
         except BybitAPIError as e:
             logger.error(f"[RECONCILE] pending_open #{tid} {symbol}: Bybit no responde ({e}) — próximo ciclo")
@@ -400,12 +402,13 @@ async def _recover_pending_opens(trader, client, account, pool, results) -> None
                 live = False
         if live:
             avg = float(position.get('avgPrice', 0) or trade['entry_price'])
-            adopted = await _adopt_position(trader, client, trade, avg, trade['side'], symbol)
+            adopted = await _adopt_position(trader, client, trade, avg, trade['side'], symbol,
+                                            size=float(position.get('size') or 0))
             if order and order.get('orderId'):
                 async with pool.acquire() as conn:
                     await conn.execute("UPDATE real_trades SET order_id=$1 WHERE id=$2", order['orderId'], tid)
             await emit_event(pool, account.id, 'reconcile_adopted', tid, symbol=symbol, side=trade['side'],
-                             kind='pending', protected=adopted)
+                             kind='pending', protected=adopted == 'protected')
             results['reconciled'].append({'trade_id': tid, 'symbol': symbol, 'reason': 'pending_open_adopted'})
             continue
 
@@ -533,14 +536,45 @@ async def reconcile(
                     continue
                 if position and float(position.get('size', 0) or 0) > 0:
                     avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
-                    adopted = await _adopt_position(trader, client, trade, avg_price, trade['side'], trade['symbol'])
+                    adopted = await _adopt_position(trader, client, trade, avg_price, trade['side'], trade['symbol'],
+                                                    size=float(position.get('size') or 0))
                     await emit_event(pool, account.id, 'reconcile_adopted', trade['id'], symbol=symbol,
-                                     side=trade['side'], kind='orphaned', protected=adopted)
+                                     side=trade['side'], kind='orphaned', protected=adopted == 'protected')
                     if adopted:
-                        results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted'})
+                        results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted',
+                                                      'protected': adopted == 'protected'})
                     else:
                         results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_sin_config'})
                 else:
+                    # C5-14: sin posición, pero si la orden llegó a ejecutarse (aunque fuera en parte) la posición se
+                    # abrió y ya cerró: se liquida con Bybit, nunca 'failed'
+                    try:
+                        order = (await client.get_order_by_link_id(symbol, trade['order_link_id'])
+                                 if trade.get('order_link_id') else None)
+                    except BybitAPIError as e:
+                        logger.error(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: no se pudo consultar la orden ({e})")
+                        results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
+                        continue
+                    if executed_qty(order) > 0:
+                        avg = float(order.get('avgPrice') or 0) or float(trade['entry_price'])
+                        async with pool.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE real_trades SET status='open', entry_price=$1, order_id=COALESCE(order_id, $2),"
+                                " updated_at=now() WHERE id=$3 AND status='orphaned'", avg, order.get('orderId'), trade['id'])
+                        trade.update(status='open', entry_price=avg)
+                        settled = await trader.settle_exchange_close(trade, client, account.id, epoch_ms(trade['entry_time']))
+                        if settled is None:
+                            async with pool.acquire() as conn:
+                                await conn.execute(
+                                    "UPDATE real_trades SET status='orphaned', error_message='Posicion cerrada en Bybit, no se"
+                                    " pudo obtener pnl real (apertura ejecutada)', updated_at=now() WHERE id=$1", trade['id'])
+                            results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
+                        else:
+                            results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol,
+                                                          'reason': 'orphaned_executed_closed'})
+                            if settled:
+                                await emit_event(pool, account.id, 'reconcile_closed', trade['id'], symbol=symbol)
+                        continue
                     async with pool.acquire() as conn:
                         await conn.execute(
                             """UPDATE real_trades SET status='failed',
@@ -605,23 +639,33 @@ async def reconcile(
     return {'status': 'ok', 'results': results}
 
 
-async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: float, side: str, symbol: str) -> bool:
-    """Deja un trade 'open' con SL/TP/BE de SU config (mismas fórmulas que una apertura normal)."""
+async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: float, side: str, symbol: str,
+                          size: float | None = None) -> str | None:
+    """
+    Deja un trade 'open' con SL/TP/BE de SU config (mismas fórmulas que una apertura normal) y el tamaño REAL de la
+    posición en Bybit (C5-14: una apertura llenada en parte no tiene el tamaño pedido).
+    Devuelve 'protected' si Bybit aceptó el SL/TP, 'unprotected' si no (C5-17: la fila queda 'open' para que el monitor
+    reintente cada minuto y avise con protection_failed; nunca se informa protegida), None sin config.
+    """
     strategy = trader._trade_strategy(trade)
     if strategy is None:
-        return False
+        return None
     params = trader._snapshot(trade)
     sl, tp, be = trader._levels(strategy, avg_price, side, *trader._effective_levels(strategy, params))
     ts_ok = await client.set_trading_stop(symbol, sl, tp)
+    real_size = size if size and size > 0 else None
     async with trader.pool.acquire() as conn:
         await conn.execute(
             """UPDATE real_trades SET status='open', entry_price=$1, sl=$2, original_sl=$2, tp=$3, be_level=$4,
-                   error_message='Adoptado por reconciliador', updated_at=now()
+                   size=COALESCE($6, size), error_message='Adoptado por reconciliador', updated_at=now()
                WHERE id=$5""",
-            avg_price, sl, tp, be, trade['id']
+            avg_price, sl, tp, be, trade['id'], real_size
         )
-    logger.warning(f"[RECONCILE] #{trade['id']} {symbol} adoptado @ {avg_price} sl={sl} tp={tp} be={be} ts={'OK' if ts_ok else 'FALLO'}")
-    return True
+    await trader.log_audit(trade['id'], 'adopted', {'avg_price': avg_price, 'size_db': float(trade['size']) if trade.get('size') is not None else None,
+                                                    'size_bybit': real_size, 'sl': sl, 'tp': tp, 'protected': bool(ts_ok)})
+    logger.warning(f"[RECONCILE] #{trade['id']} {symbol} adoptado @ {avg_price} size={real_size} sl={sl} tp={tp} be={be} "
+                   f"ts={'OK' if ts_ok else 'FALLO'}")
+    return 'protected' if ts_ok else 'unprotected'
 
 
 

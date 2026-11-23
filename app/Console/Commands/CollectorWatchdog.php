@@ -189,6 +189,7 @@ class CollectorWatchdog extends Command
             }
         }
         $this->line('trading real: ' . count($accounts) . ' cuenta(s) con posiciones · sin gestionar ' . count($late));
+        $this->checkUnresolvedTrades();
         if ($late) {
             $this->alerts->openIncident('real_tick_stalled', 'error', 'broker', 'Trading real sin gestionar posiciones',
                 count($late) . ' cuenta(s) con posiciones abiertas sin tick reciente: ' . implode(', ', $late)
@@ -197,6 +198,27 @@ class CollectorWatchdog extends Command
         } else {
             $this->alerts->resolveIncident('real_tick_stalled', 'broker', 'Trading real gestionando posiciones de nuevo',
                 'Todas las cuentas con posiciones tienen tick reciente.', '/trading');
+        }
+    }
+
+    /**
+     * C5-16 (p95): operación en estado dudoso ('orphaned' o 'pending_open' viejo) por más de real_unresolved_min minutos:
+     * la conciliación no logra resolverla (Bybit no responde, falta el closed-pnl…). Aviso al admin hasta que se resuelva.
+     */
+    private function checkUnresolvedTrades(): void
+    {
+        $limit = (int) ($this->cfg['real_unresolved_min'] ?? 15);
+        $rows = \App\Models\RealTrade::query()->unresolved()
+            ->where('updated_at', '<', now()->subMinutes($limit))
+            ->orderBy('id')->get(['id', 'symbol', 'status', 'broker_account_id']);
+        if ($rows->isNotEmpty()) {
+            $this->alerts->openIncident('real_unresolved', 'error', 'broker', 'Operación Real sin confirmar',
+                $rows->count() . " operación(es) en estado dudoso hace más de {$limit} min: "
+                . $rows->map(fn ($t) => "#{$t->id} {$t->symbol} ({$t->status}, cuenta #{$t->broker_account_id})")->implode(', ')
+                . '. Su cuenta no abre operaciones nuevas hasta resolverla. Revisa la posición en Bybit.', '/trading');
+        } else {
+            $this->alerts->resolveIncident('real_unresolved', 'broker', 'Operaciones Real confirmadas',
+                'No quedan operaciones en estado dudoso.', '/trading');
         }
     }
 

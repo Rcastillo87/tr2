@@ -21,7 +21,26 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · P0 de Real: parciales canceladas, apertura sin guardar y huérfanas (p95, C5-14..17, D-50) — 23-nov
+- **Inicio del ciclo 5.** Informe recibido el 23-nov (base p91). Validación punto por punto en
+  `docs/VALIDACION_AUDITORIA_CICLO5.md` (pendientes y resueltos en listas separadas).
+- **C5-14 (válido en parte):** la apertura ya miraba la posición antes que el estado de la orden; la recuperación
+  (`_recover_pending_opens`) y la `orphaned` de apertura sin posición marcaban `failed` una orden `Cancelled` con
+  parte ejecutada, y la conciliación trataba luego la posición viva como manual (D-18). Fix: `executed_qty`
+  (cumExecQty): adoptar con el tamaño real de Bybit o liquidar; nunca `failed` con cantidad ejecutada.
+- **C5-15 (válido):** apertura ejecutada sin poder guardar → `open_trade` ya no devuelve «abierta»; aviso
+  `open_unconfirmed`; la fila `pending_open` bloquea entradas y se concilia en ~1 min.
+- **C5-16 (válido):** `orphaned` cuenta en el máximo de operaciones; **D-50** (sin entradas con una operación dudosa);
+  el tick adelanta la conciliación (`Cache::add`, una por minuto); aviso `real_unresolved` a los 15 min.
+- **C5-17 (válido, P1, misma función):** la adopción informa `protected` según Bybit; historial `adopted` con tamaños.
+- **Prueba:** `real_unresolved_test.py` (19 casos; reutiliza los dobles de `real_parity_test` y `real_recovery_test`).
+  Código anterior: 10 FALLOS. Mutaciones 9/9. Las 10 pruebas de Real existentes, sin cambios. Regresión **75 Python +
+  30 PHP** en TODO OK. El instalador incluye la lectura del estado de Real (pedida a las 09:18 y no corrida).
+
 ### Claves del SL/TP automático renombradas: choque con TrianguloRuptura (p94, D-45) — 23-nov
+- **Instalado:** `45073e9` (23-nov 15:41 UTC): ninguna estrategia guardada usa los nombres nuevos; regresión 74 + 30
+  en el servidor; vistas compilan; motor y Horizon reiniciados, 0 errores; 0 configs con modo automático y 0 backtests
+  con las claves de p93.
 - **Hallazgo (instalando p93):** la comprobación del instalador contó 1 estrategia con `sl_mode`. TrianguloRuptura
   (#10) usa su propia clave `sl_mode` («swing» | «fixed»: SL en el último swing), la misma que eligió p93 para el modo
   del SL. Lectura del código (`self.sl_mode = params.get('sl_mode', 'swing')` en su `__init__`, después de la base):

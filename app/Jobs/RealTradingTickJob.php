@@ -3,10 +3,12 @@
 namespace App\Jobs;
 
 use App\Models\BrokerAccount;
+use App\Models\RealTrade;
 use App\Support\RealTickResults;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
@@ -27,6 +29,13 @@ class RealTradingTickJob implements ShouldQueue, ShouldBeUnique
      */
     public function handle(): void
     {
+        // C5-16 (p95): con una operación en estado dudoso la conciliación no espera a su turno de 5 minutos (a lo sumo una
+        // por minuto): la adopta o la cierra con los datos de Bybit en ~1 min. Mientras tanto la cuenta no abre (D-50).
+        if (RealTrade::query()->unresolved()->exists() && Cache::add('real_reconcile_early', 1, 55)) {
+            RealTradingReconcileJob::dispatch();
+            Log::warning('RealTradingTickJob: operaciones sin confirmar: conciliación adelantada');
+        }
+
         // Cuentas con suscripciones activas O con posiciones abiertas (estas se gestionan hasta cerrarse,
         // aunque se haya pausado la última suscripción).
         // Y cualquier cuenta PAUSADA con posiciones abiertas: se gestionan, pero no se abre nada.

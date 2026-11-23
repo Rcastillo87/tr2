@@ -15,6 +15,19 @@ class RealTrade extends Model
      * aunque esté pausada o sin suscripciones: un 'pending_open' interrumpido puede haberse llenado (N-01).
      */
     public const RECONCILE_STATUSES = ['pending_open', 'open', 'pending_close', 'orphaned'];
+    /** C5-16 (p95): minutos tras los que un 'pending_open' se considera en estado dudoso (igual que el motor). */
+    public const PENDING_OPEN_STALE_MIN = 3;
+
+    /**
+     * C5-16 (p95): operaciones en estado dudoso: la posición puede estar viva en Bybit sin certeza en TR2 ('orphaned', o
+     * 'pending_open' de más de 3 min). Misma regla que real_trader.UNRESOLVED_SQL.
+     */
+    public function scopeUnresolved($query)
+    {
+        return $query->where(fn ($q) => $q->where('status', 'orphaned')
+            ->orWhere(fn ($p) => $p->where('status', 'pending_open')
+                ->where('created_at', '<', now()->subMinutes(self::PENDING_OPEN_STALE_MIN))));
+    }
 
     protected $fillable = [
         'user_id', 'subscription_id', 'broker_account_id', 'paper_strategy_config_id',
