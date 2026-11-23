@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 fails = 0
 
@@ -47,11 +49,11 @@ check('A5: el comparador usa la misma huella (md5 del texto en UTF-8)',
       cmp.code_version({'strategy_code': CODE}) == hashlib.md5(CODE.encode('utf-8')).hexdigest()
       and cmp.code_version({}) is None)
 
-if not os.getenv('DB_HOST'):
-    print('SKIP B: sin DB_* en el entorno')
+if not require_test_db('B'):   # C5-04: nunca la base de producción
+    pass
 else:
     import asyncpg
-    from db import DB_DSN
+    DB_DSN = test_dsn()
 
     async def main():
         c = await asyncpg.connect(DB_DSN)

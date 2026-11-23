@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 fails = 0
 
@@ -165,13 +167,11 @@ check('C5: el tick y los dos endpoints leen las columnas de costos (TRADE_COLS c
 
 # ── B. Con PostgreSQL ──
 # B aplica DOWN/UP de la migración: solo en una base de pruebas (nombre terminado en «test»), nunca en producción.
-if not os.getenv('DB_HOST'):
-    print('SKIP B: sin DB_* en el entorno')
-elif not (os.getenv('DB_NAME') or '').endswith('test'):
-    print(f"SKIP B: DB_NAME={os.getenv('DB_NAME')!r} no es una base de pruebas")
+if not require_test_db('B'):   # C5-04: nunca la base de producción
+    pass
 else:
     import asyncpg
-    from db import DB_DSN
+    DB_DSN = test_dsn()
     UP = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_02_real_trade_executions.up.sql').read_text(encoding='utf-8')
     DOWN = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_02_real_trade_executions.down.sql').read_text(encoding='utf-8')
     F_UP = (ROOT / 'database' / 'sql-migrations' / '2026_11_20_03_real_trades_funding.up.sql').read_text(encoding='utf-8')

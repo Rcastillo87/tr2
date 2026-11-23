@@ -83,6 +83,7 @@
 | ID | Decisión | Fecha · origen | Dónde se aplica |
 |---|---|---|---|
 | D-48 | **Respaldo de la base fuera del VPS: no se hace** («olvídate de esto»). No se vuelve a proponer salvo pedido del dueño | 20-nov · el dueño | Sin cambio |
+| D-56 | **Ninguna prueba toca una base cuyo nombre no termine en «test».** Toda prueba Python que usa PostgreSQL pasa por una barrera única; si la base configurada no es de pruebas (en el servidor, la de producción) esa parte se salta con un aviso. Una prueba vigila que ninguna prueba nueva se conecte sin la barrera. Aquí la regresión corre esas partes contra la base de pruebas. Las pruebas PHP de integración que arrancan Laravel no son parte de la regresión: se corren a mano en el servidor y siempre dentro de una transacción que se revierte | 23-nov · el dueño («Procede», C5-04) | p102: `tests/Forensic/test_db.py`, `test_db_guard_static_test.py`, 14 pruebas con base |
 
 ## Pendientes de decisión (no asumir; preguntar)
 

@@ -11,6 +11,10 @@ from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
+if __name__ == '__main__' and not require_test_db('todo'):   # C5-04: nunca la base de producción
+    sys.exit(0)
 
 import asyncpg
 from dotenv import load_dotenv
@@ -20,8 +24,7 @@ load_dotenv(Path.cwd() / '.env')
 from api.v1.backtest import parse_range  # noqa: E402
 from collectors.broker_resolver import coverage_by_broker, interval_delta, pick_best_source  # noqa: E402
 
-DSN = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-       f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+DSN = test_dsn()
 
 
 async def main() -> int:

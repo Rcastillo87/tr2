@@ -15,6 +15,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
+if __name__ == '__main__' and not require_test_db('todo'):   # C5-04: nunca la base de producción
+    sys.exit(0)
 
 import asyncpg  # noqa: E402
 import numpy as np  # noqa: E402
@@ -27,8 +31,7 @@ from api.v1.backtest import BacktestRequest, WARMUP_BARS, load_ohlcv, load_strat
 from backtesting.engine import BacktestEngine, compute_regimes  # noqa: E402
 from collectors.broker_resolver import interval_delta, resolve_backtest_source  # noqa: E402
 
-DSN = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-       f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+DSN = test_dsn()
 
 
 def _j(v):

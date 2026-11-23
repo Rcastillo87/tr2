@@ -22,6 +22,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
+if __name__ == '__main__' and not require_test_db('todo'):   # C5-04: nunca la base de producción
+    sys.exit(0)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -95,8 +99,7 @@ async def real_data(symbol: str, interval: str, months: int):
 
 
 def _dsn() -> str:
-    return (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:"
-            f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+    return test_dsn()
 
 
 async def strategy_names() -> list[str]:

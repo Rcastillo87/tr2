@@ -13,6 +13,10 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.getcwd())  # python-engine/
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
+if __name__ == '__main__' and not require_test_db('todo'):   # C5-04: nunca la base de producción
+    sys.exit(0)
 
 import asyncpg  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
@@ -238,8 +242,7 @@ async def collector_tests(pool):
 
 async def main():
     engine_tests()
-    dsn = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-           f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+    dsn = test_dsn()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
     try:
         async with pool.acquire() as conn:

@@ -11,6 +11,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
+if __name__ == '__main__' and not require_test_db('todo'):   # C5-04: nunca la base de producción
+    sys.exit(0)
 
 import asyncpg
 from dotenv import load_dotenv
@@ -19,8 +23,7 @@ load_dotenv(Path.cwd() / '.env')
 
 from api.v1.backtest import BacktestRequest, run_backtest  # noqa: E402
 
-DSN = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-       f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+DSN = test_dsn()
 import argparse
 from datetime import date, timedelta as _td
 _ap = argparse.ArgumentParser()

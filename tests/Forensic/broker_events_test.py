@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.getcwd())                                   # python-engine/
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # tests/Forensic/
+from test_db import require_test_db, test_dsn  # noqa: E402  (C5-04: barrera de base)
 
 from dotenv import load_dotenv  # noqa: E402
 
@@ -62,9 +63,7 @@ class _BrokenPool:
 
 
 async def part_a():
-    dsn = (f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:"
-           f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
-    conn = await asyncpg.connect(dsn)
+    conn = await asyncpg.connect(test_dsn())
     tx = conn.transaction()
     await tx.start()
     try:
@@ -362,10 +361,8 @@ async def part_d():
 
 
 async def main():
-    if os.getenv('DB_HOST'):
+    if require_test_db('A'):   # C5-04: nunca la base de producción
         await part_a()
-    else:
-        print('SKIP A: sin DB_* en el entorno')
     await part_b()
     await part_c()
     await part_d()

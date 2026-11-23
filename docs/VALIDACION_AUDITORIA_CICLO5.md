@@ -13,9 +13,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 11 | C5-02 | P1 | Protección lookahead ante errores | Implementado en p101 (D-55) |
-| 12 | C5-09 | P1 | Matriz dinámica de permisos y aislamiento | Pendiente de validar |
-| 13 | C5-04 | P1 | Aislamiento de pruebas con PostgreSQL | Pendiente de validar (p89 ya exige base «*test» en `execution_ledger_test`) |
+| 13 | C5-04 | P1 | Aislamiento de pruebas con PostgreSQL | Implementado en p102 (D-56) |
 | 14 | C5-05 | P1 | Cobertura de la reparación de VWAP | Pendiente de validar |
 | 15 | C5-03 | P2 | Independencia de la prueba final 60/20/20 | Pendiente de validar |
 | 16 | C5-06 | P2 | Comparador con el snapshot vigente | Pendiente de validar |
@@ -27,7 +25,47 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-02 · Protección «mira el futuro» ante errores (P1) — **Válido (2 de 2; latente)** · Implementado en p101 (D-55)
+### C5-04 · Aislamiento obligatorio de pruebas con PostgreSQL (P1) — **Válido y más grave que lo descrito** · Implementado en p102 (D-56)
+- **Hallazgo propio, más grave que el informe:** desde p92 `backtesting/auto_levels.py` carga `python-engine/.env` al
+  importarse y casi todas las pruebas lo importan: en el servidor, **la regresión del instalador veía la base de
+  producción** (lectura 23-nov: DB_* definidas en `.env`, DB_NAME no termina en «test»; `DB_HOST` vacío antes de
+  importar el motor y presente después). Solo `execution_ledger_test` (p89) exigía una base «…test».
+- **Pruebas que tocaban producción en cada instalación:**
+  - `broker_events_test` (sin barrera, en transacción revertida), `code_md5_test` y `subscription_risk_check_test`
+    (en transacción revertida: sin rastro, pero con bloqueos de unos segundos sobre las tablas de operaciones);
+  - **`vwap_metrics_fix_test` (p82), sin transacción:** creaba y borraba la estrategia 7043, las configs 90431/90432
+    (una **activa** en Paper) en el símbolo falso D43USDT y ~135.000 velas.
+  - Otras 8 pruebas de diagnóstico (fuera de la regresión) armaban su propia conexión con el `.env`.
+- **Servidor (lectura 23-nov 22:46 UTC):** 0 rastros (estrategia 7043, backtests, configs, cambios de config, trades de
+  Paper y Real, suscripciones, velas y collector en D43USDT; usuarios y eventos de prueba) y 0 menciones en los logs:
+  la limpieza de cada prueba funcionó. El datafix de D-43 ya estaba protegido (vista previa por defecto, `--apply` y
+  exige reproducir lo guardado: una segunda corrida se niega).
+- **Fix (D-56, «Procede» 23-nov):** barrera única `tests/Forensic/test_db.py` (`require_test_db` salta con aviso sin
+  mostrar el nombre de la base; `test_dsn` lanza si no es de pruebas) en las 14 pruebas que usan base; ninguna arma su
+  propia conexión. `test_db_guard_static_test` (nueva, en la regresión) vigila que toda prueba que se conecta use la
+  barrera. La regresión local corre ahora esas partes contra `tr2test`; en el servidor se saltan.
+- **Prueba:** con una base que no termina en «test» las 6 con base se saltan sin conectarse (la base ni existía);
+  con `tr2test` corren completas (132 comprobaciones). Vigilancia contra las pruebas anteriores: 8 FALLOS. Mutaciones
+  12/12 (incluido «el servidor intentaría conectarse»). Regresión 78 Python + 31 PHP en TODO OK, con base.
+- **Pendiente menor:** `bars_order_test --db` comprobaba dos ajustes de TimescaleDB de la base de producción; con la
+  barrera ya no se corre allá (no estaba en la regresión).
+
+### C5-09 · Matriz dinámica de permisos y aislamiento (P1) — **Validado sin defecto**
+- **Código:** grupos de rutas con `can:` según D-46 (Paper admin+consultor; Real admin+inversionista; backtesting,
+  estrategias, búsquedas, usuarios y collector solo admin); cada acción sobre cuenta / suscripción comprueba el dueño
+  (`$account->user_id !== auth()->id()` y suscripción de esa cuenta); `EnsureUserIsActive` en todo el grupo web; sin
+  registro abierto; Horizon con lista vacía (nadie en producción). Motor: solo 127.0.0.1 y clave interna en todo salvo
+  `/health` (middleware global). Detalle menor: las rutas del collector están fuera del grupo `auth` (un visitante
+  recibe 403 en vez de ir al login): sin efecto de seguridad, no se cambia.
+- **Prueba dinámica** (`tests/Forensic/role_matrix_test.php`, integración en el servidor; transacción revertida y un
+  punto de guardado por petición; sin motor, Bybit, colas ni avisos): todas las rutas web con visitante, admin inactivo,
+  admin, consultor e inversionista (negadas: 403 en todos los métodos; GET permitidas: abren; escrituras permitidas no
+  se ejecutan) + aislamiento entre dos inversionistas (9 acciones sobre la cuenta / suscripción del otro, ids cruzados,
+  5 pantallas y 2 de avisos) y el admin tampoco ve en Real cuentas ajenas.
+- **Servidor (23-nov 22:42 UTC):** 61 rutas·método; visitante 61, inactivo 61, denegadas 93, abiertas 41, escrituras
+  autorizadas sin ejecutar 49; **TODO OK**, sin avisos; 0 usuarios de prueba antes y después.
+
+### C5-02 · Protección «mira el futuro» ante errores (P1) — **Válido (2 de 2; latente)** · Instalado en p101 (`d4ca055`, D-55)
 1. **Al guardar: válido.** `guard_code` saltaba en silencio una combinación sin velas (y si ninguna tenía, aprobaba sin
    probar) y, si la estrategia fallaba al evaluarse vela a vela, devolvía «aprobada» confiando en el smoke test, que
    corre con todas las velas y puede pasar. Las pruebas B5/B6 de `lookahead_guard_test` fijaban ese comportamiento.
@@ -208,3 +246,5 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-20 | Riesgo de la suscripción validado (0 < r ≤ 100) antes de Bybit; CHECK en la base (D-52). One-Way: ya corregido (D-11) | p98 `3853d5d` | 6 suscripciones activas con 1 %; 0 riesgos propios. Sin prueba Demo necesaria |
 | C5-01 | Libro de ejecuciones: «ok» solo si cantidad, precio y comisiones cuadran; «no sé» = reintento; aviso a las 24 h (D-53) | p99 `3f31b10` | 13 cerradas `ok` con funding; las 3 abiertas del 23-nov pasaron la regla nueva (`open_ok`). Falta DEMO con parcial |
 | C5-07 | Conciliación sin fallos escondidos: cuentas aisladas, `errors`/`pending`/`complete`, aviso `real_reconcile` a los 10 min, marca fija de huérfana (D-54) | p100 `599521a` | 13 cerradas, 3 abiertas, 0 huérfanas tras instalar. Falta DEMO con Bybit caído |
+| C5-02 | «No se pudo probar» no es «aprobada»: al guardar sin velas o con error no se guarda; revisión diaria con «sin evaluar» y aviso propio (D-55) | p101 `d4ca055` | Regresión en el servidor; la revisión del 24-nov (04:15) es la primera con la regla nueva |
+| C5-09 | Sin defecto: matriz dinámica de permisos (D-46) y aislamiento entre usuarios | — (prueba `role_matrix_test.php`, en el repo con p102) | Servidor 23-nov 22:42 UTC: 61 rutas·método, 305 comprobaciones, 0 fallos, 0 avisos; 0 usuarios de prueba antes y después |

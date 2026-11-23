@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
 
 from dotenv import load_dotenv  # noqa: E402
 
@@ -92,7 +94,7 @@ async def part2():
     import asyncpg
     from api.v1.backtest import load_ohlcv
     from collectors.broker_resolver import resolve_live_broker
-    from db import DB_DSN
+    DB_DSN = test_dsn()
 
     pool = await asyncpg.create_pool(DB_DSN, min_size=1, max_size=1)  # una sola conexión: fuerza el plan genérico
     try:
@@ -180,7 +182,7 @@ async def part2():
 
 
 part1()
-if '--db' in sys.argv:
+if '--db' in sys.argv and require_test_db('2'):   # C5-04: nunca la base de producción
     asyncio.run(part2())
 print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
 sys.exit(1 if fails else 0)

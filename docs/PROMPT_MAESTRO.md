@@ -216,6 +216,7 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 
 | Error | Regla |
 |---|---|
+| Las pruebas con base de la regresión del instalador corrían contra PRODUCCIÓN (el motor carga su `.env` al importarse, p92; la de p82 creaba y borraba datos falsos en cada instalación) | Toda prueba que usa PostgreSQL pasa por `tests/Forensic/test_db.py` (`require_test_db` / `test_dsn`): solo una base cuyo nombre termina en «test»; `test_db_guard_static_test` lo vigila. Las pruebas PHP que arrancan Laravel se corren a mano y siempre en una transacción revertida (D-56). |
 | Cambiar el formato de datos rompió la pantalla vieja | Al cambiar el formato de un JSON, mantener compatibilidad con la UI actual o cambiar ambas a la vez; probar la pantalla, no solo el endpoint. |
 | `max(...$arr)` con claves de texto → 500 en PHP 8 | Usar `array_values()` antes de `...`. |
 | Clases Tailwind nuevas no aparecen | Tailwind está compilado: en vistas nuevas usar CSS propio o estilos en línea. |

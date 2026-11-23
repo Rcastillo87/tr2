@@ -21,7 +21,23 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-04: ninguna prueba toca una base que no sea de pruebas (p102, D-56) — 23-nov
+- **Validado (más grave que el informe):** desde p92 la regresión del instalador veía la base de producción (el motor
+  carga su `.env` al importarse). `vwap_metrics_fix_test` creaba y borraba en producción una estrategia, configs de
+  Paper (una activa) y ~135.000 velas falsas (D43USDT) en cada instalación; otras 3 corrían en transacción revertida.
+  Lectura: 0 rastros en la base y en los logs.
+- **Fix:** barrera única `tests/Forensic/test_db.py` en las 14 pruebas con base + `test_db_guard_static_test` que la
+  vigila; regresión local con `tr2test`. Incluye `role_matrix_test.php` (C5-09). Vuelta atrás: `p102_revertir.sh`.
+- **Prueba:** con base no «…test» se saltan sin conectarse; con `tr2test` corren completas; vigilancia contra lo
+  anterior 8 FALLOS; mutaciones 12/12; regresión 78 + 31 en TODO OK.
+
+### Ciclo 5 · C5-09: matriz dinámica de permisos y aislamiento — validado sin defecto — 23-nov
+- **Prueba:** `role_matrix_test.php` (nueva, integración en el servidor, transacción revertida): 61 rutas·método × 5
+  perfiles + aislamiento entre inversionistas. Servidor: TODO OK (visitante 61, inactivo 61, denegadas 93, abiertas 41),
+  0 usuarios de prueba antes y después. Sin fix; la prueba entra al repo con p102.
+
 ### Ciclo 5 · C5-02: «no se pudo probar» no es «aprobada» en la protección contra mirar el futuro (p101, D-55) — 23-nov
+- **Instalado:** `d4ca055` (23-nov 22:25 UTC): regresión 77 + 31, motor y Horizon reiniciados, 0 errores.
 - **Validado:** al guardar se aprobaba sin velas o con error de la estrategia; la revisión diaria cerraba el aviso con
   configs sin evaluar. Lectura: 18 de 18 evaluadas, velas de sobra: nunca ocurrió.
 - **Fix:** al guardar, las 2 combinaciones obligatorias (sin velas o con error → no se guarda, con el motivo); revisión

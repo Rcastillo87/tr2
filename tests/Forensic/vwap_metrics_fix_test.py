@@ -20,6 +20,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())   # python-engine/
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests/Forensic/ (C5-04: barrera de base)
+from test_db import require_test_db, test_dsn  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 fails = 0
 
@@ -124,13 +126,13 @@ check('B7: métricas corregidas con las anteriores en r21_previous y las claves 
       and cm['extra'] == 'x' and 'p82' in cm['r21_corrected'] and saved['total_trades'] == 154, cm)
 
 # ── C. De punta a punta con PostgreSQL ──
-if not os.getenv('DB_HOST'):
-    print('SKIP C: sin DB_* en el entorno')
+if not require_test_db('C'):   # C5-04: nunca la base de producción
+    pass
 else:
     import asyncpg
     import numpy as np
     from datetime import datetime, timedelta, timezone
-    from db import DB_DSN
+    DB_DSN = test_dsn()
     spec2 = importlib.util.spec_from_file_location('r21', ROOT / 'ops' / 'datafix' / '2026_11_19_r21_vwap_std.py')
     r21 = importlib.util.module_from_spec(spec2)
     spec2.loader.exec_module(r21)
