@@ -118,6 +118,40 @@ async def main():
     check('Z4: movimiento de 0,3 % (< 0,5 %): el tamaño no cambia (5.0)', c.orders and abs(c.orders[0][1] - 5.0) < 1e-9,
           c.orders[0][1] if c.orders else '')
 
+    # C5-20 (p98): riesgo propio de la suscripción (risk_override_pct). Válido (0 < r ≤ 100) manda sobre la
+    # configuración; inválido no abre, no envía nada a Bybit y avisa open_rejected con el motivo.
+    async def with_override(override, cfg_risk=1.0):
+        sub_o = dict(sub, risk_override_pct=override, config_params={**params, 'risk_per_trade_pct': cfg_risk})
+        st = {'exec': []}
+        c = Client(1000.0, 100.0)
+        ok = await RealTrader(rp.FakePool(st)).open_trade(sub_o, strat, 'long', 100.0, 'RANGING', c)
+        ev = [a for q, a in st['exec'] if 'INSERT INTO broker_events' in q]
+        return ok, (c.orders[0][1] if c.orders else None), ev, c
+    ok, sent, ev, _ = await with_override('2.00')
+    check('V1: riesgo propio 2 % (texto, como lo entrega Laravel) manda sobre el 1 % de la configuración: tamaño doble',
+          ok and sent is not None and abs(sent - 10.0) < 1e-9 and not ev, (ok, sent, ev))
+    ok, sent, ev, _ = await with_override(None, 1.5)
+    check('V2: sin riesgo propio usa el de la configuración (1,5 %)', ok and sent is not None and abs(sent - 7.5) < 1e-9,
+          (ok, sent))
+    for tag, bad in (('V3', '0'), ('V4', -1), ('V5', 150), ('V6', 'abc'), ('V7', float('nan')), ('V8', float('inf'))):
+        ok, sent, ev, c = await with_override(bad)
+        reasons = [json.loads(a[3]).get('reason', '') for a in ev if a[2] == 'open_rejected']
+        check(f'{tag}: riesgo propio {bad!r}: no abre, nada a Bybit y aviso open_rejected con el motivo',
+              ok is False and not c.orders and reasons and 'riesgo propio de la suscripción inválido' in reasons[0],
+              (ok, c.orders, reasons))
+    ok, sent, ev, c = await with_override(None, 0)
+    reasons = [json.loads(a[3]).get('reason', '') for a in ev if a[2] == 'open_rejected']
+    check('V9: sin riesgo propio y riesgo de la configuración 0: no abre y avisa', ok is False and not c.orders
+          and reasons and 'riesgo de la configuración inválido' in reasons[0], (ok, reasons))
+    ok, sent, ev, c = await with_override('100')
+    check('V10: el borde 100 % es válido (lo frena max_leverage, como hoy)', ok and sent is not None and not ev, (ok, sent))
+    r, err = RealTrader.subscription_risk({'risk_override_pct': '', 'config_params': '{"risk_per_trade_pct": 0.5}'})
+    check('V11: riesgo propio vacío = sin riesgo propio; configuración en texto JSON', r == 0.5 and err is None, (r, err))
+    r, err = RealTrader.subscription_risk({'config_params': {}})
+    check('V12: configuración sin la clave: 1 % por defecto (como antes)', r == 1.0 and err is None, (r, err))
+    r, err = RealTrader.subscription_risk({'config_params': '{roto'})
+    check('V13: configuración ilegible: no abre (antes: excepción)', r is None and err and 'ilegible' in err, (r, err))
+
     print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
     sys.exit(1 if fails else 0)
 

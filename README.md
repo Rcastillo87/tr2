@@ -218,6 +218,7 @@ runuser -u postgres -- psql -c "ALTER SYSTEM SET maintenance_work_mem = '256MB'"
 | 11-20 02 | `real_trade_executions` (partes de Bybit de cada operación Real) y `real_trades.executions_status` (MEJ-004, p89) |
 | 11-20 03 | `real_trades.funding`: funding de Bybit separado de la comisión, como Paper (positivo = pagado; R-24, p90) |
 | 11-23 01 | `param_search_runs.sltp`: qué SL/TP prueba cada búsqueda (fixed · auto · both; D-45, p93) |
+| 11-23 02 | `real_strategy_subscriptions.risk_override_pct`: CHECK NULL o 0 < r ≤ 100 (C5-20, D-52, p98) |
 
 ```bash
 # 5. Datos: 2 años de velas (si no se restauró la base)
@@ -372,7 +373,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (75 Python + 30 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (76 Python + 30 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

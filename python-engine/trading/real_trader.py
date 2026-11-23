@@ -1360,6 +1360,30 @@ class RealTrader:
         return None
 
     @staticmethod
+    def subscription_risk(sub: dict) -> tuple[float | None, str | None]:
+        """C5-20: % de riesgo de la operación y, si no es válido, el motivo. El riesgo propio de la suscripción
+        (risk_override_pct) manda sobre el de la configuración (risk_per_trade_pct, 1 % si falta). Válido: número
+        con 0 < r ≤ 100 (la misma regla F-03 del backtest y el CHECK de la base)."""
+        override = sub.get('risk_override_pct')
+        if override is not None and str(override).strip() not in ('', 'None', 'null'):
+            raw, label = override, 'riesgo propio de la suscripción'
+        else:
+            cfg = sub.get('config_params') or {}
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except ValueError:
+                    return None, 'configuración ilegible (no se pudo leer el riesgo por operación)'
+            raw, label = (cfg if isinstance(cfg, dict) else {}).get('risk_per_trade_pct', 1.0), 'riesgo de la configuración'
+        try:
+            pct = float(raw)
+        except (TypeError, ValueError):
+            pct = None
+        if pct is None or not 0 < pct <= 100:   # NaN e infinito tampoco pasan
+            return None, f"{label} inválido ({raw} %): debe ser mayor que 0 y hasta 100"
+        return pct, None
+
+    @staticmethod
     def _risk_size(balance: float, risk_pct: float, price: float, sl: float, max_leverage: float, min_qty: float,
                    qty_step: float) -> float | None:
         """C5-19: tamaño para arriesgar risk_pct del saldo con ese SL, con el tope de apalancamiento y el paso de Bybit.
@@ -1378,6 +1402,15 @@ class RealTrader:
         symbol   = sub['symbol']
         interval = sub['interval']
 
+        # 0. Riesgo válido (C5-20): uno inválido no abre y avisa (antes: 0 o negativo dejaba de abrir en silencio y un
+        #    valor absurdo solo lo frenaba max_leverage)
+        risk_pct, risk_error = self.subscription_risk(sub)
+        if risk_error:
+            logger.error(f"[REAL] {symbol}: {risk_error} — no se abre (suscripción {sub.get('subscription_id')})")
+            await emit_event(self.pool, sub['broker_account_id'], 'open_rejected', symbol=symbol, side=side,
+                             strategy=sub['strategy'], reason=f"{risk_error}; no se envió la orden")
+            return False
+
         # 1. Balance real antes de abrir
         balance = await client.get_balance()
         if balance is None or balance <= 0:
@@ -1394,18 +1427,8 @@ class RealTrader:
         sl_pct = signal_sl_pct if signal_sl_pct is not None else float(strategy_instance.sl_pct)
         sl, tp1, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct, signal_tp_pct, signal_be_pct)
 
-        # 3. Calcular tamaño con balance real y riesgo configurado
-        # risk_override_pct de la suscripcion tiene prioridad sobre config
-        risk_override = sub.get('risk_override_pct')
-        if risk_override is not None and str(risk_override).strip() not in ('', 'None', 'null'):
-            risk_pct = float(risk_override)
-        else:
-            config_params = sub.get('config_params') or {}
-            if isinstance(config_params, str):
-                import json as _j
-                config_params = _j.loads(config_params)
-            risk_pct = float(config_params.get('risk_per_trade_pct', 1.0))
-        logger.debug(f"[REAL] Risk calculado: {risk_pct}% (override={risk_override}) para {sub.get('symbol')}")
+        # 3. Calcular tamaño con balance real y el riesgo validado en el paso 0 (el de la suscripción manda)
+        logger.debug(f"[REAL] Riesgo {risk_pct} % (propio={sub.get('risk_override_pct')}) para {symbol}")
         risk_amount = balance * (risk_pct / 100)
         sl_distance = abs(entry_price_for_calc - sl)  # mismo precio con el que se calculó el SL
         raw_size    = (risk_amount / sl_distance) if sl_distance > 0 else 0

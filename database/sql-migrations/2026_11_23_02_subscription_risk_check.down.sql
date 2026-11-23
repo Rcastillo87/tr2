@@ -1,0 +1,1 @@
+ALTER TABLE real_strategy_subscriptions DROP CONSTRAINT IF EXISTS real_strategy_subscriptions_risk_override_check;

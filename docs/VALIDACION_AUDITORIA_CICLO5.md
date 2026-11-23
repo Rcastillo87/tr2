@@ -13,7 +13,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 8 | C5-20 | P1 | Riesgo por suscripción y modo One-Way | Pendiente de validar |
+| 8 | C5-20 | P1 | Riesgo por suscripción y modo One-Way | Implementado en p98 (D-52) |
 | 9 | C5-01 | P1 | Integridad del libro de ejecuciones y costos | Pendiente de validar |
 | 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Pendiente de validar |
 | 11 | C5-02 | P1 | Protección lookahead ante errores | Pendiente de validar |
@@ -30,7 +30,29 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-19 · Tamaño con saldo y precio desactualizados (P1) — **Válido en la forma; impacto medido despreciable** · Implementado en p97
+### C5-20 · Riesgo por suscripción y modo One-Way (P1) — **One-Way: ya corregido · riesgo propio: válido en parte (latente)** · Implementado en p98 (D-52)
+- **One-Way:** D-11 / REAL-08 (03-nov, p07). La orden de apertura no lleva `positionIdx`: en Hedge Bybit la rechaza
+  entera (nunca queda una posición a medias) y el aviso `open_rejected` explica cómo pasar a One-Way. El bot no cambia
+  el modo. Servidor: 0 `open_rejected` en la historia y 0 rechazos por modo en `engine.log`.
+- **Riesgo propio (`real_strategy_subscriptions.risk_override_pct`):** reemplaza el `risk_per_trade_pct` de la
+  configuración sin validar nada (ni en Laravel ni en el motor ni en la base: solo el CHECK de `status`). No tiene
+  pantalla: solo se fija a mano en la base. Con 0 o negativo la suscripción deja de abrir en silencio (solo un warning
+  en el log); con un valor absurdo solo lo frena `max_leverage`. El % de la configuración sí se valida (F-03, 0 < r ≤ 100)
+  porque viene de un backtest firmado.
+- **Servidor (lectura 23-nov 18:20 UTC):** 11 suscripciones de la cuenta 11 (6 activas, 5 pausadas), **ninguna** con
+  riesgo propio; 13 configuraciones activas, todas con 1 %. 0 avisos de tamaño ≤ 0. El defecto no ocurrió nunca.
+- Nota aparte: 3 suscripciones pausadas (96 HYPE, 98 1000PEPE, 111 LINK H4) no muestran riesgo de configuración (sin
+  configuración o sin la clave): pausadas no abren; si se reactivaran usarían 1 % por defecto.
+- **Fix (D-52, «Blindarlo» 23-nov):** `RealTrader.subscription_risk(sub)` valida el riesgo (propio o de la configuración;
+  1 % si falta la clave) con 0 < r ≤ 100 **antes de cualquier llamada a Bybit**; inválido, no numérico o configuración
+  ilegible → no abre y `open_rejected` con el motivo. Base: CHECK `real_strategy_subscriptions_risk_override_check`
+  (NULL o 0 < r ≤ 100; migración `2026_11_23_02`, con bajada).
+- **Prueba:** `real_sizing_test` V1–V13 (código anterior: 3 FALLOS y excepción con un valor no numérico);
+  `subscription_risk_check_test` (nueva: migración contra PostgreSQL en transacción revertida: acepta NULL/0,01/1/100,
+  rechaza 0/−1/100,01, idempotente y reversible). Mutaciones 9/9 (una décima, `isfinite`, resultó redundante: se
+  quitó). Regresión 76 Python + 30 PHP en TODO OK.
+
+### C5-19 · Tamaño con saldo y precio desactualizados (P1) — **Válido en la forma; impacto medido despreciable** · Instalado en p97 (`3478b66`)
 - Confirmado en código: el tamaño se calcula con la primera lectura; si el precio se mueve > 0,5 % se recalculan SL/TP
   pero no el tamaño; el saldo releído solo se guarda. Como el SL va en %, el riesgo real se desvía en la proporción del
   movimiento (1 % de movimiento → 1,01 % de riesgo). El redondeo al paso de Bybit es hacia abajo (solo baja el riesgo).
@@ -40,7 +62,7 @@
   paso; `_risk_size`); la fila guarda el tamaño enviado; el historial `opened` guarda `risk_planned_pct` y
   `risk_real_pct` (con el fill y el SL final). Las ejecuciones parciales: C5-14 y el libro de p89.
 
-### C5-10 · SL/TP tras 34040 sin confirmar (P1) — **Válido (riesgo bajo)** · Implementado en p97
+### C5-10 · SL/TP tras 34040 sin confirmar (P1) — **Válido (riesgo bajo)** · Instalado en p97 (`3478b66`)
 - Confirmado: 34040 («not modified») se tomaba como éxito sin leer la posición. Atenuante: el monitor compara cada
   minuto los niveles de Bybit con la base y los realinea (R-17), así que una diferencia duraba a lo sumo un minuto.
 - **Fix:** con 34040 se leen los niveles de la posición (`confirm_levels`, tolerancia de un paso de precio, la misma del
@@ -118,3 +140,5 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-16 | `orphaned` en el máximo; D-50; conciliación cada minuto; aviso a los 15 min | p95 `859f817` | 0 operaciones dudosas tras instalar. Falta DEMO-07 y DEMO-12 |
 | C5-17 | `protected` según Bybit al adoptar | p95 `859f817` | Regresión en el servidor. Falta DEMO-03/05 |
 | C5-18 | Sin saldo inicial del mes no se abre (D-51); aviso a los 10 min | p96 `038e8d9` | Cuenta 11 con saldo de 2026-11 (178.118,23): sin bloqueo. Falta DEMO-08 |
+| C5-19 | Tamaño recalculado con el último precio y saldo si el precio se movió > 0,5 %; riesgo previsto y real en el historial | p97 `3478b66` | Regresión en el servidor; impacto histórico medido 0,9989–1,0013 % (13 trades). Revisar `risk_real_pct` en las próximas aperturas |
+| C5-10 | Tras 34040 se lee la posición y solo se acepta si SL/TP coinciden | p97 `3478b66` | Regresión en el servidor. Falta DEMO-03 |

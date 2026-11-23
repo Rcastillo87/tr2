@@ -21,7 +21,19 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-20: riesgo por suscripción blindado y modo One-Way (p98, D-52) — 23-nov
+- **One-Way:** ya corregido (D-11, REAL-08): Hedge = apertura rechazada entera + aviso; 0 rechazos en la historia.
+- **Riesgo propio por suscripción:** sin validación ni pantalla; 0 o negativo = deja de abrir en silencio. Lectura: 0 de
+  11 suscripciones lo usan; todas las configuraciones activas con 1 %. Latente.
+- **Fix (p98, D-52 «Blindarlo»):** el motor valida el riesgo (0 < r ≤ 100) antes de tocar Bybit; inválido → no abre y
+  avisa `open_rejected`. CHECK en la base (migración `2026_11_23_02`). Vuelta atrás: `p98_revertir.sh` (también quita
+  el CHECK).
+- **Prueba:** `real_sizing_test` V1–V13, `subscription_risk_check_test` (nueva, PostgreSQL); código anterior 3 FALLOS +
+  excepción; mutaciones 9/9; regresión 76 + 30 en TODO OK.
+
 ### Ciclo 5 · C5-19 y C5-10: tamaño con el último precio y SL/TP confirmados tras 34040 (p97) — 23-nov
+- **Instalado:** `3478b66` (23-nov 17:46 UTC): regresión 75 + 30, motor y Horizon reiniciados, 0 errores; sin
+  operaciones Real abiertas (no aplicaba esperar tick Real); 0 dudosas; cuenta 11 con saldo del mes.
 - **C5-19 (válido en la forma, impacto despreciable):** medido en las 13 operaciones Real: riesgo real 0,9989–1,0013 %
   contra 1 %. Fix: con movimiento > 0,5 % se recalcula el tamaño (último precio y saldo); el historial guarda el riesgo
   previsto y el real.
