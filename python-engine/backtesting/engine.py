@@ -367,7 +367,7 @@ class BacktestEngine:
         s = self.strategy
         logger.info(f"Iniciando backtest: {s.name} | {s.symbol} | {len(self.df)} velas")
 
-        df = s.compute_signals(self.df)
+        df = s.with_levels(s.compute_signals(self.df))   # D-45: niveles automáticos (si el modo está activo)
         n = len(df)
         times  = pd.to_datetime(df['time'])
         opens  = df['open'].to_numpy(dtype=float)
@@ -387,6 +387,8 @@ class BacktestEngine:
             m_full = (m_hi - m_lo) >= int(self.interval_minutes)
         signals = df['signal'].fillna(0).astype(int).to_numpy()
         signal_sl = df['signal_sl_pct'].to_numpy(dtype=float) if 'signal_sl_pct' in df.columns else None
+        signal_tp = df['signal_tp_pct'].to_numpy(dtype=float) if 'signal_tp_pct' in df.columns else None
+        signal_be = df['signal_be_pct'].to_numpy(dtype=float) if 'signal_be_pct' in df.columns else None
 
         if self.regime_data:
             regimes = np.array([self.regime_data.get(str(t), "TRENDING") for t in df['time']])
@@ -447,13 +449,15 @@ class BacktestEngine:
                     entry = self._fill(opens[i], side, is_entry=True)
                     sl_pct = signal_sl[i - 1] if signal_sl is not None and not np.isnan(signal_sl[i - 1]) else s.sl_pct
                     sl = round(entry * (1 - sl_pct / 100) if side == 'long' else entry * (1 + sl_pct / 100), 8)
-                    tp1 = s.calculate_tp1(entry, side)
+                    tp_pct = signal_tp[i - 1] if signal_tp is not None and not np.isnan(signal_tp[i - 1]) else None
+                    be_pct = signal_be[i - 1] if signal_be is not None and not np.isnan(signal_be[i - 1]) else None
+                    tp1 = s.calculate_tp1(entry, side, tp_pct)
                     size = self._position_size(entry, sl)
                     if size > 0:
                         pos = {
                             'side': side, 'entry_price': entry, 'entry_time': bar_time, 'entry_bar': i,
                             'sl': sl, 'tp1': tp1,
-                            'be_level': s.calculate_breakeven(entry, side),
+                            'be_level': s.calculate_breakeven(entry, side, be_pct),
                             'be_activated': False, 'trailing_applied': False, 'size': size, 'regime': regime,
                             'vol_widened': False,
                         }

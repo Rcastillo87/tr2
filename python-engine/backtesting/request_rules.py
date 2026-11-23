@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 RULES = json.loads((Path(__file__).with_name('request_rules.json')).read_text(encoding='utf-8'))
+AUTO_LEVEL_FIELDS = ('sl_tp_mode', 'sl_atr_mult', 'tp_r_mult', 'be_r_mult', 'sl_min_pct', 'sl_max_pct')   # D-45
 
 _BOUNDS = (('gt', lambda v, x: v > x, 'mayor que'), ('ge', lambda v, x: v >= x, 'mayor o igual que'),
            ('lt', lambda v, x: v < x, 'menor que'), ('le', lambda v, x: v <= x, 'menor o igual que'))

@@ -43,7 +43,10 @@ class FakeConn:
                 return []
             t = a[1].replace(second=0, microsecond=0) + timedelta(minutes=1)
             out = []
-            while t <= max(given):   # hasta el último minuto del caso (sin cola: el último precio es el del caso)
+            # R-22 (p83): un minuto es final cuando la base ya tiene el siguiente; en producción el collector siempre lo
+            # escribe. Se agrega un minuto plano después del último del caso, salvo si ese minuto aún no existe.
+            last = max(given) + timedelta(minutes=1) if max(given) + timedelta(minutes=1) <= a[2] else max(given)
+            while t <= last:
                 out.append(given.get(t, {'time': t, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}))
                 t += timedelta(minutes=1)
             return out
@@ -268,3 +271,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+    sys.exit(0 if fails == 0 else 1)   # p92: antes salía 0 con fallos y la regresión no los veía

@@ -76,3 +76,4 @@ for v in (11,13):
 s=Sig(P); s.idx={10}; t=BacktestEngine(s,df,minute_df=mdf.sort_values('time')).run()['trades'][0]
 check('1m: TP alcanzado antes que el SL en el tiempo', t['exit_reason']=='take_profit_1', t['exit_reason'])
 print('\nRESULTADO:', 'TODO OK' if fails==0 else f'{fails} FALLO(S)')
+sys.exit(0 if fails == 0 else 1)   # p92: la regresión mira el código de salida

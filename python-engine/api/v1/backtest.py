@@ -66,6 +66,13 @@ class BacktestRequest(BaseModel):
     trailing_distance_pct:  float                = 1.0
     trailing_activation_buffer_pct: float         = 0.0
     trailing_atr_mult:      float                = 2.0
+    # D-45: SL/TP/BE automáticos por ATR (None = no enviado: manda el JSON de la estrategia o el default 'fixed')
+    sl_tp_mode:             Optional[str]        = None  # None | "fixed" | "atr"
+    sl_atr_mult:            Optional[float]      = None
+    tp_r_mult:              Optional[float]      = None
+    be_r_mult:              Optional[float]      = None
+    sl_min_pct:             Optional[float]      = None
+    sl_max_pct:             Optional[float]      = None
     close_on_opposite:      bool                 = False
     exit_on_opposite:       bool                 = False
     allow_short:            bool                 = True
@@ -105,6 +112,9 @@ class BacktestRequest(BaseModel):
     def _valid_ranges(self):
         """F-03: rechaza valores imposibles (mismas reglas que Laravel: backtesting/request_rules.json)."""
         errs = request_rules.errors(self.model_dump())
+        # D-45: las mismas reglas para esas claves escritas en el JSON de la estrategia (hoy se activan desde ahí)
+        nested = {k: v for k, v in (self.strategy_config or {}).items() if k in request_rules.AUTO_LEVEL_FIELDS}
+        errs += [e for e in request_rules.errors(nested) if e not in errs]
         if errs:
             raise ValueError(' '.join(errs))
         return self

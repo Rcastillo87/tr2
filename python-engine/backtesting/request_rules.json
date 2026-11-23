@@ -161,6 +161,50 @@
         "close",
         "widen"
       ]
+    },
+    "sl_tp_mode": {
+      "label": "SL/TP",
+      "type": "enum",
+      "values": [
+        null,
+        "fixed",
+        "atr"
+      ]
+    },
+    "sl_atr_mult": {
+      "label": "SL automático: veces el ATR",
+      "type": "number",
+      "gt": 0,
+      "le": 20,
+      "nullable": true
+    },
+    "tp_r_mult": {
+      "label": "TP automático: veces el SL",
+      "type": "number",
+      "gt": 0,
+      "le": 20,
+      "nullable": true
+    },
+    "be_r_mult": {
+      "label": "Break-even automático: veces el SL",
+      "type": "number",
+      "gt": 0,
+      "le": 20,
+      "nullable": true
+    },
+    "sl_min_pct": {
+      "label": "SL automático mínimo (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100,
+      "nullable": true
+    },
+    "sl_max_pct": {
+      "label": "SL automático máximo (%)",
+      "type": "number",
+      "gt": 0,
+      "lt": 100,
+      "nullable": true
     }
   },
   "cross": [
@@ -176,6 +220,12 @@
       "equals": "stepped",
       "needs": "trailing_steps",
       "message": "El trailing escalonado necesita pasos (trailing_steps) en el JSON de la estrategia: sin pasos no hace nada."
+    },
+    {
+      "rule": "le",
+      "a": "sl_min_pct",
+      "b": "sl_max_pct",
+      "message": "El SL automático mínimo no puede ser mayor que el máximo."
     }
   ]
 }

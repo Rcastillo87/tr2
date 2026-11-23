@@ -22,6 +22,7 @@ from collectors.funding_collector import load_funding
 from backtesting.strategies.loader import build_strategy
 from backtesting.strategies.base_strategy import opposite_exit_rule
 from backtesting.exit_reasons import stop_exit_reason
+from backtesting import auto_levels
 
 load_dotenv()
 
@@ -87,6 +88,12 @@ def final_minutes(bars: list, now: datetime) -> list:
         return bars
     return bars[:-1]
 
+
+
+def snapshot_with_levels(params: dict, sl_pct, tp_pct, be_pct) -> dict:
+    """Parámetros congelados del trade + los % de SL/TP/BE de la señal (D-45), si los hubo (si no, igual que antes)."""
+    lv = {k: v for k, v in (('signal_sl_pct', sl_pct), ('signal_tp_pct', tp_pct), ('signal_be_pct', be_pct)) if v is not None}
+    return {**params, **lv} if lv else params
 
 class PaperTrader:
 
@@ -378,7 +385,8 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     async def open_trade(self, config_id: int, strategy_instance, side: str, entry_price: float, regime: str,
-                         signal_sl_pct: float | None = None):
+                         signal_sl_pct: float | None = None, signal_tp_pct: float | None = None,
+                         signal_be_pct: float | None = None):
         cfg          = self.config_map[config_id]
         cfg_params   = self._get_params_for(config_id)  # los mismos con los que se construyó strategy_instance
         display_name = cfg['display_name']
@@ -391,8 +399,8 @@ class PaperTrader:
                        else entry_price * (1 + signal_sl_pct / 100), 8)
         else:
             sl, _ = strategy_instance.calculate_sl_tp(entry_price, side)
-        be     = strategy_instance.calculate_breakeven(entry_price, side)
-        tp     = strategy_instance.calculate_tp1(entry_price, side)
+        be     = strategy_instance.calculate_breakeven(entry_price, side, signal_be_pct)   # D-45: de la señal si la hay
+        tp     = strategy_instance.calculate_tp1(entry_price, side, signal_tp_pct)
         risk_pct = cfg_params.get('risk_per_trade_pct',
                    self.default_params.get('risk_per_trade_pct', 1.0))
         risk_amount = VIRTUAL_BALANCE * (risk_pct / 100)
@@ -420,7 +428,7 @@ class PaperTrader:
                     """,
                     display_name, config_id, symbol, interval, side, entry_price, sl, tp, be,
                     size, regime, datetime.now(timezone.utc).replace(tzinfo=None),
-                    json.dumps(cfg_params)
+                    json.dumps(snapshot_with_levels(cfg_params, signal_sl_pct, signal_tp_pct, signal_be_pct))
                 )
         except asyncpg.UniqueViolationError:
             logger.warning(f"[PAPER] {self._label(cfg)}: ya existe una posición abierta (tick concurrente); no se duplica")
@@ -875,7 +883,7 @@ class PaperTrader:
                     decide('candle_pending', pending_text(symbol, pending, 'vela H4 de BTC'))
                     continue
             strategy.signal_trace = []   # señal de la última vela tras la estrategia y cada filtro (solo observa)
-            df = strategy.compute_signals(df)
+            df = strategy.with_levels(strategy.compute_signals(df))   # D-45: niveles automáticos (si el modo está activo)
 
             last_closed = df.iloc[-1]  # df ya solo contiene velas cerradas
             signal = int(last_closed['signal'])
@@ -947,9 +955,8 @@ class PaperTrader:
                 decide('no_price', f"{symbol}: error obteniendo precio")
                 continue
 
-            raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
-            signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
-            await self.open_trade(config_id, strategy, side, entry_price, regime, signal_sl_pct)
+            lv = auto_levels.row_levels(last_closed)   # SL de la estrategia o automático; TP/BE automáticos (D-45)
+            await self.open_trade(config_id, strategy, side, entry_price, regime, lv['sl'], lv['tp'], lv['be'])
             decide('reversal' if reversal else 'opened',
                    f"{symbol}: {'REVERSA' if reversal else 'ABIERTA'} {side} @ {entry_price} (regime={regime})")
 

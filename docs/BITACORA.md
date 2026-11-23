@@ -21,7 +21,30 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### SL/TP automáticos por ATR, fase 1 (p92, D-45, D-49) — 20-nov
+- **Decisiones (D-45):** SL % = k × ATR(14)/cierre de la vela de la señal, topes mínimo/máximo ajustables; TP = R × SL;
+  break-even en «veces el SL»; orden automático → SL de la estrategia → fijo. Lectura previa: de las 8 estrategias,
+  solo TrianguloRuptura propone su SL (`signal_sl_pct`).
+- **Código:** `backtesting/auto_levels.py` (un cálculo para los tres) escribe `signal_sl_pct` / `signal_tp_pct` /
+  `signal_be_pct` por vela; `BaseStrategy.with_levels` lo llaman el backtest, Paper y Real después de
+  `compute_signals` (el caché de señales del buscador no cambia). Backtest, Paper (`open_trade`) y Real (`open_trade`,
+  recálculo con el precio y con el `avgPrice`, snapshot, adopción de la conciliación) aplican los % al precio de
+  entrada; sin % de la señal, TP y BE fijos como antes. Campos en `request_rules.json` (Laravel y Python) y en
+  `BacktestRequest` (solo si se envían), validados también dentro del JSON de la estrategia.
+- **Vuelta atrás (D-49):** modo `fixed` por defecto; `SLTP_AUTO_ENABLED=false` en `python-engine/.env` + reinicio del
+  motor lo apaga en todo el sistema; `p92_revertir.sh` deja el código como antes. Sin migraciones.
+- **Hallazgo en la regresión:** `paper_parity_test` salía con código 0 aunque fallaran casos, y desde p83 (R-22) 10
+  casos fallaban sin que la regresión lo viera: el fixture no tenía el minuto siguiente que R-22 exige (en producción
+  el collector siempre lo escribe; el código de Paper estaba bien). Corregido el fixture y el código de salida de 4
+  pruebas (`paper_parity`, `real_parity`, `strategy_parity`, `engine_rules`); `auto_levels_test` E1 vigila que toda
+  prueba de la lista salga ≠ 0 si falla. El doble de `open_trade` de `real_opposite_test` pasa a la firma real.
+- **Prueba:** `auto_levels_test.py` (nueva, 25 casos: cálculo, topes, orden, sin ATR, interruptor, sin mirar el
+  futuro, backtest fijo idéntico, niveles iguales en backtest / Paper / Real, snapshot y adopción, validación).
+  Código anterior: FALLA. Mutaciones 12/12. Regresión **74 Python + 29 PHP** en TODO OK.
+
 ### Documentación alineada y estados de Real (p91) — 20-nov
+- **Instalado:** `6073506` (20-nov). Verificación de p90: 12/12 con funding, comisiones 389,78, funding 1,7575,
+  descuadre 0,0000.
 - La lista «Documentación desalineada» de la validación estaba vieja en 3 de 4 puntos (verificado: el prompt ya era
   V7.4, la tabla de migraciones del README ya estaba en orden y el `.env.example` ya dice «NO poner 600»).
 - `PROMPT_MAESTRO` → **V7.5**: cambios p81–p90, fuentes únicas nuevas, 8 lecciones nuevas y pendientes al día (se

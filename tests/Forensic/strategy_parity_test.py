@@ -71,3 +71,4 @@ except ValueError as e:
     check('sin código -> error explícito', 'strategy_code' in str(e), str(e))
 
 print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
+sys.exit(0 if fails == 0 else 1)   # p92: la regresión mira el código de salida

@@ -118,7 +118,8 @@ class Exchange:
 def mk_trader(store, ex):
     tr = RealTrader(Pool(store))
 
-    async def _open(sub, strategy, side, price, regime, client, signal_sl_pct=None):
+    async def _open(sub, strategy, side, price, regime, client, signal_sl_pct=None, signal_tp_pct=None,
+                    signal_be_pct=None):   # misma firma que RealTrader.open_trade (D-45, p92)
         ex.orders.append(('open', side))
         store.trades.append({'id': store.nid, 'subscription_id': sub['subscription_id'], 'symbol': sub['symbol'],
                              'interval': sub['interval'], 'side': side, 'entry_price': price, 'status': 'open',

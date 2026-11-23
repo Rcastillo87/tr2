@@ -146,6 +146,17 @@ class BaseStrategy(ABC):
         self.volatility_atr_multiplier  = params.get('volatility_atr_multiplier', 2.5)
         self.volatility_widen_pct       = params.get('volatility_widen_pct', 1.0)
 
+        # D-45: SL/TP/BE automáticos por ATR (opcional; 'fixed' o ausente = el SL/TP/BE fijo en % de siempre)
+        from backtesting import auto_levels
+        self.sl_tp_mode = params.get('sl_tp_mode') or 'fixed'
+        for k, v in auto_levels.DEFAULTS.items():
+            setattr(self, k, params.get(k) if params.get(k) is not None else v)
+
+    def with_levels(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Señales + niveles automáticos por vela (D-45). Lo llaman el backtest, Paper y Real tras compute_signals."""
+        from backtesting import auto_levels
+        return auto_levels.apply(df, self)
+
     def allows_side(self, side: str) -> bool:
         """Única regla de dirección de entrada para backtest, paper y real: el Short solo si allow_short."""
         return side == 'long' or self.allow_short
@@ -307,19 +318,23 @@ class BaseStrategy(ABC):
             tp = entry_price * (1 - self.tp_pct / 100)
         return round(sl, 8), round(tp, 8)
 
-    def calculate_tp1(self, entry_price: float, side: str) -> float | None:
-        """Nivel de take profit (TP1) desde un precio; None si la estrategia no define tp_pct."""
-        if self.tp_pct is None:
+    def calculate_tp1(self, entry_price: float, side: str, pct: float | None = None) -> float | None:
+        """Nivel de take profit (TP1) desde un precio; None si la estrategia no define tp_pct. `pct`: el de la señal
+        (D-45) en lugar del fijo."""
+        if pct is None:
+            pct = self.tp_pct
+        if pct is None:
             return None
-        pct = self.tp_pct / 100
+        pct = pct / 100
         return round(entry_price * (1 + pct) if side == 'long' else entry_price * (1 - pct), 8)
 
-    def calculate_breakeven(self, entry_price: float, side: str) -> float:
-        """Calcula el precio al que se activa el break-even."""
+    def calculate_breakeven(self, entry_price: float, side: str, pct: float | None = None) -> float:
+        """Calcula el precio al que se activa el break-even. `pct`: el de la señal (D-45) en lugar del fijo."""
+        pct = self.be_pct if pct is None else pct
         if side == 'long':
-            return entry_price * (1 + self.be_pct / 100)
+            return entry_price * (1 + pct / 100)
         else:
-            return entry_price * (1 - self.be_pct / 100)
+            return entry_price * (1 - pct / 100)
 
     def calculate_trailing_sl(self, entry_price: float, side: str, current_price: float,
                                current_sl: float, current_atr: float = None) -> float:

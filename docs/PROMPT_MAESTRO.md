@@ -200,7 +200,7 @@ Estado de cada punto y lo que falta: `docs/VALIDACION_AUDITORIA_13NOV.md`. Regla
 
 ### Cambios del 19–20 nov 2026 (p81–p90) **[V7.5]**
 Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES_DUENO.md` (D-43 a D-47).
-- **Fuentes únicas nuevas (usarlas, no duplicar):** `backtesting/lookahead.py` (`guard_code`, `audit`: si una estrategia mira el futuro), `paper_trader.final_minutes` (minuto de 1m final), `trading/execution_ledger.py` (`record_trade`, `split_costs`, `TRADE_COLS`), `User::canViewPaperTrading` / `canViewAnalysisTools` (permisos por rol), columna generada `strategy_code_md5`.
+- **Fuentes únicas nuevas (usarlas, no duplicar):** `backtesting/auto_levels.py` + `BaseStrategy.with_levels` (SL/TP/BE automáticos por ATR, D-45, p92; interruptor `SLTP_AUTO_ENABLED`, D-49), `backtesting/lookahead.py` (`guard_code`, `audit`: si una estrategia mira el futuro), `paper_trader.final_minutes` (minuto de 1m final), `trading/execution_ledger.py` (`record_trade`, `split_costs`, `TRADE_COLS`), `User::canViewPaperTrading` / `canViewAnalysisTools` (permisos por rol), columna generada `strategy_code_md5`.
 - **Comparador (p81):** `tools/analysis/compare_paper_vs_backtest.py --config <id> [--latest-only]`: hasta el último día completo (ayer UTC), un tramo y un backtest por snapshot de parámetros (límite = último cambio en `strategy_config_changes`), emparejamiento por (lado, vela de entrada), motivo y hora exacta de salida, PnL %; código 0/1/2; muestra el código de la estrategia («código XXXXXXXX», p86).
 - **VWAP Tendencia (p82, D-43):** métricas y estrellas guardadas de sus 24 backtests y 13 configs recalculadas con el código corregido (el viejo reproducía exacto lo guardado; anteriores en `metrics.r21_previous`).
 - **Estrategias que miran el futuro (p84–p85, D-44):** `lookahead.guard_code` en `/v1/strategies/validate` (400 «mira el futuro» al guardar) y revisión diaria de estrategias y configs activas (`strategies:lookahead-audit` 04:15 Bogotá, aviso en «Validación»). A mano: `tools/analysis/lookahead_probe.py [--control <código>]`. Las 8 estrategias actuales: limpias.
@@ -263,6 +263,7 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 | Totales dados de memoria | Sumar con código antes de escribir una cifra (R-24: los totales de funding salieron mal la primera vez). |
 | «Lista de pendientes» con puntos ya resueltos | Verificar cada punto contra el código y los documentos antes de proponerlo (código muerto de p72, versión del prompt, orden del README y permisos del `.env` ya estaban bien). |
 | Funding «sin liquidaciones» que sí las tenía | El intervalo de funding depende de la moneda (`instruments-info.fundingInterval`; ENA cada 4 h). `/v5/market/funding/history` incluye la liquidación de `startTime`: una operación abierta en ese segundo no la paga. |
+| Prueba que «pasaba» con 10 fallos (`paper_parity_test`, desde p83) | La regresión mira el **código de salida**: toda prueba termina con `sys.exit(0 if fails == 0 else 1)`; `auto_levels_test` E1 lo vigila en la lista oficial. Un doble de prueba o un fixture viejo (sin el minuto siguiente de R-22) puede esconder fallos. |
 | La comisión Real incluía el funding | El closed-pnl de Bybit descuenta comisiones **y** funding: bruto − neto no es la comisión (R-24). |
 
 ---
@@ -274,7 +275,7 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 > con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.5 (si no, pedirle que las reemplace).
 
 1. **Del dueño:** nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43). Después, informe por config (backtest corregido + Paper real + búsqueda nueva).
-2. **SL/TP automáticos opcionales (D-45):** plan presentado el 20-nov; se construye cuando el dueño lo apruebe (maqueta del formulario primero).
+2. **SL/TP automáticos opcionales (D-45):** fase 1 hecha en p92 (cálculo en los tres motores, desde el JSON de la estrategia). Falta: maqueta del formulario, el buscador probando k y R, y la comparación con el fijo.
 3. **Walk-forward real (D-38 3B):** maqueta primero.
 4. **Infraestructura:** `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema. Respaldo fuera del VPS: **descartado por el dueño** (D-48).
 5. **Pantallas con maqueta:** funding en Paper y Real, `cross` en la búsqueda, «promedio por moneda», separación maestra/config/suscripción, «código desactualizado».

@@ -288,3 +288,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+    sys.exit(0 if fails == 0 else 1)   # p92: antes salía 0 con fallos y la regresión no los veía

@@ -40,6 +40,7 @@ from collectors.bars import bars_frame
 from collectors.broker_resolver import closed_bars, final_closed_bars, interval_delta, pending_text, resolve_live_broker
 from indicators.regime_indicators import calculate_atr, calculate_adx, calculate_bb_width, classify_regime
 from backtesting.strategies.loader import build_strategy
+from backtesting import auto_levels
 from backtesting.strategies.base_strategy import opposite_exit_rule, NATIVE_TRAILING_MIN_BUFFER_PCT
 from backtesting.exit_reasons import STOP_LOSS, stop_exit_reason
 from trading.broker_events import emit_event
@@ -1001,17 +1002,21 @@ class RealTrader:
             return None
 
     @staticmethod
-    def _effective_sl_pct(strategy, params: dict | None) -> float:
-        """SL propuesto por la señal al abrir (si lo hubo); si no, el sl_pct de la config."""
-        sig = (params or {}).get('signal_sl_pct')
-        return float(sig) if sig is not None else float(strategy.sl_pct)
+    def _effective_levels(strategy, params: dict | None) -> tuple:
+        """(sl %, tp %, be %) con que se abrió: los de la señal (estrategia o automáticos, D-45) si los hubo; si no,
+        sl_pct de la config y None (= TP y BE fijos de la config)."""
+        p = params or {}
+        sig = lambda k: float(p[k]) if p.get(k) is not None else None   # noqa: E731
+        sl = sig('signal_sl_pct')
+        return (sl if sl is not None else float(strategy.sl_pct)), sig('signal_tp_pct'), sig('signal_be_pct')
 
     @staticmethod
-    def _levels(strategy, price: float, side: str, sl_pct: float) -> tuple:
-        """(sl, tp, be) desde un precio de referencia."""
+    def _levels(strategy, price: float, side: str, sl_pct: float, tp_pct: float | None = None,
+                be_pct: float | None = None) -> tuple:
+        """(sl, tp, be) desde un precio de referencia. tp_pct / be_pct None = los fijos de la config."""
         sl = round(price * (1 - sl_pct / 100) if side == 'long' else price * (1 + sl_pct / 100), 8)
-        be = round(strategy.calculate_breakeven(price, side), 8)
-        return sl, strategy.calculate_tp1(price, side), be
+        be = round(strategy.calculate_breakeven(price, side, be_pct), 8)
+        return sl, strategy.calculate_tp1(price, side, tp_pct), be
 
     async def _minute_extremes_since_entry(self, trade: dict) -> tuple[float | None, float | None]:
         """(máximo, mínimo) de las velas de 1m CERRADAS desde la entrada (mismo dato que usan backtest y paper)."""
@@ -1309,7 +1314,8 @@ class RealTrader:
 
     async def open_trade(self, sub: dict, strategy_instance, side: str,
                           entry_signal_price: float, regime: str, client: BybitClient,
-                          signal_sl_pct: float | None = None) -> bool:
+                          signal_sl_pct: float | None = None, signal_tp_pct: float | None = None,
+                          signal_be_pct: float | None = None) -> bool:
         symbol   = sub['symbol']
         interval = sub['interval']
 
@@ -1327,7 +1333,7 @@ class RealTrader:
             logger.warning(f"[REAL] Precio actual ({current_price}) difiere >2% del precio de señal ({entry_signal_price}) para {symbol}")
 
         sl_pct = signal_sl_pct if signal_sl_pct is not None else float(strategy_instance.sl_pct)
-        sl, tp1, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct)
+        sl, tp1, be = self._levels(strategy_instance, entry_price_for_calc, side, sl_pct, signal_tp_pct, signal_be_pct)
 
         # 3. Calcular tamaño con balance real y riesgo configurado
         # risk_override_pct de la suscripcion tiene prioridad sobre config
@@ -1409,7 +1415,9 @@ class RealTrader:
                 link_id,
                 # Parámetros congelados de ESTA posición (el pool codifica jsonb desde dict)
                 {**_cfg, 'symbol': symbol, 'interval': interval, 'risk_per_trade_pct': risk_pct,
-                 'signal_sl_pct': signal_sl_pct},
+                 'signal_sl_pct': signal_sl_pct,
+                 **({'signal_tp_pct': signal_tp_pct} if signal_tp_pct is not None else {}),
+                 **({'signal_be_pct': signal_be_pct} if signal_be_pct is not None else {})},
             )
 
         # 6. Recalcular SL/TP con precio actual justo antes de enviar
@@ -1418,7 +1426,7 @@ class RealTrader:
         if current_price and abs(current_price - entry_signal_price) / entry_signal_price > 0.005:
             # Precio movio mas de 0.5% — recalcular SL/TP con precio actual
             logger.warning(f"[REAL] Precio movio de {entry_signal_price} a {current_price} — recalculando SL/TP")
-            sl, tp1, be = self._levels(strategy_instance, current_price, side, sl_pct)
+            sl, tp1, be = self._levels(strategy_instance, current_price, side, sl_pct, signal_tp_pct, signal_be_pct)
             entry_signal_price = current_price
         # Actualizar SL/TP en DB si fueron recalculados
         async with self.pool.acquire() as conn:
@@ -1514,7 +1522,7 @@ class RealTrader:
 
         # 7b. Calcular SL/TP reales con avgPrice real de ejecucion
         avg_price = filled_price
-        sl, tp1, be = self._levels(strategy_instance, avg_price, side, sl_pct)
+        sl, tp1, be = self._levels(strategy_instance, avg_price, side, sl_pct, signal_tp_pct, signal_be_pct)
         logger.info(f"[REAL] SL/TP reales calculados: sl={sl} tp={tp1} be={be} avg={avg_price}")
         liq_price = float((position or {}).get('liqPrice') or 0)
         leverage = float((position or {}).get('leverage') or 0) or None
@@ -2184,7 +2192,7 @@ class RealTrader:
             strategy_instance.btc_macro_df, pending = final_closed_bars(await self.get_bars('BTCUSDT', '240'), '240', now)
             if pending is not None:
                 return pending_text(symbol, pending, 'vela H4 de BTC')
-        df = strategy_instance.compute_signals(df)
+        df = strategy_instance.with_levels(strategy_instance.compute_signals(df))   # D-45 (si el modo está activo)
 
         last_closed = df.iloc[-1]  # df solo contiene velas cerradas
         signal = int(last_closed['signal'])
@@ -2217,8 +2225,7 @@ class RealTrader:
         if not strategy_instance.allows_side(side):   # allow_short desactivado (misma regla que backtest y paper)
             return (f"{closed_note}; short no permitido, sin reversa" if reversal
                     else f"{symbol}: señal short ignorada (short no permitido)")
-        raw_sl = last_closed.get('signal_sl_pct') if 'signal_sl_pct' in df.columns else None
-        signal_sl_pct = float(raw_sl) if raw_sl is not None and pd.notna(raw_sl) else None
+        lv = auto_levels.row_levels(last_closed)   # SL de la estrategia o automático; TP/BE automáticos (D-45)
         candle_time = last_closed['time']
         if hasattr(candle_time, 'tzinfo') and candle_time.tzinfo is not None:
             candle_time = candle_time.tz_convert('UTC').tz_localize(None)
@@ -2258,7 +2265,7 @@ class RealTrader:
         label = 'REVERSA' if reversal else 'ABIERTA'
         try:
             success = await self.open_trade(sub, strategy_instance, side,
-                                            entry_price, regime, client, signal_sl_pct)
+                                            entry_price, regime, client, lv['sl'], lv['tp'], lv['be'])
             return f"{symbol}: {label if success else 'ERROR'} {side} @ {entry_price}"
         except Exception as e:
             logger.error(f"[REAL] open_trade exception {symbol}: {e}", exc_info=True)
