@@ -13,8 +13,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Implementado en p100 (D-54) |
-| 11 | C5-02 | P1 | Protección lookahead ante errores | Pendiente de validar |
+| 11 | C5-02 | P1 | Protección lookahead ante errores | Implementado en p101 (D-55) |
 | 12 | C5-09 | P1 | Matriz dinámica de permisos y aislamiento | Pendiente de validar |
 | 13 | C5-04 | P1 | Aislamiento de pruebas con PostgreSQL | Pendiente de validar (p89 ya exige base «*test» en `execution_ledger_test`) |
 | 14 | C5-05 | P1 | Cobertura de la reparación de VWAP | Pendiente de validar |
@@ -28,7 +27,24 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-07 · Fiabilidad de la conciliación de Real (P1) — **Válido (1) y válido en parte (2); latente** · Implementado en p100 (D-54)
+### C5-02 · Protección «mira el futuro» ante errores (P1) — **Válido (2 de 2; latente)** · Implementado en p101 (D-55)
+1. **Al guardar: válido.** `guard_code` saltaba en silencio una combinación sin velas (y si ninguna tenía, aprobaba sin
+   probar) y, si la estrategia fallaba al evaluarse vela a vela, devolvía «aprobada» confiando en el smoke test, que
+   corre con todas las velas y puede pasar. Las pruebas B5/B6 de `lookahead_guard_test` fijaban ese comportamiento.
+2. **Revisión diaria: válido.** Con evaluaciones sin datos o con error, si no había «malas» el comando cerraba el aviso
+   («ninguna mira el futuro») y terminaba bien; las sin evaluar solo aparecían como número en el log.
+- **Servidor (lectura 23-nov 21:38 UTC):** última revisión (23-nov 09:17): 18 revisadas, ninguna sin evaluar; BTCUSDT
+  H1 2.858 y H4 714 velas (se usan 400, mínimo 160); las 13 configs activas con 450 velas. **Nunca ocurrió.**
+- **Fix (D-55, «Procede» 23-nov):** al guardar, las 2 combinaciones son obligatorias: sin velas suficientes (mínimo
+  160) o con error al calcularse → 400 «No se pudo comprobar… Sin esa prueba no se guarda», sin correr el smoke test.
+  Revisión diaria: `status` ok / bad / unverified y `evaluated`; con alguna sin evaluar, incidente
+  `strategy-lookahead-unverified` (warning, se cierra cuando se evalúan todas), el de «mira el futuro» no se cierra y el
+  comando termina en FAILURE. No cambia ninguna estrategia ni config.
+- **Prueba:** `lookahead_guard_test` B5/B6 actualizados a la decisión + B9–B12, C3, C4; `lookahead_audit_static_test`
+  +3. Código anterior: 3 + 3 FALLOS. Mutaciones 10/10 (una undécima mostró que la prueba calculaba el mínimo con la
+  misma función: se fijó en 160). Regresión 77 Python + 31 PHP en TODO OK.
+
+### C5-07 · Fiabilidad de la conciliación de Real (P1) — **Válido (1) y válido en parte (2); latente** · Instalado en p100 (`599521a`, D-54)
 1. **Errores dentro de un HTTP 200: válido.** `/v1/real/reconcile` respondía siempre `status: ok`; los fallos iban a
    `results.errors`, que `RealTradingReconcileJob` no leía (ni log ni aviso). Errores de Bybit con huérfanas y
    `pending_open` se anotaban en `ok` con nota. Una excepción inesperada en una cuenta tumbaba la conciliación de todas
@@ -191,3 +207,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-10 | Tras 34040 se lee la posición y solo se acepta si SL/TP coinciden | p97 `3478b66` | Regresión en el servidor. Falta DEMO-03 |
 | C5-20 | Riesgo de la suscripción validado (0 < r ≤ 100) antes de Bybit; CHECK en la base (D-52). One-Way: ya corregido (D-11) | p98 `3853d5d` | 6 suscripciones activas con 1 %; 0 riesgos propios. Sin prueba Demo necesaria |
 | C5-01 | Libro de ejecuciones: «ok» solo si cantidad, precio y comisiones cuadran; «no sé» = reintento; aviso a las 24 h (D-53) | p99 `3f31b10` | 13 cerradas `ok` con funding; las 3 abiertas del 23-nov pasaron la regla nueva (`open_ok`). Falta DEMO con parcial |
+| C5-07 | Conciliación sin fallos escondidos: cuentas aisladas, `errors`/`pending`/`complete`, aviso `real_reconcile` a los 10 min, marca fija de huérfana (D-54) | p100 `599521a` | 13 cerradas, 3 abiertas, 0 huérfanas tras instalar. Falta DEMO con Bybit caído |

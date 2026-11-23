@@ -21,7 +21,18 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-02: «no se pudo probar» no es «aprobada» en la protección contra mirar el futuro (p101, D-55) — 23-nov
+- **Validado:** al guardar se aprobaba sin velas o con error de la estrategia; la revisión diaria cerraba el aviso con
+  configs sin evaluar. Lectura: 18 de 18 evaluadas, velas de sobra: nunca ocurrió.
+- **Fix:** al guardar, las 2 combinaciones obligatorias (sin velas o con error → no se guarda, con el motivo); revisión
+  diaria con «sin evaluar» y su aviso; el aviso de «mira el futuro» no se cierra con alguna sin evaluar. Vuelta atrás:
+  `p101_revertir.sh`.
+- **Prueba:** `lookahead_guard_test` (B5/B6 actualizados, +6), `lookahead_audit_static_test` (+3); código anterior falla;
+  mutaciones 10/10; regresión 77 + 31 en TODO OK.
+
 ### Ciclo 5 · C5-07: la conciliación de Real no esconde fallos (p100, D-54) — 23-nov
+- **Instalado:** `599521a` (23-nov 21:29 UTC): regresión 77 + 31, motor y Horizon reiniciados, 0 errores; 13 cerradas,
+  3 abiertas, 0 huérfanas.
 - **Validado:** errores dentro de un 200 que Laravel no leía (válido); huérfanas distinguidas por el texto (válido en
   parte); cierre sin closed-pnl ya cubierto por p95 (válido en parte). Lectura: 0 errores y 0 huérfanas: latente.
 - **Fix:** cuentas aisladas; errores visibles (`errors`, `pending`, `complete`); aviso `real_reconcile` con 10 min de

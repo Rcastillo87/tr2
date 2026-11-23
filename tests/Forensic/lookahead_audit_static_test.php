@@ -30,6 +30,12 @@ $check('sin respuesta del motor: no abre ni cierra el incidente (no confunde «n
     (bool) preg_match('/catch \(Throwable \$e\) \{[^}]*return self::FAILURE;/s', $cmd)
     && (bool) preg_match('/if \(! \$response->successful\(\)\) \{[^}]*return self::FAILURE;/s', $cmd));
 $check('el cuerpo del error se registra sin datos sensibles (SafeLogBody)', str_contains($cmd, 'SafeLogBody::of('));
+// C5-02 (p101): «sin evaluar» con aviso propio; el aviso principal no se cierra mientras falte evaluar alguna
+$check('C5-02: con alguna sin evaluar abre el aviso «sin evaluar» (warning) y lo cierra cuando se evalúan todas',
+    (bool) preg_match('/if \(\$unverified !== \[\]\) \{.*?openIncident\(self::INCIDENT_UNVERIFIED, \'warning\', \'validation\'.*?\} else \{.*?resolveIncident\(self::INCIDENT_UNVERIFIED, \'validation\'/s', $cmd));
+$check('C5-02: el aviso «mira el futuro» solo se cierra si se evaluaron todas',
+    (bool) preg_match('/if \(\$errors === 0\) \{[^}]*resolveIncident\(self::INCIDENT, \'validation\'/s', $cmd));
+$check('C5-02: con alguna sin evaluar el comando termina en FAILURE', str_contains($cmd, 'return $errors ? self::FAILURE : self::SUCCESS;'));
 
 $notif = (string) file_get_contents($root . '/app/Http/Controllers/NotificationController.php');
 $check('«validation» es una categoría que la pantalla de avisos ya muestra (sin pestaña nueva)',

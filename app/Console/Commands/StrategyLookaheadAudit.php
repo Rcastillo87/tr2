@@ -19,6 +19,10 @@ class StrategyLookaheadAudit extends Command
 {
     public const INCIDENT = 'strategy-lookahead';
 
+    /** C5-02 (p101): alguna config o estrategia quedó sin evaluar (sin datos o con error): aviso aparte, abierto hasta
+     *  que una revisión las evalúe todas. */
+    public const INCIDENT_UNVERIFIED = 'strategy-lookahead-unverified';
+
     protected $signature = 'strategies:lookahead-audit';
 
     protected $description = 'Revisa si alguna estrategia o config activa de Paper mira el futuro (R-21)';
@@ -44,9 +48,22 @@ class StrategyLookaheadAudit extends Command
         $data = (array) $response->json();
         $bad = (array) ($data['bad'] ?? []);
         $checked = (int) ($data['checked'] ?? 0);
-        $errors = count((array) ($data['errors'] ?? []));
+        $unverified = (array) ($data['errors'] ?? []);
+        $errors = count($unverified);
         foreach ((array) ($data['results'] ?? []) as $r) {
             $this->line(($r['label'] ?? '?') . ': ' . ($r['verdict'] ?? ''));
+        }
+
+        if ($unverified !== []) {
+            $list = implode(' · ', array_map(fn ($u) => ($u['label'] ?? '?') . ' — ' . ($u['verdict'] ?? ''), $unverified));
+            $alerts->openIncident(self::INCIDENT_UNVERIFIED, 'warning', 'validation',
+                "Estrategias sin evaluar ({$errors})",
+                "La revisión diaria no pudo comprobar si miran el futuro: {$list}. Revisa las velas del collector o el código.",
+                url('/strategies'));
+            Log::warning("[LOOKAHEAD] {$errors} de {$checked} sin evaluar: {$list}");
+        } else {
+            $alerts->resolveIncident(self::INCIDENT_UNVERIFIED, 'validation', 'Estrategias: todas evaluadas',
+                "La revisión diaria pudo evaluar las {$checked}.", url('/strategies'));
         }
 
         if ($bad !== []) {
@@ -60,12 +77,15 @@ class StrategyLookaheadAudit extends Command
             return self::FAILURE;
         }
 
-        $alerts->resolveIncident(self::INCIDENT, 'validation', 'Estrategias: ninguna mira el futuro',
-            "Revisadas {$checked}.", url('/strategies'));
-        Log::info("[LOOKAHEAD] revisión diaria: {$checked} revisadas, ninguna mira el futuro"
+        if ($errors === 0) {   // C5-02: con alguna sin evaluar no se puede afirmar que ninguna mira el futuro
+            $alerts->resolveIncident(self::INCIDENT, 'validation', 'Estrategias: ninguna mira el futuro',
+                "Revisadas {$checked}.", url('/strategies'));
+        }
+        $none = $errors ? 'ninguna de las evaluadas mira el futuro' : 'ninguna mira el futuro';
+        Log::info("[LOOKAHEAD] revisión diaria: {$checked} revisadas, {$none}"
             . ($errors ? ", {$errors} sin evaluar (sin datos o con error)" : ''));
-        $this->info("{$checked} revisadas: ninguna mira el futuro");
+        $this->info("{$checked} revisadas: {$none}" . ($errors ? " ({$errors} sin evaluar)" : ''));
 
-        return self::SUCCESS;
+        return $errors ? self::FAILURE : self::SUCCESS;
     }
 }

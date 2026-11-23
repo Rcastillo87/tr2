@@ -11,6 +11,10 @@ filtros de H4 (macro y BTC) se apagan: son de la plataforma y usan solo velas H4
 
 Se usa al guardar una estrategia (smoke test: no se guarda si mira el futuro), en la revisión diaria
 (`/v1/strategies/lookahead-audit`) y a mano (`tools/analysis/lookahead_probe.py`).
+
+C5-02 (p101, D-55): «no se pudo probar» no es «aprobada». Al guardar, si alguna de las GUARD_COMBOS combinaciones no
+tiene velas suficientes o la estrategia falla al calcularse con menos velas, no se guarda (con el motivo). En la
+revisión diaria cada unidad queda `ok` (aprobada), `bad` (mira el futuro) o `unverified` (sin evaluar).
 """
 from __future__ import annotations
 
@@ -99,6 +103,17 @@ def verdict(r: dict) -> str:
     return f"OK: no mira el futuro ({r['checked']} velas, {r['full_signals']} señales)"
 
 
+def min_bars(warmup: int = WARMUP) -> int:
+    """Velas mínimas para que la prueba tenga sentido (la mitad del calentamiento + 10)."""
+    return warmup // 2 + 10
+
+
+def unverified_message(symbol: str, interval: str, why: str) -> str:
+    """Motivo de rechazo al guardar cuando la prueba no se pudo hacer (C5-02)."""
+    place = f"{symbol} {interval}".strip()
+    return f"no se pudo comprobar que la estrategia no mira el futuro en {place}: {why}. Sin esa prueba no se guarda."
+
+
 def guard_message(symbol: str, interval: str, r: dict) -> str:
     """Motivo de rechazo al guardar (lo muestra la pantalla de estrategias en «Falló el Smoke Test: …»)."""
     cols = _cols(r)
@@ -128,17 +143,22 @@ async def _check(slot, code, params, df, last_n) -> dict:
 
 async def guard_code(db, slot, code: str, config: dict | None, combos: list[str],
                      warmup: int = WARMUP, last_n: int = LAST_GUARD) -> str | None:
-    """Al guardar: None si no mira el futuro (o no hay datos para probarlo); si mira, el motivo del rechazo.
-    Un error de la estrategia no se informa aquí: lo informa el smoke test que sigue."""
-    for combo in combos[:GUARD_COMBOS]:
+    """Al guardar: None solo si las primeras GUARD_COMBOS combinaciones se probaron y ninguna mira el futuro; si no, el
+    motivo del rechazo (mira el futuro, o no se pudo probar: faltan velas o la estrategia falló con menos velas)."""
+    tried = combos[:GUARD_COMBOS]
+    if not tried:
+        return unverified_message('ninguna combinación', '', 'no hay combinaciones para probar')
+    for combo in tried:
         symbol, _, interval = combo.partition(':')
         df = await load_bars(db, symbol, interval, warmup + last_n)
-        if len(df) < warmup // 2 + 10:
-            continue
+        if len(df) < min_bars(warmup):
+            return unverified_message(symbol, interval, f"solo hay {len(df)} velas cerradas (se necesitan al menos "
+                                                        f"{min_bars(warmup)})")
         try:
             r = await _check(slot, code, dict(strategy_config=config or {}, symbol=symbol, interval=interval), df, last_n)
-        except Exception:   # noqa: BLE001
-            return None
+        except Exception as e:   # noqa: BLE001
+            return unverified_message(symbol, interval, f"la estrategia falló al calcularse vela a vela "
+                                                        f"({type(e).__name__}: {str(e)[:160]})")
         if looks_ahead(r):
             return guard_message(symbol, interval, r)
     return None
@@ -167,14 +187,18 @@ async def audit(db, slot, warmup: int = WARMUP, last_n: int = LAST_AUDIT) -> dic
     results = []
     for u in await load_units(db):
         df = await load_bars(db, u['symbol'], u['interval'], warmup + last_n)
-        if len(df) < warmup // 2 + 10:
-            results.append(dict(label=u['label'], ok=None, verdict=f"sin datos suficientes ({len(df)} velas)"))
+        if len(df) < min_bars(warmup):
+            results.append(dict(label=u['label'], ok=None, status='unverified',
+                                verdict=f"sin evaluar: sin datos suficientes ({len(df)} velas)"))
             continue
         try:
             r = await _check(slot, u['code'], u['params'], df, last_n)
         except Exception as e:   # noqa: BLE001
-            results.append(dict(label=u['label'], ok=None, verdict=f"error al evaluar: {type(e).__name__}: {str(e)[:160]}"))
+            results.append(dict(label=u['label'], ok=None, status='unverified',
+                                verdict=f"sin evaluar: error al evaluar: {type(e).__name__}: {str(e)[:160]}"))
             continue
-        results.append(dict(label=u['label'], ok=not looks_ahead(r), verdict=verdict(r)))
-    return dict(checked=len(results), bad=[x for x in results if x['ok'] is False],
-                errors=[x for x in results if x['ok'] is None], results=results)
+        bad = looks_ahead(r)
+        results.append(dict(label=u['label'], ok=not bad, status='bad' if bad else 'ok', verdict=verdict(r)))
+    return dict(checked=len(results), evaluated=sum(1 for x in results if x['status'] != 'unverified'),
+                bad=[x for x in results if x['status'] == 'bad'],
+                errors=[x for x in results if x['status'] == 'unverified'], results=results)

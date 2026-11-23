@@ -135,13 +135,32 @@ try:
     out, err, calls = validate(NEW, FakeDB())
     check('B4: el código corregido pasa la prueba y sigue al smoke test', err is None and out['trades'] == 3 and calls,
           (err.detail if err else out, calls))
+    # C5-02 (p101, D-55): «no se pudo probar» no es «aprobada» (antes B5/B6 aprobaban y decidía el smoke test)
     db = FakeDB(data={})
-    out, err, calls = validate(OLD, db)
-    check('B5: sin velas para probar: no bloquea, decide el smoke test', err is None and calls and db.bar_reads == la.GUARD_COMBOS,
-          (err.detail if err else out, db.bar_reads))
+    out, err, calls = validate(NEW, db)
+    check('B5: sin velas para probar: NO se guarda (400), dice por qué y no corre el smoke test',
+          err is not None and err.status_code == 400 and 'No se pudo comprobar' in err.detail and 'BTCUSDT 60' in err.detail
+          and 'velas' in err.detail and calls == [], (err.detail if err else out, calls))
     out, err, calls = validate(BROKEN, FakeDB())
-    check('B6: si la estrategia falla al evaluarse, el error lo informa el smoke test (no la prueba del futuro)',
-          err is None and calls == [('BTCUSDT', '60')], (err.detail if err else out, calls))
+    check('B6: si la estrategia falla al calcularse vela a vela: NO se guarda y el motivo trae el error',
+          err is not None and err.status_code == 400 and 'No se pudo comprobar' in err.detail and 'ValueError' in err.detail
+          and calls == [], (err.detail if err else out, calls))
+    db = FakeDB(data={('BTCUSDT', '60'): DATA[('BTCUSDT', '60')]})
+    out, err, calls = validate(NEW, db)
+    check('B9: la primera combinación pasa pero la segunda (H4) no tiene velas: NO se guarda (las 2 son obligatorias)',
+          err is not None and 'BTCUSDT 240' in err.detail and calls == [] and db.bar_reads == 2, (err.detail if err else out))
+    check('B10a: el mínimo sigue siendo 160 velas (300 // 2 + 10, el mismo de la revisión diaria)', la.min_bars() == 160,
+          la.min_bars())
+    few = {('BTCUSDT', '60'): DATA[('BTCUSDT', '60')][:la.min_bars() - 1], ('BTCUSDT', '240'): DATA[('BTCUSDT', '240')]}
+    out, err, calls = validate(NEW, FakeDB(data=few))
+    check(f'B10: una vela menos que el mínimo ({la.min_bars()}): NO se guarda', err is not None and 'BTCUSDT 60' in err.detail
+          and f'solo hay {la.min_bars() - 1} velas' in err.detail, err.detail if err else out)
+    edge = {('BTCUSDT', '60'): DATA[('BTCUSDT', '60')][:la.min_bars()], ('BTCUSDT', '240'): DATA[('BTCUSDT', '240')]}
+    out, err, calls = validate(NEW, FakeDB(data=edge))
+    check('B11: con el mínimo justo de velas sí se prueba y sigue al smoke test', err is None and calls,
+          (err.detail if err else out, calls))
+    r = asyncio.run(la.guard_code(FakeDB(), asyncio.Semaphore(1), NEW, CFG, []))
+    check('B12: sin combinaciones para probar: rechazada', r is not None and 'no hay combinaciones' in r, r)
     db = FakeDB()
     validate(NEW, db)
     check('B7: al guardar se revisan solo las 2 primeras combinaciones (H1 y H4 de BTC), por el tiempo del smoke test',
@@ -169,7 +188,17 @@ try:
           and labels.get('config #61 VWAP Tendencia — BTCUSDT H4') is True, out['bad'])
     db.data = {}
     out = asyncio.run(api.strategies_lookahead_audit())
-    check('C3: sin velas: «sin datos», ni buena ni mala', out['bad'] == [] and len(out['errors']) == 3, out['errors'][:1])
+    check('C3: sin velas: «sin evaluar», ni buena ni mala', out['bad'] == [] and len(out['errors']) == 3
+          and all(x['status'] == 'unverified' and x['verdict'].startswith('sin evaluar') for x in out['errors'])
+          and out['evaluated'] == 0, out['errors'][:1])
+    db.data = DATA
+    db.strategies = st + [dict(id=9, name='Rota', code=BROKEN, config='{}')]
+    out = asyncio.run(api.strategies_lookahead_audit())
+    st_of = {x['label']: x['status'] for x in out['results']}
+    check('C4: cada una queda aprobada, mira el futuro o sin evaluar (la rota: sin evaluar, con el error)',
+          st_of.get('config #61 VWAP Tendencia — BTCUSDT H4') == 'ok' and st_of.get('config #59 VWAP Tendencia — DOGEUSDT H4') == 'bad'
+          and st_of.get('estrategia #9 Rota (BTCUSDT H1)') == 'unverified' and out['evaluated'] == 3 and out['checked'] == 4
+          and 'ValueError' in out['errors'][0]['verdict'], (st_of, out['errors']))
 finally:
     api.get_pool, api.run_backtest = orig
 
