@@ -67,9 +67,9 @@ class BacktestRequest(BaseModel):
     trailing_activation_buffer_pct: float         = 0.0
     trailing_atr_mult:      float                = 2.0
     # D-45: SL/TP/BE automáticos por ATR (None = no enviado: manda el JSON de la estrategia o el default 'fixed')
-    sl_mode:                Optional[str]        = None  # None | "fixed" | "atr"
-    tp_mode:                Optional[str]        = None  # None | "fixed" | "r" | "atr"
-    sl_tp_mode:             Optional[str]        = None  # p92: "atr" = sl_mode atr + tp_mode r
+    sl_level_mode:                Optional[str]        = None  # None | "fixed" | "atr"
+    tp_level_mode:                Optional[str]        = None  # None | "fixed" | "r" | "atr"
+    sl_tp_mode:             Optional[str]        = None  # p92: "atr" = sl_level_mode atr + tp_level_mode r
     tp_atr_mult:            Optional[float]      = None
     sl_atr_mult:            Optional[float]      = None
     tp_r_mult:              Optional[float]      = None

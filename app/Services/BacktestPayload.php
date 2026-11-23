@@ -35,7 +35,7 @@ final class BacktestPayload
     }
 
     /** D-45: claves del SL/TP automático que viajan al motor (y al config_params guardado). */
-    public const LEVEL_KEYS = ['sl_mode', 'tp_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult',
+    public const LEVEL_KEYS = ['sl_level_mode', 'tp_level_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult',
         'tp_atr_mult'];
 
     /**
@@ -47,13 +47,13 @@ final class BacktestPayload
      */
     public static function levels(array $input): array
     {
-        $sl = in_array($input['sl_mode'] ?? null, ['fixed', 'atr'], true) ? $input['sl_mode'] : 'fixed';
-        $tp = in_array($input['tp_mode'] ?? null, ['fixed', 'r', 'atr'], true) ? $input['tp_mode'] : 'fixed';
+        $sl = in_array($input['sl_level_mode'] ?? null, ['fixed', 'atr'], true) ? $input['sl_level_mode'] : 'fixed';
+        $tp = in_array($input['tp_level_mode'] ?? null, ['fixed', 'r', 'atr'], true) ? $input['tp_level_mode'] : 'fixed';
         if ($sl === 'fixed' && $tp === 'fixed') {
             return [];
         }
         $num = static fn (string $k, float $default): float => is_numeric($input[$k] ?? null) ? (float) $input[$k] : $default;
-        $out = ['sl_mode' => $sl, 'tp_mode' => $tp];
+        $out = ['sl_level_mode' => $sl, 'tp_level_mode' => $tp];
         if ($sl === 'atr') {
             $out += ['sl_atr_mult' => $num('sl_atr_mult', 2.0), 'sl_min_pct' => $num('sl_min_pct', 0.8),
                      'sl_max_pct' => $num('sl_max_pct', 5.0), 'be_r_mult' => $num('be_r_mult', 1.0)];

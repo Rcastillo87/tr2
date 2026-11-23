@@ -264,6 +264,7 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 | «Lista de pendientes» con puntos ya resueltos | Verificar cada punto contra el código y los documentos antes de proponerlo (código muerto de p72, versión del prompt, orden del README y permisos del `.env` ya estaban bien). |
 | Funding «sin liquidaciones» que sí las tenía | El intervalo de funding depende de la moneda (`instruments-info.fundingInterval`; ENA cada 4 h). `/v5/market/funding/history` incluye la liquidación de `startTime`: una operación abierta en ese segundo no la paga. |
 | Prueba que «pasaba» con 10 fallos (`paper_parity_test`, desde p83) | La regresión mira el **código de salida**: toda prueba termina con `sys.exit(0 if fails == 0 else 1)`; `auto_levels_test` E1 lo vigila en la lista oficial. Un doble de prueba o un fixture viejo (sin el minuto siguiente de R-22) puede esconder fallos. |
+| Clave nueva que ya usaba una estrategia (`sl_mode` de TrianguloRuptura, p93) | Antes de nombrar un parámetro, buscarlo en `docs/estrategias/` y en `strategies.code`/`config` del servidor; el instalador lo revisa (p94). |
 | La comisión Real incluía el funding | El closed-pnl de Bybit descuenta comisiones **y** funding: bruto − neto no es la comisión (R-24). |
 
 ---

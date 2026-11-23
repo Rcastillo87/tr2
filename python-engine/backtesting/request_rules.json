@@ -162,7 +162,7 @@
         "widen"
       ]
     },
-    "sl_mode": {
+    "sl_level_mode": {
       "label": "Stop Loss: modo",
       "type": "enum",
       "values": [
@@ -171,7 +171,7 @@
         "atr"
       ]
     },
-    "tp_mode": {
+    "tp_level_mode": {
       "label": "Take Profit: modo",
       "type": "enum",
       "values": [

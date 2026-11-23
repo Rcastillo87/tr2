@@ -1,10 +1,10 @@
 """
 D-45 (p92, p93): SL, TP y break-even automáticos, opcionales y por separado. Único cálculo para backtest, Paper y Real.
 
-Stop Loss (`sl_mode`):
+Stop Loss (`sl_level_mode`):
     'fixed' (default)  el sl_pct de la config (o el SL que proponga la estrategia), como siempre
     'atr'              SL % = sl_atr_mult × ATR(14) / cierre × 100, acotado a [sl_min_pct, sl_max_pct]
-Take Profit (`tp_mode`):
+Take Profit (`tp_level_mode`):
     'fixed' (default)  el tp_pct de la config
     'r'                TP % = tp_r_mult × el SL de la operación (automático, de la estrategia o fijo)
     'atr'              TP % = tp_atr_mult × ATR(14) / cierre × 100
@@ -43,15 +43,15 @@ def enabled() -> bool:
 
 
 def modes(params: dict) -> tuple[str, str]:
-    """(sl_mode, tp_mode) de unos parámetros. 'sl_tp_mode': 'atr' (p92) = SL automático + TP veces el SL."""
-    sl, tp = params.get('sl_mode'), params.get('tp_mode')
+    """(sl_level_mode, tp_level_mode) de unos parámetros. 'sl_tp_mode': 'atr' (p92) = SL automático + TP veces el SL."""
+    sl, tp = params.get('sl_level_mode'), params.get('tp_level_mode')
     if params.get('sl_tp_mode') == 'atr':
         sl, tp = sl or 'atr', tp or 'r'
     return (sl if sl in SL_MODES else 'fixed'), (tp if tp in TP_MODES else 'fixed')
 
 
 def is_auto(strategy) -> bool:
-    return enabled() and (getattr(strategy, 'sl_mode', 'fixed') != 'fixed' or getattr(strategy, 'tp_mode', 'fixed') != 'fixed')
+    return enabled() and (getattr(strategy, 'sl_level_mode', 'fixed') != 'fixed' or getattr(strategy, 'tp_level_mode', 'fixed') != 'fixed')
 
 
 def _atr_pct(df: pd.DataFrame) -> np.ndarray:
@@ -74,16 +74,16 @@ def apply(df: pd.DataFrame, strategy) -> pd.DataFrame:
     nan = np.full(n, np.nan)
 
     sl_auto = nan
-    if strategy.sl_mode == 'atr':
+    if strategy.sl_level_mode == 'atr':
         lo, hi = sorted((float(strategy.sl_min_pct), float(strategy.sl_max_pct)))
         sl_auto = np.round(np.clip(float(strategy.sl_atr_mult) * atr_pct, lo, hi), PCT_DECIMALS)   # NaN se conserva
     sl_signal = np.where(np.isfinite(sl_auto), sl_auto, base)
     out['signal_sl_pct'] = sl_signal
 
-    if strategy.tp_mode == 'r':
+    if strategy.tp_level_mode == 'r':
         sl_used = np.where(np.isfinite(sl_signal), sl_signal, float(strategy.sl_pct))
         out['signal_tp_pct'] = np.round(sl_used * float(strategy.tp_r_mult), PCT_DECIMALS)
-    elif strategy.tp_mode == 'atr':
+    elif strategy.tp_level_mode == 'atr':
         out['signal_tp_pct'] = np.round(float(strategy.tp_atr_mult) * atr_pct, PCT_DECIMALS)
     else:
         out['signal_tp_pct'] = nan

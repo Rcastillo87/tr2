@@ -96,7 +96,7 @@ BASE_KEYS = ('sl_pct', 'tp_pct', 'be_pct', 'trailing_mode', 'trailing_atr_mult',
 # D-45 (p93): SL/TP automáticos en la búsqueda. 'fixed' = como siempre (mismo sorteo); 'auto' = todas automáticas;
 # 'both' = una de cada dos automática (las fijas salen del mismo sorteo de siempre). Topes del SL: los de auto_levels.
 SLTP_CHOICES = ('fixed', 'auto', 'both')
-AUTO_KEYS = ('sl_mode', 'tp_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult', 'tp_atr_mult')
+AUTO_KEYS = ('sl_level_mode', 'tp_level_mode', 'sl_atr_mult', 'sl_min_pct', 'sl_max_pct', 'be_r_mult', 'tp_r_mult', 'tp_atr_mult')
 NO_BE_R = 20.0            # break-even a 20 veces el SL = nunca (equivale al «sin BE» de 99 % del modo fijo)
 AUTO_SPACES = {
     'gain': dict(sl_k=(1.5, 2.0, 2.5, 3.0), tp=(('r', 2.0), ('r', 3.0), ('atr', 4.0), ('atr', 6.0), ('fixed', None)),
@@ -131,12 +131,12 @@ def with_auto_levels(cfg: dict, rng: random.Random, focus: str | None) -> dict:
     """D-45: la misma configuración con SL automático y un TP de AUTO_SPACES (sl_pct / tp_pct / be_pct quedan de
     respaldo, como en el formulario)."""
     sp = AUTO_SPACES.get(focus or 'gain', AUTO_SPACES['gain'])
-    tp_mode, mult = rng.choice(sp['tp'])
-    out = dict(cfg, sl_mode='atr', sl_atr_mult=rng.choice(sp['sl_k']), sl_min_pct=0.8, sl_max_pct=5.0,
-               be_r_mult=rng.choice(sp['be_r']), tp_mode=tp_mode)
-    if tp_mode == 'r':
+    tp_level_mode, mult = rng.choice(sp['tp'])
+    out = dict(cfg, sl_level_mode='atr', sl_atr_mult=rng.choice(sp['sl_k']), sl_min_pct=0.8, sl_max_pct=5.0,
+               be_r_mult=rng.choice(sp['be_r']), tp_level_mode=tp_level_mode)
+    if tp_level_mode == 'r':
         out['tp_r_mult'] = mult
-    elif tp_mode == 'atr':
+    elif tp_level_mode == 'atr':
         out['tp_atr_mult'] = mult
     return out
 

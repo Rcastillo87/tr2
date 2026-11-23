@@ -229,7 +229,7 @@ class BacktestingController extends Controller
         $bePct = (float) $request->input('be_pct', 2.0);
         $tpPct = (float) $request->input('tp_pct', 3.0);
         $autoLevels = \App\Services\BacktestPayload::levels($request->all()) !== [];   // D-45: niveles por operación
-        if ($autoLevels && ($request->input('sl_mode') === 'atr') && ($request->input('tp_mode', 'fixed') === 'fixed')) {
+        if ($autoLevels && ($request->input('sl_level_mode') === 'atr') && ($request->input('tp_level_mode', 'fixed') === 'fixed')) {
             $warnings[] = 'AVISO: SL automático con TP fijo: en las operaciones donde el SL sale más grande que el TP '
                 . 'se arriesga más de lo que se puede ganar. Revisa el resultado.';
         }

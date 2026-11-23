@@ -149,8 +149,8 @@ class BacktestMonthlyExport
         $labels = [
             'sl_pct'                     => 'Stop Loss %',
             'tp_pct'                     => 'Take Profit %',
-            'sl_mode'                    => 'Stop Loss: modo (fixed | atr)',
-            'tp_mode'                    => 'Take Profit: modo (fixed | r | atr)',
+            'sl_level_mode'                    => 'Stop Loss: modo (fixed | atr)',
+            'tp_level_mode'                    => 'Take Profit: modo (fixed | r | atr)',
             'sl_atr_mult'                => 'SL automático: veces el ATR',
             'sl_min_pct'                 => 'SL automático mínimo %',
             'sl_max_pct'                 => 'SL automático máximo %',

@@ -69,12 +69,12 @@ def frame(n=120, seed=7, start='2026-01-01'):
 
 df = frame()
 atr = calculate_atr(df, 14).to_numpy()
-AUTO = dict(sl_mode='atr', tp_mode='r', sl_atr_mult=2.0, tp_r_mult=3.0, be_r_mult=1.0, sl_min_pct=0.5, sl_max_pct=5.0)
+AUTO = dict(sl_level_mode='atr', tp_level_mode='r', sl_atr_mult=2.0, tp_r_mult=3.0, be_r_mult=1.0, sl_min_pct=0.5, sl_max_pct=5.0)
 
 # ── A. Cálculo ──
 s_fixed = strat()
 check('A1: modo fijo (default): el df no cambia (mismo objeto, sin columnas nuevas)',
-      (s_fixed.sl_mode, s_fixed.tp_mode) == ('fixed', 'fixed') and al.apply(df, s_fixed) is df)
+      (s_fixed.sl_level_mode, s_fixed.tp_level_mode) == ('fixed', 'fixed') and al.apply(df, s_fixed) is df)
 s = strat(**AUTO)
 out = s.with_levels(s.compute_signals(df.copy()))
 i = 60
@@ -115,26 +115,50 @@ def lv(**kw):
 
 
 pct = atr[i] / df['close'][i] * 100
-o = lv(sl_mode='fixed', tp_mode='atr', tp_atr_mult=4.0)
+o = lv(sl_level_mode='fixed', tp_level_mode='atr', tp_atr_mult=4.0)
 check('S1: SL fijo + TP automático: sin SL de la señal (fijo) y TP = 4 × ATR / cierre; sin ATR, TP fijo',
       np.isnan(o['signal_sl_pct'][i]) and abs(o['signal_tp_pct'][i] - round(4 * pct, 6)) < 1e-12
       and o['signal_tp_pct'][:14].isna().all() and o['signal_be_pct'].isna().all())
-o = lv(sl_mode='atr', tp_mode='fixed', sl_atr_mult=2.0, sl_min_pct=0.5, sl_max_pct=5.0, be_r_mult=1.0)
+o = lv(sl_level_mode='atr', tp_level_mode='fixed', sl_atr_mult=2.0, sl_min_pct=0.5, sl_max_pct=5.0, be_r_mult=1.0)
 check('S2: SL automático + TP fijo: SL y BE de la señal, TP fijo (sin TP de la señal)',
       abs(o['signal_sl_pct'][i] - exp_sl) < 1e-12 and o['signal_tp_pct'].isna().all() and abs(o['signal_be_pct'][i] - exp_sl) < 1e-12)
-o = lv(sl_mode='fixed', tp_mode='r', tp_r_mult=2.0)
+o = lv(sl_level_mode='fixed', tp_level_mode='r', tp_r_mult=2.0)
 check('S3: SL fijo + TP veces el SL: TP = 2 × 1 % (el SL fijo) en todas las velas, también sin ATR',
       (o['signal_tp_pct'] == 2.0).all() and o['signal_sl_pct'].isna().all())
-o = lv(own_sl=1.7, sl_mode='fixed', tp_mode='r', tp_r_mult=2.0)
+o = lv(own_sl=1.7, sl_level_mode='fixed', tp_level_mode='r', tp_r_mult=2.0)
 check('S4: estrategia con SL propio + TP veces el SL: TP = 2 × 1,7', (o['signal_tp_pct'] == 3.4).all() and (o['signal_sl_pct'] == 1.7).all())
 st92 = strat(sl_tp_mode='atr')
-check('S5: compatibilidad p92 («sl_tp_mode»: «atr» = SL automático + TP veces el SL)', (st92.sl_mode, st92.tp_mode) == ('atr', 'r'))
-t_mix = BacktestEngine(strategy=strat(fire=[i], sl_mode='fixed', tp_mode='atr', tp_atr_mult=4.0), df=df.copy(),
+check('S5: compatibilidad p92 («sl_tp_mode»: «atr» = SL automático + TP veces el SL)', (st92.sl_level_mode, st92.tp_level_mode) == ('atr', 'r'))
+t_mix = BacktestEngine(strategy=strat(fire=[i], sl_level_mode='fixed', tp_level_mode='atr', tp_atr_mult=4.0), df=df.copy(),
                        initial_balance=10000, risk_per_trade_pct=1.0).run()['trades']
 em = t_mix[0]['entry_price']
 check('S6: backtest SL fijo + TP automático: SL 1 % y TP = 4 × ATR del precio de entrada',
       abs(t_mix[0]['sl'] - round(em * 0.99, 8)) < 1e-6 and abs(t_mix[0]['tp1'] - round(em * (1 + round(4 * pct, 6) / 100), 8)) < 1e-6,
       (t_mix[0]['sl'], t_mix[0]['tp1']))
+
+# ── A4. Sin choque con las claves propias de las estrategias (p94: TrianguloRuptura usa «sl_mode»: «swing») ──
+import json as _json  # noqa: E402
+
+D = ROOT / 'docs' / 'estrategias'
+tri_cfg = _json.loads((D / 'triangulo_ruptura.config.json').read_text(encoding='utf-8'))
+tri = build_strategy({**BASE, **tri_cfg, 'strategy_code': (D / 'triangulo_ruptura.py').read_text(encoding='utf-8')})
+check('K1: TrianguloRuptura conserva su sl_mode «swing» y el SL/TP de la config queda en fijo',
+      tri.sl_mode == 'swing' and (tri.sl_level_mode, tri.tp_level_mode) == ('fixed', 'fixed') and not al.is_auto(tri))
+from api.v1.backtest import BacktestRequest as _BRk  # noqa: E402
+try:
+    _BRk(strategy='TrianguloRuptura', strategy_code='c', symbol='BTCUSDT', interval='240', strategy_config=tri_cfg)
+    k2 = True
+except Exception as e:   # noqa: BLE001
+    k2 = e
+check('K2: un backtest de TrianguloRuptura con su JSON pasa la validación (p93 lo rechazaba)', k2 is True, k2)
+tri_r = build_strategy({**BASE, **tri_cfg, 'strategy_code': (D / 'triangulo_ruptura.py').read_text(encoding='utf-8'),
+                        'tp_level_mode': 'r', 'tp_r_mult': 2.0})
+check('K3: con «TP veces el SL» TrianguloRuptura sigue en swing (su SL por señal intacto)',
+      tri_r.sl_mode == 'swing' and tri_r.tp_level_mode == 'r')
+OURS = ('sl_level_mode', 'tp_level_mode', 'sl_atr_mult', 'tp_r_mult', 'tp_atr_mult', 'be_r_mult', 'sl_min_pct', 'sl_max_pct')
+clash = {f.name: [k for k in OURS if re.search(rf'\b{k}\b', f.read_text(encoding='utf-8'))] for f in D.iterdir() if f.is_file()}
+clash = {f: ks for f, ks in clash.items() if ks}
+check('K4: ninguna estrategia del repositorio usa los nombres de las claves del SL/TP automático', not clash, clash)
 
 # ── A3. Búsqueda (p93) ──
 from cli import param_search as ps  # noqa: E402
@@ -146,15 +170,15 @@ bo = ps.sample_configs(40, 11, 'gain', sltp='both')
 check('P1: «Fijos»: las mismas configuraciones de siempre, sin claves automáticas',
       fx == fx2 and not any(k in c for c in fx for k in ps.AUTO_KEYS))
 check('P2: «Automáticos»: todas con SL automático (topes 0,8–5 %) y un TP de la lista',
-      all(c['sl_mode'] == 'atr' and c['sl_min_pct'] == 0.8 and c['sl_max_pct'] == 5.0 and c['tp_mode'] in ('r', 'atr', 'fixed') for c in au))
+      all(c['sl_level_mode'] == 'atr' and c['sl_min_pct'] == 0.8 and c['sl_max_pct'] == 5.0 and c['tp_level_mode'] in ('r', 'atr', 'fixed') for c in au))
 check('P3: «Los dos»: alternan fija / automática y la primera es la de siempre',
-      bo[0] == fx[0] and all(('sl_mode' in c) == (k % 2 == 1) for k, c in enumerate(bo)))
+      bo[0] == fx[0] and all(('sl_level_mode' in c) == (k % 2 == 1) for k, c in enumerate(bo)))
 base = lambda c: {k: c[k] for k in ps.BASE_KEYS}   # noqa: E731
 check('P3b: «Los dos»: cada configuración parte de la misma base que en «Fijos» (las fijas no cambian de sorteo)',
       [base(c) for c in bo] == [base(c) for c in fx])
 rc = ps.row_cfg(au[0])
 check('P4: los resultados guardan el modo y sus multiplicadores (para crear el backtest desde la búsqueda)',
-      all(k in rc for k in ('sl_mode', 'tp_mode', 'sl_atr_mult', 'be_r_mult')) and ps.row_cfg(fx[0]).keys() == set(ps.BASE_KEYS))
+      all(k in rc for k in ('sl_level_mode', 'tp_level_mode', 'sl_atr_mult', 'be_r_mult')) and ps.row_cfg(fx[0]).keys() == set(ps.BASE_KEYS))
 from api.v1.backtest import BacktestRequest as _BR  # noqa: E402
 okreq = all(_BR(strategy='x', strategy_code='c', symbol='BTCUSDT', interval='60', **c) for c in au[:10])
 check('P5: toda configuración automática del buscador pasa la validación del motor', bool(okreq))
@@ -165,7 +189,7 @@ def run(st):
 
 
 t_fixed = run(strat(fire=[i]))
-t_fixed2 = run(strat(fire=[i], sl_mode='fixed', tp_mode='fixed'))
+t_fixed2 = run(strat(fire=[i], sl_level_mode='fixed', tp_level_mode='fixed'))
 check('B1: modo fijo: mismas operaciones con o sin la clave (como antes)', t_fixed == t_fixed2 and len(t_fixed) == 1)
 e = t_fixed[0]['entry_price']
 check('B2: modo fijo: SL 1 % y TP 2 % del precio de entrada',
@@ -264,7 +288,7 @@ def rejects(cfg):
 
 check('D4: validación (Laravel y Python): modo desconocido, mínimo > máximo y multiplicadores ≤ 0 se rechazan, '
       'también dentro del JSON de la estrategia',
-      rejects({'sl_mode': 'atx'}) and rejects({'tp_mode': 'zz'}) and rejects({'tp_atr_mult': -1}) and rejects({'sl_min_pct': 6, 'sl_max_pct': 5}) and rejects({'tp_r_mult': 0})
+      rejects({'sl_level_mode': 'atx'}) and rejects({'tp_level_mode': 'zz'}) and rejects({'tp_atr_mult': -1}) and rejects({'sl_min_pct': 6, 'sl_max_pct': 5}) and rejects({'tp_r_mult': 0})
       and not rejects(dict(AUTO)))
 
 # ── E. Códigos de salida de la regresión ──

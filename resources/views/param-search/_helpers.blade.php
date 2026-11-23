@@ -12,10 +12,10 @@ window.SB = window.SB || (function () {
     const pfCls = v => v >= 1 ? 'sb-pos' : 'sb-neg';
     function cfgTags(c) {
         const t = [];
-        if (c.sl_mode === 'atr' || (c.tp_mode && c.tp_mode !== 'fixed')) {   // D-45: SL/TP automáticos (azul)
-            t.push([c.sl_mode === 'atr' ? 'SL ATR ×' + c.sl_atr_mult + ' (' + c.sl_min_pct + '–' + c.sl_max_pct + '%)' : 'SL ' + c.sl_pct + '%', c.sl_mode === 'atr' ? 2 : 0]);
-            t.push([c.tp_mode === 'r' ? 'TP ' + c.tp_r_mult + ' × SL' : (c.tp_mode === 'atr' ? 'TP ATR ×' + c.tp_atr_mult : 'TP ' + c.tp_pct + '%'), c.tp_mode !== 'fixed' ? 2 : 0]);
-            t.push([c.sl_mode === 'atr' ? (Number(c.be_r_mult) >= 20 ? 'Sin BE' : 'BE ' + c.be_r_mult + ' × SL') : (Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%'), c.sl_mode === 'atr' ? 2 : 0]);
+        if (c.sl_level_mode === 'atr' || (c.tp_level_mode && c.tp_level_mode !== 'fixed')) {   // D-45: SL/TP automáticos (azul)
+            t.push([c.sl_level_mode === 'atr' ? 'SL ATR ×' + c.sl_atr_mult + ' (' + c.sl_min_pct + '–' + c.sl_max_pct + '%)' : 'SL ' + c.sl_pct + '%', c.sl_level_mode === 'atr' ? 2 : 0]);
+            t.push([c.tp_level_mode === 'r' ? 'TP ' + c.tp_r_mult + ' × SL' : (c.tp_level_mode === 'atr' ? 'TP ATR ×' + c.tp_atr_mult : 'TP ' + c.tp_pct + '%'), c.tp_level_mode !== 'fixed' ? 2 : 0]);
+            t.push([c.sl_level_mode === 'atr' ? (Number(c.be_r_mult) >= 20 ? 'Sin BE' : 'BE ' + c.be_r_mult + ' × SL') : (Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%'), c.sl_level_mode === 'atr' ? 2 : 0]);
         } else {
             t.push(['SL ' + c.sl_pct + '%'], ['TP ' + c.tp_pct + '%']);
             t.push([Number(c.be_pct) >= 99 ? 'Sin BE' : 'BE ' + c.be_pct + '%']);

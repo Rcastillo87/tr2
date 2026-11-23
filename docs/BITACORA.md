@@ -21,7 +21,24 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Claves del SL/TP automático renombradas: choque con TrianguloRuptura (p94, D-45) — 23-nov
+- **Hallazgo (instalando p93):** la comprobación del instalador contó 1 estrategia con `sl_mode`. TrianguloRuptura
+  (#10) usa su propia clave `sl_mode` («swing» | «fixed»: SL en el último swing), la misma que eligió p93 para el modo
+  del SL. Lectura del código (`self.sl_mode = params.get('sl_mode', 'swing')` en su `__init__`, después de la base):
+  **Paper y Real no cambiaron** (la estrategia pisa el atributo con su valor y «swing» no es un modo automático: su SL
+  por señal pasa igual). **Sí se rompió:** la validación nueva rechazaba los backtests, búsquedas y guardados de
+  TrianguloRuptura (`'swing'` no válido), y «TP veces el SL» con SL fijo le habría enviado `sl_mode: fixed`.
+  La estrategia está en `docs/estrategias/`: se debió revisar antes de elegir los nombres.
+- **Fix:** claves `sl_level_mode` y `tp_level_mode` (atributos con el mismo nombre). `sl_tp_mode` de p92 sigue valiendo.
+  Ninguna config ni backtest usaba las de p93.
+- **Protección:** `auto_levels_test` K1–K4 (TrianguloRuptura real del repositorio: conserva «swing», pasa la
+  validación, sigue en swing con «TP veces el SL»; ninguna estrategia del repositorio usa los nombres nuevos) y el
+  instalador revisa las estrategias guardadas en el servidor antes de aplicar (aborta si alguna usa esos nombres).
+  Código de p93: FALLA (rechaza el JSON de TrianguloRuptura). Regresión 74 Python + 30 PHP en TODO OK.
+
 ### SL y TP automáticos por separado: formulario, búsqueda y pantallas (p93, D-45) — 23-nov
+- **Instalado:** `ab269d4` (23-nov 15:20 UTC): regresión 74 + 30 en el servidor, migración (72 búsquedas → «fixed»),
+  vistas compilan, motor y Horizon reiniciados, 0 errores. La comprobación final encontró el choque de p94.
 - **Decisión (23-nov):** SL y TP independientes («sepáralos»: un solo modo confundía). Maquetas aprobadas: formulario
   con dos menús (Stop Loss: Fijo / Automático; Take Profit: Fijo / Veces el SL / Automático) y bloque «SL y TP a
   probar» en la búsqueda (Fijos por defecto, Automáticos, Los dos y comparar).

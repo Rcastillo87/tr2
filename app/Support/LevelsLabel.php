@@ -11,8 +11,8 @@ class LevelsLabel
     /** @param array<string, mixed> $p parámetros de la config (config_params o params) */
     public static function modes(array $p): array
     {
-        $sl = $p['sl_mode'] ?? null;
-        $tp = $p['tp_mode'] ?? null;
+        $sl = $p['sl_level_mode'] ?? null;
+        $tp = $p['tp_level_mode'] ?? null;
         if (($p['sl_tp_mode'] ?? null) === 'atr') {   // p92: SL automático + TP veces el SL
             $sl ??= 'atr';
             $tp ??= 'r';

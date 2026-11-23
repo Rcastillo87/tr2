@@ -25,22 +25,22 @@ $hasLevels = method_exists(\App\Services\BacktestPayload::class, 'levels');
 $check('existe BacktestPayload::levels', $hasLevels);
 
 if ($hasLevels) {
-    $form = ['sl_pct' => '1.5', 'tp_pct' => '3', 'sl_mode' => 'fixed', 'tp_mode' => 'fixed', 'sl_atr_mult' => '2', 'tp_r_mult' => '2'];
+    $form = ['sl_pct' => '1.5', 'tp_pct' => '3', 'sl_level_mode' => 'fixed', 'tp_level_mode' => 'fixed', 'sl_atr_mult' => '2', 'tp_r_mult' => '2'];
     $check('L1: Fijo + Fijo: no viaja nada (payload y hash de backtest iguales que antes)', $levels($form) === [] && $levels([]) === []);
-    $got = $levels(['sl_mode' => 'atr', 'tp_mode' => 'r', 'sl_atr_mult' => '2.5', 'sl_min_pct' => '0.8', 'sl_max_pct' => '4',
+    $got = $levels(['sl_level_mode' => 'atr', 'tp_level_mode' => 'r', 'sl_atr_mult' => '2.5', 'sl_min_pct' => '0.8', 'sl_max_pct' => '4',
                     'be_r_mult' => '1', 'tp_r_mult' => '3', 'tp_atr_mult' => '9']);
     $check('L2: SL automático + TP veces el SL: modos y solo sus multiplicadores (sin tp_atr_mult)', $got === [
-        'sl_mode' => 'atr', 'tp_mode' => 'r', 'sl_atr_mult' => 2.5, 'sl_min_pct' => 0.8, 'sl_max_pct' => 4.0, 'be_r_mult' => 1.0,
+        'sl_level_mode' => 'atr', 'tp_level_mode' => 'r', 'sl_atr_mult' => 2.5, 'sl_min_pct' => 0.8, 'sl_max_pct' => 4.0, 'be_r_mult' => 1.0,
         'tp_r_mult' => 3.0], $got);
-    $got = $levels(['sl_mode' => 'fixed', 'tp_mode' => 'atr', 'tp_atr_mult' => '4', 'sl_atr_mult' => '2']);
-    $check('L3: SL fijo + TP automático: sin campos del SL automático', $got === ['sl_mode' => 'fixed', 'tp_mode' => 'atr',
+    $got = $levels(['sl_level_mode' => 'fixed', 'tp_level_mode' => 'atr', 'tp_atr_mult' => '4', 'sl_atr_mult' => '2']);
+    $check('L3: SL fijo + TP automático: sin campos del SL automático', $got === ['sl_level_mode' => 'fixed', 'tp_level_mode' => 'atr',
         'tp_atr_mult' => 4.0], $got);
-    $got = $levels(['sl_mode' => 'atr', 'tp_mode' => 'fixed']);
-    $check('L4: SL automático + TP fijo: valores por defecto 2 · 0,8 · 5 · 1', $got === ['sl_mode' => 'atr', 'tp_mode' => 'fixed',
+    $got = $levels(['sl_level_mode' => 'atr', 'tp_level_mode' => 'fixed']);
+    $check('L4: SL automático + TP fijo: valores por defecto 2 · 0,8 · 5 · 1', $got === ['sl_level_mode' => 'atr', 'tp_level_mode' => 'fixed',
         'sl_atr_mult' => 2.0, 'sl_min_pct' => 0.8, 'sl_max_pct' => 5.0, 'be_r_mult' => 1.0], $got);
-    $check('L5: modo desconocido = fijo', $levels(['sl_mode' => 'xx', 'tp_mode' => 'yy']) === []);
-    $err = \App\Services\BacktestPayload::validate(['sl_mode' => 'atr', 'sl_min_pct' => 6, 'sl_max_pct' => 5]);
-    $err2 = \App\Services\BacktestPayload::validate(['tp_mode' => 'zz']);
+    $check('L5: modo desconocido = fijo', $levels(['sl_level_mode' => 'xx', 'tp_level_mode' => 'yy']) === []);
+    $err = \App\Services\BacktestPayload::validate(['sl_level_mode' => 'atr', 'sl_min_pct' => 6, 'sl_max_pct' => 5]);
+    $err2 = \App\Services\BacktestPayload::validate(['tp_level_mode' => 'zz']);
     $check('L6: las mismas reglas que Python: mínimo > máximo y modo inválido se rechazan', $err !== null && $err2 !== null, [$err, $err2]);
 }
 
@@ -49,12 +49,12 @@ if ($lvl) {
     $fix = ['sl_pct' => 1.5, 'tp_pct' => 3, 'be_pct' => 2];
     $check('E1: fijo: «1.5%», «3%», «2%» (como hoy)', [$L::sl($fix), $L::tp($fix), $L::be($fix)] === ['1.5%', '3%', '2%']
         && ! $L::isAuto($fix));
-    $a = ['sl_mode' => 'atr', 'tp_mode' => 'r', 'sl_atr_mult' => 2, 'sl_min_pct' => 0.8, 'sl_max_pct' => 5, 'tp_r_mult' => 2,
+    $a = ['sl_level_mode' => 'atr', 'tp_level_mode' => 'r', 'sl_atr_mult' => 2, 'sl_min_pct' => 0.8, 'sl_max_pct' => 5, 'tp_r_mult' => 2,
           'be_r_mult' => 1, 'sl_pct' => 1.5];
     $check('E2: automático: «ATR ×2 (0.8–5%)», «2 × SL», «1 × SL»',
         [$L::sl($a), $L::tp($a), $L::be($a)] === ['ATR ×2 (0.8–5%)', '2 × SL', '1 × SL'] && $L::isAuto($a), [$L::sl($a), $L::tp($a), $L::be($a)]);
     $check('E3: TP automático: «ATR ×4»; BE a 20 veces el SL = «Sin BE»',
-        $L::tp(['tp_mode' => 'atr', 'tp_atr_mult' => 4]) === 'ATR ×4' && $L::be(['sl_mode' => 'atr', 'be_r_mult' => 20]) === 'Sin BE');
+        $L::tp(['tp_level_mode' => 'atr', 'tp_atr_mult' => 4]) === 'ATR ×4' && $L::be(['sl_level_mode' => 'atr', 'be_r_mult' => 20]) === 'Sin BE');
     $check('E4: p92 «sl_tp_mode: atr» = SL automático + TP veces el SL', $L::modes(['sl_tp_mode' => 'atr']) === ['atr', 'r']);
 }
 
@@ -68,7 +68,7 @@ $check('C3: un backtest creado desde la búsqueda conserva el SL/TP automático'
 
 $run = $read('resources/views/backtesting/run.blade.php');
 $check('V1: formulario: dos menús (Stop Loss / Take Profit) con sus opciones y campos',
-    str_contains($run, 'name="sl_mode"') && str_contains($run, 'name="tp_mode"') && str_contains($run, '<option value="r"')
+    str_contains($run, 'name="sl_level_mode"') && str_contains($run, 'name="tp_level_mode"') && str_contains($run, '<option value="r"')
     && str_contains($run, 'name="sl_atr_mult"') && str_contains($run, 'name="tp_atr_mult"') && str_contains($run, 'name="be_r_mult"')
     && str_contains($run, 'name="sl_min_pct"') && str_contains($run, 'name="sl_max_pct"') && str_contains($run, 'name="tp_r_mult"'));
 $check('V2: formulario: los campos de hoy siguen (sl_pct, tp_pct, be_pct) y «Fijo» viene por defecto en configs viejas',

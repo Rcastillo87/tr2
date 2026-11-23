@@ -315,8 +315,8 @@
     }
     function nearText(n) {
         const c = n.cfg || {};
-        const lv = c.sl_mode === 'atr' || (c.tp_mode && c.tp_mode !== 'fixed')   // D-45
-            ? `SL ${c.sl_mode === 'atr' ? 'ATR ×' + c.sl_atr_mult : c.sl_pct + '%'} / TP ${c.tp_mode === 'r' ? c.tp_r_mult + ' × SL' : (c.tp_mode === 'atr' ? 'ATR ×' + c.tp_atr_mult : c.tp_pct + '%')}`
+        const lv = c.sl_level_mode === 'atr' || (c.tp_level_mode && c.tp_level_mode !== 'fixed')   // D-45
+            ? `SL ${c.sl_level_mode === 'atr' ? 'ATR ×' + c.sl_atr_mult : c.sl_pct + '%'} / TP ${c.tp_level_mode === 'r' ? c.tp_r_mult + ' × SL' : (c.tp_level_mode === 'atr' ? 'ATR ×' + c.tp_atr_mult : c.tp_pct + '%')}`
             : `SL ${c.sl_pct}% / TP ${c.tp_pct}%`;
         return `${SB.LABEL[n.interval] || n.interval} · ${lv}: ${SB.esc(n.why)}`;
     }

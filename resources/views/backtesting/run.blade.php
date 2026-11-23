@@ -219,14 +219,14 @@
                     // D-45: SL y TP por separado (Fijo como siempre, o automático). Sin claves guardadas = Fijo + Fijo.
                     $lvCp = (array) ($backtestToLoad->config_params ?? []);
                     [$lvSl, $lvTp] = \App\Support\LevelsLabel::modes($lvCp);
-                    $lvSl = old('sl_mode', $lvSl);
-                    $lvTp = old('tp_mode', $lvTp);
+                    $lvSl = old('sl_level_mode', $lvSl);
+                    $lvTp = old('tp_level_mode', $lvTp);
                     $lvVal = fn (string $k, string $d) => old($k, $lvCp[$k] ?? $d);
                 @endphp
                 <div class="bt-levels">
                     <div class="bt-level-box">
                         <label class="bt-label" for="sl_mode_select" style="font-weight:600;color:var(--color-text-primary);">Stop Loss</label>
-                        <select name="sl_mode" id="sl_mode_select" onchange="toggleLevelInputs()" class="bt-input">
+                        <select name="sl_level_mode" id="sl_mode_select" onchange="toggleLevelInputs()" class="bt-input">
                             <option value="fixed" @selected($lvSl === 'fixed')>Fijo (%) — como hoy</option>
                             <option value="atr" @selected($lvSl === 'atr')>Automático (según el ATR)</option>
                         </select>
@@ -254,7 +254,7 @@
                     </div>
                     <div class="bt-level-box">
                         <label class="bt-label" for="tp_mode_select" style="font-weight:600;color:var(--color-text-primary);">Take Profit</label>
-                        <select name="tp_mode" id="tp_mode_select" onchange="toggleLevelInputs()" class="bt-input">
+                        <select name="tp_level_mode" id="tp_mode_select" onchange="toggleLevelInputs()" class="bt-input">
                             <option value="fixed" @selected($lvTp === 'fixed')>Fijo (%) — como hoy</option>
                             <option value="r" @selected($lvTp === 'r')>Veces el SL</option>
                             <option value="atr" @selected($lvTp === 'atr')>Automático (según el ATR)</option>

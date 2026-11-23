@@ -396,7 +396,7 @@ function showConfigModal(params, title) {
         sl_pct: 'Stop Loss %', tp_pct: 'Take Profit 1 %', tp2_pct: 'Take Profit 2 %',
         tp3_pct: 'Take Profit 3 %', tp4_pct: 'Take Profit 4 %', be_pct: 'Break-even %',
         max_duration: 'Máx. duración (velas)', risk_per_trade_pct: 'Riesgo/trade %',
-        sl_mode: 'Stop Loss: modo', tp_mode: 'Take Profit: modo', sl_atr_mult: 'SL: veces el ATR', sl_min_pct: 'SL mínimo %',
+        sl_level_mode: 'Stop Loss: modo', tp_level_mode: 'Take Profit: modo', sl_atr_mult: 'SL: veces el ATR', sl_min_pct: 'SL mínimo %',
         sl_max_pct: 'SL máximo %', be_r_mult: 'Break-even: veces el SL', tp_r_mult: 'TP: veces el SL', tp_atr_mult: 'TP: veces el ATR',
         mode: 'Modo', regime_filter: 'Filtro régimen', allowed_regimes: 'Regímenes permitidos', macro_trend_filter: 'Filtro macro H4',
         btc_trend_filter: 'Filtro tendencia BTC',
