@@ -13,8 +13,6 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 6 | C5-19 | P1 | Tamaño con balance y precio desactualizados | Pendiente de validar |
-| 7 | C5-10 | P1 | Confirmar SL/TP tras 34040 | Pendiente de validar |
 | 8 | C5-20 | P1 | Riesgo por suscripción y modo One-Way | Pendiente de validar |
 | 9 | C5-01 | P1 | Integridad del libro de ejecuciones y costos | Pendiente de validar |
 | 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Pendiente de validar |
@@ -32,7 +30,27 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-18 · Límite mensual sin saldo de referencia (P1) — **Válido** · Implementado en p96 (D-51)
+### C5-19 · Tamaño con saldo y precio desactualizados (P1) — **Válido en la forma; impacto medido despreciable** · Implementado en p97
+- Confirmado en código: el tamaño se calcula con la primera lectura; si el precio se mueve > 0,5 % se recalculan SL/TP
+  pero no el tamaño; el saldo releído solo se guarda. Como el SL va en %, el riesgo real se desvía en la proporción del
+  movimiento (1 % de movimiento → 1,01 % de riesgo). El redondeo al paso de Bybit es hacia abajo (solo baja el riesgo).
+- **Medido en el servidor (23-nov, 13 operaciones Real):** riesgo real 0,9989 %–1,0013 % contra 1 % configurado
+  (máximo 0,13 % relativo, #85 con 0,131 % de movimiento); ninguna superó el 0,5 % (nunca se recalculó).
+- **Fix (pequeño):** con movimiento > 0,5 % el tamaño se recalcula con el último precio y el último saldo (mismo tope y
+  paso; `_risk_size`); la fila guarda el tamaño enviado; el historial `opened` guarda `risk_planned_pct` y
+  `risk_real_pct` (con el fill y el SL final). Las ejecuciones parciales: C5-14 y el libro de p89.
+
+### C5-10 · SL/TP tras 34040 sin confirmar (P1) — **Válido (riesgo bajo)** · Implementado en p97
+- Confirmado: 34040 («not modified») se tomaba como éxito sin leer la posición. Atenuante: el monitor compara cada
+  minuto los niveles de Bybit con la base y los realinea (R-17), así que una diferencia duraba a lo sumo un minuto.
+- **Fix:** con 34040 se leen los niveles de la posición (`confirm_levels`, tolerancia de un paso de precio, la misma del
+  monitor); éxito solo si coinciden SL y TP. Sin posición, sin respuesta o niveles distintos = no confirmado (False),
+  y el que llamó actúa como ante un rechazo (aviso `protection_failed` / reintento del monitor).
+
+**Prueba p97:** `real_tick_size_test` S2 (ahora exige la confirmación) + S2b–S2e; `real_sizing_test` Z1–Z4. Código
+anterior: 7 FALLOS. Mutaciones 6/6. Regresión 75 Python + 30 PHP en TODO OK.
+
+### C5-18 · Límite mensual sin saldo de referencia (P1) — **Válido** · Instalado en p96 (`038e8d9`, D-51)
 - `ensure_month_baseline` (antes de cada tick): si Bybit no da el patrimonio, no guarda el saldo inicial del mes y lo
   reintenta al minuto siguiente. Mientras tanto `entry_limit_reason` no puede calcular la pérdida del mes y **permite
   entradas sin el límite mensual**. También permite si la cuenta no existe en la base.
@@ -99,3 +117,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-15 | Apertura sin guardar: no informa «abierta»; aviso y conciliación adelantada | p95 `859f817` | Regresión en el servidor. Falta DEMO-04 |
 | C5-16 | `orphaned` en el máximo; D-50; conciliación cada minuto; aviso a los 15 min | p95 `859f817` | 0 operaciones dudosas tras instalar. Falta DEMO-07 y DEMO-12 |
 | C5-17 | `protected` según Bybit al adoptar | p95 `859f817` | Regresión en el servidor. Falta DEMO-03/05 |
+| C5-18 | Sin saldo inicial del mes no se abre (D-51); aviso a los 10 min | p96 `038e8d9` | Cuenta 11 con saldo de 2026-11 (178.118,23): sin bloqueo. Falta DEMO-08 |

@@ -74,12 +74,38 @@ class TickClient(rp.FakeClient):
 async def client_cases():
     rt.httpx.AsyncClient = Http
     c = rt.BybitClient('k', 's', 'demo')
+    # C5-10 (p97): con 34040 se leen los niveles de la posición; solo es éxito si coinciden (± un paso de precio)
+    pos = {'size': '1', 'stopLoss': '0.05974', 'takeProfit': '0.05623'}
+
+    async def _pos(symbol):
+        if pos == 'ERR':
+            raise rt.BybitAPIError('caída simulada')
+        return pos
+    c.get_open_position = _pos
+
+    async def _tick(symbol):
+        return 0.00001
+    c.get_tick_size = _tick
     for code, want, name in ((0, True, 'S1 retCode 0 -> configurado'),
-                             (34040, True, 'S2 retCode 34040 «not modified» -> ya vigente: éxito (antes: fallo)'),
+                             (34040, True, 'S2 retCode 34040 y la posición tiene esos niveles (al paso) -> éxito confirmado'),
                              (10001, False, 'S3 otro rechazo (10001) -> sigue siendo fallo')):
         Http.post_answer = {'retCode': code, 'retMsg': 'not modified' if code == 34040 else 'x'}
         got = await c.set_trading_stop('DOGEUSDT', 0.0597414, 0.0562272)
         check(name, got is want, got)
+    Http.post_answer = {'retCode': 34040, 'retMsg': 'not modified'}
+    pos = {'size': '1', 'stopLoss': '0.06100', 'takeProfit': '0.05623'}
+    got = await c.set_trading_stop('DOGEUSDT', 0.0597414, 0.0562272)
+    check('S2b 34040 pero la posición tiene OTRO SL -> no confirmado (False)', got is False, got)
+    pos = {'size': '1', 'stopLoss': '0.05974', 'takeProfit': '0'}
+    got = await c.set_trading_stop('DOGEUSDT', 0.0597414, 0.0562272)
+    check('S2c 34040 y la posición sin TP -> no confirmado', got is False, got)
+    pos = None
+    got = await c.set_trading_stop('DOGEUSDT', 0.0597414, 0.0562272)
+    check('S2d 34040 sin posición -> no confirmado', got is False, got)
+    pos = 'ERR'
+    got = await c.set_trading_stop('DOGEUSDT', 0.0597414, 0.0562272)
+    check('S2e 34040 y Bybit no responde la lectura -> no confirmado (nunca «protegida» sin ver)', got is False, got)
+    del c.get_open_position, c.get_tick_size
 
     rt._LOT_CACHE.clear()
     if hasattr(rt, '_TICK_CACHE'):

@@ -752,14 +752,33 @@ class BybitClient:
             if data.get('retCode') == BYBIT_NOT_MODIFIED:
                 # Lo pedido, redondeado al paso de precio de la moneda, ya es lo vigente en Bybit: la posición tiene
                 # esos niveles. No es un fallo (19-nov, DOGEUSDT #99: falsa «protección fallida» y un ERROR por minuto).
-                logger.info(f"[BYBIT] SL/TP sin cambios en Bybit (ya vigentes al paso de precio): {symbol} SL={sl} TP={tp}")
-                return True
+                # C5-10 (p97): no se da por hecho: se leen los niveles de la posición y se confirman (± un paso).
+                ok = await self.confirm_levels(symbol, sl, tp)
+                logger.info(f"[BYBIT] SL/TP sin cambios en Bybit (34040): {symbol} SL={sl} TP={tp} — "
+                            f"{'confirmados en la posición' if ok else 'NO coinciden con la posición'}")
+                return ok
             else:
                 logger.error(f"[BYBIT] set_trading_stop error: {data.get('retMsg')} code={data.get('retCode')} body={body}")
                 return False
         except Exception as e:
             logger.error(f"[BYBIT] set_trading_stop exception: {e}")
             return False
+
+    async def confirm_levels(self, symbol: str, sl: float, tp: float | None) -> bool:
+        """C5-10 (p97): True si la posición de Bybit tiene ese SL (y ese TP, si se pide) con la tolerancia de un paso de
+        precio, la misma de la alineación del monitor. Sin posición o sin respuesta de Bybit: False (no confirmado)."""
+        try:
+            pos = await self.get_open_position(symbol)
+        except Exception as e:   # noqa: BLE001 — no confirmado, nunca «protegida»
+            logger.error(f"[BYBIT] {symbol}: no se pudieron leer los niveles para confirmarlos ({e})")
+            return False
+        if not pos:
+            return False
+        tick = await self.get_tick_size(symbol)
+        ref = abs(float(sl or 0)) or abs(float(tp or 0))
+        tol = max(ref * 1e-4, tick * 0.999) if tick else ref * 1e-4
+        ex_sl, ex_tp = float(pos.get('stopLoss') or 0), float(pos.get('takeProfit') or 0)
+        return abs(ex_sl - float(sl)) <= tol and (tp is None or abs(ex_tp - float(tp)) <= tol)
 
     async def get_order(self, symbol: str, order_id: str | None = None, link_id: str | None = None) -> dict | None:
         """Estado de una orden por orderId o, si no llegó el orderId, por orderLinkId. None si no se encuentra."""
@@ -1340,6 +1359,18 @@ class RealTrader:
             return f"máximo de trades abiertos ({open_count}/{acc['max_open_trades']})"
         return None
 
+    @staticmethod
+    def _risk_size(balance: float, risk_pct: float, price: float, sl: float, max_leverage: float, min_qty: float,
+                   qty_step: float) -> float | None:
+        """C5-19: tamaño para arriesgar risk_pct del saldo con ese SL, con el tope de apalancamiento y el paso de Bybit.
+        None si no llega al mínimo de la moneda."""
+        dist = abs(price - sl)
+        if not balance or not price or dist <= 0:
+            return None
+        size = round(min(balance * risk_pct / 100 / dist, balance * max_leverage / price), 6)
+        size = floor_to_step(size, qty_step)
+        return size if size >= min_qty and size > 0 else None
+
     async def open_trade(self, sub: dict, strategy_instance, side: str,
                           entry_signal_price: float, regime: str, client: BybitClient,
                           signal_sl_pct: float | None = None, signal_tp_pct: float | None = None,
@@ -1456,11 +1487,17 @@ class RealTrader:
             logger.warning(f"[REAL] Precio movio de {entry_signal_price} a {current_price} — recalculando SL/TP")
             sl, tp1, be = self._levels(strategy_instance, current_price, side, sl_pct, signal_tp_pct, signal_be_pct)
             entry_signal_price = current_price
-        # Actualizar SL/TP en DB si fueron recalculados
+            # C5-19 (p97): y el tamaño, con ese precio y el último saldo, para que el riesgo siga siendo el configurado
+            new_size = self._risk_size(balance, risk_pct, current_price, sl, max_leverage, min_qty, qty_step)
+            if new_size and new_size != size:
+                logger.warning(f"[REAL] {symbol}: tamaño recalculado {size} → {new_size} (precio {current_price})")
+                size = new_size
+        # Actualizar SL/TP (y tamaño) en DB si fueron recalculados
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE real_trades SET sl=$1, tp=$2, entry_price_signal=$3, updated_at=now() WHERE id=$4",
-                sl, tp1, entry_signal_price, trade_id
+                "UPDATE real_trades SET sl=$1, tp=$2, entry_price_signal=$3, size=$5, original_size=$5, updated_at=now()"
+                " WHERE id=$4",
+                sl, tp1, entry_signal_price, trade_id, size
             )
         logger.info(f"[REAL] Abriendo {side} {symbol} entry={entry_signal_price} sl={sl} tp1={tp1} size={size}")
         result = await client.place_market_order(symbol, bybit_side, size, sl=sl, tp=tp1, link_id=link_id)
@@ -1647,9 +1684,12 @@ class RealTrader:
                              reason='ejecutada en Bybit; no se pudo guardar en la base: la conciliación la recupera')
             return False
 
+        risk_real = (size * abs(filled_price - sl) / balance * 100) if balance else None
         await self.log_audit(trade_id, 'opened', {
             'order_id': order_id,
             'order_link_id': link_id,
+            'risk_planned_pct': risk_pct,                     # C5-19 (p97): riesgo configurado
+            'risk_real_pct': round(risk_real, 4) if risk_real is not None else None,   # con el fill y el SL final
             'filled_price': filled_price,
             'signal_price': entry_signal_price,
             'slippage_pct': slippage_pct,

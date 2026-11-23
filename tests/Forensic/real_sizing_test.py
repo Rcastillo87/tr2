@@ -5,6 +5,7 @@ Sin base de datos ni Bybit: pool y cliente simulados, sin órdenes reales.
 Uso: cd python-engine && venv/bin/python ../tests/Forensic/real_sizing_test.py
 """
 import asyncio
+import json
 import math
 import os
 import sys
@@ -84,6 +85,38 @@ async def main():
         exp = engine_size(params, bal, risk, price, sl_pct, side)
         got = await real_size(params, bal, risk, price, side)
         check(f'{label}: Real = motor ({exp})', isinstance(got, float) and abs(got - exp) < 1e-9, got)
+
+    # C5-19 (p97): el precio se movió más de 0,5 % entre la señal y el envío: el tamaño se recalcula con el último precio
+    class Moving(Client):
+        def __init__(self, balance, prices):
+            super().__init__(balance, prices[0])
+            self.prices = list(prices)
+
+        async def get_market_price(self, symbol):
+            return self.prices.pop(0) if len(self.prices) > 1 else self.prices[0]
+    params = dict(rp.P, sl_pct=2.0, max_leverage=5)
+    sub = {'symbol': 'BTCUSDT', 'interval': '60', 'broker_account_id': 1, 'user_id': 1, 'subscription_id': 1,
+           'paper_strategy_config_id': 9, 'strategy': 'T', 'broker': 'bybit', 'config_params': {**params, 'risk_per_trade_pct': 1.0}}
+    strat = rt_mod.build_strategy({**params, 'symbol': 'BTCUSDT', 'interval': '60'})
+    s = {'exec': []}
+    c = Moving(1000.0, [100.0, 102.0])
+    ok = await RealTrader(rp.FakePool(s)).open_trade(sub, strat, 'long', 100.0, 'RANGING', c)
+    sent = c.orders[0][1] if c.orders else None
+    exp = round(math.floor((1000 * 0.01 / (102.0 * 0.02)) / STEP) * STEP, 3)
+    check('Z1: precio 100 → 102 (2 %): se envía el tamaño recalculado con 102 (riesgo = 1 %)',
+          ok and sent is not None and abs(sent - exp) < 1e-9 and abs(sent - 5.0) > 1e-9, (sent, exp))
+    upd = [a for q, a in s['exec'] if 'SET sl=$1, tp=$2, entry_price_signal=$3, size=$5' in q]
+    check('Z2: la fila guarda el tamaño enviado', upd and abs(upd[-1][4] - sent) < 1e-9, upd[-1] if upd else '')
+    audit = json.loads(s.get('audit') or '[]') if isinstance(s.get('audit'), str) else (s.get('audit') or [])
+    opened = [e for e in audit if e.get('action') == 'opened']
+    check('Z3: el historial guarda el riesgo previsto y el real (con el fill y el SL final)',
+          opened and opened[-1]['data'].get('risk_planned_pct') == 1.0 and opened[-1]['data'].get('risk_real_pct') is not None,
+          opened[-1]['data'] if opened else audit)
+    s = {'exec': []}
+    c = Moving(1000.0, [100.0, 100.3])
+    await RealTrader(rp.FakePool(s)).open_trade(sub, strat, 'long', 100.0, 'RANGING', c)
+    check('Z4: movimiento de 0,3 % (< 0,5 %): el tamaño no cambia (5.0)', c.orders and abs(c.orders[0][1] - 5.0) < 1e-9,
+          c.orders[0][1] if c.orders else '')
 
     print('\nRESULTADO:', 'TODO OK' if fails == 0 else f'{fails} FALLO(S)')
     sys.exit(1 if fails else 0)

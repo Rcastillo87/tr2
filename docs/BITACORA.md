@@ -21,7 +21,17 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-19 y C5-10: tamaño con el último precio y SL/TP confirmados tras 34040 (p97) — 23-nov
+- **C5-19 (válido en la forma, impacto despreciable):** medido en las 13 operaciones Real: riesgo real 0,9989–1,0013 %
+  contra 1 %. Fix: con movimiento > 0,5 % se recalcula el tamaño (último precio y saldo); el historial guarda el riesgo
+  previsto y el real.
+- **C5-10 (válido, riesgo bajo):** 34040 ya no se da por bueno sin leer la posición: se confirman SL y TP (± un paso).
+- **Prueba:** `real_tick_size_test` S2–S2e, `real_sizing_test` Z1–Z4; código anterior 7 FALLOS; mutaciones 6/6;
+  regresión 75 + 30 en TODO OK.
+
 ### Ciclo 5 · C5-18: sin saldo inicial del mes no se abre (p96, D-51) — 23-nov
+- **Instalado:** `038e8d9` (23-nov 16:47 UTC): regresión 75 + 30, motor y Horizon reiniciados, 0 errores; cuenta 11 con
+  saldo inicial de 2026-11 (`saldo_del_mes_ok = t`), sin bloqueo; 0 operaciones dudosas.
 - **Validado:** `ensure_month_baseline` no guarda el saldo si Bybit no da el patrimonio (reintenta cada tick) y,
   mientras tanto, `entry_limit_reason` dejaba abrir sin aplicar el límite mensual; también con la cuenta ausente de la
   base. Hoy la cuenta 11 tiene saldo del mes: afecta a los primeros minutos de un mes o a una cuenta nueva si Bybit falla.
