@@ -104,6 +104,28 @@ LIQ_BUFFER = 0.005
 ORDER_DEAD_STATUSES = ('Rejected', 'Cancelled', 'Deactivated')
 # C5-16 (p95): operaciones en estado dudoso (la posición puede estar viva en Bybit sin que TR2 lo sepa con certeza).
 # Mientras la cuenta tenga una, no abre nada (D-50); las abiertas se siguen gestionando.
+# C5-07 (p100): tipo de huérfana con una marca fija al comienzo de error_message (no con el texto del mensaje).
+#   cierre   = la posición ya cerró en Bybit y falta el closed-pnl: la conciliación reintenta la liquidación;
+#   apertura = no se sabe si la orden quedó viva: la conciliación busca la posición o la orden.
+ORPHAN_CLOSE_TAG = '[huerfana:cierre]'
+ORPHAN_OPEN_TAG = '[huerfana:apertura]'
+_LEGACY_CLOSE_TEXT = 'no se pudo obtener pnl real'   # filas anteriores a p100 (sin marca)
+
+
+def orphan_message(kind: str, detail: str) -> str:
+    """error_message de una operación que pasa a 'orphaned' (kind: 'close' o 'open'). La de cierre conserva además el
+    texto anterior, para que el código previo a p100 (p100_revertir.sh) la siga reconociendo."""
+    if kind == 'close':
+        return f"{ORPHAN_CLOSE_TAG} {detail} ({_LEGACY_CLOSE_TEXT})"
+    return f"{ORPHAN_OPEN_TAG} {detail}"
+
+
+def is_close_orphan(trade: dict) -> bool:
+    """Huérfana de cierre (con la marca de p100, o el texto de las filas anteriores)."""
+    msg = trade.get('error_message') or ''
+    return msg.startswith(ORPHAN_CLOSE_TAG) or (not msg.startswith(ORPHAN_OPEN_TAG) and _LEGACY_CLOSE_TEXT in msg)
+
+
 UNRESOLVED_SQL = ("(status = 'orphaned' OR (status = 'pending_open' AND created_at < now() - interval '3 minutes'))")
 
 
@@ -1637,8 +1659,8 @@ class RealTrader:
         if not filled:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE real_trades SET status='orphaned', error_message='No confirmada tras 3 verificaciones (38s)', updated_at=now() WHERE id=$1",
-                    trade_id
+                    "UPDATE real_trades SET status='orphaned', error_message=$2, updated_at=now() WHERE id=$1",
+                    trade_id, orphan_message('open', 'No confirmada tras 3 verificaciones (38s)')
                 )
             logger.error(f"[REAL] Trade #{trade_id} {symbol} marcado como orphaned tras 3 verificaciones")
             await emit_event(self.pool, sub['broker_account_id'], 'open_unconfirmed', trade_id,
@@ -2082,11 +2104,9 @@ class RealTrader:
                     logger.error(f"[REAL] {symbol} #{trade_id}: cerrada en Bybit sin closed-pnl tras reintento — 'orphaned'")
                     async with self.pool.acquire() as conn:
                         await conn.execute(
-                            """UPDATE real_trades SET status = 'orphaned',
-                                   error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (closed-pnl vacio tras reintento)',
-                                   updated_at = now()
+                            """UPDATE real_trades SET status = 'orphaned', error_message = $2, updated_at = now()
                                WHERE id = $1 AND status IN ('open', 'pending_close')""",
-                            trade_id
+                            trade_id, orphan_message('close', 'Posicion cerrada en Bybit, sin closed-pnl tras reintento')
                         )
                     outcome["errors"] += 1
                 elif settled:

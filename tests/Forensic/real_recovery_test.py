@@ -197,7 +197,9 @@ async def part_reconcile():
     c = RecClient(order=FILLED, positions=[None])
     await reconcile(s, c, settle=None)
     check('P5: ejecutada y cerrada sin closed-pnl aún -> orphaned (la conciliación lo reintenta)',
-          not events(s) and any("status='orphaned'" in q and 'apertura interrumpida' in q for q in sqls(s)), sqls(s))
+          not events(s) and any("status='orphaned'" in q and any(isinstance(x, str) and x.startswith(rt_mod.ORPHAN_CLOSE_TAG)
+                                                                  and 'apertura interrumpida' in x for x in args)
+                                for q, args in s['exec']), s['exec'])   # C5-07: huérfana de CIERRE con la marca fija
 
     s = {'exec': [], 'pending': [pending(link=None)]}
     c = RecClient(positions=[None])

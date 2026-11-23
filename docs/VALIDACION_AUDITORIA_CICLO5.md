@@ -13,8 +13,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 9 | C5-01 | P1 | Integridad del libro de ejecuciones y costos | Implementado en p99 (D-53) |
-| 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Pendiente de validar |
+| 10 | C5-07 | P1 | Conciliación: errores dentro de HTTP 200, estados | Implementado en p100 (D-54) |
 | 11 | C5-02 | P1 | Protección lookahead ante errores | Pendiente de validar |
 | 12 | C5-09 | P1 | Matriz dinámica de permisos y aislamiento | Pendiente de validar |
 | 13 | C5-04 | P1 | Aislamiento de pruebas con PostgreSQL | Pendiente de validar (p89 ya exige base «*test» en `execution_ledger_test`) |
@@ -29,7 +28,30 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-01 · Integridad del libro de ejecuciones de Bybit (P1) — **Válido (5 de 5 en código; latente)** · Implementado en p99 (D-53)
+### C5-07 · Fiabilidad de la conciliación de Real (P1) — **Válido (1) y válido en parte (2); latente** · Implementado en p100 (D-54)
+1. **Errores dentro de un HTTP 200: válido.** `/v1/real/reconcile` respondía siempre `status: ok`; los fallos iban a
+   `results.errors`, que `RealTradingReconcileJob` no leía (ni log ni aviso). Errores de Bybit con huérfanas y
+   `pending_open` se anotaban en `ok` con nota. Una excepción inesperada en una cuenta tumbaba la conciliación de todas
+   (HTTP 500, solo una línea de log).
+2. **Estados poco claros: válido en parte.** Los tres casos existen (`failed` = no ejecutada; `pending_open` / huérfana
+   de apertura = ejecución desconocida; huérfana de cierre = falta el closed-pnl), pero los dos tipos de huérfana se
+   distinguían por el texto de `error_message` («no se pudo obtener pnl real»).
+3. **Cierre confirmado sin closed-pnl: válido en parte (ya cubierto).** Queda huérfana de cierre, se reintenta en cada
+   conciliación (adelantada cada minuto, p95), bloquea entradas (D-50) y avisa a los 15 min (`real_unresolved`).
+- **Servidor (lectura 23-nov 20:33 UTC):** 0 errores de conciliación en `engine.log` y en `laravel.log` (desde el
+  22-nov); 13 cerradas y 3 abiertas, 0 huérfanas. **Nunca ocurrió.**
+- **Fix (D-54, «Procede» 23-nov):** cada cuenta en su propio try (las demás siguen); errores de Bybit a `errors`;
+  esperar el closed-pnl a `pending` (no es fallo); respuesta con `complete` y `status: partial` si hay errores.
+  `App\Support\ReconcileHealth` (puro): lista de errores y regla del aviso; el job registra cada error y, con fallos
+  10 min seguidos (HTTP, excepción o errores del motor), abre el incidente `real_reconcile`; al completarse lo cierra.
+  Huérfanas con marca fija `[huerfana:cierre]` / `[huerfana:apertura]` (`orphan_message`, `is_close_orphan`; las filas
+  anteriores con el texto viejo siguen reconociéndose, y la de cierre conserva ese texto para que una vuelta atrás con
+  `p100_revertir.sh` la siga reconociendo). Sin cambios de base ni de apertura / cierre.
+- **Prueba:** `real_reconcile_visibility_test` (nueva: R1–R5, H1–H8) y `reconcile_health_test.php` (nueva: A1–A11,
+  B1–B4); `real_recovery_test` P5 buscaba el texto en el SQL: ahora en el parámetro y con la marca. Código anterior:
+  FALLA. Mutaciones 16/16. Regresión 77 Python + 31 PHP en TODO OK.
+
+### C5-01 · Integridad del libro de ejecuciones de Bybit (P1) — **Válido (5 de 5 en código; latente)** · Instalado en p99 (`3f31b10`, D-53)
 1. **«ok» con diferencias:** confirmado. `record_trade` ponía `ok` con las dos patas aunque `leg_checks` tuviera
    diferencias de cantidad o precio, y con eso separaba comisión y funding.
 2. **No volvía a pedir partes:** confirmado. Con alguna parte guardada de una pata (`have[leg]`) no se consultaba más.
@@ -168,3 +190,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-19 | Tamaño recalculado con el último precio y saldo si el precio se movió > 0,5 %; riesgo previsto y real en el historial | p97 `3478b66` | Regresión en el servidor; impacto histórico medido 0,9989–1,0013 % (13 trades). Revisar `risk_real_pct` en las próximas aperturas |
 | C5-10 | Tras 34040 se lee la posición y solo se acepta si SL/TP coinciden | p97 `3478b66` | Regresión en el servidor. Falta DEMO-03 |
 | C5-20 | Riesgo de la suscripción validado (0 < r ≤ 100) antes de Bybit; CHECK en la base (D-52). One-Way: ya corregido (D-11) | p98 `3853d5d` | 6 suscripciones activas con 1 %; 0 riesgos propios. Sin prueba Demo necesaria |
+| C5-01 | Libro de ejecuciones: «ok» solo si cantidad, precio y comisiones cuadran; «no sé» = reintento; aviso a las 24 h (D-53) | p99 `3f31b10` | 13 cerradas `ok` con funding; las 3 abiertas del 23-nov pasaron la regla nueva (`open_ok`). Falta DEMO con parcial |

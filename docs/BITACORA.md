@@ -21,7 +21,17 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-07: la conciliación de Real no esconde fallos (p100, D-54) — 23-nov
+- **Validado:** errores dentro de un 200 que Laravel no leía (válido); huérfanas distinguidas por el texto (válido en
+  parte); cierre sin closed-pnl ya cubierto por p95 (válido en parte). Lectura: 0 errores y 0 huérfanas: latente.
+- **Fix:** cuentas aisladas; errores visibles (`errors`, `pending`, `complete`); aviso `real_reconcile` con 10 min de
+  fallos y aviso al normalizarse; marca fija de huérfana. Vuelta atrás: `p100_revertir.sh`.
+- **Prueba:** 2 pruebas nuevas (Python y PHP), `real_recovery_test` P5 ajustado; código anterior falla; mutaciones
+  16/16; regresión 77 + 31 en TODO OK.
+
 ### Ciclo 5 · C5-01: libro de ejecuciones de Bybit solo «ok» si todo cuadra (p99, D-53) — 23-nov
+- **Instalado:** `3f31b10` (23-nov 20:28 UTC): regresión 76 + 30, motor y Horizon reiniciados, 0 errores; 13 cerradas
+  `ok` con funding y las 3 abiertas del día ya `open_ok` con la regla nueva.
 - **Validado:** los 5 puntos del informe están en el código («ok» con diferencias; no se volvían a pedir partes; 10
   páginas sin confirmar el cursor; closed-pnl de una página y error = «no hay»; comisión faltante = 0). Lectura: 13 de
   13 operaciones cuadran exactas, 26 partes con comisión, 0 errores: nunca ocurrió (fix preventivo).

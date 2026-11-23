@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESHOLD, BybitAPIError,
                                  ORDER_DEAD_STATUSES, epoch_ms, executed_qty,
-                                 close_trigger_reason, last_close_order_id)
+                                 close_trigger_reason, last_close_order_id, orphan_message, is_close_orphan)
 from trading.risk_manager import RiskManager
 from trading import execution_ledger
 from trading.broker_events import emit_event
@@ -386,7 +386,7 @@ async def _recover_pending_opens(trader, client, account, pool, results) -> None
             position = await client.get_open_position(symbol) if executed is not False else None
         except BybitAPIError as e:
             logger.error(f"[RECONCILE] pending_open #{tid} {symbol}: Bybit no responde ({e}) — próximo ciclo")
-            results['ok'].append({'trade_id': tid, 'symbol': symbol, 'note': 'pending_open_api_error'})
+            results['errors'].append({'trade_id': tid, 'symbol': symbol, 'note': 'pending_open_api_error'})
             continue
 
         live = bool(position) and float(position.get('size', 0) or 0) > 0
@@ -425,9 +425,9 @@ async def _recover_pending_opens(trader, client, account, pool, results) -> None
             if settled is None:
                 async with pool.acquire() as conn:
                     await conn.execute(
-                        "UPDATE real_trades SET status='orphaned', error_message="
-                        "'Posicion cerrada en Bybit, no se pudo obtener pnl real (apertura interrumpida)',"
-                        " updated_at=now() WHERE id=$1", tid)
+                        "UPDATE real_trades SET status='orphaned', error_message=$2, updated_at=now() WHERE id=$1", tid,
+                        orphan_message('close', 'Posicion cerrada en Bybit, sin closed-pnl (apertura interrumpida)'))
+                results['pending'].append({'trade_id': tid, 'symbol': symbol, 'note': 'esperando closed-pnl'})
             else:
                 await emit_event(pool, account.id, 'reconcile_closed', tid, symbol=symbol)
                 results['reconciled'].append({'trade_id': tid, 'symbol': symbol, 'reason': 'pending_open_closed'})
@@ -452,7 +452,9 @@ async def reconcile(
 
     pool    = await get_json_pool()  # compartido (db.py), con codec jsonb
     trader  = RealTrader(pool)
-    results = {'reconciled': [], 'orphaned': [], 'ok': []}
+    # C5-07 (p100): ok = verificada sin cambios · reconciled = resuelta · pending = esperando a Bybit (closed-pnl) ·
+    # errors = no se pudo verificar (Bybit falló, sin config, cuenta ocupada o error inesperado). complete = sin errors.
+    results = {'reconciled': [], 'orphaned': [], 'ok': [], 'pending': [], 'errors': []}
 
     try:
         async def _reconcile_account(account):
@@ -471,7 +473,7 @@ async def reconcile(
                     position = await client.get_open_position(symbol)
                 except BybitAPIError as e:
                     logger.error(f"[RECONCILE] {symbol} #{trade['id']}: error consultando Bybit ({e}) — se omite, NO se marca cerrado")
-                    results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'error': str(e)})
+                    results['errors'].append({'trade_id': trade['id'], 'symbol': symbol, 'error': str(e)})
                     continue
                 if position:
                     results['ok'].append({'trade_id': trade['id'], 'symbol': symbol})
@@ -481,13 +483,11 @@ async def reconcile(
                     logger.warning(f"[RECONCILE] Trade #{trade['id']} {symbol}: cerrada en Bybit sin closed-pnl — 'orphaned'")
                     async with pool.acquire() as conn:
                         await conn.execute(
-                            """UPDATE real_trades SET status = 'orphaned',
-                                   error_message = 'Posicion cerrada en Bybit, no se pudo obtener pnl real (get_closed_pnl sin match)',
-                                   updated_at = now()
+                            """UPDATE real_trades SET status = 'orphaned', error_message = $2, updated_at = now()
                                WHERE id = $1 AND status IN ('open', 'pending_close')""",
-                            trade['id']
+                            trade['id'], orphan_message('close', 'Posicion cerrada en Bybit, sin closed-pnl (conciliacion)')
                         )
-                    results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'no_exit_price_found'})
+                    results['pending'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'esperando closed-pnl'})
                 else:
                     results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'closed_on_exchange'})
                     if settled:
@@ -509,7 +509,7 @@ async def reconcile(
                 symbol = trade['symbol']
 
                 # 2a. Orphaned de CIERRE: la posición cerró pero faltaba el pnl → reintentar
-                if trade['error_message'] and 'no se pudo obtener pnl real' in trade['error_message']:
+                if is_close_orphan(trade):
                     trade['status'] = 'open'  # close_trade solo actualiza filas 'open'
                     async with pool.acquire() as conn:
                         await conn.execute("UPDATE real_trades SET status='open' WHERE id=$1 AND status='orphaned'", trade['id'])
@@ -520,7 +520,7 @@ async def reconcile(
                     if settled is None:
                         async with pool.acquire() as conn:
                             await conn.execute("UPDATE real_trades SET status='orphaned' WHERE id=$1 AND status='open'", trade['id'])
-                        results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
+                        results['pending'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'esperando closed-pnl'})
                     else:
                         results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_pnl_recovered'})
                         if settled:
@@ -532,7 +532,7 @@ async def reconcile(
                     position = await client.get_open_position(symbol)
                 except BybitAPIError as e:
                     logger.error(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: error consultando Bybit ({e}) — próximo ciclo")
-                    results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
+                    results['errors'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
                     continue
                 if position and float(position.get('size', 0) or 0) > 0:
                     avg_price = float(position.get('avgPrice', 0) or trade['entry_price'])
@@ -544,7 +544,7 @@ async def reconcile(
                         results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol, 'reason': 'orphaned_adopted',
                                                       'protected': adopted == 'protected'})
                     else:
-                        results.setdefault('errors', []).append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_sin_config'})
+                        results['errors'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_sin_config'})
                 else:
                     # C5-14: sin posición, pero si la orden llegó a ejecutarse (aunque fuera en parte) la posición se
                     # abrió y ya cerró: se liquida con Bybit, nunca 'failed'
@@ -553,7 +553,7 @@ async def reconcile(
                                  if trade.get('order_link_id') else None)
                     except BybitAPIError as e:
                         logger.error(f"[RECONCILE] Orphaned #{trade['id']} {symbol}: no se pudo consultar la orden ({e})")
-                        results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
+                        results['errors'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_api_error'})
                         continue
                     if executed_qty(order) > 0:
                         avg = float(order.get('avgPrice') or 0) or float(trade['entry_price'])
@@ -566,9 +566,9 @@ async def reconcile(
                         if settled is None:
                             async with pool.acquire() as conn:
                                 await conn.execute(
-                                    "UPDATE real_trades SET status='orphaned', error_message='Posicion cerrada en Bybit, no se"
-                                    " pudo obtener pnl real (apertura ejecutada)', updated_at=now() WHERE id=$1", trade['id'])
-                            results['ok'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'orphaned_pending_pnl'})
+                                    "UPDATE real_trades SET status='orphaned', error_message=$2, updated_at=now() WHERE id=$1",
+                                    trade['id'], orphan_message('close', 'Posicion cerrada en Bybit, sin closed-pnl (apertura ejecutada)'))
+                            results['pending'].append({'trade_id': trade['id'], 'symbol': symbol, 'note': 'esperando closed-pnl'})
                         else:
                             results['reconciled'].append({'trade_id': trade['id'], 'symbol': symbol,
                                                           'reason': 'orphaned_executed_closed'})
@@ -598,7 +598,7 @@ async def reconcile(
                     position = await client.get_open_position(sub.symbol)
                 except BybitAPIError as e:
                     logger.error(f"[RECONCILE] {sub.symbol} error consultando Bybit: {e}")
-                    results.setdefault('errors', []).append({'account_id': account.id, 'symbol': sub.symbol, 'error': str(e)})
+                    results['errors'].append({'account_id': account.id, 'symbol': sub.symbol, 'error': str(e)})
                     continue
                 if not position or float(position.get('size', 0) or 0) <= 0:
                     continue
@@ -627,16 +627,23 @@ async def reconcile(
                 results.setdefault('manual_ignored', []).append({'symbol': sub.symbol, 'side': db_side, 'size': pos_size})
 
         for account in request.accounts:
-            got, _ = await _exclusive(account.id, RECONCILE_LOCK_WAIT, lambda: _reconcile_account(account))
+            try:   # C5-07: un error inesperado en una cuenta no deja sin conciliar a las demás
+                got, _ = await _exclusive(account.id, RECONCILE_LOCK_WAIT, lambda: _reconcile_account(account))
+            except Exception as e:   # noqa: BLE001
+                logger.exception(f"[RECONCILE] Cuenta {account.id}: error inesperado — se sigue con las demás")
+                results['errors'].append({'account_id': account.id, 'note': 'error inesperado',
+                                          'error': f'{type(e).__name__}: {e}'[:300]})
+                continue
             if not got:
                 logger.warning(f"[RECONCILE] Cuenta {account.id} ocupada más de {RECONCILE_LOCK_WAIT:g} s: "
                                f"se reconcilia en el próximo ciclo")
-                results.setdefault('errors', []).append({'account_id': account.id, 'note': 'cuenta ocupada: omitida'})
+                results['errors'].append({'account_id': account.id, 'note': 'cuenta ocupada: omitida'})
 
     finally:
         await pool.close()
 
-    return {'status': 'ok', 'results': results}
+    complete = not results['errors']
+    return {'status': 'ok' if complete else 'partial', 'complete': complete, 'results': results}
 
 
 async def _adopt_position(trader: RealTrader, client, trade: dict, avg_price: float, side: str, symbol: str,
