@@ -9,7 +9,10 @@ use App\Models\Backtest;
 use App\Models\BrokerAccount;
 use App\Models\PaperStrategyConfig;
 use App\Models\RealStrategySubscription;
+use App\Models\ParamSearchRun;
 use App\Models\RealTrade;
+use App\Models\Strategy;
+use App\Support\StrategyDeletionPlan;
 use App\Support\StrategyLabel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +32,7 @@ final class StrategyConfigSync
     public const SOURCE_BACKTEST_SAVE = 'backtest_save';
     public const SOURCE_STOP          = 'stop';
     public const SOURCE_DELETE        = 'backtest_delete';
+    public const SOURCE_STRATEGY_DELETE = 'strategy_delete';
 
     /** Claves que describen la ejecución del backtest, no la estrategia. */
     private const RUN_ONLY_KEYS = [
@@ -228,6 +232,60 @@ final class StrategyConfigSync
             Log::info('[CONFIG-SYNC] backtest #' . $backtest->id . ' eliminado', ['configs' => $ids->all(), 'user' => $userId]);
 
             return null;
+        });
+    }
+
+    /**
+     * D-63 (C5-13): borra una estrategia y todo lo suyo, en una transacción (todo o nada). Reglas en
+     * App\Support\StrategyDeletionPlan. Lo de Real se conserva; las operaciones Real abiertas siguen gestionándose con
+     * su config_snapshot (y la cuenta se sigue vigilando: RealTradingTickJob::openRealTrades).
+     *
+     * @return array{error: ?string, message: ?string}
+     */
+    public function deleteStrategy(Strategy $strategy, ?int $userId = null): array
+    {
+        return DB::transaction(function () use ($strategy, $userId): array {
+            $strategy = Strategy::whereKey($strategy->id)->lockForUpdate()->first();
+            if (! $strategy) {
+                return ['error' => 'La estrategia ya no existe.', 'message' => null];
+            }
+            $backtestIds = Backtest::where('strategy_id', $strategy->id)->lockForUpdate()->pluck('id');
+            $configs     = PaperStrategyConfig::whereIn('backtest_id', $backtestIds)->lockForUpdate()->get();
+            $ids         = $configs->pluck('id');
+            $subs        = RealStrategySubscription::whereIn('paper_strategy_config_id', $ids)->lockForUpdate()->get();
+            $searching   = ParamSearchRun::where('strategy_id', $strategy->id)->whereIn('status', ParamSearchRun::ACTIVE)->count();
+
+            $plan = StrategyDeletionPlan::decide(
+                $configs->mapWithKeys(fn ($c) => [(int) $c->id => (bool) $c->active])->all(),
+                $strategy->hasActivePaper(),
+                $searching,
+                $subs->mapWithKeys(fn ($s) => [(int) $s->id => UserDeactivation::hasLiveTrades((int) $s->id)])->all(),
+            );
+            if ($plan['error'] !== null) {
+                return ['error' => $plan['error'], 'message' => null];
+            }
+
+            foreach ($configs as $config) {   // antes de borrar: las FK SET NULL anulan los ids de la fila de auditoría
+                $tombstone = ['deleted' => ['config_id' => (int) $config->id, 'backtest_id' => (int) $config->backtest_id,
+                                            'strategy_id' => (int) $strategy->id, 'display_name' => $config->display_name]];
+                $this->audit($config, 'deleted', (array) $config->params, $tombstone, [], self::SOURCE_STRATEGY_DELETE, $userId);
+            }
+            $paperTrades = DB::table('paper_trades')->whereIn('paper_strategy_config_id', $ids)->delete();
+            DB::table('paper_eval_state')->whereIn('paper_strategy_config_id', $ids)->delete();
+            DB::table('paper_eval_log')->whereIn('paper_strategy_config_id', $ids)->delete();
+            RealStrategySubscription::whereIn('id', $plan['retire_subs'])->update(['status' => 'paused', 'retire_on_close' => true]);
+            $subsDeleted = RealStrategySubscription::whereIn('id', $plan['delete_subs'])->delete();
+            $nConfigs    = PaperStrategyConfig::whereIn('id', $ids)->delete();
+            $searches    = ParamSearchRun::where('strategy_id', $strategy->id)->delete();
+            $backtests   = Backtest::whereIn('id', $backtestIds)->delete();
+            $name        = $strategy->name;
+            $strategy->delete();
+
+            $n = ['backtests' => $backtests, 'searches' => $searches, 'configs' => $nConfigs, 'paper_trades' => $paperTrades,
+                  'subs_deleted' => $subsDeleted, 'subs_retired' => count($plan['retire_subs'])];
+            Log::info("[CONFIG-SYNC] estrategia #{$strategy->id} {$name} eliminada", $n + ['config_ids' => $ids->all(), 'user' => $userId]);
+
+            return ['error' => null, 'message' => StrategyDeletionPlan::summary($name, $n)];
         });
     }
 

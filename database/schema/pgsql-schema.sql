@@ -1,11 +1,16 @@
+-- Esquema public de TR2 (solo estructura). Generado con ops/schema_dump.sh — no editar a mano.
+-- PostgreSQL 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1) · TimescaleDB 2.27.2
+-- Hypertables (recrear con create_hypertable después de crear la tabla):
+--   ohlcv_data por time cada 7 days
+-- Políticas de TimescaleDB:
+--   policy_compression en ohlcv_data cada 12:00:00 {"hypertable_id": 1, "compress_after": "14 days"}
+-- Migraciones SQL aplicadas después: database/sql-migrations (este volcado ya las incluye).
+
 --
 -- PostgreSQL database dump
 --
 
-\restrict qkJ5nAfwDKWwpSmNTsTz7UXB9dMOtKlY7dgbCuQoedbxBZ7GpG6jfgogzxxVLzo
 
--- Dumped from database version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -19,17 +24,10 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: timescaledb; Type: EXTENSION; Schema: -; Owner: -
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE EXTENSION IF NOT EXISTS timescaledb WITH SCHEMA public;
-
-
---
--- Name: EXTENSION timescaledb; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION timescaledb IS 'Enables scalable inserts and complex queries for time-series data (Community Edition)';
+CREATE SCHEMA public;
 
 
 SET default_tablespace = '';
@@ -54,1266 +52,6 @@ CREATE TABLE public.ohlcv_data (
 
 
 --
--- Name: _hyper_1_100_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_100_chunk (
-    CONSTRAINT constraint_100 CHECK ((("time" >= '2026-03-05 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-03-12 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_101_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_101_chunk (
-    CONSTRAINT constraint_101 CHECK ((("time" >= '2026-03-12 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-03-19 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_102_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_102_chunk (
-    CONSTRAINT constraint_102 CHECK ((("time" >= '2026-03-19 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-03-26 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_103_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_103_chunk (
-    CONSTRAINT constraint_103 CHECK ((("time" >= '2026-03-26 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-04-02 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_104_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_104_chunk (
-    CONSTRAINT constraint_104 CHECK ((("time" >= '2026-04-02 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-04-09 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_105_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_105_chunk (
-    CONSTRAINT constraint_105 CHECK ((("time" >= '2026-04-09 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-04-16 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_106_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_106_chunk (
-    CONSTRAINT constraint_106 CHECK ((("time" >= '2026-06-11 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-06-18 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_107_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_107_chunk (
-    CONSTRAINT constraint_107 CHECK ((("time" >= '2026-06-18 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-06-25 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_108_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_108_chunk (
-    CONSTRAINT constraint_108 CHECK ((("time" >= '2026-06-25 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-07-02 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_109_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_109_chunk (
-    CONSTRAINT constraint_109 CHECK ((("time" >= '2026-07-02 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-07-09 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_10_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_10_chunk (
-    CONSTRAINT constraint_10 CHECK ((("time" >= '2024-06-13 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-06-20 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_110_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_110_chunk (
-    CONSTRAINT constraint_110 CHECK ((("time" >= '2026-07-09 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-07-16 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_111_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_111_chunk (
-    CONSTRAINT constraint_111 CHECK ((("time" >= '2026-07-16 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-07-23 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_112_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_112_chunk (
-    CONSTRAINT constraint_112 CHECK ((("time" >= '2026-07-23 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-07-30 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_113_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_113_chunk (
-    CONSTRAINT constraint_113 CHECK ((("time" >= '2026-07-30 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-08-06 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_114_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_114_chunk (
-    CONSTRAINT constraint_114 CHECK ((("time" >= '2026-08-06 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-08-13 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_115_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_115_chunk (
-    CONSTRAINT constraint_115 CHECK ((("time" >= '2026-08-13 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-08-20 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_116_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_116_chunk (
-    CONSTRAINT constraint_116 CHECK ((("time" >= '2026-08-20 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-08-27 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_117_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_117_chunk (
-    CONSTRAINT constraint_117 CHECK ((("time" >= '2026-08-27 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-09-03 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_118_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_118_chunk (
-    CONSTRAINT constraint_118 CHECK ((("time" >= '2026-09-03 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-09-10 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_119_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_119_chunk (
-    CONSTRAINT constraint_119 CHECK ((("time" >= '2026-09-10 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-09-17 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_11_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_11_chunk (
-    CONSTRAINT constraint_11 CHECK ((("time" >= '2024-06-20 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-06-27 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_120_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_120_chunk (
-    CONSTRAINT constraint_120 CHECK ((("time" >= '2026-09-17 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-09-24 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_121_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_121_chunk (
-    CONSTRAINT constraint_121 CHECK ((("time" >= '2026-09-24 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-10-01 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_122_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_122_chunk (
-    CONSTRAINT constraint_122 CHECK ((("time" >= '2026-10-01 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-10-08 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_123_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_123_chunk (
-    CONSTRAINT constraint_123 CHECK ((("time" >= '2026-10-08 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-10-15 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_124_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_124_chunk (
-    CONSTRAINT constraint_124 CHECK ((("time" >= '2026-10-15 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-10-22 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_125_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_125_chunk (
-    CONSTRAINT constraint_125 CHECK ((("time" >= '2024-05-30 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-06-06 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_126_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_126_chunk (
-    CONSTRAINT constraint_126 CHECK ((("time" >= '2026-10-22 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-10-29 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_12_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_12_chunk (
-    CONSTRAINT constraint_12 CHECK ((("time" >= '2024-06-27 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-07-04 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_13_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_13_chunk (
-    CONSTRAINT constraint_13 CHECK ((("time" >= '2024-07-04 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-07-11 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_14_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_14_chunk (
-    CONSTRAINT constraint_14 CHECK ((("time" >= '2024-07-11 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-07-18 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_15_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_15_chunk (
-    CONSTRAINT constraint_15 CHECK ((("time" >= '2024-07-18 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-07-25 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_16_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_16_chunk (
-    CONSTRAINT constraint_16 CHECK ((("time" >= '2024-07-25 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-08-01 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_17_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_17_chunk (
-    CONSTRAINT constraint_17 CHECK ((("time" >= '2024-08-01 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-08-08 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_18_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_18_chunk (
-    CONSTRAINT constraint_18 CHECK ((("time" >= '2024-08-08 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-08-15 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_19_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_19_chunk (
-    CONSTRAINT constraint_19 CHECK ((("time" >= '2024-08-15 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-08-22 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_1_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_1_chunk (
-    CONSTRAINT constraint_1 CHECK ((("time" >= '2026-04-16 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-04-23 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_20_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_20_chunk (
-    CONSTRAINT constraint_20 CHECK ((("time" >= '2024-08-22 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-08-29 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_21_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_21_chunk (
-    CONSTRAINT constraint_21 CHECK ((("time" >= '2024-08-29 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-09-05 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_22_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_22_chunk (
-    CONSTRAINT constraint_22 CHECK ((("time" >= '2024-09-05 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-09-12 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_23_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_23_chunk (
-    CONSTRAINT constraint_23 CHECK ((("time" >= '2024-09-12 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-09-19 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_24_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_24_chunk (
-    CONSTRAINT constraint_24 CHECK ((("time" >= '2024-09-19 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-09-26 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_25_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_25_chunk (
-    CONSTRAINT constraint_25 CHECK ((("time" >= '2024-09-26 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-10-03 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_26_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_26_chunk (
-    CONSTRAINT constraint_26 CHECK ((("time" >= '2024-10-03 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-10-10 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_27_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_27_chunk (
-    CONSTRAINT constraint_27 CHECK ((("time" >= '2024-10-10 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-10-17 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_28_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_28_chunk (
-    CONSTRAINT constraint_28 CHECK ((("time" >= '2024-10-17 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-10-24 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_29_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_29_chunk (
-    CONSTRAINT constraint_29 CHECK ((("time" >= '2024-10-24 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-10-31 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_2_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_2_chunk (
-    CONSTRAINT constraint_2 CHECK ((("time" >= '2026-04-23 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-04-30 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_30_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_30_chunk (
-    CONSTRAINT constraint_30 CHECK ((("time" >= '2024-10-31 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-11-07 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_31_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_31_chunk (
-    CONSTRAINT constraint_31 CHECK ((("time" >= '2024-11-07 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-11-14 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_32_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_32_chunk (
-    CONSTRAINT constraint_32 CHECK ((("time" >= '2024-11-14 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-11-21 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_33_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_33_chunk (
-    CONSTRAINT constraint_33 CHECK ((("time" >= '2024-11-21 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-11-28 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_34_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_34_chunk (
-    CONSTRAINT constraint_34 CHECK ((("time" >= '2024-11-28 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-12-05 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_35_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_35_chunk (
-    CONSTRAINT constraint_35 CHECK ((("time" >= '2024-12-05 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-12-12 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_36_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_36_chunk (
-    CONSTRAINT constraint_36 CHECK ((("time" >= '2024-12-12 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-12-19 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_37_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_37_chunk (
-    CONSTRAINT constraint_37 CHECK ((("time" >= '2024-12-19 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-12-26 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_38_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_38_chunk (
-    CONSTRAINT constraint_38 CHECK ((("time" >= '2024-12-26 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-01-02 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_39_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_39_chunk (
-    CONSTRAINT constraint_39 CHECK ((("time" >= '2025-01-02 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-01-09 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_3_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_3_chunk (
-    CONSTRAINT constraint_3 CHECK ((("time" >= '2026-04-30 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-05-07 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_40_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_40_chunk (
-    CONSTRAINT constraint_40 CHECK ((("time" >= '2025-01-09 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-01-16 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_41_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_41_chunk (
-    CONSTRAINT constraint_41 CHECK ((("time" >= '2025-01-16 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-01-23 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_42_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_42_chunk (
-    CONSTRAINT constraint_42 CHECK ((("time" >= '2025-01-23 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-01-30 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_43_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_43_chunk (
-    CONSTRAINT constraint_43 CHECK ((("time" >= '2025-01-30 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-02-06 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_44_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_44_chunk (
-    CONSTRAINT constraint_44 CHECK ((("time" >= '2025-02-06 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-02-13 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_45_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_45_chunk (
-    CONSTRAINT constraint_45 CHECK ((("time" >= '2025-02-13 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-02-20 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_46_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_46_chunk (
-    CONSTRAINT constraint_46 CHECK ((("time" >= '2025-02-20 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-02-27 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_47_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_47_chunk (
-    CONSTRAINT constraint_47 CHECK ((("time" >= '2025-02-27 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-03-06 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_48_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_48_chunk (
-    CONSTRAINT constraint_48 CHECK ((("time" >= '2025-03-06 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-03-13 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_49_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_49_chunk (
-    CONSTRAINT constraint_49 CHECK ((("time" >= '2025-03-13 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-03-20 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_4_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_4_chunk (
-    CONSTRAINT constraint_4 CHECK ((("time" >= '2026-05-07 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-05-14 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_50_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_50_chunk (
-    CONSTRAINT constraint_50 CHECK ((("time" >= '2025-03-20 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-03-27 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_51_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_51_chunk (
-    CONSTRAINT constraint_51 CHECK ((("time" >= '2025-03-27 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-04-03 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_52_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_52_chunk (
-    CONSTRAINT constraint_52 CHECK ((("time" >= '2025-04-03 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-04-10 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_53_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_53_chunk (
-    CONSTRAINT constraint_53 CHECK ((("time" >= '2025-04-10 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-04-17 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_54_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_54_chunk (
-    CONSTRAINT constraint_54 CHECK ((("time" >= '2025-04-17 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-04-24 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_55_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_55_chunk (
-    CONSTRAINT constraint_55 CHECK ((("time" >= '2025-04-24 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-05-01 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_56_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_56_chunk (
-    CONSTRAINT constraint_56 CHECK ((("time" >= '2025-05-01 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-05-08 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_57_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_57_chunk (
-    CONSTRAINT constraint_57 CHECK ((("time" >= '2025-05-08 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-05-15 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_58_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_58_chunk (
-    CONSTRAINT constraint_58 CHECK ((("time" >= '2025-05-15 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-05-22 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_59_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_59_chunk (
-    CONSTRAINT constraint_59 CHECK ((("time" >= '2025-05-22 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-05-29 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_5_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_5_chunk (
-    CONSTRAINT constraint_5 CHECK ((("time" >= '2026-05-14 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-05-21 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_60_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_60_chunk (
-    CONSTRAINT constraint_60 CHECK ((("time" >= '2025-05-29 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-06-05 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_61_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_61_chunk (
-    CONSTRAINT constraint_61 CHECK ((("time" >= '2025-06-05 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-06-12 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_62_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_62_chunk (
-    CONSTRAINT constraint_62 CHECK ((("time" >= '2025-06-12 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-06-19 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_63_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_63_chunk (
-    CONSTRAINT constraint_63 CHECK ((("time" >= '2025-06-19 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-06-26 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_64_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_64_chunk (
-    CONSTRAINT constraint_64 CHECK ((("time" >= '2025-06-26 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-07-03 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_65_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_65_chunk (
-    CONSTRAINT constraint_65 CHECK ((("time" >= '2025-07-03 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-07-10 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_66_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_66_chunk (
-    CONSTRAINT constraint_66 CHECK ((("time" >= '2025-07-10 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-07-17 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_67_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_67_chunk (
-    CONSTRAINT constraint_67 CHECK ((("time" >= '2025-07-17 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-07-24 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_68_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_68_chunk (
-    CONSTRAINT constraint_68 CHECK ((("time" >= '2025-07-24 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-07-31 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_69_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_69_chunk (
-    CONSTRAINT constraint_69 CHECK ((("time" >= '2025-07-31 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-08-07 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_6_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_6_chunk (
-    CONSTRAINT constraint_6 CHECK ((("time" >= '2026-05-21 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-05-28 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_70_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_70_chunk (
-    CONSTRAINT constraint_70 CHECK ((("time" >= '2025-08-07 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-08-14 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_71_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_71_chunk (
-    CONSTRAINT constraint_71 CHECK ((("time" >= '2025-08-14 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-08-21 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_72_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_72_chunk (
-    CONSTRAINT constraint_72 CHECK ((("time" >= '2025-08-21 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-08-28 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_73_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_73_chunk (
-    CONSTRAINT constraint_73 CHECK ((("time" >= '2025-08-28 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-09-04 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_74_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_74_chunk (
-    CONSTRAINT constraint_74 CHECK ((("time" >= '2025-09-04 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-09-11 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_75_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_75_chunk (
-    CONSTRAINT constraint_75 CHECK ((("time" >= '2025-09-11 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-09-18 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_76_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_76_chunk (
-    CONSTRAINT constraint_76 CHECK ((("time" >= '2025-09-18 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-09-25 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_77_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_77_chunk (
-    CONSTRAINT constraint_77 CHECK ((("time" >= '2025-09-25 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-10-02 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_78_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_78_chunk (
-    CONSTRAINT constraint_78 CHECK ((("time" >= '2025-10-02 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-10-09 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_79_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_79_chunk (
-    CONSTRAINT constraint_79 CHECK ((("time" >= '2025-10-09 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-10-16 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_7_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_7_chunk (
-    CONSTRAINT constraint_7 CHECK ((("time" >= '2026-05-28 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-06-04 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_80_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_80_chunk (
-    CONSTRAINT constraint_80 CHECK ((("time" >= '2025-10-16 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-10-23 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_81_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_81_chunk (
-    CONSTRAINT constraint_81 CHECK ((("time" >= '2025-10-23 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-10-30 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_82_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_82_chunk (
-    CONSTRAINT constraint_82 CHECK ((("time" >= '2025-10-30 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-11-06 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_83_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_83_chunk (
-    CONSTRAINT constraint_83 CHECK ((("time" >= '2025-11-06 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-11-13 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_84_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_84_chunk (
-    CONSTRAINT constraint_84 CHECK ((("time" >= '2025-11-13 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-11-20 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_85_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_85_chunk (
-    CONSTRAINT constraint_85 CHECK ((("time" >= '2025-11-20 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-11-27 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_86_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_86_chunk (
-    CONSTRAINT constraint_86 CHECK ((("time" >= '2025-11-27 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-12-04 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_87_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_87_chunk (
-    CONSTRAINT constraint_87 CHECK ((("time" >= '2025-12-04 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-12-11 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_88_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_88_chunk (
-    CONSTRAINT constraint_88 CHECK ((("time" >= '2025-12-11 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-12-18 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_89_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_89_chunk (
-    CONSTRAINT constraint_89 CHECK ((("time" >= '2025-12-18 00:00:00+00'::timestamp with time zone) AND ("time" < '2025-12-25 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_8_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_8_chunk (
-    CONSTRAINT constraint_8 CHECK ((("time" >= '2026-06-04 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-06-11 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_90_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_90_chunk (
-    CONSTRAINT constraint_90 CHECK ((("time" >= '2025-12-25 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-01-01 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_91_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_91_chunk (
-    CONSTRAINT constraint_91 CHECK ((("time" >= '2026-01-01 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-01-08 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_92_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_92_chunk (
-    CONSTRAINT constraint_92 CHECK ((("time" >= '2026-01-08 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-01-15 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_93_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_93_chunk (
-    CONSTRAINT constraint_93 CHECK ((("time" >= '2026-01-15 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-01-22 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_94_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_94_chunk (
-    CONSTRAINT constraint_94 CHECK ((("time" >= '2026-01-22 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-01-29 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_95_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_95_chunk (
-    CONSTRAINT constraint_95 CHECK ((("time" >= '2026-01-29 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-02-05 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_96_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_96_chunk (
-    CONSTRAINT constraint_96 CHECK ((("time" >= '2026-02-05 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-02-12 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_97_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_97_chunk (
-    CONSTRAINT constraint_97 CHECK ((("time" >= '2026-02-12 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-02-19 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_98_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_98_chunk (
-    CONSTRAINT constraint_98 CHECK ((("time" >= '2026-02-19 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-02-26 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_99_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_99_chunk (
-    CONSTRAINT constraint_99 CHECK ((("time" >= '2026-02-26 00:00:00+00'::timestamp with time zone) AND ("time" < '2026-03-05 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
--- Name: _hyper_1_9_chunk; Type: TABLE; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE TABLE _timescaledb_internal._hyper_1_9_chunk (
-    CONSTRAINT constraint_9 CHECK ((("time" >= '2024-06-06 00:00:00+00'::timestamp with time zone) AND ("time" < '2024-06-13 00:00:00+00'::timestamp with time zone)))
-)
-INHERITS (public.ohlcv_data);
-
-
---
 -- Name: backtests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1329,7 +67,10 @@ CREATE TABLE public.backtests (
     approved boolean DEFAULT false NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    hash character varying(32)
+    hash character varying(32),
+    origin character varying(16),
+    origin_meta jsonb,
+    CONSTRAINT backtests_origin_check CHECK (((origin IS NULL) OR ((origin)::text = ANY ((ARRAY['manual'::character varying, 'search'::character varying])::text[]))))
 );
 
 
@@ -1368,7 +109,13 @@ CREATE TABLE public.broker_accounts (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     single_position_per_symbol boolean DEFAULT true NOT NULL,
+    max_monthly_loss_pct numeric(5,2) DEFAULT 5 NOT NULL,
+    max_open_trades smallint DEFAULT 3 NOT NULL,
+    month_start_balance numeric(20,8),
+    month_start_at date,
     CONSTRAINT broker_accounts_account_type_check CHECK (((account_type)::text = ANY ((ARRAY['real'::character varying, 'demo'::character varying])::text[]))),
+    CONSTRAINT broker_accounts_max_monthly_loss_chk CHECK (((max_monthly_loss_pct >= (1)::numeric) AND (max_monthly_loss_pct <= (30)::numeric))),
+    CONSTRAINT broker_accounts_max_open_trades_chk CHECK (((max_open_trades >= 1) AND (max_open_trades <= 20))),
     CONSTRAINT broker_accounts_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[])))
 );
 
@@ -1390,6 +137,40 @@ CREATE SEQUENCE public.broker_accounts_id_seq
 --
 
 ALTER SEQUENCE public.broker_accounts_id_seq OWNED BY public.broker_accounts.id;
+
+
+--
+-- Name: broker_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.broker_events (
+    id bigint NOT NULL,
+    broker_account_id bigint NOT NULL,
+    trade_id bigint,
+    event character varying(40) NOT NULL,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone
+);
+
+
+--
+-- Name: broker_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.broker_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: broker_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.broker_events_id_seq OWNED BY public.broker_events.id;
 
 
 --
@@ -1426,8 +207,7 @@ CREATE TABLE public.collector_configs (
     notes text,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    broker character varying(20) DEFAULT 'bybit'::character varying NOT NULL,
-    epic character varying(40)
+    broker character varying(20) DEFAULT 'bybit'::character varying NOT NULL
 );
 
 
@@ -1482,6 +262,30 @@ CREATE SEQUENCE public.failed_jobs_id_seq
 --
 
 ALTER SEQUENCE public.failed_jobs_id_seq OWNED BY public.failed_jobs.id;
+
+
+--
+-- Name: funding_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.funding_coverage (
+    symbol character varying(30) NOT NULL,
+    covered_from timestamp with time zone NOT NULL,
+    covered_to timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT funding_coverage_check CHECK ((covered_from <= covered_to))
+);
+
+
+--
+-- Name: funding_rates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.funding_rates (
+    symbol character varying(30) NOT NULL,
+    funding_time timestamp with time zone NOT NULL,
+    rate double precision NOT NULL
+);
 
 
 --
@@ -1568,6 +372,118 @@ ALTER SEQUENCE public.migrations_id_seq OWNED BY public.migrations.id;
 
 
 --
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id uuid NOT NULL,
+    type character varying(255) NOT NULL,
+    notifiable_type character varying(255) NOT NULL,
+    notifiable_id bigint NOT NULL,
+    data text NOT NULL,
+    read_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: ohlcv_deletions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohlcv_deletions (
+    id bigint NOT NULL,
+    broker character varying(32) NOT NULL,
+    symbol character varying(20) NOT NULL,
+    "interval" character varying(5) NOT NULL,
+    source character varying(16) NOT NULL,
+    reason text NOT NULL,
+    deleted_count integer NOT NULL,
+    first_time timestamp with time zone,
+    last_time timestamp with time zone,
+    bars jsonb,
+    bars_saved boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ohlcv_deletions_source_chk CHECK (((source)::text = ANY ((ARRAY['reload'::character varying, 'invalidate'::character varying])::text[])))
+);
+
+
+--
+-- Name: ohlcv_deletions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ohlcv_deletions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ohlcv_deletions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ohlcv_deletions_id_seq OWNED BY public.ohlcv_deletions.id;
+
+
+--
+-- Name: paper_eval_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.paper_eval_log (
+    id bigint NOT NULL,
+    paper_strategy_config_id bigint NOT NULL,
+    bucket_time timestamp without time zone NOT NULL,
+    code character varying(32) NOT NULL,
+    detail text NOT NULL,
+    regime character varying(16),
+    signal smallint,
+    filters jsonb,
+    first_at timestamp without time zone NOT NULL,
+    last_at timestamp without time zone NOT NULL,
+    evaluations integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: paper_eval_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.paper_eval_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: paper_eval_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.paper_eval_log_id_seq OWNED BY public.paper_eval_log.id;
+
+
+--
+-- Name: paper_eval_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.paper_eval_state (
+    paper_strategy_config_id bigint NOT NULL,
+    evaluated_at timestamp without time zone NOT NULL,
+    code character varying(32) NOT NULL,
+    detail text NOT NULL,
+    regime character varying(16),
+    signal smallint,
+    filters jsonb,
+    candle_time timestamp without time zone,
+    last_bar_time timestamp without time zone,
+    bars integer
+);
+
+
+--
 -- Name: paper_strategy_configs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1597,43 +513,8 @@ CREATE TABLE public.paper_strategy_configs (
     sharpe_ratio numeric(6,2),
     consistency_pct numeric(5,1),
     profit_factor numeric(5,2),
-    backtest_id bigint
+    backtest_id bigint NOT NULL
 );
-
-
---
--- Name: COLUMN paper_strategy_configs.audited_months; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.paper_strategy_configs.audited_months IS 'Meses auditados en el ultimo backtest';
-
-
---
--- Name: COLUMN paper_strategy_configs.avg_win_rate; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.paper_strategy_configs.avg_win_rate IS 'Win rate promedio mensual del ultimo backtest (%)';
-
-
---
--- Name: COLUMN paper_strategy_configs.avg_monthly_pnl; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.paper_strategy_configs.avg_monthly_pnl IS 'P&L promedio mensual del ultimo backtest (%)';
-
-
---
--- Name: COLUMN paper_strategy_configs.avg_monthly_trades; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.paper_strategy_configs.avg_monthly_trades IS 'Promedio de operaciones por mes del ultimo backtest';
-
-
---
--- Name: COLUMN paper_strategy_configs.total_return_pct; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.paper_strategy_configs.total_return_pct IS 'Retorno total acumulado del ultimo backtest (%)';
 
 
 --
@@ -1690,6 +571,10 @@ CREATE TABLE public.paper_trades (
     last_monitored_at timestamp(0) without time zone,
     commission numeric(20,8),
     config_snapshot jsonb,
+    paper_strategy_config_id bigint,
+    vol_widened boolean DEFAULT false NOT NULL,
+    funding numeric(20,8),
+    strategy_code_md5 character(32) GENERATED ALWAYS AS (md5((config_snapshot ->> 'strategy_code'::text))) STORED,
     CONSTRAINT paper_trades_side_check CHECK (((side)::text = ANY ((ARRAY['long'::character varying, 'short'::character varying])::text[]))),
     CONSTRAINT paper_trades_status_check CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying])::text[])))
 );
@@ -1712,6 +597,69 @@ CREATE SEQUENCE public.paper_trades_id_seq
 --
 
 ALTER SEQUENCE public.paper_trades_id_seq OWNED BY public.paper_trades.id;
+
+
+--
+-- Name: param_search_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.param_search_runs (
+    id bigint NOT NULL,
+    strategy_id bigint NOT NULL,
+    user_id bigint,
+    status character varying(16) DEFAULT 'queued'::character varying NOT NULL,
+    intervals jsonb NOT NULL,
+    search_symbols jsonb NOT NULL,
+    validation_symbols jsonb DEFAULT '[]'::jsonb NOT NULL,
+    months smallint DEFAULT 24 NOT NULL,
+    samples smallint DEFAULT 40 NOT NULL,
+    seed integer DEFAULT 7 NOT NULL,
+    strategy_code_md5 character(32),
+    period_start date,
+    split_date date,
+    period_end date,
+    phase character varying(32),
+    progress_done integer DEFAULT 0 NOT NULL,
+    progress_total integer DEFAULT 0 NOT NULL,
+    progress_note text,
+    heartbeat_at timestamp with time zone,
+    pid integer,
+    cancel_requested boolean DEFAULT false NOT NULL,
+    results jsonb,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    focus character varying(8) DEFAULT 'gain'::character varying NOT NULL,
+    mode character varying(8) DEFAULT 'interval'::character varying NOT NULL,
+    sltp character varying(8) DEFAULT 'fixed'::character varying NOT NULL,
+    CONSTRAINT param_search_runs_focus_chk CHECK (((focus)::text = ANY ((ARRAY['gain'::character varying, 'wr'::character varying, 'cons'::character varying])::text[]))),
+    CONSTRAINT param_search_runs_mode_chk CHECK (((mode)::text = ANY ((ARRAY['interval'::character varying, 'symbol'::character varying])::text[]))),
+    CONSTRAINT param_search_runs_months_check CHECK (((months >= 6) AND (months <= 36))),
+    CONSTRAINT param_search_runs_samples_check CHECK (((samples >= 1) AND (samples <= 200))),
+    CONSTRAINT param_search_runs_sltp_chk CHECK (((sltp)::text = ANY ((ARRAY['fixed'::character varying, 'auto'::character varying, 'both'::character varying])::text[]))),
+    CONSTRAINT param_search_runs_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+
+--
+-- Name: param_search_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.param_search_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: param_search_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.param_search_runs_id_seq OWNED BY public.param_search_runs.id;
 
 
 --
@@ -1752,15 +700,10 @@ CREATE TABLE public.real_strategy_subscriptions (
     paper_strategy_config_id bigint,
     "interval" character varying(255),
     risk_override_pct numeric(5,2),
+    retire_on_close boolean DEFAULT false NOT NULL,
+    CONSTRAINT real_strategy_subscriptions_risk_override_check CHECK (((risk_override_pct IS NULL) OR ((risk_override_pct > (0)::numeric) AND (risk_override_pct <= (100)::numeric)))),
     CONSTRAINT real_strategy_subscriptions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[])))
 );
-
-
---
--- Name: COLUMN real_strategy_subscriptions.risk_override_pct; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.real_strategy_subscriptions.risk_override_pct IS 'Sobrescribe risk_per_trade_pct de la config para esta suscripcion especifica';
 
 
 --
@@ -1780,6 +723,51 @@ CREATE SEQUENCE public.real_strategy_subscriptions_id_seq
 --
 
 ALTER SEQUENCE public.real_strategy_subscriptions_id_seq OWNED BY public.real_strategy_subscriptions.id;
+
+
+--
+-- Name: real_trade_executions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.real_trade_executions (
+    id bigint NOT NULL,
+    real_trade_id bigint NOT NULL,
+    leg character varying(5) NOT NULL,
+    exec_id character varying(64) NOT NULL,
+    order_id character varying(64) NOT NULL,
+    symbol character varying(32) NOT NULL,
+    side character varying(4) NOT NULL,
+    exec_price numeric NOT NULL,
+    exec_qty numeric NOT NULL,
+    exec_value numeric,
+    exec_fee numeric,
+    fee_rate numeric,
+    is_maker boolean,
+    exec_type character varying(24),
+    stop_order_type character varying(32),
+    exec_time timestamp without time zone NOT NULL,
+    created_at timestamp without time zone DEFAULT timezone('UTC'::text, now()) NOT NULL,
+    CONSTRAINT real_trade_executions_leg_check CHECK (((leg)::text = ANY ((ARRAY['open'::character varying, 'close'::character varying])::text[])))
+);
+
+
+--
+-- Name: real_trade_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.real_trade_executions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: real_trade_executions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.real_trade_executions_id_seq OWNED BY public.real_trade_executions.id;
 
 
 --
@@ -1834,6 +822,12 @@ CREATE TABLE public.real_trades (
     tp4_hit boolean DEFAULT false NOT NULL,
     realized_pnl_partial numeric(20,8) DEFAULT '0'::numeric NOT NULL,
     original_sl numeric(20,8),
+    config_snapshot jsonb,
+    vol_widened boolean DEFAULT false NOT NULL,
+    order_link_id character varying(40),
+    strategy_code_md5 character(32) GENERATED ALWAYS AS (md5((config_snapshot ->> 'strategy_code'::text))) STORED,
+    executions_status character varying(12),
+    funding numeric(20,8),
     CONSTRAINT real_trades_side_check CHECK (((side)::text = ANY ((ARRAY['long'::character varying, 'short'::character varying])::text[]))),
     CONSTRAINT real_trades_status_check CHECK (((status)::text = ANY (ARRAY['pending_open'::text, 'open'::text, 'pending_close'::text, 'closed'::text, 'error'::text, 'orphaned'::text, 'failed'::text, 'ignored'::text])))
 );
@@ -1948,6 +942,45 @@ ALTER SEQUENCE public.strategies_id_seq OWNED BY public.strategies.id;
 
 
 --
+-- Name: strategy_config_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_config_changes (
+    id bigint NOT NULL,
+    paper_strategy_config_id bigint,
+    backtest_id bigint,
+    symbol character varying(32) NOT NULL,
+    action character varying(16) NOT NULL,
+    old_params jsonb,
+    new_params jsonb,
+    changed_keys text[] DEFAULT '{}'::text[] NOT NULL,
+    source character varying(32) NOT NULL,
+    user_id bigint,
+    created_at timestamp(0) without time zone DEFAULT timezone('UTC'::text, now()) NOT NULL,
+    CONSTRAINT strategy_config_changes_action_check CHECK (((action)::text = ANY ((ARRAY['created'::character varying, 'updated'::character varying, 'deactivated'::character varying, 'deleted'::character varying])::text[])))
+);
+
+
+--
+-- Name: strategy_config_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategy_config_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategy_config_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategy_config_changes_id_seq OWNED BY public.strategy_config_changes.id;
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1986,888 +1019,6 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- Name: _hyper_1_100_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_100_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_101_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_101_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_102_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_102_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_103_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_103_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_104_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_104_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_105_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_105_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_106_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_106_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_107_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_107_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_108_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_108_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_109_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_109_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_10_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_10_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_110_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_110_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_111_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_111_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_112_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_112_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_113_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_113_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_114_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_114_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_115_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_115_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_116_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_116_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_117_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_117_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_118_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_118_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_119_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_119_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_11_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_11_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_120_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_120_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_121_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_121_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_122_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_122_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_123_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_123_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_124_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_124_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_125_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_125_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_126_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_126_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_12_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_12_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_13_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_13_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_14_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_14_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_15_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_15_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_16_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_16_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_17_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_17_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_18_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_18_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_19_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_19_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_1_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_1_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_20_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_20_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_21_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_21_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_22_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_22_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_23_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_23_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_24_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_24_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_25_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_25_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_26_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_26_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_27_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_27_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_28_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_28_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_29_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_29_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_2_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_2_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_30_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_30_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_31_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_31_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_32_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_32_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_33_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_33_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_34_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_34_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_35_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_35_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_36_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_36_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_37_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_37_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_38_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_38_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_39_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_39_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_3_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_3_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_40_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_40_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_41_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_41_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_42_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_42_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_43_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_43_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_44_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_44_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_45_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_45_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_46_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_46_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_47_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_47_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_48_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_48_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_49_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_49_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_4_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_4_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_50_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_50_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_51_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_51_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_52_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_52_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_53_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_53_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_54_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_54_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_55_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_55_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_56_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_56_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_57_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_57_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_58_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_58_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_59_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_59_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_5_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_5_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_60_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_60_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_61_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_61_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_62_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_62_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_63_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_63_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_64_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_64_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_65_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_65_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_66_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_66_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_67_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_67_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_68_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_68_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_69_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_69_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_6_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_6_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_70_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_70_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_71_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_71_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_72_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_72_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_73_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_73_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_74_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_74_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_75_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_75_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_76_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_76_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_77_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_77_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_78_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_78_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_79_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_79_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_7_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_7_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_80_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_80_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_81_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_81_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_82_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_82_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_83_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_83_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_84_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_84_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_85_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_85_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_86_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_86_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_87_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_87_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_88_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_88_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_89_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_89_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_8_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_8_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_90_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_90_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_91_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_91_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_92_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_92_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_93_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_93_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_94_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_94_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_95_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_95_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_96_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_96_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_97_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_97_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_98_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_98_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_99_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_99_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
--- Name: _hyper_1_9_chunk broker; Type: DEFAULT; Schema: _timescaledb_internal; Owner: -
---
-
-ALTER TABLE ONLY _timescaledb_internal._hyper_1_9_chunk ALTER COLUMN broker SET DEFAULT 'bybit'::character varying;
-
-
---
 -- Name: backtests id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2879,6 +1030,13 @@ ALTER TABLE ONLY public.backtests ALTER COLUMN id SET DEFAULT nextval('public.ba
 --
 
 ALTER TABLE ONLY public.broker_accounts ALTER COLUMN id SET DEFAULT nextval('public.broker_accounts_id_seq'::regclass);
+
+
+--
+-- Name: broker_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.broker_events ALTER COLUMN id SET DEFAULT nextval('public.broker_events_id_seq'::regclass);
 
 
 --
@@ -2910,6 +1068,20 @@ ALTER TABLE ONLY public.migrations ALTER COLUMN id SET DEFAULT nextval('public.m
 
 
 --
+-- Name: ohlcv_deletions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohlcv_deletions ALTER COLUMN id SET DEFAULT nextval('public.ohlcv_deletions_id_seq'::regclass);
+
+
+--
+-- Name: paper_eval_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_eval_log ALTER COLUMN id SET DEFAULT nextval('public.paper_eval_log_id_seq'::regclass);
+
+
+--
 -- Name: paper_strategy_configs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2924,10 +1096,24 @@ ALTER TABLE ONLY public.paper_trades ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: param_search_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.param_search_runs ALTER COLUMN id SET DEFAULT nextval('public.param_search_runs_id_seq'::regclass);
+
+
+--
 -- Name: real_strategy_subscriptions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.real_strategy_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.real_strategy_subscriptions_id_seq'::regclass);
+
+
+--
+-- Name: real_trade_executions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.real_trade_executions ALTER COLUMN id SET DEFAULT nextval('public.real_trade_executions_id_seq'::regclass);
 
 
 --
@@ -2949,6 +1135,13 @@ ALTER TABLE ONLY public.risk_controls ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.strategies ALTER COLUMN id SET DEFAULT nextval('public.strategies_id_seq'::regclass);
+
+
+--
+-- Name: strategy_config_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_config_changes ALTER COLUMN id SET DEFAULT nextval('public.strategy_config_changes_id_seq'::regclass);
 
 
 --
@@ -2988,6 +1181,14 @@ ALTER TABLE ONLY public.broker_accounts
 
 ALTER TABLE ONLY public.broker_accounts
     ADD CONSTRAINT broker_accounts_user_broker_type_unique UNIQUE (user_id, broker, account_type);
+
+
+--
+-- Name: broker_events broker_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.broker_events
+    ADD CONSTRAINT broker_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -3039,6 +1240,22 @@ ALTER TABLE ONLY public.failed_jobs
 
 
 --
+-- Name: funding_coverage funding_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.funding_coverage
+    ADD CONSTRAINT funding_coverage_pkey PRIMARY KEY (symbol);
+
+
+--
+-- Name: funding_rates funding_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.funding_rates
+    ADD CONSTRAINT funding_rates_pkey PRIMARY KEY (symbol, funding_time);
+
+
+--
 -- Name: job_batches job_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3063,6 +1280,54 @@ ALTER TABLE ONLY public.migrations
 
 
 --
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohlcv_deletions ohlcv_deletions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohlcv_deletions
+    ADD CONSTRAINT ohlcv_deletions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: paper_eval_log paper_eval_log_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_eval_log
+    ADD CONSTRAINT paper_eval_log_key UNIQUE (paper_strategy_config_id, bucket_time, code);
+
+
+--
+-- Name: paper_eval_log paper_eval_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_eval_log
+    ADD CONSTRAINT paper_eval_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: paper_eval_state paper_eval_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_eval_state
+    ADD CONSTRAINT paper_eval_state_pkey PRIMARY KEY (paper_strategy_config_id);
+
+
+--
+-- Name: paper_strategy_configs paper_strategy_configs_backtest_symbol_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_strategy_configs
+    ADD CONSTRAINT paper_strategy_configs_backtest_symbol_unique UNIQUE (backtest_id, symbol);
+
+
+--
 -- Name: paper_strategy_configs paper_strategy_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3076,6 +1341,14 @@ ALTER TABLE ONLY public.paper_strategy_configs
 
 ALTER TABLE ONLY public.paper_trades
     ADD CONSTRAINT paper_trades_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: param_search_runs param_search_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.param_search_runs
+    ADD CONSTRAINT param_search_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -3108,6 +1381,22 @@ ALTER TABLE ONLY public.real_strategy_subscriptions
 
 ALTER TABLE ONLY public.real_strategy_subscriptions
     ADD CONSTRAINT real_subs_unique_v2 UNIQUE (broker_account_id, paper_strategy_config_id);
+
+
+--
+-- Name: real_trade_executions real_trade_executions_exec_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.real_trade_executions
+    ADD CONSTRAINT real_trade_executions_exec_id_key UNIQUE (exec_id);
+
+
+--
+-- Name: real_trade_executions real_trade_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.real_trade_executions
+    ADD CONSTRAINT real_trade_executions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3151,6 +1440,14 @@ ALTER TABLE ONLY public.strategies
 
 
 --
+-- Name: strategy_config_changes strategy_config_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_config_changes
+    ADD CONSTRAINT strategy_config_changes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3167,2656 +1464,31 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: _hyper_1_100_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_100_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_100_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_100_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_100_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_100_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_100_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_100_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_100_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_101_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_101_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_101_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_101_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_101_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_101_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_101_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_101_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_101_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_102_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_102_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_102_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_102_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_102_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_102_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_102_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_102_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_102_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_103_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_103_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_103_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_103_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_103_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_103_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_103_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_103_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_103_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_104_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_104_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_104_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_104_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_104_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_104_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_104_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_104_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_104_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_105_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_105_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_105_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_105_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_105_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_105_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_105_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_105_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_105_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_106_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_106_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_106_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_106_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_106_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_106_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_106_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_106_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_106_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_107_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_107_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_107_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_107_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_107_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_107_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_107_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_107_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_107_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_108_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_108_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_108_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_108_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_108_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_108_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_108_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_108_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_108_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_109_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_109_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_109_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_109_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_109_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_109_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_109_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_109_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_109_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_10_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_10_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_10_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_10_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_10_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_10_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_10_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_10_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_10_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_110_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_110_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_110_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_110_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_110_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_110_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_110_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_110_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_110_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_111_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_111_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_111_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_111_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_111_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_111_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_111_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_111_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_111_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_112_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_112_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_112_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_112_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_112_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_112_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_112_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_112_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_112_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_113_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_113_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_113_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_113_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_113_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_113_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_113_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_113_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_113_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_114_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_114_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_114_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_114_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_114_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_114_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_114_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_114_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_114_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_115_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_115_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_115_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_115_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_115_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_115_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_115_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_115_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_115_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_116_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_116_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_116_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_116_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_116_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_116_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_116_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_116_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_116_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_117_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_117_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_117_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_117_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_117_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_117_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_117_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_117_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_117_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_118_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_118_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_118_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_118_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_118_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_118_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_118_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_118_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_118_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_119_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_119_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_119_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_119_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_119_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_119_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_119_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_119_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_119_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_11_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_11_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_11_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_11_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_11_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_11_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_11_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_11_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_11_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_120_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_120_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_120_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_120_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_120_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_120_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_120_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_120_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_120_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_121_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_121_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_121_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_121_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_121_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_121_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_121_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_121_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_121_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_122_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_122_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_122_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_122_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_122_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_122_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_122_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_122_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_122_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_123_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_123_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_123_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_123_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_123_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_123_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_123_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_123_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_123_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_124_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_124_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_124_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_124_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_124_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_124_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_124_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_124_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_124_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_125_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_125_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_125_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_125_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_125_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_125_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_125_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_125_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_125_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_126_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_126_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_126_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_126_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_126_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_126_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_126_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_126_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_126_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_12_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_12_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_12_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_12_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_12_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_12_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_12_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_12_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_12_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_13_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_13_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_13_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_13_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_13_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_13_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_13_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_13_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_13_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_14_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_14_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_14_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_14_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_14_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_14_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_14_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_14_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_14_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_15_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_15_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_15_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_15_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_15_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_15_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_15_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_15_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_15_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_16_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_16_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_16_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_16_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_16_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_16_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_16_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_16_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_16_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_17_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_17_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_17_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_17_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_17_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_17_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_17_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_17_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_17_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_18_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_18_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_18_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_18_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_18_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_18_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_18_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_18_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_18_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_19_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_19_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_19_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_19_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_19_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_19_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_19_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_19_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_19_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_1_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_1_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_1_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_1_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_1_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_1_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_1_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_1_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_1_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_20_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_20_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_20_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_20_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_20_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_20_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_20_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_20_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_20_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_21_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_21_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_21_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_21_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_21_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_21_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_21_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_21_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_21_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_22_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_22_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_22_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_22_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_22_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_22_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_22_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_22_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_22_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_23_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_23_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_23_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_23_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_23_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_23_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_23_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_23_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_23_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_24_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_24_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_24_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_24_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_24_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_24_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_24_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_24_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_24_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_25_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_25_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_25_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_25_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_25_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_25_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_25_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_25_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_25_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_26_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_26_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_26_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_26_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_26_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_26_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_26_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_26_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_26_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_27_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_27_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_27_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_27_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_27_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_27_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_27_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_27_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_27_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_28_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_28_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_28_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_28_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_28_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_28_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_28_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_28_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_28_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_29_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_29_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_29_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_29_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_29_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_29_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_29_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_29_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_29_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_2_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_2_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_2_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_2_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_2_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_2_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_2_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_2_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_2_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_30_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_30_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_30_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_30_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_30_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_30_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_30_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_30_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_30_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_31_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_31_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_31_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_31_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_31_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_31_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_31_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_31_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_31_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_32_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_32_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_32_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_32_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_32_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_32_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_32_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_32_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_32_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_33_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_33_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_33_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_33_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_33_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_33_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_33_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_33_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_33_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_34_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_34_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_34_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_34_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_34_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_34_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_34_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_34_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_34_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_35_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_35_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_35_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_35_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_35_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_35_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_35_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_35_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_35_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_36_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_36_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_36_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_36_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_36_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_36_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_36_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_36_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_36_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_37_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_37_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_37_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_37_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_37_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_37_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_37_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_37_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_37_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_38_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_38_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_38_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_38_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_38_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_38_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_38_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_38_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_38_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_39_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_39_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_39_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_39_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_39_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_39_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_39_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_39_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_39_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_3_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_3_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_3_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_3_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_3_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_3_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_3_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_3_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_3_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_40_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_40_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_40_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_40_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_40_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_40_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_40_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_40_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_40_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_41_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_41_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_41_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_41_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_41_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_41_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_41_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_41_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_41_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_42_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_42_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_42_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_42_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_42_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_42_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_42_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_42_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_42_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_43_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_43_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_43_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_43_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_43_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_43_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_43_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_43_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_43_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_44_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_44_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_44_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_44_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_44_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_44_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_44_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_44_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_44_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_45_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_45_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_45_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_45_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_45_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_45_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_45_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_45_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_45_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_46_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_46_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_46_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_46_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_46_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_46_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_46_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_46_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_46_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_47_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_47_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_47_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_47_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_47_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_47_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_47_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_47_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_47_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_48_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_48_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_48_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_48_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_48_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_48_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_48_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_48_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_48_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_49_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_49_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_49_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_49_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_49_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_49_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_49_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_49_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_49_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_4_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_4_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_4_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_4_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_4_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_4_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_4_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_4_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_4_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_50_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_50_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_50_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_50_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_50_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_50_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_50_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_50_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_50_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_51_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_51_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_51_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_51_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_51_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_51_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_51_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_51_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_51_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_52_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_52_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_52_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_52_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_52_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_52_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_52_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_52_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_52_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_53_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_53_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_53_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_53_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_53_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_53_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_53_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_53_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_53_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_54_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_54_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_54_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_54_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_54_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_54_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_54_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_54_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_54_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_55_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_55_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_55_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_55_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_55_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_55_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_55_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_55_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_55_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_56_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_56_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_56_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_56_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_56_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_56_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_56_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_56_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_56_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_57_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_57_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_57_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_57_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_57_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_57_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_57_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_57_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_57_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_58_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_58_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_58_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_58_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_58_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_58_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_58_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_58_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_58_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_59_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_59_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_59_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_59_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_59_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_59_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_59_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_59_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_59_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_5_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_5_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_5_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_5_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_5_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_5_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_5_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_5_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_5_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_60_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_60_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_60_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_60_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_60_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_60_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_60_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_60_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_60_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_61_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_61_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_61_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_61_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_61_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_61_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_61_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_61_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_61_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_62_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_62_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_62_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_62_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_62_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_62_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_62_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_62_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_62_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_63_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_63_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_63_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_63_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_63_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_63_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_63_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_63_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_63_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_64_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_64_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_64_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_64_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_64_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_64_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_64_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_64_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_64_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_65_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_65_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_65_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_65_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_65_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_65_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_65_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_65_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_65_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_66_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_66_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_66_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_66_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_66_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_66_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_66_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_66_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_66_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_67_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_67_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_67_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_67_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_67_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_67_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_67_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_67_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_67_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_68_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_68_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_68_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_68_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_68_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_68_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_68_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_68_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_68_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_69_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_69_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_69_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_69_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_69_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_69_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_69_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_69_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_69_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_6_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_6_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_6_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_6_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_6_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_6_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_6_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_6_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_6_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_70_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_70_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_70_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_70_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_70_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_70_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_70_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_70_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_70_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_71_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_71_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_71_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_71_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_71_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_71_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_71_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_71_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_71_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_72_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_72_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_72_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_72_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_72_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_72_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_72_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_72_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_72_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_73_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_73_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_73_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_73_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_73_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_73_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_73_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_73_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_73_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_74_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_74_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_74_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_74_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_74_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_74_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_74_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_74_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_74_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_75_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_75_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_75_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_75_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_75_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_75_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_75_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_75_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_75_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_76_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_76_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_76_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_76_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_76_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_76_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_76_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_76_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_76_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_77_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_77_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_77_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_77_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_77_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_77_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_77_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_77_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_77_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_78_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_78_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_78_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_78_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_78_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_78_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_78_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_78_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_78_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_79_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_79_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_79_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_79_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_79_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_79_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_79_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_79_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_79_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_7_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_7_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_7_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_7_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_7_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_7_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_7_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_7_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_7_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_80_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_80_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_80_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_80_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_80_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_80_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_80_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_80_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_80_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_81_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_81_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_81_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_81_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_81_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_81_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_81_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_81_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_81_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_82_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_82_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_82_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_82_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_82_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_82_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_82_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_82_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_82_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_83_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_83_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_83_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_83_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_83_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_83_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_83_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_83_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_83_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_84_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_84_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_84_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_84_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_84_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_84_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_84_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_84_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_84_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_85_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_85_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_85_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_85_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_85_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_85_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_85_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_85_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_85_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_86_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_86_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_86_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_86_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_86_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_86_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_86_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_86_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_86_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_87_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_87_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_87_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_87_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_87_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_87_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_87_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_87_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_87_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_88_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_88_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_88_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_88_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_88_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_88_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_88_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_88_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_88_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_89_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_89_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_89_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_89_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_89_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_89_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_89_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_89_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_89_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_8_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_8_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_8_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_8_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_8_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_8_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_8_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_8_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_8_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_90_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_90_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_90_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_90_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_90_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_90_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_90_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_90_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_90_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_91_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_91_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_91_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_91_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_91_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_91_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_91_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_91_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_91_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_92_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_92_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_92_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_92_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_92_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_92_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_92_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_92_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_92_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_93_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_93_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_93_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_93_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_93_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_93_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_93_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_93_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_93_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_94_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_94_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_94_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_94_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_94_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_94_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_94_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_94_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_94_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_95_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_95_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_95_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_95_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_95_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_95_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_95_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_95_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_95_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_96_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_96_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_96_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_96_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_96_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_96_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_96_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_96_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_96_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_97_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_97_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_97_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_97_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_97_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_97_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_97_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_97_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_97_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_98_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_98_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_98_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_98_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_98_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_98_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_98_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_98_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_98_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_99_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_99_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_99_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_99_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_99_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_99_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_99_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_99_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_99_chunk USING btree ("time" DESC);
-
-
---
--- Name: _hyper_1_9_chunk_idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE UNIQUE INDEX _hyper_1_9_chunk_idx_ohlcv_broker_symbol_interval_time ON _timescaledb_internal._hyper_1_9_chunk USING btree (broker, symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_9_chunk_idx_ohlcv_symbol_interval_time; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_9_chunk_idx_ohlcv_symbol_interval_time ON _timescaledb_internal._hyper_1_9_chunk USING btree (symbol, "interval", "time" DESC);
-
-
---
--- Name: _hyper_1_9_chunk_ohlcv_data_time_idx; Type: INDEX; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE INDEX _hyper_1_9_chunk_ohlcv_data_time_idx ON _timescaledb_internal._hyper_1_9_chunk USING btree ("time" DESC);
-
-
---
 -- Name: broker_accounts_user_id_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX broker_accounts_user_id_status_index ON public.broker_accounts USING btree (user_id, status);
+
+
+--
+-- Name: broker_events_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX broker_events_account_idx ON public.broker_events USING btree (broker_account_id, created_at DESC);
+
+
+--
+-- Name: broker_events_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX broker_events_created_at_idx ON public.broker_events USING btree (created_at);
+
+
+--
+-- Name: broker_events_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX broker_events_pending_idx ON public.broker_events USING btree (id) WHERE (processed_at IS NULL);
 
 
 --
@@ -5841,6 +1513,13 @@ CREATE INDEX failed_jobs_connection_queue_failed_at_index ON public.failed_jobs 
 
 
 --
+-- Name: idx_backtests_strategy_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_backtests_strategy_created ON public.backtests USING btree (strategy_id, created_at DESC);
+
+
+--
 -- Name: idx_ohlcv_broker_symbol_interval_time; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5862,6 +1541,27 @@ CREATE INDEX jobs_queue_index ON public.jobs USING btree (queue);
 
 
 --
+-- Name: notifications_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_created_at_idx ON public.notifications USING btree (created_at);
+
+
+--
+-- Name: notifications_notifiable_type_notifiable_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_notifiable_type_notifiable_id_index ON public.notifications USING btree (notifiable_type, notifiable_id);
+
+
+--
+-- Name: notifications_unread_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_unread_idx ON public.notifications USING btree (notifiable_id, created_at DESC) WHERE (read_at IS NULL);
+
+
+--
 -- Name: ohlcv_data_time_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5869,10 +1569,38 @@ CREATE INDEX ohlcv_data_time_idx ON public.ohlcv_data USING btree ("time" DESC);
 
 
 --
--- Name: paper_strategy_configs_unique; Type: INDEX; Schema: public; Owner: -
+-- Name: ohlcv_deletions_series_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX paper_strategy_configs_unique ON public.paper_strategy_configs USING btree (strategy_class, symbol, "interval", ((params ->> 'mode'::text)));
+CREATE INDEX ohlcv_deletions_series_idx ON public.ohlcv_deletions USING btree (broker, symbol, "interval", created_at DESC);
+
+
+--
+-- Name: paper_eval_log_last_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX paper_eval_log_last_at_idx ON public.paper_eval_log USING btree (last_at);
+
+
+--
+-- Name: paper_eval_log_recent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX paper_eval_log_recent_idx ON public.paper_eval_log USING btree (paper_strategy_config_id, last_at DESC);
+
+
+--
+-- Name: paper_trades_config_status_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX paper_trades_config_status_index ON public.paper_trades USING btree (paper_strategy_config_id, status);
+
+
+--
+-- Name: paper_trades_one_open_per_config; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX paper_trades_one_open_per_config ON public.paper_trades USING btree (paper_strategy_config_id) WHERE ((status)::text = 'open'::text);
 
 
 --
@@ -5890,6 +1618,27 @@ CREATE INDEX paper_trades_strategy_symbol_status_index ON public.paper_trades US
 
 
 --
+-- Name: param_search_runs_one_active_per_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX param_search_runs_one_active_per_strategy ON public.param_search_runs USING btree (strategy_id) WHERE ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[]));
+
+
+--
+-- Name: param_search_runs_one_running; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX param_search_runs_one_running ON public.param_search_runs USING btree ((true)) WHERE ((status)::text = 'running'::text);
+
+
+--
+-- Name: param_search_runs_strategy_created_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX param_search_runs_strategy_created_index ON public.param_search_runs USING btree (strategy_id, created_at DESC);
+
+
+--
 -- Name: real_strategy_subscriptions_user_id_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5897,10 +1646,38 @@ CREATE INDEX real_strategy_subscriptions_user_id_status_index ON public.real_str
 
 
 --
+-- Name: real_trade_executions_trade_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX real_trade_executions_trade_idx ON public.real_trade_executions USING btree (real_trade_id);
+
+
+--
 -- Name: real_trades_broker_account_id_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX real_trades_broker_account_id_status_index ON public.real_trades USING btree (broker_account_id, status);
+
+
+--
+-- Name: real_trades_closed_month_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX real_trades_closed_month_idx ON public.real_trades USING btree (broker_account_id, exit_time) WHERE ((status)::text = 'closed'::text);
+
+
+--
+-- Name: real_trades_paper_strategy_config_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX real_trades_paper_strategy_config_id_index ON public.real_trades USING btree (paper_strategy_config_id);
+
+
+--
+-- Name: real_trades_pending_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX real_trades_pending_open_idx ON public.real_trades USING btree (broker_account_id) WHERE ((status)::text = 'pending_open'::text);
 
 
 --
@@ -5925,6 +1702,13 @@ CREATE INDEX sessions_user_id_index ON public.sessions USING btree (user_id);
 
 
 --
+-- Name: strategy_config_changes_config_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX strategy_config_changes_config_created ON public.strategy_config_changes USING btree (paper_strategy_config_id, created_at DESC);
+
+
+--
 -- Name: backtests backtests_strategy_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5945,7 +1729,31 @@ ALTER TABLE ONLY public.broker_accounts
 --
 
 ALTER TABLE ONLY public.paper_strategy_configs
-    ADD CONSTRAINT paper_strategy_configs_backtest_id_foreign FOREIGN KEY (backtest_id) REFERENCES public.backtests(id) ON DELETE SET NULL;
+    ADD CONSTRAINT paper_strategy_configs_backtest_id_foreign FOREIGN KEY (backtest_id) REFERENCES public.backtests(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: paper_trades paper_trades_paper_strategy_config_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paper_trades
+    ADD CONSTRAINT paper_trades_paper_strategy_config_id_foreign FOREIGN KEY (paper_strategy_config_id) REFERENCES public.paper_strategy_configs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: param_search_runs param_search_runs_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.param_search_runs
+    ADD CONSTRAINT param_search_runs_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: param_search_runs param_search_runs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.param_search_runs
+    ADD CONSTRAINT param_search_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -5970,6 +1778,14 @@ ALTER TABLE ONLY public.real_strategy_subscriptions
 
 ALTER TABLE ONLY public.real_strategy_subscriptions
     ADD CONSTRAINT real_strategy_subscriptions_user_id_foreign FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: real_trade_executions real_trade_executions_real_trade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.real_trade_executions
+    ADD CONSTRAINT real_trade_executions_real_trade_id_fkey FOREIGN KEY (real_trade_id) REFERENCES public.real_trades(id) ON DELETE CASCADE;
 
 
 --
@@ -6005,87 +1821,31 @@ ALTER TABLE ONLY public.real_trades
 
 
 --
--- PostgreSQL database dump complete
+-- Name: strategy_config_changes strategy_config_changes_backtest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-\unrestrict qkJ5nAfwDKWwpSmNTsTz7UXB9dMOtKlY7dgbCuQoedbxBZ7GpG6jfgogzxxVLzo
-
---
--- PostgreSQL database dump
---
-
-\restrict Fyoe0EkbjjSN4tCJbXvsgUku86QEvHaVQ44TXgclOjMrQNGKvR5Net0YJXMkN0Y
-
--- Dumped from database version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
---
--- Data for Name: migrations; Type: TABLE DATA; Schema: public; Owner: -
---
-
-COPY public.migrations (id, migration, batch) FROM stdin;
-1	0001_01_01_000000_create_users_table	1
-2	0001_01_01_000001_create_cache_table	1
-3	0001_01_01_000002_create_jobs_table	1
-4	2026_06_10_031106_create_ohlcv_data_table	2
-5	2026_06_13_212650_create_paper_trades_table	3
-6	2026_06_13_234626_create_risk_controls_table	4
-7	2026_06_14_220220_add_role_and_status_to_users_table	5
-8	2026_06_14_220221_create_real_strategy_subscriptions_table	5
-9	2026_06_14_220222_create_real_trades_table	5
-10	2026_06_15_032606_create_broker_accounts_table	6
-11	2026_06_15_032607_update_real_strategy_subscriptions_table	6
-12	2026_06_15_032608_add_broker_account_id_to_real_trades_table	6
-13	2026_06_18_041904_add_max_profit_loss_to_paper_trades_table	7
-14	2026_06_18_201634_create_paper_strategy_configs_table	8
-15	2026_06_19_011512_create_collector_configs_table	9
-16	2026_06_19_144230_add_tp2_to_paper_trades_table	10
-17	2026_06_23_000000_extend_trading_tables	11
-18	2026_06_23_100000_broker_accounts_unique	12
-19	2026_06_25_221018_add_stats_to_paper_strategy_configs	13
-20	2026_06_26_045957_add_avg_monthly_trades_to_paper_strategy_configs	14
-21	2026_06_26_054108_add_total_return_pct_to_paper_strategy_configs	15
-22	2026_06_26_190005_change_audit_log_to_jsonb_in_real_trades	16
-23	2026_06_27_195227_add_risk_override_to_real_strategy_subscriptions	17
-24	2026_06_27_231408_update_real_trades_status_check	18
-25	2026_06_28_221854_add_star_rating_to_paper_strategy_configs	19
-26	2026_06_29_024100_add_metrics_to_paper_strategy_configs	20
-27	2026_07_01_151756_fix_paper_strategy_configs_unique_constraint	21
-28	2026_07_01_152513_add_tp3_tp4_trailing_to_trades	22
-29	2026_07_01_165440_add_partial_tp_closes_to_real_trades	23
-30	2026_07_04_200729_add_single_position_per_symbol_to_broker_accounts	24
-31	2026_07_07_220119_add_credentials_extra_to_broker_accounts_table	25
-32	2026_07_07_235900_add_broker_and_epic_to_collector_configs_table	26
-33	2026_07_09_163559_add_commission_to_paper_trades_table	27
-34	2026_10_21_100000_create_strategies_table	28
-35	2026_10_21_100001_create_backtests_table	28
-36	2026_10_21_100002_add_backtest_id_to_paper_strategy_configs	28
-37	2026_10_21_100005_update_strategies_table	29
-38	2026_10_22_100006_add_hash_to_backtests	30
-\.
+ALTER TABLE ONLY public.strategy_config_changes
+    ADD CONSTRAINT strategy_config_changes_backtest_id_fkey FOREIGN KEY (backtest_id) REFERENCES public.backtests(id) ON DELETE SET NULL;
 
 
 --
--- Name: migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+-- Name: strategy_config_changes strategy_config_changes_paper_strategy_config_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.migrations_id_seq', 38, true);
+ALTER TABLE ONLY public.strategy_config_changes
+    ADD CONSTRAINT strategy_config_changes_paper_strategy_config_id_fkey FOREIGN KEY (paper_strategy_config_id) REFERENCES public.paper_strategy_configs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: strategy_config_changes strategy_config_changes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_config_changes
+    ADD CONSTRAINT strategy_config_changes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Fyoe0EkbjjSN4tCJbXvsgUku86QEvHaVQ44TXgclOjMrQNGKvR5Net0YJXMkN0Y
 

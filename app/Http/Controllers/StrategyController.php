@@ -143,16 +143,14 @@ class StrategyController extends Controller
         return back()->with('status', "Estrategia {$strategy->name} " . ($strategy->active ? 'activada' : 'desactivada'));
     }
 
-    public function destroy(Strategy $strategy)
+    public function destroy(Strategy $strategy, \App\Services\StrategyConfigSync $sync)
     {
         Gate::authorize('manageUsers');
 
-        if ($strategy->hasActivePaper()) {
-            return back()->with('error', 'No puedes eliminar esta estrategia porque tiene una variante activa en Paper Trading. Pausa el Paper primero.');
-        }
-        $name = $strategy->name;
-        $strategy->delete();
-        return back()->with('status', "Estrategia {$name} eliminada.");
+        // D-63: con Paper operando no se borra; si no, se borra todo lo suyo (reglas en StrategyDeletionPlan)
+        $r = $sync->deleteStrategy($strategy, auth()->id());
+
+        return $r['error'] !== null ? back()->with('error', $r['error']) : back()->with('status', $r['message']);
     }
 
     /** Backtest real de 90 días (BTCUSDT H1, BTCUSDT H4, ETHUSDT H1): debe operar en al menos uno. */

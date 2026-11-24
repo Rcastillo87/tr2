@@ -16,13 +16,31 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Implementado en p107 (D-62) |
-| 20 | C5-13 | P2 | Infraestructura heredada | Pendiente de validar (respaldo fuera del VPS: descartado, D-48) |
+| 20 | C5-13 | P2 | Infraestructura heredada | Implementado en p108 (D-63, D-64) |
 | — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Pendientes (protocolo por preparar) |
 
 ## Validados (con fix implementado o instalado)
 
-### C5-12 · Claridad del drawdown consolidado del backtest (P2) — **Excel: refutado · pantalla: sugerencia aceptada** · Implementado en p107 (D-62)
+### C5-13 · Infraestructura y mantenimiento heredado (P2) — **revisión de solo lectura** · Implementado en p108 (D-63, D-64)
+Lectura del servidor (24-nov 06:34 UTC), elemento por elemento:
+
+| Elemento | Estado comprobado | Riesgo | Decisión |
+|---|---|---|---|
+| `trading2-horizon` y su usuario | `User=root`, activo desde el 19-nov, 0 reinicios; `schedule:run` en el crontab de root (sin duplicados) | Bajo: trabajos con privilegios de root | **Sugerencia rechazada (D-64):** queda como root; el vigilante reinicia servicios con `systemctl` |
+| Dueño y permisos de `storage` y `bootstrap/cache` | Carpetas de `tr2` (775); 0 escribibles por cualquiera; 9 archivos de root (2 cachés que la web solo lee, el cursor de la auditoría del collector que escribe el programador, un respaldo del 24-oct) | Ninguno | **Refutado:** sin cambio; la carpeta de respaldos se deja |
+| Lotes de TimescaleDB y compresión | Una sola política (`policy_compression`, 12 h, `compress_after` 14 días): 58 corridas, 0 fallas; 0 fragmentos parciales; 0 viejos sin comprimir; 0 `[BARS]` en `engine.log` (el motor ordena y avisa si llegan desordenadas) | Bajo | **Sin evidencia:** sin cambio (`detect.sql` no se corrió: contiene escrituras) |
+| Esquema guardado | `pgsql-schema.sql` del 26-oct: 20 de las 30 tablas | Medio en una reconstrucción (sin respaldo fuera del VPS, D-48) | **Defecto de mantenimiento: regenerado** por el instalador de p108 con `ops/schema_dump.sh` |
+| Borrar una estrategia | Con configs detenidas: error 500 (FK `RESTRICT`); sin configs: borraba backtests y búsquedas en cascada | Bajo (no se perdía nada; hoy no ocurre: las configs existentes están activas) | **Defecto pequeño: D-63** (el dueño definió qué se borra) |
+| Maestra / config / suscripción | 0 configs sin backtest, 0 operaciones huérfanas; 3 suscripciones pausadas sin config (96, 98, 111) que nunca abren (`runnable` exige config activa) | Ninguno | Sin cambio; se dejan (el dueño). Pantallas CFG-06/07/09 siguen pendientes con maqueta |
+
+- **D-63:** `App\Support\StrategyDeletionPlan` (regla pura) y `StrategyConfigSync::deleteStrategy` (transacción con
+  bloqueo; auditoría `deleted` por config; nunca borra operaciones Real; una suscripción con operación Real viva se
+  pausa y se borra sola al cerrar: `retire_on_close`, la tarea de D-04; las operaciones abiertas siguen con su
+  `config_snapshot` y `RealTradingTickJob` vigila toda cuenta con operaciones abiertas).
+- **Prueba:** `strategy_delete_rules_test.php` (nueva); código anterior 13 FALLOS; mutaciones 11/11; integración en el
+  servidor `strategy_delete_test.php` (transacción revertida, a mano); regresión 78 Python + 34 PHP en TODO OK.
+
+### C5-12 · Claridad del drawdown consolidado del backtest (P2) — **Excel: refutado · pantalla: sugerencia aceptada** · Instalado en p107 (`48580b1`, D-62)
 - **Código:** en la fila CONSOLIDADO, «DD cerrado» y «DD flotante» son el peor DD entre las monedas
   (`BacktestingController`, Fase 12 · 4A); cada moneda se simula sola (D-41). El número es el decidido; el encabezado
   («Peor caída del capital…») es el mismo de las monedas y se puede leer como el DD de una cartera conjunta.
@@ -334,3 +352,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-06 | El comparador Paper vs backtest dice qué versión compara y avisa si la config cambió después (D-59) | p104 `fbc71cf` | Regresión en el servidor (herramienta manual) |
 | C5-08 | Un solo criterio (neto; bruto si falta) para filtro, KPI y curva de Real y el Dashboard (D-60) | p105 `c9cb836` | 14 cerradas, neto +2.942,98, 7 ganadoras con el criterio nuevo |
 | C5-11 | Posiciones manuales: un aviso por posición y aviso «Posición manual cerrada» (D-61) | p106 `c7f9090` | 0 posiciones manuales en la historia. Falta DEMO con una manual abierta y cerrada |
+| C5-12 | DD del CONSOLIDADO rotulado «peor moneda» (D-62); Excel refutado | p107 `48580b1` | 120 vistas compiladas y revisadas con `php -l` |

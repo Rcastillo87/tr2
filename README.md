@@ -75,8 +75,8 @@ app/
   Notifications/SystemAlert.php            aviso en la plataforma (canal database)
 config/trading.php                         URL del motor, clave interna, vigilante
 database/sql-migrations/                   migraciones SQL numeradas (up/down) — se aplican a mano, en orden
-database/schema/pgsql-schema.sql           volcado viejo del esquema: DESACTUALIZADO (FK, CHECK y columnas: consultar la base)
-ops/                                       dbsql.sh, backtest_from_search.php, logrotate-tr2.conf
+database/schema/pgsql-schema.sql           estructura del esquema public (sin datos); regenerar: bash ops/schema_dump.sh > …
+ops/                                       dbsql.sh, schema_dump.sh, backtest_from_search.php, logrotate-tr2.conf
 python-engine/
   main.py · start.py                       FastAPI (uvicorn 127.0.0.1:8002)
   api/v1/                                  backtest, paper_trading, real_trading, collector, broker, prices, regime
@@ -373,7 +373,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (78 Python + 33 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (78 Python + 34 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 

@@ -56,7 +56,9 @@ $check("R2: renameReferences ya no hace orWhere('strategy', \$oldName) suelto",
 $check('R3: displayName arma la etiqueta con StrategyLabel::compose', str_contains($sync, 'StrategyLabel::compose('));
 
 $ctl = file_get_contents("{$root}/app/Http/Controllers/StrategyController.php");
-$check('D1: destroy usa $strategy->hasActivePaper()', str_contains($ctl, '$strategy->hasActivePaper()'));
+// D-63 (p108): el borrado pasó a StrategyConfigSync::deleteStrategy; la comprobación es la misma
+$check('D1: borrar una estrategia usa $strategy->hasActivePaper() (StrategyConfigSync::deleteStrategy)',
+    str_contains($ctl, '$sync->deleteStrategy(') && str_contains($sync, '$strategy->hasActivePaper()'));
 $check('D2: destroy ya no busca por LIKE del nombre', ! preg_match("/display_name',\s*'like',\s*\\\$strategy->name/", $ctl));
 $model = file_get_contents("{$root}/app/Models/Strategy.php");
 $check("D3: hasActivePaper compara por strategy_id del backtest",

@@ -11,8 +11,8 @@
 1. ~~Respaldo de la base fuera del VPS~~: descartado por el dueño (D-48, 20-nov).
 2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades (desde p81 termina en ayer y separa por snapshot); registrar aquí. Corridas del 19-nov en la sección de p80.
 3. **Fase 12:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
-4. **Infraestructura:** `trading2-horizon` como `User=tr2` (revisar qué de `storage/` y `bootstrap/cache` quedó con dueño root); revisión automática de lotes solapados tras `policy_compression` (`/root/patches/batches/detect.sql`); regenerar `database/schema/pgsql-schema.sql` (desactualizado).
-5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; decidir si borrar una estrategia debe bloquearse como un backtest (cascada).
+4. ~~**Infraestructura:**~~ revisado en C5-13 (24-nov): Horizon y el programador siguen como root (D-64, el vigilante necesita reiniciar servicios); permisos sin problema; lotes de TimescaleDB sin evidencia (0 parciales, 0 `[BARS]`); esquema regenerado en p108 (`ops/schema_dump.sh`).
+5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; ~~decidir si borrar una estrategia debe bloquearse como un backtest~~ (D-63, p108).
 6. **Limpieza:** TP2–TP4 (REAL-05); reescribir `docs/01–03`; slippage de altcoins en demo.
 7. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
 - **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por `docs/PROMPT_MAESTRO.md` (**V7.5**, 20-nov). No se puede hacer por script.
@@ -21,7 +21,24 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · C5-12: rótulo «peor moneda» en el DD del consolidado (p107, D-62) — 24-nov
+### Ciclo 5 · C5-13: infraestructura heredada; borrar una estrategia; esquema (p108, D-63, D-64) — 24-nov
+- **Validado (lectura 24-nov 06:34 UTC):** Horizon y `schedule:run` como root (sin problemas; el vigilante reinicia
+  servicios con `systemctl`: queda así, D-64); permisos sin problema (lo que escribe la web es de `tr2`; 9 archivos de
+  root inofensivos); TimescaleDB con una política de compresión, 58 corridas, 0 fallas, 0 fragmentos parciales y
+  0 `[BARS]` en `engine.log`; esquema guardado con 20 de 30 tablas (26-oct); borrar una estrategia con configs detenidas
+  daba error 500 (FK RESTRICT de `paper_strategy_configs.backtest_id`); 3 suscripciones sin config que no operan (se
+  dejan).
+- **Fix (D-63):** `App\Support\StrategyDeletionPlan` (puro) + `StrategyConfigSync::deleteStrategy` (una transacción):
+  con Paper operando o una búsqueda en curso no borra; si no, borra búsquedas, backtests, configs y lo de Paper de esas
+  configs (también abiertas) y sus suscripciones (las que tienen una operación Real viva: pausadas y `retire_on_close`);
+  nunca toca operaciones Real; auditoría `deleted` por config (`strategy_delete`). Esquema: `ops/schema_dump.sh`
+  (solo estructura de public, con las hypertables y políticas como comentario), regenerado por el instalador.
+- **Prueba:** `strategy_delete_rules_test.php` (nueva, en la regresión); código anterior 13 FALLOS; mutaciones 11/11 (una
+  duodécima, «ignora el bloqueo», sobrevivía por `false < n` en PHP: se reforzó C2); `strategy_label_test` D1 busca la
+  comprobación de Paper en el servicio (se movió, no cambió). Integración a mano: `strategy_delete_test.php`
+  (transacción revertida). Regresión 78 Python + 34 PHP en TODO OK.
+
+### Ciclo 5 · C5-12: rótulo «peor moneda» en el DD del consolidado (p107, D-62) — 24-nov · instalado `48580b1`
 - **Validado:** el DD del CONSOLIDADO es el peor de las monedas (D-38 4A, D-41) con el mismo encabezado que las monedas.
   Excel refutado (es por moneda; la ruta no está enlazada en ninguna pantalla). Sugerencia aceptada con boceto.
 - **Cambio:** solo texto en `results.blade.php`. Vuelta atrás: `p107_revertir.sh`.
