@@ -12,14 +12,14 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Detección implementada en p117; reparación de 2 fragmentos: parche aparte aprobado |
+| 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Detección instalada en p117 (`c3946eb`); reparación de los 2 fragmentos en p118 |
 | 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Pendiente (del dueño, D-45) |
 | 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Pendiente de validar |
 | 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Pendiente de validar |
 
 ## Validados
 
-### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Detección implementada en p117
+### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Detección instalada en p117 (`c3946eb`); reparación en p118
 - **Antecedente:** el 28-oct una recompresión dejó lotes solapados (50 fragmentos reescritos; `detect.sql`, que crea una
   tabla temporal). El motor ordena y avisa `[BARS]` (`bars_frame`). Faltaba la revisión automática (BITACORA 28-oct).
 - **Servidor (lecturas 24-nov 20:38–20:45 UTC, solo lectura):** compresión `segmentby` broker, symbol, interval;
@@ -39,6 +39,22 @@
   imita un fragmento comprimido: sin solapes, parcial, otro broker y otra temporalidad sin falsos positivos, contenido,
   tras reparar un hueco, varios, borde exacto) y `ohlcv_overlap_command_test.php` (nueva); mutaciones 10/10 (K5 se
   reforzó: un aviso comentado pasaba); regresión 82 Python + 36 PHP en TODO OK.
+- **Instalado p117 (`c3946eb`, 24-nov 23:20 UTC):** la primera revisión encontró exactamente las 12 series de la lectura
+  (`_hyper_1_123_chunk`: BNB 10, BTC 8, ETH 9, SOL 10 lotes en 1m; `_hyper_1_124_chunk`: BNB 8, BTC 9, ETH 9, SOL 10 en 1m
+  y 1 en 5m) y abrió el aviso.
+- **Parte 2 (p118):** `ops/ohlcv_rewrite_chunk.sh <fragmento>` (reutilizable cuando vuelva a pasar): 1) comprueba que es un
+  fragmento comprimido de `ohlcv_data`; 2) respalda todas sus velas (`/root/patches/ohlcv_rewrite/…csv.gz`, verificado);
+  3) `database/sql/ohlcv_rewrite_chunk.sql`: en UNA transacción (`lock_timeout` 5 s), antes de tocar exige el mismo número
+  de velas que el respaldo y ninguna repetida; `decompress_chunk` + `compress_chunk`; confirma solo si el número y el md5 de
+  todas las filas son iguales antes y después; si no, se deshace sola. El instalador solo repara los fragmentos aprobados
+  que sigan avisados, sin búsquedas en curso, sin la compresión corriendo y lejos de 05:38 / 17:38 UTC; al final vuelve a
+  correr la revisión (el aviso debe cerrarse). Mismo método que el arreglo del 28-oct (50 fragmentos), ahora con respaldo
+  y verificación.
+- **Prueba p118:** `ohlcv_rewrite_chunk_test.py` (nueva: el SQL tal cual con psql contra PostgreSQL de pruebas, con
+  `decompress_chunk`/`compress_chunk` imitados: sin cambios y filas reescritas → se confirma; vela perdida, precio
+  cambiado, falla de la compresión → se deshace con las velas intactas; repetidas o cambio desde el respaldo → no toca);
+  mutaciones 7/8 (la octava, «md5 sin `ORDER BY`», es equivalente en PostgreSQL 16: el plan ya ordena la entrada por el
+  `count(DISTINCT …)`; se deja el `ORDER BY` para no depender del plan); regresión 83 Python + 36 PHP en TODO OK.
 
 ### C6-02 · Estado del panel de riesgo coherente con el motor (P2) — **Defecto (pantalla)** · Instalado en p116 (`f9bcfe6`)
 - **Código:** `RiskLimits::evaluate` devolvía `ok` («Opera normal») con una nota cuando faltaba el saldo base del mes,

@@ -29,7 +29,16 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-05: revisión automática de lotes comprimidos solapados (p117) — 24-nov
+### Ciclo 6 · C6-05 (parte 2): reparación con respaldo de los 2 fragmentos solapados (p118) — 24-nov
+- **Nuevo:** `ops/ohlcv_rewrite_chunk.sh <fragmento>` + `database/sql/ohlcv_rewrite_chunk.sql`: respaldo csv.gz de las
+  velas del fragmento y `decompress_chunk` + `compress_chunk` en una transacción que solo se confirma con las velas
+  idénticas (número y md5); si no, se deshace. Reutilizable cuando la revisión de p117 vuelva a avisar.
+- **Instalador:** repara `_hyper_1_123_chunk` y `_hyper_1_124_chunk` si siguen avisados; sin búsquedas, sin la compresión
+  corriendo, lejos de 05:38 / 17:38 UTC; vuelve a revisar al final. Vuelta atrás del código: `p118_revertir.sh`; las velas
+  no cambian (respaldo en `/root/patches/ohlcv_rewrite/`).
+- **Prueba:** `ohlcv_rewrite_chunk_test.py` (nueva); mutaciones 7/8 (1 equivalente); regresión 83 + 36.
+
+### Ciclo 6 · C6-05: revisión automática de lotes comprimidos solapados (p117) — 24-nov · instalado `c3946eb`
 - **Validado:** 12 series con lotes solapados en `_hyper_1_123_chunk` y `_hyper_1_124_chunk` (8 y 15-oct; BNB, BTC, ETH,
   SOL en 1m y 5m), comprimidos después del arreglo del 28-oct; 64 `[BARS]` hoy (SOL/1, BNB/1). Se ordenan al leer.
 - **Parte 1:** `ohlcv:overlap-check` (solo lectura, cada 3 h) + `database/sql/ohlcv_overlap_batches.sql`. Vuelta atrás: `p117_revertir.sh`.

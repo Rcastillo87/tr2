@@ -373,7 +373,7 @@ En `tests/Forensic/`. Las `.py` se corren desde `python-engine/` (`venv/bin/pyth
 
 \* Integración: Laravel + base real dentro de una transacción que se revierte; corren al instalar su parche.
 
-Regresión oficial (82 Python + 36 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
+Regresión oficial (83 Python + 36 PHP): lista en `docs/CERTIFICACION_AUDITORIA.md`.
 
 ---
 
@@ -398,10 +398,9 @@ Regresión oficial (82 Python + 36 PHP): lista en `docs/CERTIFICACION_AUDITORIA.
 - Real: slippage real de Bybit y cantidad redondeada al paso del símbolo.
 
 **Mantenimiento de la base**
-- La compresión automática de TimescaleDB (cada 12 h) puede dejar **lotes solapados** en fragmentos donde el collector reparó huecos; la lectura ordenada sale desordenada. Detectar: `runuser -u postgres -- psql -d trading2 -tA < /root/patches/batches/detect.sql`. Arreglar: `decompress_chunk` + `compress_chunk` del fragmento. El escudo `bars_frame` protege los resultados mientras tanto (aviso `[BARS]` en el log).
+- La compresión automática de TimescaleDB (cada 12 h) puede dejar **lotes solapados** en fragmentos donde el collector reparó huecos; la lectura ordenada sale desordenada. Detectar: lo revisa solo `php artisan ohlcv:overlap-check` cada 3 h (aviso «Velas: lotes comprimidos solapados», con el fragmento). Arreglar (root, sin búsquedas en curso, lejos de 05:38 / 17:38 UTC): `bash ops/ohlcv_rewrite_chunk.sh <fragmento>` — respalda sus velas en `/root/patches/ohlcv_rewrite/` y las reescribe en una transacción que solo se confirma si quedan idénticas. El escudo `bars_frame` protege los resultados mientras tanto (aviso `[BARS]` en el log).
 
 **Pendientes**
-- Revisión automática de lotes solapados tras cada compresión.
 - ~~Correr el comparador (`compare_paper_vs_backtest.py --config <id>`) sobre las configs activas de Paper~~: hecho el 19-nov (bitácora, p80); desde p81 termina en el último día completo y separa por snapshot.
 - Fase estadística (holdout, cartera, walk forward, drawdown flotante, tamaño con costos): opciones en `docs/FASE12_ESTADISTICA.md`.
 - `trading2-horizon` corre como root (propuesta: `tr2`).
