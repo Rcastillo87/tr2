@@ -7,15 +7,16 @@
 > **Estados:** Pendiente de validar · Validado (con su veredicto) · Implementado (sin instalar) · Instalado (SHA) ·
 > Validado en Demo. Un instalador que termina bien no cierra un punto por sí solo (§7.7 del informe).
 > **Veredictos:** Válido · Válido en parte · Refutado · Ya corregido · Decisión del dueño.
+> **Criterio desde C5-03 (dueño, 23-nov):** *defecto* = el sistema contradice una decisión, da un dato equivocado o
+> arriesga dinero o datos → se propone y recomienda el arreglo; *sugerencia* = cambia algo que funciona como el dueño
+> decidió → se presenta como opción con pros y contras, sin recomendarla como arreglo; *refutado* → se explica y se cierra.
 > Los resueltos van en una lista aparte de los pendientes (§7.10 del informe).
 
 ## Pendientes del ciclo
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 13 | C5-04 | P1 | Aislamiento de pruebas con PostgreSQL | Implementado en p102 (D-56) |
-| 14 | C5-05 | P1 | Cobertura de la reparación de VWAP | Pendiente de validar |
-| 15 | C5-03 | P2 | Independencia de la prueba final 60/20/20 | Pendiente de validar |
+| 15 | C5-03 | P2 | Independencia de la prueba final 60/20/20 | **Sugerencia rechazada por el dueño (D-58)**: el cálculo con 24 meses es su diseño; solo se corrige el texto engañoso de la pantalla + filtro ≥ +5 % y columna «Retorno 24 m» (maqueta aprobada 23-nov) · Implementado en p103 |
 | 16 | C5-06 | P2 | Comparador con el snapshot vigente | Pendiente de validar |
 | 17 | C5-08 | P2 | PnL bruto / neto en estadísticas Real | Pendiente de validar |
 | 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Pendiente de validar |
@@ -25,7 +26,35 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-04 · Aislamiento obligatorio de pruebas con PostgreSQL (P1) — **Válido y más grave que lo descrito** · Implementado en p102 (D-56)
+### C5-03 · Independencia de la prueba final 60/20/20 (P2) — **Sugerencia rechazada por el dueño (D-58)** · Pantalla en p103
+- **Código:** `accept()` exige `MIN_TRADES` sobre el período completo (prueba final incluida) y, en el enfoque win rate,
+  el PF del período completo; las filas se ordenan por retorno y consistencia de los 24 meses (motor) y Laravel ordena
+  con `summarize()` de los 24 meses. La pantalla decía que la prueba final «no eligió ni aceptó».
+- **Servidor (lectura 23-nov 23:31 UTC, 72 búsquedas v4):** 144 de 1.287 ganadoras (11 %) solo llegan al mínimo de
+  operaciones con la prueba final; la 1.ª cambiaría en 24 de 62 búsquedas sin ella (top 5: 71 %; top 10: 78 % iguales).
+- **Veredicto:** no es un defecto: evaluar 24 meses, como el backtest, es el diseño del dueño (D-58, que reemplaza a la
+  D-57 del mismo día). Lo incorrecto era el texto. Se implementa lo que pidió el dueño: filtro ≥ +5 % en 24 meses en
+  todas las búsquedas (sin aviso; tampoco se pueden crear por id), «Retorno 24 m» justo antes de «Elegir», barra con lo
+  que se evalúa en cada parte («Total 24 meses: con esto se ordena…»; «debe ganar aquí»; «no se le exige ganar») y
+  textos corregidos.
+- **Prueba:** `search_min_return_test.php` (nueva: regla, `summarize()`, filtro, creatable, orden de columnas, textos);
+  código anterior 9 FALLOS; mutaciones 9/9; JS de la página compila; regresión 78 Python + 32 PHP en TODO OK.
+
+### C5-05 · Cobertura de la reparación de VWAP Tendencia (P1) — **Válido en la herramienta; sin exposición** · Sin arreglo
+1. **Sin cobertura mínima: válido.** `2026_11_19_r21_vwap_std.py` daba por verificada una config con 0 velas revisadas.
+2. **Otras versiones solo avisadas: válido.** Las configs con la línea vieja y otra huella quedaban en «AVISO» sin
+   tocarse ni verificarse (el modo «YA APLICADO» sí falla si queda alguna con la línea vieja).
+3. **Hallazgo propio:** p80 no cambió `backtests.config_params.strategy_code`, que es lo que copia «Implementar en
+   Paper» (`StrategyConfigSync::syncFromBacktest`): un backtest guardado antes del 19-nov reintroduciría el código viejo.
+- **Servidor (lectura 23-nov 23:23 UTC):** «VWAP Tendencia» con el código nuevo; las 11 configs de VWAP (todas
+  activas, 6 con suscripción Real activa) con la huella corregida `2cf17fbe`; los 11 backtests guardados de VWAP con el
+  código nuevo en `config_params` y en `strategy_snapshot` (se corrieron después de p80); 0 operaciones abiertas de
+  Paper o Real con el código viejo. «VWAP Reversión» no tiene esa línea (la revisión diaria la aprueba).
+- **Veredicto:** los dos huecos están en una herramienta de un solo uso que ya no tiene nada que corregir y el camino de
+  «Implementar en Paper» está cerrado (no hay backtests con el código viejo). Sin arreglo; queda como lección para la
+  próxima reparación de código guardado (PROMPT_MAESTRO §8).
+
+### C5-04 · Aislamiento obligatorio de pruebas con PostgreSQL (P1) — **Válido y más grave que lo descrito** · Instalado en p102 (`637821f`, D-56)
 - **Hallazgo propio, más grave que el informe:** desde p92 `backtesting/auto_levels.py` carga `python-engine/.env` al
   importarse y casi todas las pruebas lo importan: en el servidor, **la regresión del instalador veía la base de
   producción** (lectura 23-nov: DB_* definidas en `.env`, DB_NAME no termina en «test»; `DB_HOST` vacío antes de
@@ -247,4 +276,6 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-01 | Libro de ejecuciones: «ok» solo si cantidad, precio y comisiones cuadran; «no sé» = reintento; aviso a las 24 h (D-53) | p99 `3f31b10` | 13 cerradas `ok` con funding; las 3 abiertas del 23-nov pasaron la regla nueva (`open_ok`). Falta DEMO con parcial |
 | C5-07 | Conciliación sin fallos escondidos: cuentas aisladas, `errors`/`pending`/`complete`, aviso `real_reconcile` a los 10 min, marca fija de huérfana (D-54) | p100 `599521a` | 13 cerradas, 3 abiertas, 0 huérfanas tras instalar. Falta DEMO con Bybit caído |
 | C5-02 | «No se pudo probar» no es «aprobada»: al guardar sin velas o con error no se guarda; revisión diaria con «sin evaluar» y aviso propio (D-55) | p101 `d4ca055` | Regresión en el servidor; la revisión del 24-nov (04:15) es la primera con la regla nueva |
-| C5-09 | Sin defecto: matriz dinámica de permisos (D-46) y aislamiento entre usuarios | — (prueba `role_matrix_test.php`, en el repo con p102) | Servidor 23-nov 22:42 UTC: 61 rutas·método, 305 comprobaciones, 0 fallos, 0 avisos; 0 usuarios de prueba antes y después |
+| C5-09 | Sin defecto: matriz dinámica de permisos (D-46) y aislamiento entre usuarios | — (prueba `role_matrix_test.php`, en el repo desde p102 `637821f`) | Servidor 23-nov 22:42 UTC: 61 rutas·método, 305 comprobaciones, 0 fallos, 0 avisos; 0 usuarios de prueba antes y después |
+| C5-04 | Ninguna prueba toca una base que no sea de pruebas: barrera única en 14 pruebas + vigilancia (D-56) | p102 `637821f` | En el servidor el instalador comprobó que las 6 pruebas con base se saltan (no tocan producción) |
+| C5-05 | Sin arreglo pendiente: no queda código viejo de VWAP Tendencia en ningún lado (estrategia, 11 configs, 11 backtests, operaciones abiertas) | — | Lectura 23-nov 23:23 UTC: todo con la huella corregida `2cf17fbe`; 0 código viejo |

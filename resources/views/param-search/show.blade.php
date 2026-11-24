@@ -331,12 +331,21 @@
     }
     function bar3(g) {
         const box = (flex, bg, fg, txt) => `<div style="flex:${flex};background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">${txt}</div>`;
-        return `<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;font-size:11px">`
+        const total = g.choose + g.val + g.test;
+        const tag = (flex, fg, txt) => `<div style="flex:${flex};color:${fg};padding:0 6px;text-align:center">${txt}</div>`;
+        // D-58 (p103): qué se evalúa en cada parte. El total de 24 meses ordena y filtra; cada tramo dice si debe ganar.
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px;color:var(--color-text-primary)">`
+            + `<span style="flex:1;border-top:2px solid #C4B5FD"></span><span style="white-space:nowrap"><b>Total ${total} meses</b> · con esto se ordena, `
+            + `se dan las estrellas y se pide el mínimo de operaciones y +${SB.num(MIN_RET, 0)} %</span><span style="flex:1;border-top:2px solid #C4B5FD"></span></div>`
+            + `<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;font-size:11px">`
             + box(g.choose, 'var(--color-surface-raised)', 'var(--color-text-secondary)', `Elegir · meses ${g.from[0]}–${g.to[0]}`)
             + box(g.val, 'rgba(196,181,253,.18)', '#C4B5FD', `Validar · ${g.from[1]}–${g.to[1]}`)
             + box(g.test, 'rgba(34,197,94,.15)', 'var(--color-profit)', `Prueba final · ${g.from[2]}–${g.to[2]}`) + `</div>`
-            + `<div class="sb-muted" style="font-size:11px;margin-top:4px">Qué meses se usan para qué: se elige con el primer tramo, se acepta solo si también gana en la validación y la prueba final solo se muestra.</div>`;
+            + `<div style="display:flex;font-size:11px;line-height:1.4;margin-top:4px">`
+            + tag(g.choose, 'var(--color-text-secondary)', 'debe ganar aquí') + tag(g.val, '#C4B5FD', 'debe ganar aquí también')
+            + tag(g.test, 'var(--color-profit)', 'no se le exige ganar: solo se muestra') + `</div>`;
     }
+    const MIN_RET = {{ \App\Services\ParamSearchService::MIN_TOTAL_RETURN_PCT }};   // D-58: retorno mínimo en 24 meses
     const testCell = r => r.test ? `<span class="${SB.cls(r.test.ret)}">${SB.pct(r.test.ret)}</span>` : '—';
     function renderV3() {
         const s = state, symMode = data.mode === 'symbol', months = data.months || 24, late = lateMonths(), first = months - late;
@@ -358,22 +367,22 @@
         const testWins = list.filter(r => r.test && r.test.ret > 0).length;
         $('sbKpis3').innerHTML = [
             ['Probadas', s.tested ?? '—', symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : ''],
-            g ? ['Pasan la validación', list.length, `ganan en los meses ${g.from[1]}–${g.to[1]}`] : ['Ganan en los dos tramos', list.length, ''],
-            ...(g ? [['También ganan en la prueba final', `${testWins} de ${list.length}`, `últimos ${g.test} meses, que no eligieron ni aceptaron`]] : []),
+            g ? ['En la lista', list.length, `ganan al elegir y en la validación · +${SB.num(MIN_RET, 0)} % o más en ${months} m`] : ['Ganan en los dos tramos', list.length, ''],
+            ...(g ? [['También ganan en la prueba final', `${testWins} de ${list.length}`, `últimos ${g.test} meses (cuentan en el total)`]] : []),
             ['Mejor retorno 24 m', best === null ? '—' : SB.pct(best, 1), ''],
             ['Temporalidades', (s.intervals || []).length, ivs(s)],
             ['Duró', s.elapsed_s ? `${Math.floor(s.elapsed_s / 60)} min ${Math.round(s.elapsed_s % 60)} s` : '—', ''],
         ].map(([t, v, sub], i) => `<div class="sb-kpi"><span>${t}</span><b class="${i === 1 && list.length ? 'sb-pos' : (i === 2 && best !== null ? SB.cls(best) : '')}">${v}</b>${sub ? '<span>' + sub + '</span>' : ''}</div>`).join('');
 
         const H = (label, k, cls = 'r') => `<th class="${cls}${k === key ? ' key' : ''}">${label}${k === key ? ' ↓' : ''}</th>`;
-        $('sbHead3').innerHTML = `<tr><th style="width:30px"></th><th>Estrellas</th><th>Configuración</th>${H('Retorno 24 m', 'total_return_pct')}
+        $('sbHead3').innerHTML = `<tr><th style="width:30px"></th><th>Estrellas</th><th>Configuración</th>
             ${H('Win rate', 'win_rate')}${H('Consistencia', 'consist_pct')}<th class="r">PF</th><th class="r">Trades</th><th class="r">DD máx</th>
-            ${g ? `<th class="r">Elegir ${g.choose} m</th><th class="r">Validación ${g.val} m</th><th class="r">Prueba final ${g.test} m</th>`
+            ${H('Retorno ' + months + ' m', 'total_return_pct')}${g ? `<th class="r">Elegir ${g.choose} m</th><th class="r">Validación ${g.val} m</th><th class="r">Prueba final ${g.test} m</th>`
                 : `<th class="r">Primeros ${first} m</th><th class="r">Últimos ${late} m</th>`}${symMode ? '' : '<th>Monedas que ganan</th>'}<th></th></tr>`;
         $('sbEmpty3').style.display = list.length ? 'none' : 'block';
         $('sbTable3').style.display = list.length ? '' : 'none';
         $('sbFoot3').style.display = rows.length ? '' : 'none';
-        $('sbEmpty3').innerHTML = `<b>Ninguna configuración gana ${symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : 'en ≥ ¾ de las monedas'} ${g ? 'al elegir y en la validación' : 'en los dos tramos'}.</b>`
+        $('sbEmpty3').innerHTML = `<b>Ninguna configuración gana ${symMode ? 'en ' + SB.esc(tab.replace('USDT', '')) : 'en ≥ ¾ de las monedas'} ${g ? 'al elegir y en la validación' : 'en los dos tramos'} con +${SB.num(MIN_RET, 0)} % o más en ${months} meses.</b>`
             + (near.length ? '<div class="sb-near" style="margin-top:8px"><span>Las que más se acercaron:</span>' + near.map(n => `<span>· ${nearText(n)}</span>`).join('') + '</div>'
                            : ' Es un resultado válido: con esta estrategia y temporalidades no apareció una ventaja.');
         const coins3 = r => { const w = r.survivors || [], l = r.discarded || [];
@@ -385,11 +394,11 @@
               <td><input type="checkbox" class="sb-chk" data-id="${r.id}" aria-label="Elegir configuración" ${on ? 'checked' : ''} ${pick ? '' : 'disabled'}></td>
               <td>${stars(m)}<span class="sb-sub">Sharpe ${SB.num(m.sharpe_ratio, 2)}</span></td>
               <td>${SB.cfgTags(r.cfg)}<span class="sb-sub" style="margin-top:4px">${SB.LABEL[r.interval] || r.interval}</span>${dupNote(r)}</td>
-              <td class="r"><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></td>
               <td class="r">${SB.num(m.win_rate, 0)}%</td>
               <td class="r">${SB.num(m.consist_pct, 0)}%<span class="sb-sub">${Math.round(m.consist_pct * months / 100)}/${months} meses</span></td>
               <td class="r ${SB.pfCls(m.profit_factor)}">${SB.num(m.profit_factor)}</td>
               <td class="r">${m.total_trades.toLocaleString('es-CO')}</td><td class="r">${SB.num(m.max_drawdown_pct, 1)}%</td>
+              <td class="r"><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></td>
               <td class="r ${SB.cls(r.is.ret)}">${SB.pct(r.is.ret)}</td>
               <td class="r"><span class="sb-badge late">${SB.pct(r.oos.ret)}</span></td>
               ${g ? `<td class="r">${testCell(r)}</td>` : ''}
@@ -402,8 +411,8 @@
               <div class="sb-rc-top"><label class="sb-switch"><input type="checkbox" class="sb-chk" data-id="${r.id}" ${on ? 'checked' : ''} ${pick ? '' : 'disabled'}>
                 ${stars(m)}</label>${createdBadge(r)}</div>
               ${SB.cfgTags(r.cfg)}<span class="sb-sub" style="margin-top:4px">${SB.LABEL[r.interval] || r.interval}</span>
-              <div class="sb-rc-grid"><div><span>Retorno 24 m</span><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></div>
-                <div><span>Win rate</span><b>${SB.num(m.win_rate, 0)}%</b></div><div><span>Consistencia</span><b>${SB.num(m.consist_pct, 0)}%</b></div>
+              <div class="sb-rc-grid"><div><span>Win rate</span><b>${SB.num(m.win_rate, 0)}%</b></div><div><span>Consistencia</span><b>${SB.num(m.consist_pct, 0)}%</b></div>
+                <div><span>Retorno ${months} m</span><b class="${SB.cls(m.total_return_pct)}">${SB.pct(m.total_return_pct)}</b></div>
                 <div><span>${g ? 'Elegir ' + g.choose : 'Primeros ' + first} m</span><b class="${SB.cls(r.is.ret)}">${SB.pct(r.is.ret)}</b></div>
                 <div><span>${g ? 'Validación ' + g.val : 'Últimos ' + late} m</span><b class="sb-pos">${SB.pct(r.oos.ret)}</b></div>
                 ${g ? `<div><span>Prueba final ${g.test} m</span><b>${testCell(r)}</b></div>` : ''}<div><span>Trades</span><b>${m.total_trades}</b></div></div>
@@ -417,8 +426,9 @@
         $('sbCreate3').textContent = selected.size ? `💾 Crear ${selected.size} en historial` : '💾 Crear en historial';
         $('sbCreate3').disabled = !selected.size;
         $('sbNote3').innerHTML = (g
-            ? `<b>Elegir ${g.choose} m</b>: tramo con el que se eligió. <b>Validación ${g.val} m</b>: nunca eligió; toda configuración de la lista también ganó ahí. `
-              + `<b>Prueba final ${g.test} m</b>: no eligió ni aceptó; solo se muestra (verde gana, rojo pierde) y nunca saca a nadie de la lista.`
+            ? `Para entrar a la lista una configuración tiene que <b>ganar en Elegir ${g.choose} m y en Validación ${g.val} m</b>, tener el mínimo de operaciones en los ${months} meses `
+              + `y <b>+${SB.num(MIN_RET, 0)} % o más en el total de ${months} meses</b>. Las columnas de la izquierda y «Retorno ${months} m» son del total, como en el backtest; `
+              + `las tres de la derecha muestran cómo le fue en cada tramo. La <b>Prueba final ${g.test} m</b> cuenta dentro del total, pero perder en ella no saca a nadie de la lista (verde gana, rojo pierde).`
             : `<b>Primeros ${first} m</b>: tramo con el que se eligió. <b>Últimos ${late} m</b>: tramo que nunca se usó para elegir; `
               + `toda configuración de la lista también ganó ahí.`) + (data.focus === 'wr' ? ` Enfoque win rate: además profit factor ≥ ${SB.num(data.wr_min_pf ?? 1.2, 1)}.` : '');
     }

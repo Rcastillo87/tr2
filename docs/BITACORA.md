@@ -21,7 +21,25 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-03: prueba final de la búsqueda — sugerencia rechazada por el dueño (D-58) — 23-nov
+- **Validado:** la aceptación (mínimo de operaciones) y el orden usan los 24 meses, prueba final incluida; la pantalla
+  decía que la prueba final «no eligió ni aceptó». Lectura: 144 de 1.287 ganadoras y la 1.ª en 24 de 62 búsquedas
+  dependen de la prueba final.
+- **Decisión (D-58):** el dueño mantiene los 24 meses (como el backtest) y rechaza la sugerencia; pide filtro ≥ +5 % en
+  24 meses (todas las búsquedas, sin aviso), «Retorno 24 m» antes de los tramos y un texto que diga lo cierto
+  (maqueta aprobada). Lección: clasificar defecto / sugerencia / refutado (PROMPT_MAESTRO §8).
+- **Implementado (p103):** `MIN_TOTAL_RETURN_PCT = 5` en `ParamSearchService` (results() salta y creatable() rechaza),
+  columna «Retorno 24 m» antes de los tramos, barra y textos que dicen qué se evalúa. Prueba `search_min_return_test`
+  (nueva); código anterior 9 FALLOS; mutaciones 9/9; regresión 78 + 32 en TODO OK. Vuelta atrás: `p103_revertir.sh`.
+
+### Ciclo 5 · C5-05: cobertura de la reparación de VWAP Tendencia — sin arreglo pendiente — 23-nov
+- **Validado:** la herramienta de p80 no exigía cobertura mínima, dejaba en aviso otras versiones y no tocaba los
+  backtests guardados (lo que copia «Implementar en Paper»). Lectura: 0 código viejo en estrategias, 11 configs, 11
+  backtests y operaciones abiertas (huella `2cf17fbe`). Sin arreglo; lección en el PROMPT_MAESTRO.
+
 ### Ciclo 5 · C5-04: ninguna prueba toca una base que no sea de pruebas (p102, D-56) — 23-nov
+- **Instalado:** `637821f` (23-nov ~23:10 UTC): regresión 78 + 31 en TODO OK; las 6 pruebas con base se saltaron en el
+  servidor (comprobado por el instalador). Sin reinicios.
 - **Validado (más grave que el informe):** desde p92 la regresión del instalador veía la base de producción (el motor
   carga su `.env` al importarse). `vwap_metrics_fix_test` creaba y borraba en producción una estrategia, configs de
   Paper (una activa) y ~135.000 velas falsas (D43USDT) en cada instalación; otras 3 corrían en transacción revertida.

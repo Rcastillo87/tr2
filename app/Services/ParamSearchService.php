@@ -27,6 +27,8 @@ class ParamSearchService
     /** D-45 (p93): qué SL/TP se prueban. 'fixed' = como siempre (default). */
     public const SLTPS = ['fixed' => 'Fijos (como hoy)', 'auto' => 'Automáticos', 'both' => 'Los dos y comparar'];
     public const FOCUS_SORT = ['gain' => 'total_return_pct', 'wr' => 'win_rate', 'cons' => 'consist_pct'];
+    /** D-58 (p103): solo se muestran (y se pueden crear) las configuraciones con este retorno total en 24 meses o más. */
+    public const MIN_TOTAL_RETURN_PCT = 5.0;
     /** Modo "por moneda": de 1 a MAX_SYMBOLS_SYMBOL_MODE monedas × todas las temporalidades con datos. */
     public const MAX_SYMBOLS_SYMBOL_MODE = 5;
     public const KEEP_PER_STRATEGY = 10;
@@ -264,8 +266,23 @@ class ParamSearchService
      * Se puede crear en el historial: búsquedas nuevas (v2) = la configuración sobrevivió en al menos una moneda;
      * búsquedas anteriores (v1) = robusta y validada (la regla con la que se hicieron).
      */
+    /** D-58: un resumen (summarize) llega al retorno total mínimo de los 24 meses. */
+    public static function passesMinReturn(array $summary): bool
+    {
+        return (float) ($summary['total_return_pct'] ?? 0) >= self::MIN_TOTAL_RETURN_PCT;
+    }
+
+    /** D-58: la fila llega al retorno mínimo en los 24 meses (con las monedas con que se muestra por defecto). */
+    public function meetsMinReturn(ParamSearchRun $run, array $row): bool
+    {
+        return self::passesMinReturn($this->summarize($row, $this->symbolsFor($run, $row, 'survivors')));
+    }
+
     public function creatable(ParamSearchRun $run, array $row): bool
     {
+        if (! $this->meetsMinReturn($run, $row)) {   // D-58: lo que no se muestra no se crea
+            return false;
+        }
         if (($run->results['version'] ?? 1) >= 2) {
             return ! empty($row['survivors']);
         }

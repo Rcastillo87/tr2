@@ -152,6 +152,9 @@ class ParamSearchController extends Controller
         $created = $this->service->createdStates($run);   // conciliado con los backtests que existen (RQ-01.2)
         $rows = [];
         foreach ($run->results['rows'] ?? [] as $row) {
+            if (! $this->service->meetsMinReturn($run, $row)) {   // D-58: menos de +5 % en 24 meses: no se muestra
+                continue;
+            }
             $rows[] = [
                 'id'         => $row['id'],
                 'symbol'     => $row['symbol'] ?? null,
