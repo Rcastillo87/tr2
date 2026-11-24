@@ -88,6 +88,28 @@ def snapshot_segments(trades: list[dict], change_times=(), fallback: dict | None
     return segs
 
 
+def changed_after(segs: list[dict], change_times=()) -> datetime | None:
+    """C5-06 (p104): último cambio de la config registrado DESPUÉS de la entrada de la última operación de Paper (el
+    último tramo ya no es la config vigente: no hay operaciones con ella todavía). None si no cambió después."""
+    if not segs:
+        return None
+    last = naive_utc(segs[-1]['trades'][-1]['entry_time'])
+    after = sorted(naive_utc(c) for c in change_times if c is not None and naive_utc(c) > last)
+    return after[-1] if after else None
+
+
+def version_line(cfg: dict) -> str:
+    """Qué versión tiene hoy la config (huella de los parámetros y del código), para ponerla junto a cada tramo."""
+    p = as_dict(cfg.get('params'))
+    code = code_version(p)
+    return f"config vigente #{cfg['id']}: parámetros {snapshot_key(p)} · código {code[:8] if code else 'sin código'}"
+
+
+def stale_warning(changed: datetime) -> str:
+    return (f"*** AVISO: el último tramo NO es la configuración vigente: la config cambió el {changed:%Y-%m-%d %H:%M} UTC "
+            f"y todavía no hay operaciones de Paper con ella. Lo comparado es la versión anterior. ***")
+
+
 def backtest_payload(cfg: dict, params: dict, start: str, end: str) -> dict:
     p = {k: v for k, v in params.items() if k not in SKIP_KEYS}
     return dict(p, strategy=cfg['display_name'] or f"config #{cfg['id']}", symbol=cfg['symbol'],
@@ -212,7 +234,8 @@ async def load(config_id: int, start: str | None, end: str | None) -> tuple[dict
         cfg = await conn.fetchrow("SELECT id, display_name, symbol, interval, params FROM paper_strategy_configs"
                                   " WHERE id = $1", config_id)
         changes = [r['created_at'] for r in await conn.fetch(
-            "SELECT created_at FROM strategy_config_changes WHERE paper_strategy_config_id = $1", config_id)]
+            "SELECT created_at FROM strategy_config_changes WHERE paper_strategy_config_id = $1"
+            " AND action IN ('created', 'updated')", config_id)]   # C5-06: solo lo que cambia parámetros
         q = ("SELECT id, side, entry_price, exit_price, entry_time, exit_time, exit_reason, pnl_pct, status,"
              " config_snapshot FROM paper_trades WHERE paper_strategy_config_id = $1")
         args = [config_id]
@@ -247,7 +270,8 @@ def main(argv=None, loader=load, backtester=run_backtest, today: date | None = N
     ap.add_argument('--config', type=int, required=True, help='id de paper_strategy_configs')
     ap.add_argument('--start', help='YYYY-MM-DD (por defecto: el primer trade de Paper)')
     ap.add_argument('--end', help='YYYY-MM-DD inclusive (por defecto y como máximo: ayer UTC, el último día completo)')
-    ap.add_argument('--latest-only', action='store_true', help='solo el tramo de los parámetros vigentes')
+    ap.add_argument('--latest-only', action='store_true',
+                    help='solo el último tramo con operaciones (si la config cambió después, el reporte lo avisa)')
     ap.add_argument('--json-out')
     a = ap.parse_args(argv)
 
@@ -265,6 +289,10 @@ def main(argv=None, loader=load, backtester=run_backtest, today: date | None = N
     start, end = default_range(trades, a.start, end, today)
     step = interval_delta(str(cfg['interval']))
     segs = snapshot_segments(trades, cfg.get('change_times') or (), as_dict(cfg.get('params')))
+    changed = changed_after(segs, cfg.get('change_times') or ())   # C5-06: ¿el último tramo es la config vigente?
+    print(version_line(cfg))
+    if changed:
+        print(stale_warning(changed))
     if a.latest_only:
         segs = segs[-1:]
     if len(segs) > 1:
@@ -285,21 +313,26 @@ def main(argv=None, loader=load, backtester=run_backtest, today: date | None = N
             r['snapshot'] = seg['key']
         s = summarize(rows)
         code_md5 = code_version(seg['params'])
-        title = ((f"tramo {n}/{len(segs)} · parámetros {seg['key']} · desde {lo:%Y-%m-%d %H:%M}"
-                  f"{' hasta ' + format(hi, '%Y-%m-%d %H:%M') if hi else ''} · ") if len(segs) > 1 or seg['lo'] else '') \
-            + f"código {code_md5[:8] if code_md5 else 'sin código'}"
+        # C5-06: cada tramo dice siempre qué versión compara (parámetros, código y desde cuándo)
+        last_seg = n == len(segs)
+        title = (f"tramo {n}/{len(segs)} · parámetros {seg['key']} · código {code_md5[:8] if code_md5 else 'sin código'}"
+                 f" · desde {lo:%Y-%m-%d %H:%M}{' hasta ' + format(hi, '%Y-%m-%d %H:%M') if hi else ''}"
+                 + (f" · {'NO es la vigente' if changed else 'vigente'}" if last_seg else ''))
         print(report(cfg, s_start, end, rows, s, title))
         for w in out.get('warnings') or []:
             print(w)
         all_rows += rows
-        out_segs.append(dict(snapshot=seg['key'], code_md5=code_md5, start=s_start, lo=lo, hi=hi, summary=s))
+        out_segs.append(dict(snapshot=seg['key'], code_md5=code_md5, start=s_start, lo=lo, hi=hi, summary=s,
+                             vigente=bool(last_seg and not changed)))
     total = summarize(all_rows)
     if len(segs) > 1:
         print(f"\n=== Total de los {len(segs)} tramos: iguales {total['igual']} · distintas {total['distinta']} · solo Paper "
               f"{total['solo_paper']} · solo backtest {total['solo_backtest']} · DIVERGENCIAS: {total['divergencias']}")
     if a.json_out:
         with open(a.json_out, 'w', encoding='utf-8') as f:
-            json.dump(dict(config=cfg['id'], start=start, end=end, summary=total, rows=all_rows, segments=out_segs),
+            json.dump(dict(config=cfg['id'], start=start, end=end, summary=total, rows=all_rows, segments=out_segs,
+                           config_params_key=snapshot_key(as_dict(cfg.get('params'))),
+                           config_code_md5=code_version(as_dict(cfg.get('params'))), config_changed_after=changed),
                       f, ensure_ascii=False, default=str)
     return 1 if total['divergencias'] else 0
 

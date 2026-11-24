@@ -16,8 +16,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 15 | C5-03 | P2 | Independencia de la prueba final 60/20/20 | **Sugerencia rechazada por el dueño (D-58)**: el cálculo con 24 meses es su diseño; solo se corrige el texto engañoso de la pantalla + filtro ≥ +5 % y columna «Retorno 24 m» (maqueta aprobada 23-nov) · Implementado en p103 |
-| 16 | C5-06 | P2 | Comparador con el snapshot vigente | Pendiente de validar |
+| 16 | C5-06 | P2 | Comparador con el snapshot vigente | Implementado en p104 (D-59) |
 | 17 | C5-08 | P2 | PnL bruto / neto en estadísticas Real | Pendiente de validar |
 | 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Pendiente de validar |
 | 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Pendiente de validar |
@@ -26,7 +25,19 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-03 · Independencia de la prueba final 60/20/20 (P2) — **Sugerencia rechazada por el dueño (D-58)** · Pantalla en p103
+### C5-06 · Comparador Paper vs backtest con la configuración vigente (P2) — **Defecto menor (solo herramienta)** · Implementado en p104 (D-59)
+- **Código:** `--latest-only` («solo el tramo de los parámetros vigentes») toma el tramo de la ÚLTIMA OPERACIÓN de Paper;
+  si la config cambió después, compara la versión anterior como si fuera la vigente. Además los cambios de
+  `strategy_config_changes` se leían todos (también desactivar / borrar), aunque solo `created` / `updated` cambian
+  parámetros. No se puede comparar la huella del snapshot con la de la config: cada snapshot lleva además los niveles
+  de su señal (`snapshot_with_levels`). Sin efecto en Paper, Real ni la base (herramienta manual).
+- **Fix (D-59, «Procede» 23-nov):** cada tramo dice parámetros, código, desde/hasta y, el último, «vigente» o «NO es la
+  vigente»; la cabecera da la huella de la config de hoy; si hubo un cambio de parámetros después de la última
+  entrada, aviso en grande; el JSON trae `vigente`, `config_params_key`, `config_code_md5` y `config_changed_after`.
+- **Prueba:** `compare_tool_test` V1–V5 (+ bordes V1b/V1c); código anterior FALLA; mutaciones 9/9 (dos bordes
+  agregados tras la primera corrida); regresión 78 Python + 32 PHP en TODO OK.
+
+### C5-03 · Independencia de la prueba final 60/20/20 (P2) — **Sugerencia rechazada por el dueño (D-58)** · Pantalla instalada en p103 (`0786a92`)
 - **Código:** `accept()` exige `MIN_TRADES` sobre el período completo (prueba final incluida) y, en el enfoque win rate,
   el PF del período completo; las filas se ordenan por retorno y consistencia de los 24 meses (motor) y Laravel ordena
   con `summarize()` de los 24 meses. La pantalla decía que la prueba final «no eligió ni aceptó».
@@ -279,3 +290,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-09 | Sin defecto: matriz dinámica de permisos (D-46) y aislamiento entre usuarios | — (prueba `role_matrix_test.php`, en el repo desde p102 `637821f`) | Servidor 23-nov 22:42 UTC: 61 rutas·método, 305 comprobaciones, 0 fallos, 0 avisos; 0 usuarios de prueba antes y después |
 | C5-04 | Ninguna prueba toca una base que no sea de pruebas: barrera única en 14 pruebas + vigilancia (D-56) | p102 `637821f` | En el servidor el instalador comprobó que las 6 pruebas con base se saltan (no tocan producción) |
 | C5-05 | Sin arreglo pendiente: no queda código viejo de VWAP Tendencia en ningún lado (estrategia, 11 configs, 11 backtests, operaciones abiertas) | — | Lectura 23-nov 23:23 UTC: todo con la huella corregida `2cf17fbe`; 0 código viejo |
+| C5-03 | Sugerencia rechazada (D-58): se evalúan los 24 meses; pantalla con filtro ≥ +5 %, «Retorno 24 m» antes de los tramos y textos de lo que se evalúa | p103 `0786a92` | 72 búsquedas / 1.287 filas guardadas, filtradas al mostrar |

@@ -223,6 +223,55 @@ with redirect_stdout(io.StringIO()):
 check('main(): --latest-only corre solo el tramo vigente', calls == [(2.0, '2026-11-02', '2026-11-05')] and code == 0, calls)
 
 
+# ── C5-06 (p104): el reporte dice qué versión compara y avisa si la config cambió después de la última operación ──
+LATER = B1['entry_time'] + timedelta(days=1) if isinstance(B1['entry_time'], datetime) else None
+check('V1: changed_after: cambio posterior a la última entrada -> esa fecha; anteriores -> None',
+      cmp.changed_after(cmp.snapshot_segments([A1, A2, B1], [CH]), [CH, LATER]) == cmp.naive_utc(LATER)
+      and cmp.changed_after(cmp.snapshot_segments([A1, A2, B1], [CH]), [CH]) is None
+      and cmp.changed_after([], [LATER]) is None, LATER)
+segA = cmp.snapshot_segments([A1, A2])   # un solo tramo con dos operaciones
+mid = cmp.naive_utc(A1['entry_time']) + (cmp.naive_utc(A2['entry_time']) - cmp.naive_utc(A1['entry_time'])) / 2
+check('V1b: cambio justo a la hora de la última entrada: no es «después» (esa operación ya es de la versión nueva)',
+      cmp.changed_after(segA, [cmp.naive_utc(A2['entry_time'])]) is None)
+check('V1c: cambio entre dos operaciones del mismo último tramo: no es «después» (cuenta la última entrada)',
+      cmp.changed_after(segA, [mid]) is None, mid)
+vl = cmp.version_line(CFG)
+check('V2: version_line: id, huella de los parámetros y del código de la config de hoy',
+      f"#{CFG['id']}" in vl and cmp.snapshot_key(cmp.as_dict(CFG.get('params'))) in vl and 'código' in vl, vl)
+
+
+async def _load_stale(cid, start, end):
+    return dict(CFG, change_times=[CH, LATER]), [A1, A2, B1]
+
+
+for flags in ([], ['--latest-only']):
+    buf = io.StringIO()
+    calls.clear()
+    with redirect_stdout(buf):
+        code = cmp.main(['--config', '54', '--json-out', jout] + flags, loader=_load_stale, backtester=_bt_seg,
+                        today=date(2026, 11, 6))
+    txt = buf.getvalue()
+    j = json.load(open(jout))
+    check(f'V3{" --latest-only" if flags else ""}: la config cambió después: aviso en grande y el tramo dice «NO es la vigente»',
+          'el último tramo NO es la configuración vigente' in txt and 'NO es la vigente' in txt
+          and j['segments'][-1]['vigente'] is False and j['config_changed_after'] is not None, txt[:300])
+buf = io.StringIO()
+with redirect_stdout(buf):
+    cmp.main(['--config', '54', '--latest-only', '--json-out', jout], loader=_load_seg, backtester=_bt_seg,
+             today=date(2026, 11, 6))
+txt = buf.getvalue()
+j = json.load(open(jout))
+check('V4: sin cambios después: sin aviso, el tramo dice «vigente», con su huella de parámetros y de código',
+      'NO es la configuración vigente' not in txt and '· vigente' in txt and 'config vigente #' in txt
+      and f"parámetros {cmp.snapshot_key(S2)}" in txt and j['segments'][-1]['vigente'] is True
+      and j['config_changed_after'] is None and j['config_params_key'], txt[:300])
+src = (ROOT / 'python-engine' / 'tools' / 'analysis' / 'compare_paper_vs_backtest.py').read_text(encoding='utf-8') \
+    if 'ROOT' in globals() else open(os.path.join(os.getcwd(), 'tools', 'analysis', 'compare_paper_vs_backtest.py'),
+                                     encoding='utf-8').read()
+check("V5: solo los cambios que tocan parámetros cuentan (created / updated; no activar ni desactivar)",
+      "AND action IN ('created', 'updated')" in src)
+
+
 async def _load_today(cid, start, end):
     return CFG, []
 

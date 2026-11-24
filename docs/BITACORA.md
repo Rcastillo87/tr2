@@ -21,6 +21,13 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-06: el comparador dice qué versión compara (p104, D-59) — 23-nov
+- **Validado:** defecto menor de la herramienta: `--latest-only` podía presentar la versión anterior como vigente; los
+  cambios de la config incluían activar / desactivar. Sin efecto en Paper, Real ni la base.
+- **Fix:** versión de cada tramo y de la config de hoy, «vigente» / «NO es la vigente» y aviso si la config cambió después
+  de la última operación; solo cambios de parámetros. Vuelta atrás: `p104_revertir.sh`.
+- **Prueba:** `compare_tool_test` (+7); código anterior falla; mutaciones 9/9; regresión 78 + 32 en TODO OK.
+
 ### Ciclo 5 · C5-03: prueba final de la búsqueda — sugerencia rechazada por el dueño (D-58) — 23-nov
 - **Validado:** la aceptación (mínimo de operaciones) y el orden usan los 24 meses, prueba final incluida; la pantalla
   decía que la prueba final «no eligió ni aceptó». Lectura: 144 de 1.287 ganadoras y la 1.ª en 24 de 62 búsquedas
@@ -28,6 +35,7 @@
 - **Decisión (D-58):** el dueño mantiene los 24 meses (como el backtest) y rechaza la sugerencia; pide filtro ≥ +5 % en
   24 meses (todas las búsquedas, sin aviso), «Retorno 24 m» antes de los tramos y un texto que diga lo cierto
   (maqueta aprobada). Lección: clasificar defecto / sugerencia / refutado (PROMPT_MAESTRO §8).
+- **Instalado:** `0786a92` (24-nov 00:21 UTC): regresión 78 + 32, vistas compilan, motor y Horizon reiniciados, 0 errores.
 - **Implementado (p103):** `MIN_TOTAL_RETURN_PCT = 5` en `ParamSearchService` (results() salta y creatable() rechaza),
   columna «Retorno 24 m» antes de los tramos, barra y textos que dicen qué se evalúa. Prueba `search_min_return_test`
   (nueva); código anterior 9 FALLOS; mutaciones 9/9; regresión 78 + 32 en TODO OK. Vuelta atrás: `p103_revertir.sh`.
