@@ -21,7 +21,14 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
+### Ciclo 5 · C5-08: un solo criterio (neto) para los números de Real (p105, D-60) — 23-nov
+- **Validado:** filtro con el bruto y KPI con el neto; salto a bruto si la suma neta da 0; Dashboard con el bruto.
+  Lectura: 13 cerradas sin diferencias de signo: latente.
+- **Fix:** `App\Support\RealPnl` en Trading y Dashboard. Vuelta atrás: `p105_revertir.sh`.
+- **Prueba:** `real_pnl_criteria_test.php` (nueva); código anterior 4 FALLOS; mutaciones 9/9; regresión 78 + 33 en TODO OK.
+
 ### Ciclo 5 · C5-06: el comparador dice qué versión compara (p104, D-59) — 23-nov
+- **Instalado:** `fbc71cf` (24-nov ~00:45 UTC): regresión 78 + 32 en TODO OK; sin reinicios.
 - **Validado:** defecto menor de la herramienta: `--latest-only` podía presentar la versión anterior como vigente; los
   cambios de la config incluían activar / desactivar. Sin efecto en Paper, Real ni la base.
 - **Fix:** versión de cada tramo y de la config de hoy, «vigente» / «NO es la vigente» y aviso si la config cambió después

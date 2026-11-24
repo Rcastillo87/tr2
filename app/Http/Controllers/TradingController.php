@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\RealPnl;
 use App\Support\StrategyLabel;
 use App\Models\BrokerAccount;
 use App\Models\PaperStrategyConfig;
@@ -73,24 +74,26 @@ class TradingController extends Controller
         if ($filterStrategy !== 'all') $closedQuery->where('strategy', 'like', StrategyLabel::likePrefix($filterStrategy));
         if ($filterSymbol   !== 'all') $closedQuery->where('symbol', $filterSymbol);
         if ($filterInterval !== 'all') $closedQuery->where('interval', $filterInterval);
-        if ($filterResult === 'win')   $closedQuery->where('pnl', '>', 0);
-        if ($filterResult === 'loss')  $closedQuery->where('pnl', '<=', 0);
+        // C5-08 (D-60): «Ganadoras / Perdedoras» con el mismo criterio que los KPI (neto; bruto solo si falta el neto)
+        if ($filterResult === 'win')   $closedQuery->whereRaw(RealPnl::NET_SQL . ' > 0');
+        if ($filterResult === 'loss')  $closedQuery->whereRaw(RealPnl::NET_SQL . ' <= 0');
         if ($filterAccount  !== 'all') $closedQuery->where('broker_account_id', $filterAccount);
         $closedTrades = $closedQuery->orderBy('exit_time', 'desc')->get();
 
         // KPIs consolidados
-        $totalClosed  = $closedTrades->count();
-        $wins         = $closedTrades->filter(fn ($t) => ($t->net_pnl ?? $t->pnl) > 0)->count();
-        $winRate      = $totalClosed > 0 ? round($wins / $totalClosed * 100, 2) : 0;
-        $totalNetPnl  = round((float) $closedTrades->sum('net_pnl') ?: $closedTrades->sum('pnl'), 2);
-        $grossProfit  = $closedTrades->filter(fn ($t) => ($t->net_pnl ?? $t->pnl) > 0)->sum('net_pnl');
-        $grossLoss    = abs($closedTrades->filter(fn ($t) => ($t->net_pnl ?? $t->pnl) <= 0)->sum('net_pnl'));
-        $profitFactor = $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : null;
+        $kpi          = RealPnl::stats($closedTrades);   // C5-08 (D-60): un solo criterio (neto; bruto solo si falta)
+        $totalClosed  = $kpi['total_closed'];
+        $wins         = $kpi['wins'];
+        $winRate      = $kpi['win_rate'];
+        $totalNetPnl  = $kpi['total_pnl'];
+        $grossProfit  = $kpi['gross_profit'];
+        $grossLoss    = $kpi['gross_loss'];
+        $profitFactor = $kpi['profit_factor'];
 
         // Equity curve en USDT (net_pnl acumulado)
         $equityCurve = [0];
         foreach ($closedTrades->sortBy('exit_time') as $trade) {
-            $equityCurve[] = round(end($equityCurve) + (float) ($trade->net_pnl ?? $trade->pnl), 2);
+            $equityCurve[] = round(end($equityCurve) + RealPnl::of($trade), 2);
         }
 
         // Opciones para filtros — dinamicas desde DB

@@ -60,11 +60,12 @@ class DashboardController extends Controller
             ->closed()
             ->whereBetween('entry_time', [$startOfMonth, $endOfMonth]);
         $openRealTrades    = \App\Models\RealTrade::whereIn('broker_account_id', $realAccountIds)->open()->count();
-        $totalRealPnl = (float) (clone $closedRealMonth)->get()->sum(fn ($t) => $t->net_pnl ?? $t->pnl);
-
-        $totalRealTrades   = (clone $closedRealMonth)->count();
-        $winningRealTrades = (clone $closedRealMonth)->where('pnl', '>', 0)->count();
-        $realWinRate       = $totalRealTrades > 0 ? round($winningRealTrades / $totalRealTrades * 100, 2) : 0;
+        // C5-08 (D-60): el mismo criterio que la pantalla de Real (neto; bruto solo si falta el neto)
+        $realKpi           = \App\Support\RealPnl::stats((clone $closedRealMonth)->get(['net_pnl', 'pnl']));
+        $totalRealPnl      = $realKpi['total_pnl'];
+        $totalRealTrades   = $realKpi['total_closed'];
+        $winningRealTrades = $realKpi['wins'];
+        $realWinRate       = $realKpi['win_rate'];
         // Carga inicial de precios (Desde la base de datos, ultra rápido)
         $activeConfigs = PaperStrategyConfig::where('active', true)->get();
         $activeSymbols = $activeConfigs->pluck('symbol')->unique()->values()->toArray();

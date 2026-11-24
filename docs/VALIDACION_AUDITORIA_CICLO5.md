@@ -16,8 +16,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 16 | C5-06 | P2 | Comparador con el snapshot vigente | Implementado en p104 (D-59) |
-| 17 | C5-08 | P2 | PnL bruto / neto en estadísticas Real | Pendiente de validar |
+| 17 | C5-08 | P2 | PnL bruto / neto en estadísticas Real | Implementado en p105 (D-60) |
 | 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Pendiente de validar |
 | 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Pendiente de validar |
 | 20 | C5-13 | P2 | Infraestructura heredada | Pendiente de validar (respaldo fuera del VPS: descartado, D-48) |
@@ -25,7 +24,19 @@
 
 ## Validados (con fix implementado o instalado)
 
-### C5-06 · Comparador Paper vs backtest con la configuración vigente (P2) — **Defecto menor (solo herramienta)** · Implementado en p104 (D-59)
+### C5-08 · PnL bruto y neto en las estadísticas de Real (P2) — **Defecto pequeño de pantalla (latente)** · Implementado en p105 (D-60)
+- **Código:** el filtro «Ganadoras / Perdedoras» de Trading usaba el bruto (`pnl`) y los KPI el neto; el total pasaba a
+  la suma bruta si la neta daba exactamente 0 (`sum('net_pnl') ?: sum('pnl')`); una operación sin neto contaba como 0
+  en ganancia / pérdida y con su bruto al contar ganadoras. El Dashboard contaba las ganadoras de Real con el bruto.
+- **Servidor (lectura 24-nov 00:50 UTC):** 13 cerradas, 0 sin neto, 0 con distinto signo entre bruto y neto; neto
+  +2.698,51 y bruto +3.121,93 USDT. No ocurrió; aparecería con un cierre que gana poco y pierde por comisiones.
+- **Fix (D-60, «Procede» 23-nov):** `App\Support\RealPnl` (puro): resultado = neto ?? bruto, KPI con ese criterio y
+  `NET_SQL` para el filtro; usado en Trading (filtro, KPI, curva) y en el bloque de Real del Dashboard. Paper no se toca
+  (consistente consigo mismo, fuera del punto).
+- **Prueba:** `real_pnl_criteria_test.php` (nueva); código anterior 4 FALLOS; mutaciones 9/9; regresión 78 Python + 33
+  PHP en TODO OK.
+
+### C5-06 · Comparador Paper vs backtest con la configuración vigente (P2) — **Defecto menor (solo herramienta)** · Instalado en p104 (`fbc71cf`, D-59)
 - **Código:** `--latest-only` («solo el tramo de los parámetros vigentes») toma el tramo de la ÚLTIMA OPERACIÓN de Paper;
   si la config cambió después, compara la versión anterior como si fuera la vigente. Además los cambios de
   `strategy_config_changes` se leían todos (también desactivar / borrar), aunque solo `created` / `updated` cambian
@@ -291,3 +302,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-04 | Ninguna prueba toca una base que no sea de pruebas: barrera única en 14 pruebas + vigilancia (D-56) | p102 `637821f` | En el servidor el instalador comprobó que las 6 pruebas con base se saltan (no tocan producción) |
 | C5-05 | Sin arreglo pendiente: no queda código viejo de VWAP Tendencia en ningún lado (estrategia, 11 configs, 11 backtests, operaciones abiertas) | — | Lectura 23-nov 23:23 UTC: todo con la huella corregida `2cf17fbe`; 0 código viejo |
 | C5-03 | Sugerencia rechazada (D-58): se evalúan los 24 meses; pantalla con filtro ≥ +5 %, «Retorno 24 m» antes de los tramos y textos de lo que se evalúa | p103 `0786a92` | 72 búsquedas / 1.287 filas guardadas, filtradas al mostrar |
+| C5-06 | El comparador Paper vs backtest dice qué versión compara y avisa si la config cambió después (D-59) | p104 `fbc71cf` | Regresión en el servidor (herramienta manual) |
