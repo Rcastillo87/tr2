@@ -12,15 +12,35 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 3 | C6-02 | P2 | Estado engañoso del panel de riesgo sin saldo base | Implementado en p116 |
-| 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Pendiente de validar |
+| 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Detección implementada en p117; reparación de 2 fragmentos: parche aparte aprobado |
 | 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Pendiente (del dueño, D-45) |
 | 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Pendiente de validar |
 | 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Pendiente de validar |
 
 ## Validados
 
-### C6-02 · Estado del panel de riesgo coherente con el motor (P2) — **Defecto (pantalla)** · Implementado en p116
+### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Detección implementada en p117
+- **Antecedente:** el 28-oct una recompresión dejó lotes solapados (50 fragmentos reescritos; `detect.sql`, que crea una
+  tabla temporal). El motor ordena y avisa `[BARS]` (`bars_frame`). Faltaba la revisión automática (BITACORA 28-oct).
+- **Servidor (lecturas 24-nov 20:38–20:45 UTC, solo lectura):** compresión `segmentby` broker, symbol, interval;
+  `orderby` time DESC; 127 fragmentos comprimidos; revisión completa en 0,53 s. Agrupando solo por moneda y
+  temporalidad salían 4.341 falsos solapes (en la base hay velas viejas de otro broker); por la serie completa, **12
+  series reales** en 2 fragmentos comprimidos **después** del arreglo de octubre: `_hyper_1_123_chunk` (8-oct: BNB, BTC,
+  ETH, SOL 1m, 8–10 lotes) y `_hyper_1_124_chunk` (15-oct: los mismos en 1m y 5m). `engine.log`: **64 `[BARS]` desde hoy
+  14:47 UTC** (SOL/1 y BNB/1, 1.008.000 velas: lecturas de 2 años de 1m) — el motor las ordenó; en la lectura de C5-13
+  (mañana del 24-nov) eran 0.
+- **Decisión (24-nov):** parte 1, revisión automática solo lectura («Procede»); parte 2, reparar los 2 fragmentos en un
+  parche aparte con respaldo y verificación («Sí, en un parche aparte»).
+- **Parte 1 (p117):** `database/sql/ohlcv_overlap_batches.sql` (por serie completa, `max` de los lotes anteriores ≥
+  mínimo del lote) y `ohlcv:overlap-check` (transacción de solo lectura; aviso `ohlcv-overlap` con fragmento, moneda,
+  temporalidad y lotes; se cierra solo al quedar en 0; si falla, no toca el aviso; nunca repara), cada 3 h a los :10 UTC
+  (tras la compresión de 05:38 / 17:38).
+- **Prueba:** `ohlcv_overlap_check_test.py` (nueva: la consulta real contra PostgreSQL de pruebas sobre una tabla que
+  imita un fragmento comprimido: sin solapes, parcial, otro broker y otra temporalidad sin falsos positivos, contenido,
+  tras reparar un hueco, varios, borde exacto) y `ohlcv_overlap_command_test.php` (nueva); mutaciones 10/10 (K5 se
+  reforzó: un aviso comentado pasaba); regresión 82 Python + 36 PHP en TODO OK.
+
+### C6-02 · Estado del panel de riesgo coherente con el motor (P2) — **Defecto (pantalla)** · Instalado en p116 (`f9bcfe6`)
 - **Código:** `RiskLimits::evaluate` devolvía `ok` («Opera normal») con una nota cuando faltaba el saldo base del mes,
   aunque el motor no abre (D-51). **Hallazgo propio, mismo tipo:** con una operación en estado dudoso el motor tampoco
   abre (D-50) y el panel también decía «Opera normal».
@@ -74,5 +94,6 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-02 | El panel de riesgo dice «Esperando saldo base» / «Operación sin confirmar» como el motor | p116 `f9bcfe6` | 120 vistas compiladas y revisadas |
 | C6-01 | La cola del libro de ejecuciones descarta en la consulta las que esperan reintento | p115 `0cd5811` | 16 cerradas `ok`, 2 abiertas `open_ok`; motor y tick sin errores |
 | C6-03 | El circuit breaker también cubre las operaciones dudosas vivas; cierra solo con certeza, si no aviso máximo (D-68) | p114 `7d5956e` | 2 abiertas, 0 dudosas; tick Real y motor sin errores tras el reinicio |

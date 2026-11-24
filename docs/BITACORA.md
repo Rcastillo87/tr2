@@ -29,7 +29,14 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-02: el panel de riesgo dice lo mismo que el motor (p116) — 24-nov
+### Ciclo 6 · C6-05: revisión automática de lotes comprimidos solapados (p117) — 24-nov
+- **Validado:** 12 series con lotes solapados en `_hyper_1_123_chunk` y `_hyper_1_124_chunk` (8 y 15-oct; BNB, BTC, ETH,
+  SOL en 1m y 5m), comprimidos después del arreglo del 28-oct; 64 `[BARS]` hoy (SOL/1, BNB/1). Se ordenan al leer.
+- **Parte 1:** `ohlcv:overlap-check` (solo lectura, cada 3 h) + `database/sql/ohlcv_overlap_batches.sql`. Vuelta atrás: `p117_revertir.sh`.
+- **Parte 2 (aprobada, parche aparte):** reescribir esos 2 fragmentos (`decompress_chunk` + `compress_chunk`) con respaldo.
+- **Prueba:** dos nuevas (PostgreSQL de pruebas y PHP); mutaciones 10/10; regresión 82 + 36.
+
+### Ciclo 6 · C6-02: el panel de riesgo dice lo mismo que el motor (p116) — 24-nov · instalado `f9bcfe6`
 - **Validado:** sin saldo base del mes (D-51) o con una operación dudosa (D-50) el motor no abre y el panel decía «Opera normal».
 - **Fix:** estados `waiting_baseline` y `unresolved` en `RiskLimits::evaluate` y el panel, en el orden del motor. Vuelta atrás: `p116_revertir.sh`.
 - **Prueba:** `risk_limit_options_test.php` (+9); código anterior 6 FALLOS; mutaciones 6/6; regresión 81 + 35.

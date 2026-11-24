@@ -33,6 +33,9 @@ Schedule::job(new \App\Jobs\ValidateCollectorDataJob(repair: true), \App\Service
 // p84 (R-21): ¿alguna estrategia o config activa mira el futuro? Aviso al admin (Validación) si aparece una
 Schedule::command('strategies:lookahead-audit')->dailyAt('04:15')->timezone('America/Bogota')
     ->name('strategies-lookahead-audit')->withoutOverlapping(60)->runInBackground();
+// C6-05: lotes comprimidos solapados en ohlcv_data (solo lectura, ~0,5 s); a los :10 cada 3 h UTC, así cae justo después
+// de la compresión (policy_compression cada 12 h, hoy 05:38 y 17:38 UTC). Solo avisa; nunca repara.
+Schedule::command('ohlcv:overlap-check')->cron('10 */3 * * *')->name('ohlcv-overlap-check')->withoutOverlapping(30)->runInBackground();
 Schedule::call(fn () => app(\App\Services\SystemAlerts::class)->prune())
     ->dailyAt('04:30')->timezone('America/Bogota')->name('alerts-prune');
 
