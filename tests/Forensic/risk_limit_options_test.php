@@ -23,7 +23,7 @@ $now = $since + 10 * 86400;    // 10 días después
 $acc = fn (array $o = []) => $o + ['max_loss' => 5.0, 'max_open' => 3, 'month_at' => '2026-11-01', 'month_balance' => 1000.0,
     'loss_enabled' => true, 'open_enabled' => true, 'pause_days' => null, 'paused_until' => null, 'paused_until_text' => null,
     'period_start' => null, 'period_start_text' => null, 'period_balance' => null];
-$ev = fn (array $a, float $pnl = 0.0, int $open = 0, bool $opt = true) => $R::evaluate($a, $pnl, $open, '2026-11-01', $since, $now, $opt, '1 de diciembre');
+$ev = fn (array $a, float $pnl = 0.0, int $open = 0, bool $opt = true, ?array $unr = null) => $R::evaluate($a, $pnl, $open, '2026-11-01', $since, $now, $opt, '1 de diciembre', $unr);
 
 $r = $ev($acc(), -20.0, 1);
 $check('A1: como hoy (sin pausa, límites activos): -2 % y 1/3 -> opera normal', $r['state'] === 'ok' && $r['label'] === 'Mes'
@@ -59,8 +59,30 @@ $check('A11: 3 de 3 con el límite activo -> sin entradas nuevas', $r['state'] =
 $r = $ev($acc(['loss_enabled' => false, 'open_enabled' => false, 'pause_days' => 3]), -50.0, 3, false);
 $check('A12: interruptor general apagado -> como antes de p111 (bloqueada hasta el día 1, sin pausa)', $r['state'] === 'blocked'
     && str_contains($r['note'], 'hasta el 1 de diciembre') && $r['loss_on'] && $r['open_on'], $r);
-$r = $ev($acc(['month_at' => null]));
-$check('A13: límite activo sin saldo del mes -> lo dice (D-51)', str_contains($r['note'], 'Saldo inicial del mes pendiente'), $r['note']);
+// C6-02 (p116): antes «ok» («Opera normal») con una nota; el motor no abre (D-51): ahora es un estado propio
+$r = $ev($acc(['month_at' => null]), 0.0, 1);
+$check('A13: límite activo sin saldo del mes -> «esperando saldo base», no «ok» (el motor no abre, D-51)',
+    $r['state'] === 'waiting_baseline' && str_contains($r['note'], 'Falta el saldo inicial del mes')
+    && str_contains($r['note'], 'Las abiertas se siguen gestionando') && str_contains($r['note'], 'reintenta cada minuto'), $r);
+$r = $ev($acc());
+$check('A13b: con el saldo del mes disponible vuelve a «ok»', $r['state'] === 'ok' && $r['note'] === '', $r);
+$r = $ev($acc(['month_at' => null, 'loss_enabled' => false]));
+$check('A13c: con la pérdida «sin límite» no se exige el saldo base (como el motor)', $r['state'] === 'ok', $r);
+$r = $ev($acc(), 0.0, 1, true, ['id' => 123, 'symbol' => 'ADAUSDT', 'status' => 'orphaned']);
+$check('A16: operación sin confirmar -> «unresolved» con su número y moneda (D-50: el motor no abre)',
+    $r['state'] === 'unresolved' && str_contains($r['note'], '#123 ADAUSDT sin confirmar con Bybit'), $r);
+$r = $ev($acc(['month_at' => null]), 0.0, 1, true, ['id' => 123, 'symbol' => 'ADAUSDT', 'status' => 'orphaned']);
+$check('A17: el orden es el del motor: saldo base antes que operación sin confirmar', $r['state'] === 'waiting_baseline', $r['state']);
+$r = $ev($acc(), -60.0, 1, true, ['id' => 123, 'symbol' => 'ADAUSDT', 'status' => 'pending_open']);
+$check('A18: operación sin confirmar antes que pérdida máxima (como el motor)', $r['state'] === 'unresolved', $r['state']);
+$r = $ev($acc(['pause_days' => 3, 'paused_until' => $now + 60, 'paused_until_text' => 'x', 'month_at' => null]), 0.0, 0, true,
+    ['id' => 1, 'symbol' => 'X', 'status' => 'orphaned']);
+$check('A19: la pausa va primero (como el motor)', $r['state'] === 'paused', $r['state']);
+$check('A20b: el panel le pasa a la regla la operación dudosa de cada cuenta',
+    str_contains(file_get_contents("{$root}/app/Services/RiskLimits.php"), "\$unresolved[\$a->id] ?? null);"));
+$check('A20: la consulta de operaciones dudosas usa la regla del motor (orphaned o pending_open de más de 3 min)',
+    str_contains($svc_src = file_get_contents("{$root}/app/Services/RiskLimits.php"), "->where('status', 'orphaned')->orWhere(fn (\$p) => \$p->where('status', 'pending_open')")
+    && str_contains($svc_src, 'RealTrade::PENDING_OPEN_STALE_MIN'));
 $check('A14: el conteo de abiertos incluye las huérfanas (como el motor, C5-16)',
     $R::OPEN_STATUSES === ['pending_open', 'open', 'pending_close', 'orphaned']);
 
@@ -81,6 +103,9 @@ $check('B3: formulario: «Sin límite» en los dos (con su oculto 0) y campo de 
     substr_count($blade, '> Sin límite') === 2 && str_contains($blade, '<input type="hidden" name="monthly_loss_unlimited" value="0">')
     && str_contains($blade, '<input type="hidden" name="open_trades_unlimited" value="0">')
     && str_contains($blade, 'name="loss_pause_days" value="{{ $r[\'pause_days\'] }}" min="1" max="30"'));
+$check('B4b: panel: los dos estados nuevos con su texto (no «Opera normal»)',
+    str_contains($blade, "'waiting_baseline' => ['Esperando saldo base · sin entradas nuevas', 'var(--color-neutral)']")
+    && str_contains($blade, "'unresolved' => ['Operación sin confirmar · sin entradas nuevas', 'var(--color-neutral)']"));
 $check('B4: panel: «/ sin límite», etiqueta del conteo y estado «En pausa hasta …»',
     substr_count($blade, '/ sin límite') === 2 && str_contains($blade, "{{ \$r['label'] }}")
     && str_contains($blade, "\$stateLabel = 'En pausa hasta ' . \$r['paused_text'];"));

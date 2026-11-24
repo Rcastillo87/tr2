@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\DB;
  *   - pérdida = suma neta de los trades cerrados desde el día 1 (00:00 Bogotá), en % del saldo inicial del mes
  *     (month_start_balance); D-66: tras una pausa, desde que se reanudó y sobre el patrimonio de ese momento;
  *   - trades abiertos = pending_open + open + pending_close + orphaned (C5-16: las huérfanas pueden estar vivas);
- *   - D-66: cada límite se puede desactivar («sin límite») y la pérdida máxima puede pausar N días.
+ *   - D-66: cada límite se puede desactivar («sin límite») y la pérdida máxima puede pausar N días;
+ *   - C6-02: sin saldo base del mes (D-51) o con una operación sin confirmar (D-50) el motor no abre: el panel lo dice.
  * Dos consultas agrupadas para todas las cuentas (sin N+1). La regla de cada cuenta es pura: evaluate().
  */
 final class RiskLimits
@@ -66,6 +67,12 @@ final class RiskLimits
                 . ' THEN ba.loss_period_start ELSE ?::timestamp END', [$options ? 'true' : 'false', $since, $since])
             ->groupBy('rt.broker_account_id')->selectRaw('rt.broker_account_id, COALESCE(SUM(COALESCE(rt.net_pnl, rt.pnl, 0)), 0) AS s')
             ->pluck('s', 'rt.broker_account_id');
+        // C6-02 / D-50: la operación en estado dudoso más antigua de cada cuenta (misma regla que el motor)
+        $unresolved = DB::table('real_trades')->whereIn('broker_account_id', $ids)
+            ->where(fn ($q) => $q->where('status', 'orphaned')->orWhere(fn ($p) => $p->where('status', 'pending_open')
+                ->where('created_at', '<', now()->subMinutes(\App\Models\RealTrade::PENDING_OPEN_STALE_MIN))))
+            ->orderBy('id')->get(['id', 'broker_account_id', 'symbol', 'status'])
+            ->groupBy('broker_account_id')->map(fn ($g) => (array) $g->first());
 
         $next = $sinceUtc->copy()->timezone(self::TZ)->addMonth()->locale('es')->isoFormat('D [de] MMMM');
         $out = [];
@@ -85,7 +92,8 @@ final class RiskLimits
                 'period_start'      => $start?->getTimestamp(),
                 'period_start_text' => $start ? explode(' ', self::bogota($start))[0] : null,
                 'period_balance'    => $a->loss_period_balance !== null ? (float) $a->loss_period_balance : null,
-            ], (float) ($pnl[$a->id] ?? 0), (int) ($open[$a->id] ?? 0), $month, $sinceUtc->getTimestamp(), time(), $options, $next);
+            ], (float) ($pnl[$a->id] ?? 0), (int) ($open[$a->id] ?? 0), $month, $sinceUtc->getTimestamp(), time(), $options, $next,
+                $unresolved[$a->id] ?? null);
         }
 
         return $out;
@@ -94,9 +102,12 @@ final class RiskLimits
     /**
      * Regla de una cuenta (pura, sin base ni Carbon; la misma del motor). $a: max_loss, max_open, month_at (Y-m-d),
      * month_balance, loss_enabled, open_enabled, pause_days, paused_until / period_start (segundos Unix) con sus textos
-     * en hora de Bogotá, period_balance. $since / $now en segundos Unix; $next = «1 de diciembre».
+     * en hora de Bogotá, period_balance. $since / $now en segundos Unix; $next = «1 de diciembre». $unresolved = la
+     * operación dudosa más antigua de la cuenta (id, symbol, status) o null. El orden es el del motor: pausa, saldo base,
+     * operación dudosa, pérdida máxima, trades abiertos.
      */
-    public static function evaluate(array $a, float $pnl, int $openN, string $month, int $since, int $now, bool $options, string $next): array
+    public static function evaluate(array $a, float $pnl, int $openN, string $month, int $since, int $now, bool $options, string $next,
+                                    ?array $unresolved = null): array
     {
         $maxLoss = (float) $a['max_loss'];
         $maxOpen = max(1, (int) $a['max_open']);
@@ -113,11 +124,15 @@ final class RiskLimits
             $until !== null && $now < $until    => ['paused', 'Llegó a la pérdida máxima: sin entradas nuevas hasta el '
                 . $a['paused_until_text'] . '; las abiertas se siguen gestionando. Al reanudar, la pérdida se cuenta de cero.'],
             $until !== null                     => ['paused', 'Terminó la pausa: la pérdida se cuenta de cero en el próximo ciclo del motor.'],
+            $lossOn && ! $base                  => ['waiting_baseline', 'Falta el saldo inicial del mes (Bybit no lo dio): sin él no se '
+                . 'puede aplicar la pérdida máxima. Las abiertas se siguen gestionando; el motor lo reintenta cada minuto.'],
+            $unresolved !== null                => ['unresolved', "#{$unresolved['id']} {$unresolved['symbol']} sin confirmar con Bybit: "
+                . 'no se abre nada hasta que la conciliación la resuelva (cada minuto). Las abiertas se siguen gestionando.'],
             $lossOn && $pct !== null && $pct <= -$maxLoss => ['blocked', $days
                 ? "Pérdida máxima alcanzada: pausa de {$days} día(s) desde el próximo ciclo del motor."
                 : "Pérdida del mes alcanzada: sin entradas hasta el {$next}."],
             $openOn && $openN >= $maxOpen       => ['full', 'Máximo de trades abiertos: abre de nuevo al cerrarse uno.'],
-            default                             => ['ok', $lossOn && ! $base ? 'Saldo inicial del mes pendiente: se toma en el próximo ciclo del motor.' : ''],
+            default                             => ['ok', ''],
         };
         $off = array_filter([$lossOn || $maxLoss <= 0 ? null : 'pérdida del mes', $openOn ? null : 'trades abiertos']);
         if ($off !== []) {

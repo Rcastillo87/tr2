@@ -2,7 +2,9 @@
 @if ($accounts->isNotEmpty())
 @php
     $rl = config('trading.risk_limits');
-    $stateStyle = ['ok' => ['Opera normal', 'var(--color-profit)'], 'full' => ['Sin entradas nuevas', 'var(--color-neutral)'], 'blocked' => ['Bloqueada', 'var(--color-loss)'], 'paused' => ['En pausa', 'var(--color-neutral)']];
+    $stateStyle = ['ok' => ['Opera normal', 'var(--color-profit)'], 'full' => ['Sin entradas nuevas', 'var(--color-neutral)'], 'blocked' => ['Bloqueada', 'var(--color-loss)'], 'paused' => ['En pausa', 'var(--color-neutral)'],
+                   'waiting_baseline' => ['Esperando saldo base · sin entradas nuevas', 'var(--color-neutral)'],   // C6-02 (D-51)
+                   'unresolved' => ['Operación sin confirmar · sin entradas nuevas', 'var(--color-neutral)']];   // C6-02 (D-50)
     $inputStyle = 'padding:5px 8px; border-radius:6px; border:1px solid var(--color-border-strong); background:var(--color-surface-raised); color:var(--color-text-primary); font-size:12px;';
 @endphp
 <div style="background:var(--color-surface); border:1px solid var(--color-border-soft); border-radius:8px; margin-bottom:16px;">

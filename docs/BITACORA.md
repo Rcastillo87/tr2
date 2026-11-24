@@ -29,7 +29,12 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-01: la cola del libro de ejecuciones no deja atrás a las nuevas (p115) — 24-nov
+### Ciclo 6 · C6-02: el panel de riesgo dice lo mismo que el motor (p116) — 24-nov
+- **Validado:** sin saldo base del mes (D-51) o con una operación dudosa (D-50) el motor no abre y el panel decía «Opera normal».
+- **Fix:** estados `waiting_baseline` y `unresolved` en `RiskLimits::evaluate` y el panel, en el orden del motor. Vuelta atrás: `p116_revertir.sh`.
+- **Prueba:** `risk_limit_options_test.php` (+9); código anterior 6 FALLOS; mutaciones 6/6; regresión 81 + 35.
+
+### Ciclo 6 · C6-01: la cola del libro de ejecuciones no deja atrás a las nuevas (p115) — 24-nov · instalado `0cd5811`
 - **Validado:** se tomaban las 20 pendientes más antiguas y se descartaban después las que esperaban su reintento: con
   20 esperando, las nuevas no entraban (hasta ~24 h). Lectura: 0 en cola (latente).
 - **Fix:** exclusión en la consulta (`NOT (id = ANY($3))`, `LIMIT 2`); limpieza de la memoria de esperas. Vuelta atrás: `p115_revertir.sh`.

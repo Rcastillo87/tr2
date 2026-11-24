@@ -12,8 +12,7 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 2 | C6-01 | P2 | Equidad de la cola del libro de ejecuciones | Implementado en p115 |
-| 3 | C6-02 | P2 | Estado engañoso del panel de riesgo sin saldo base | Pendiente de validar |
+| 3 | C6-02 | P2 | Estado engañoso del panel de riesgo sin saldo base | Implementado en p116 |
 | 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Pendiente de validar |
 | 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Pendiente (del dueño, D-45) |
 | 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Pendiente de validar |
@@ -21,7 +20,22 @@
 
 ## Validados
 
-### C6-01 · Equidad de la cola del libro de ejecuciones (P2) — **Defecto pequeño (latente)** · Implementado en p115
+### C6-02 · Estado del panel de riesgo coherente con el motor (P2) — **Defecto (pantalla)** · Implementado en p116
+- **Código:** `RiskLimits::evaluate` devolvía `ok` («Opera normal») con una nota cuando faltaba el saldo base del mes,
+  aunque el motor no abre (D-51). **Hallazgo propio, mismo tipo:** con una operación en estado dudoso el motor tampoco
+  abre (D-50) y el panel también decía «Opera normal».
+- **Fix («sí», 24-nov, tras un ejemplo; boceto mostrado):** estados `waiting_baseline` («Esperando saldo base · sin
+  entradas nuevas») y `unresolved` («Operación sin confirmar · sin entradas nuevas», con su número y moneda), con estilo
+  de advertencia y explicación (las abiertas se siguen gestionando; el motor reintenta cada minuto). Mismo orden que el
+  motor: pausa → saldo base → operación dudosa → pérdida máxima → trades abiertos. Con la pérdida «sin límite» no se
+  exige el saldo base (como el motor). La consulta de dudosas usa la regla del motor (3 min). Vuelve a «Opera normal»
+  sola al resolverse. El motor no cambia.
+- **Prueba:** `risk_limit_options_test.php` A13 (antes esperaba la nota bajo «ok»: cambia por la decisión), A13b–c,
+  A16–A20b, B4b; código anterior 6 FALLOS; mutaciones 6/6 (una séptima, «no pasa la dudosa», sobrevivía: A20b);
+  `execution_ledger_fairness_test` B1 ahora aplica las migraciones del libro dentro de su transacción (no depende del
+  estado de la base local); regresión 81 Python + 35 PHP en TODO OK.
+
+### C6-01 · Equidad de la cola del libro de ejecuciones (P2) — **Defecto pequeño (latente)** · Instalado en p115 (`0cd5811`)
 - **Código:** `execution_ledger.process_pending` tomaba las 20 pendientes más antiguas (`LIMIT limit * 10`, por id) y
   descartaba DESPUÉS las que esperaban su reintento (`RETRY_EVERY`, 10 min): con 20 o más esperando, una operación nueva
   no entraba nunca a la selección. El retraso tenía tope: a las 24 h del cierre una operación que no cuadra pasa a
@@ -60,4 +74,5 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-01 | La cola del libro de ejecuciones descarta en la consulta las que esperan reintento | p115 `0cd5811` | 16 cerradas `ok`, 2 abiertas `open_ok`; motor y tick sin errores |
 | C6-03 | El circuit breaker también cubre las operaciones dudosas vivas; cierra solo con certeza, si no aviso máximo (D-68) | p114 `7d5956e` | 2 abiertas, 0 dudosas; tick Real y motor sin errores tras el reinicio |

@@ -10,7 +10,8 @@ A. Base simulada que aplica el SQL (exclusión y LIMIT):
       y nada queda sin atender;
    F4 una excepción del libro no frena el ciclo y deja esa operación en espera;
    F5 la memoria de esperas se limpia (lo vencido hace más de 2 días se olvida).
-B. Con PostgreSQL de pruebas (C5-04; si no, SKIP): la consulta real corre con la lista vacía y con ids.
+B. Con PostgreSQL de pruebas (C5-04; si no, SKIP), en una transacción revertida con las migraciones del libro: la
+   consulta real corre con la lista vacía y con ids.
 Uso: cd python-engine && venv/bin/python ../tests/Forensic/execution_ledger_fairness_test.py
 """
 import asyncio
@@ -137,7 +138,12 @@ if require_test_db('B'):   # C5-04: nunca la base de producción
 
     async def db():
         c = await asyncpg.connect(test_dsn())
+        tr = c.transaction()
+        await tr.start()   # independiente del estado de la base de pruebas: migraciones del libro dentro y se revierte
         try:
+            mig = os.path.join(os.path.dirname(led.__file__), '..', '..', 'database', 'sql-migrations')
+            for name in ('2026_11_20_02_real_trade_executions.up.sql', '2026_11_20_03_real_trades_funding.up.sql'):
+                await c.execute(open(os.path.join(mig, name), encoding='utf-8').read())
             # la consulta se arma con f-string: se reconstruye con TRADE_COLS, como hace el código
             src = open(led.__file__, encoding='utf-8').read()
             i = src.index('SELECT {TRADE_COLS}', src.index('async def process_pending'))
@@ -150,6 +156,7 @@ if require_test_db('B'):   # C5-04: nunca la base de producción
                 r2 = await c.fetch(query, -1, 2, [1, 2, 3])
                 check('B1: la consulta real corre en PostgreSQL con la lista de esperas vacía y con ids', r1 == [] and r2 == [])
         finally:
+            await tr.rollback()
             await c.close()
 
     asyncio.run(db())
