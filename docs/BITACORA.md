@@ -11,7 +11,7 @@
 parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CICLO5.md`; reglas: `docs/DECISIONES_DUENO.md`.
 1. **Del dueño:** comparar en backtest SL/TP automático vs fijo (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65
    (D-43, «Pendientes de decisión»).
-2. **Walk-forward real (D-38 3B):** boceto presentado el 24-nov; esperar el visto bueno del dueño antes de construir.
+2. ~~**Walk-forward real (D-38 3B)**~~: opcional y para más adelante (D-67, carga en el VPS multiusuario); boceto del 24-nov.
 3. **Pantallas (boceto primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09),
    funding en pantalla, «código desactualizado» en Paper.
 4. **Opcional:** base `tr2test` en el servidor para correr completas las pruebas Demo con base (DEMO-04, 07, 08, 11, 12; el

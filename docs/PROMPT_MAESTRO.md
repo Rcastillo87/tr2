@@ -332,7 +332,7 @@ reglas D-50 a D-66 en `docs/DECISIONES_DUENO.md`.
 > `docs/DECISIONES_DUENO.md`. Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai son esta V7.6.
 
 1. **Del dueño:** comparar SL/TP automático vs fijo en backtest (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43).
-2. **Walk-forward real (D-38 3B):** boceto presentado el 24-nov; construir solo con su visto bueno.
+2. **Walk-forward real (D-38 3B):** opcional y para más adelante (D-67: carga en el VPS multiusuario). No proponerlo salvo pedido del dueño.
 3. **Pantallas con boceto:** funding en Paper y Real, `cross` en la búsqueda, separación maestra/config/suscripción,
    «código desactualizado».
 4. **Opcional:** base `tr2test` en el servidor para las pruebas Demo con base (el dueño no la quiso, D-65);
