@@ -21,7 +21,14 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · C5-13: infraestructura heredada; borrar una estrategia; esquema (p108, D-63, D-64) — 24-nov
+### Ciclo 5 · DEMO: pruebas de aceptación en Bybit Demo, parte Bybit (p109, D-65) — 24-nov
+- **Decisión:** sin base de pruebas en el servidor; desde el VPS solo contra Bybit Demo (ADAUSDT, cantidad mínima).
+- **Script:** `tests/Forensic/demo_c5_bybit.py` (DEMO-01, 02, 03, 05, 06, 09, 10 con el código real del bot; sin base:
+  `asyncpg` bloqueado). Las partes con base: `real_unresolved_test`, `risk_limits_test`, `real_recovery_test`,
+  `real_reconcile_visibility_test`. Verificado aquí contra un Bybit simulado (27 comprobaciones en TODO OK).
+- C5-13 verificado en el servidor: `strategy_delete_test.php` 10/10 PASS (transacción revertida).
+
+### Ciclo 5 · C5-13: infraestructura heredada; borrar una estrategia; esquema (p108, D-63, D-64) — 24-nov · instalado `a0d664f`
 - **Validado (lectura 24-nov 06:34 UTC):** Horizon y `schedule:run` como root (sin problemas; el vigilante reinicia
   servicios con `systemctl`: queda así, D-64); permisos sin problema (lo que escribe la web es de `tr2`; 9 archivos de
   root inofensivos); TimescaleDB con una política de compresión, 58 corridas, 0 fallas, 0 fragmentos parciales y

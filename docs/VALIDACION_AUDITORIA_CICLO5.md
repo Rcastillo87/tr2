@@ -16,12 +16,37 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 20 | C5-13 | P2 | Infraestructura heredada | Implementado en p108 (D-63, D-64) |
-| — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Pendientes (protocolo por preparar) |
+| — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Parte Bybit lista en p109 (`demo_c5_bybit.py`, D-65): por correr en el VPS |
 
 ## Validados (con fix implementado o instalado)
 
-### C5-13 · Infraestructura y mantenimiento heredado (P2) — **revisión de solo lectura** · Implementado en p108 (D-63, D-64)
+### DEMO-01..12 · Pruebas de aceptación en Bybit Demo — **parte Bybit lista (p109, D-65)**
+- **Cómo (D-65):** sin base de pruebas en el servidor (el dueño); desde el VPS, solo contra `api-demo.bybit.com`, con la
+  cuenta demo del dueño, en ADAUSDT (sin suscripciones ni operaciones del bot: lectura 24-nov) y la cantidad mínima.
+  `tests/Forensic/demo_c5_bybit.py` usa el código real del bot (`BybitClient`, `RealTrader._risk_size`); los fallos que
+  no se pueden provocar (respuesta perdida, Bybit caído, cuenta en Hedge) se simulan alrededor de la llamada real.
+  Bloquea toda conexión a base; aborta si hay posición u órdenes en la moneda; cierra siempre; evidencia (respuestas de
+  Bybit y resultados, sin claves) en un JSON fuera del proyecto.
+
+| Prueba | Cómo se cubre |
+|---|---|
+| DEMO-01 parcial cancelada | Bybit Demo: cantidad ejecutada de la orden real; «Cancelled» con parte ejecutada = ejecutada; la posición tiene ese tamaño. Adopción con base: `real_unresolved_test` |
+| DEMO-02 corte tras enviar | Bybit Demo: respuesta perdida tras crear la orden → se recupera por `orderLinkId`, sin duplicar |
+| DEMO-03 SL/TP sin confirmar | Bybit Demo: aceptado y confirmado; 34040 confirmado leyendo la posición; niveles distintos no se confirman; SL inválido rechazado y la protección anterior sigue |
+| DEMO-04 fallo de base tras el fill | Con base de pruebas y Bybit simulado: `real_unresolved_test` |
+| DEMO-05 reinicio con posición abierta | Bybit Demo: cliente nuevo encuentra la posición y verifica niveles. Recuperación con base: `real_recovery_test` |
+| DEMO-06 Bybit sin responder | Bybit Demo + corte simulado: posición, orden, closed-pnl, ejecuciones y saldo = «no sé». Conciliación: `real_reconcile_visibility_test` |
+| DEMO-07 huérfana viva | Con base de pruebas: `real_unresolved_test` |
+| DEMO-08 sin patrimonio del mes | Con base de pruebas: `risk_limits_test` |
+| DEMO-09 precio movido | Bybit Demo: tamaño con saldo, precio y lote reales; recalculado con +1 %; riesgo ≤ 1 % |
+| DEMO-10 cuenta en Hedge | Bybit Demo: orden con `positionIdx=1` en la cuenta One-Way → rechazo real, sin posición nueva (no se cambia el modo, D-11) |
+| DEMO-11 límite mensual | Con base de pruebas: `risk_limits_test` |
+| DEMO-12 máximo de operaciones | Con base de pruebas: `real_unresolved_test` |
+
+- **Verificado aquí** contra un Bybit simulado: 27 comprobaciones en TODO OK; aborta con una posición abierta; la
+  evidencia no tiene claves ni firmas. Falta correrlo en el VPS contra Bybit Demo.
+
+### C5-13 · Infraestructura y mantenimiento heredado (P2) — **revisión de solo lectura** · Instalado en p108 (`a0d664f`, D-63, D-64) · verificado
 Lectura del servidor (24-nov 06:34 UTC), elemento por elemento:
 
 | Elemento | Estado comprobado | Riesgo | Decisión |
@@ -353,3 +378,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-08 | Un solo criterio (neto; bruto si falta) para filtro, KPI y curva de Real y el Dashboard (D-60) | p105 `c9cb836` | 14 cerradas, neto +2.942,98, 7 ganadoras con el criterio nuevo |
 | C5-11 | Posiciones manuales: un aviso por posición y aviso «Posición manual cerrada» (D-61) | p106 `c7f9090` | 0 posiciones manuales en la historia. Falta DEMO con una manual abierta y cerrada |
 | C5-12 | DD del CONSOLIDADO rotulado «peor moneda» (D-62); Excel refutado | p107 `48580b1` | 120 vistas compiladas y revisadas con `php -l` |
+| C5-13 | Borrar una estrategia sin error 500 y con todo lo suyo salvo Real (D-63); Horizon como root (D-64); esquema regenerado | p108 `a0d664f` | `strategy_delete_test.php` en el servidor (24-nov, transacción revertida): 10/10 PASS; esquema con 30 tablas |
