@@ -38,6 +38,9 @@ class Trader:
     async def ensure_month_baseline(self, *a):
         return None
 
+    async def ensure_loss_pause_end(self, *a):   # D-66 (p111): paso nuevo del ciclo
+        return None
+
     async def get_circuit_breaker_errors(self, *a):
         return 0
 

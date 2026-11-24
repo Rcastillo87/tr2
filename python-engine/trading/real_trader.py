@@ -89,6 +89,19 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 RISK_TZ = ZoneInfo('America/Bogota')
 _MONTHLY_NOTIFIED: set = set()
 
+
+def risk_limit_options_enabled() -> bool:
+    """D-66 / D-49: interruptor general de la pausa por pérdida y de «sin límite» (RISK_LIMIT_OPTIONS_ENABLED en el
+    .env del motor; por defecto encendido). Apagado: los límites funcionan como antes de p111 en todas las cuentas."""
+    return os.getenv('RISK_LIMIT_OPTIONS_ENABLED', 'true').strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+def _bogota(ts: datetime) -> str:
+    """Instante UTC sin tz (como se guarda) en hora de Bogotá, para los mensajes: «13-nov 10:00»."""
+    months = ('ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic')
+    local = ts.replace(tzinfo=timezone.utc).astimezone(RISK_TZ)
+    return f"{local.day}-{months[local.month - 1]} {local:%H:%M}"
+
 # Comisión taker de Bybit por lado (cierres hechos por el bot). Los cierres detectados
 # en Bybit usan su closedPnl, que ya trae las comisiones reales descontadas.
 BYBIT_TAKER_FEE = 0.00055  # 0.055%
@@ -1352,6 +1365,8 @@ class RealTrader:
         month, _ = self._month_start()
         async with self.pool.acquire() as conn:
             current = await conn.fetchval("SELECT month_start_at FROM broker_accounts WHERE id = $1", account_id)
+            paused_until = await conn.fetchval("SELECT loss_paused_until FROM broker_accounts WHERE id = $1", account_id) \
+                if risk_limit_options_enabled() else None
         if current == month:
             return
         equity = await client.get_equity()
@@ -1366,16 +1381,68 @@ class RealTrader:
             )
         if result != "UPDATE 0":
             logger.info(f"[RISK] cuenta {account_id}: saldo inicial de {month:%Y-%m} = {equity}")
-            if current is not None:  # cambio de mes: cierra el aviso de límite mensual, si lo hubo
+            paused = paused_until is not None and datetime.now(timezone.utc).replace(tzinfo=None) < paused_until
+            if current is not None and not paused:  # cambio de mes: cierra el aviso de límite mensual, si lo hubo
                 await emit_event(self.pool, account_id, 'monthly_limit_reset', month=f"{month:%Y-%m}")
+            # D-66: con una pausa por pérdida en curso el mes nuevo no la borra; el aviso se cierra al reanudar
 
-    async def entry_limit_reason(self, account_id: int) -> str | None:
-        """Motivo por el que la cuenta NO puede abrir otra posición (None = puede). Solo bloquea entradas."""
-        month, since = self._month_start()
+    async def ensure_loss_pause_end(self, account_id: int, client: BybitClient) -> None:
+        """D-66, en cada ciclo de la cuenta (no solo cuando llega una señal):
+        - si la cuenta tiene pausa de N días y llegó a la pérdida máxima, la pausa empieza ahora (entry_limit_reason);
+        - al terminar la pausa, la pérdida se cuenta de cero desde ese momento: el patrimonio de Bybit de ahora es la nueva
+          base. Sin patrimonio sigue sin abrir y se reintenta cada ciclo (como D-51)."""
+        if not risk_limit_options_enabled():
+            return
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         async with self.pool.acquire() as conn:
             acc = await conn.fetchrow(
-                "SELECT max_monthly_loss_pct, max_open_trades, month_start_balance, month_start_at"
+                "SELECT loss_paused_until, loss_pause_days, monthly_loss_enabled, max_monthly_loss_pct"
                 " FROM broker_accounts WHERE id = $1", account_id)
+        acc = dict(acc) if acc is not None else None
+        if acc is None or acc.get('monthly_loss_enabled') is False or not float(acc.get('max_monthly_loss_pct') or 0) > 0:
+            return
+        until = acc.get('loss_paused_until')
+        if until is None:
+            if acc.get('loss_pause_days'):
+                await self.entry_limit_reason(account_id)   # empieza la pausa si ya se llegó al límite
+            return
+        if now < until:
+            return
+        equity = await client.get_equity()
+        if not equity:
+            logger.warning(f"[RISK] cuenta {account_id}: terminó la pausa por pérdida pero Bybit no da el patrimonio; próximo ciclo")
+            return
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE broker_accounts SET loss_period_start = $1, loss_period_balance = $2, loss_paused_until = NULL"
+                " WHERE id = $3 AND loss_paused_until = $4", now, round(equity, 8), account_id, until)
+        if result != "UPDATE 0":
+            logger.info(f"[RISK] cuenta {account_id}: fin de la pausa por pérdida; la pérdida se cuenta desde {now} con base {equity}")
+            await emit_event(self.pool, account_id, 'loss_pause_ended', since=_bogota(now), base=round(equity, 2))
+
+    @staticmethod
+    def loss_window(acc, month, month_since: datetime, options_on: bool) -> tuple:
+        """D-66: (base, desde, período) con que se cuenta la pérdida. Tras una pausa, el período que empezó al reanudar
+        (si empezó dentro de este mes); si no, el mes con su saldo inicial (D-51). base None = no hay base válida."""
+        start, balance = acc.get('loss_period_start'), acc.get('loss_period_balance')
+        if options_on and start is not None and balance is not None and float(balance) > 0 and start > month_since:
+            return float(balance), start, start
+        if acc['month_start_at'] == month and acc['month_start_balance'] and float(acc['month_start_balance']) > 0:
+            return float(acc['month_start_balance']), month_since, None
+        return None, month_since, None
+
+    async def entry_limit_reason(self, account_id: int) -> str | None:
+        """Motivo por el que la cuenta NO puede abrir otra posición (None = puede). Solo bloquea entradas.
+        D-66: cada límite se puede desactivar («sin límite») y, al llegar a la pérdida máxima, la cuenta puede pausar N
+        días (1–30) en vez de esperar al mes siguiente; al reanudar la pérdida se cuenta de cero."""
+        month, since = self._month_start()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        options = risk_limit_options_enabled()
+        async with self.pool.acquire() as conn:
+            acc = await conn.fetchrow(
+                "SELECT max_monthly_loss_pct, max_open_trades, month_start_balance, month_start_at,"
+                " monthly_loss_enabled, open_trades_limit_enabled, loss_pause_days, loss_paused_until,"
+                " loss_period_start, loss_period_balance FROM broker_accounts WHERE id = $1", account_id)
             # C5-16: las 'orphaned' cuentan (pueden estar vivas en Bybit)
             open_count = await conn.fetchval(
                 "SELECT count(*) FROM real_trades WHERE broker_account_id = $1"
@@ -1383,16 +1450,27 @@ class RealTrader:
             unresolved = await conn.fetchrow(
                 f"SELECT id, symbol, status FROM real_trades WHERE broker_account_id = $1 AND {UNRESOLVED_SQL}"
                 " ORDER BY id LIMIT 1", account_id)
-            month_pnl = None
-            if acc is not None and acc['month_start_at'] == month and acc['month_start_balance']:
-                month_pnl = await conn.fetchval(
-                    "SELECT COALESCE(SUM(COALESCE(net_pnl, pnl, 0)), 0) FROM real_trades"
-                    " WHERE broker_account_id = $1 AND status = 'closed' AND exit_time >= $2", account_id, since)
+            month_pnl, base, period = None, None, None
+            if acc is not None:
+                base, pnl_since, period = self.loss_window(dict(acc), month, since, options)
+                if base is not None:
+                    month_pnl = await conn.fetchval(
+                        "SELECT COALESCE(SUM(COALESCE(net_pnl, pnl, 0)), 0) FROM real_trades"
+                        " WHERE broker_account_id = $1 AND status = 'closed' AND exit_time >= $2", account_id, pnl_since)
 
         if acc is None:   # C5-18 (p96): una cuenta que no está en la base no abre
             return "cuenta no encontrada en la base: sin entradas"
+        acc = dict(acc)   # D-66: columnas nuevas con sus valores por defecto si faltaran (límites activos, sin pausa)
         limit_pct = float(acc['max_monthly_loss_pct'] or 0)
-        if limit_pct > 0 and not (acc['month_start_at'] == month and acc['month_start_balance']):
+        loss_on = limit_pct > 0 and (not options or acc.get('monthly_loss_enabled') is not False)
+        open_on = not options or acc.get('open_trades_limit_enabled') is not False
+        paused_until = acc.get('loss_paused_until') if options and loss_on else None
+        if paused_until is not None:   # D-66: pausa por pérdida (se respeta aunque cambie el mes)
+            if now < paused_until:
+                return f"pausa por pérdida máxima hasta el {_bogota(paused_until)}: sin entradas nuevas"
+            return ("terminó la pausa por pérdida: falta el patrimonio de Bybit para contar de cero "
+                    "(se reintenta cada minuto)")
+        if loss_on and base is None:
             # C5-18 / D-51: sin el saldo inicial del mes el límite de pérdida mensual no se puede aplicar: no se abre
             # hasta que ensure_month_baseline lo guarde (lo reintenta cada tick); las abiertas se siguen gestionando
             key = (account_id, month, 'baseline')
@@ -1403,16 +1481,28 @@ class RealTrader:
         if unresolved is not None:   # D-50: con una operación en estado dudoso no se abre nada
             return (f"operación #{unresolved['id']} {unresolved['symbol']} sin confirmar ({unresolved['status']}): "
                     "sin entradas nuevas hasta que la conciliación la resuelva")
-        if month_pnl is not None:
-            base, limit = float(acc['month_start_balance']), float(acc['max_monthly_loss_pct'])
+        if loss_on and month_pnl is not None:
             pct = float(month_pnl) / base * 100
-            if pct <= -limit:
+            what = f"pérdida desde el {_bogota(period)}" if period is not None else "pérdida del mes"
+            if pct <= -limit_pct:
+                days = int(acc.get('loss_pause_days') or 0) if options else 0
+                if days > 0:   # D-66: pausa de N días; al terminar se cuenta de cero
+                    until = now + timedelta(days=days)
+                    async with self.pool.acquire() as conn:
+                        result = await conn.execute(
+                            "UPDATE broker_accounts SET loss_paused_until = $1, loss_period_start = NULL,"
+                            " loss_period_balance = NULL WHERE id = $2 AND loss_paused_until IS NULL", until, account_id)
+                    if result != "UPDATE 0":
+                        await emit_event(self.pool, account_id, 'monthly_limit_reached', pct=round(pct, 2),
+                                         limit=limit_pct, pause_days=days, paused_until=_bogota(until))
+                    return (f"{what} {pct:.2f} % alcanzó el máximo −{limit_pct:g} %: pausa de {days} día(s) "
+                            f"hasta el {_bogota(until)}")
                 key = (account_id, month)
                 if key not in _MONTHLY_NOTIFIED:  # un evento por cuenta y mes (Laravel deduplica tras reinicios)
                     _MONTHLY_NOTIFIED.add(key)
-                    await emit_event(self.pool, account_id, 'monthly_limit_reached', pct=round(pct, 2), limit=limit)
-                return f"pérdida del mes {pct:.2f} % alcanzó el máximo −{limit:g} %"
-        if int(open_count or 0) >= int(acc['max_open_trades']):
+                    await emit_event(self.pool, account_id, 'monthly_limit_reached', pct=round(pct, 2), limit=limit_pct)
+                return f"{what} {pct:.2f} % alcanzó el máximo −{limit_pct:g} %"
+        if open_on and int(open_count or 0) >= int(acc['max_open_trades']):
             return f"máximo de trades abiertos ({open_count}/{acc['max_open_trades']})"
         return None
 

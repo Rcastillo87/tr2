@@ -234,6 +234,7 @@ class CollectorWatchdog extends Command
             return;
         }
         $missing = \App\Models\BrokerAccount::query()->where('status', 'active')->where('max_monthly_loss_pct', '>', 0)
+            ->where('monthly_loss_enabled', true)   // D-66: con la pérdida «sin límite» no se exige el saldo del mes
             ->where(fn ($q) => $q->whereNull('month_start_at')->orWhere('month_start_at', '<', $start->toDateString())
                 ->orWhereNull('month_start_balance'))
             ->orderBy('id')->pluck('id');

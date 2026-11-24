@@ -121,17 +121,34 @@ class BrokerAccountController extends Controller
 
         $rl = config('trading.risk_limits');
         $validated = $request->validate([
-            'max_monthly_loss_pct' => ['required', 'numeric', "min:{$rl['monthly_loss_min']}", "max:{$rl['monthly_loss_max']}", 'multiple_of:0.5'],
-            'max_open_trades'      => ['required', 'integer', "min:{$rl['open_trades_min']}", "max:{$rl['open_trades_max']}"],
+            'max_monthly_loss_pct'  => ['required', 'numeric', "min:{$rl['monthly_loss_min']}", "max:{$rl['monthly_loss_max']}", 'multiple_of:0.5'],
+            'max_open_trades'       => ['required', 'integer', "min:{$rl['open_trades_min']}", "max:{$rl['open_trades_max']}"],
+            // D-66: «sin límite» en cada uno (el número se conserva) y pausa de 1–30 días al llegar a la pérdida máxima
+            'monthly_loss_unlimited' => ['nullable', 'boolean'],
+            'open_trades_unlimited'  => ['nullable', 'boolean'],
+            'loss_pause_days'        => ['nullable', 'integer', 'min:1', 'max:30'],
         ], [], [
             'max_monthly_loss_pct' => 'pérdida máxima del mes',
             'max_open_trades'      => 'trades abiertos máximos',
+            'loss_pause_days'      => 'días de pausa',
         ]);
 
-        $account->update($validated);
+        $lossOn = ! $request->boolean('monthly_loss_unlimited');
+        $openOn = ! $request->boolean('open_trades_unlimited');
+        $days = $validated['loss_pause_days'] ?? null;
+        $account->update([
+            'max_monthly_loss_pct'      => $validated['max_monthly_loss_pct'],
+            'max_open_trades'           => $validated['max_open_trades'],
+            'monthly_loss_enabled'      => $lossOn,
+            'open_trades_limit_enabled' => $openOn,
+            'loss_pause_days'           => $days,
+        ]);
 
-        return back()->with('status', "Límites de {$account->label}: pérdida del mes −" . ($validated['max_monthly_loss_pct'] + 0)
-            . " %, {$validated['max_open_trades']} trades abiertos como máximo. Valen desde la próxima orden.");
+        $loss = $lossOn ? 'pérdida del mes −' . ($validated['max_monthly_loss_pct'] + 0) . ' %'
+            . ($days ? ", pausa de {$days} día(s) al llegar" : ', hasta fin de mes al llegar') : 'pérdida sin límite';
+        $open = $openOn ? "{$validated['max_open_trades']} trades abiertos como máximo" : 'trades abiertos sin límite';
+
+        return back()->with('status', "Límites de {$account->label}: {$loss}; {$open}. Valen desde la próxima orden.");
     }
 
     public function destroy(BrokerAccount $account)

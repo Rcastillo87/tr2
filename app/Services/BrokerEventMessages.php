@@ -94,7 +94,16 @@ final class BrokerEventMessages
                 'body'  => "{$account}: pérdida neta del mes "
                     . (isset($data['pct']) ? self::pct($data['pct']) : 'por encima del máximo')
                     . (isset($data['limit']) ? ' (máximo −' . self::num($data['limit']) . ' %)' : '')
-                    . '. No se abren posiciones hasta el día 1 (00:00 Bogotá); las abiertas se siguen gestionando.',
+                    . (isset($data['paused_until'])   // D-66: pausa de N días
+                        ? '. Pausa de ' . (int) ($data['pause_days'] ?? 0) . " día(s): no se abren posiciones hasta el {$data['paused_until']}"
+                          . ' (hora de Bogotá); las abiertas se siguen gestionando. Al reanudar, la pérdida se cuenta de cero.'
+                        : '. No se abren posiciones hasta el día 1 (00:00 Bogotá); las abiertas se siguen gestionando.'),
+            ],
+            'loss_pause_ended' => [
+                'level' => 'success', 'mode' => 'resolve', 'key' => "monthly_limit:{$accountId}",
+                'title' => 'Terminó la pausa por pérdida',
+                'body'  => "{$account}: vuelve a abrir posiciones; la pérdida se cuenta de cero desde el "
+                    . ($data['since'] ?? 'reinicio') . ' (hora de Bogotá).',
             ],
             'monthly_limit_reset' => [
                 'level' => 'success', 'mode' => 'resolve', 'key' => "monthly_limit:{$accountId}",

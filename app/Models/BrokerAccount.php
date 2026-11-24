@@ -22,6 +22,9 @@ class BrokerAccount extends Model
         'single_position_per_symbol',
         'max_monthly_loss_pct',
         'max_open_trades',
+        'monthly_loss_enabled',       // D-66: false = «sin límite»
+        'open_trades_limit_enabled',  // D-66: false = «sin límite»
+        'loss_pause_days',            // D-66: 1–30; null = hasta fin de mes
     ];
 
     protected $casts = [
@@ -32,6 +35,10 @@ class BrokerAccount extends Model
         'max_open_trades' => 'integer',
         'month_start_balance' => 'float',
         'month_start_at' => 'date',
+        'monthly_loss_enabled' => 'boolean',
+        'open_trades_limit_enabled' => 'boolean',
+        'loss_pause_days' => 'integer',
+        // loss_paused_until / loss_period_start: UTC sin zona (como exit_time); sin cast, se leen con Carbon::parse(…, 'UTC')
     ];
 
     /**

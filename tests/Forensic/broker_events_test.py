@@ -199,6 +199,9 @@ class FakeTrader:
     async def ensure_month_baseline(self, account_id, client):
         return None
 
+    async def ensure_loss_pause_end(self, account_id, client):   # D-66 (p111): paso nuevo del ciclo
+        return None
+
     async def clear_non_critical_errors(self, account_id):
         self.calls.append('clear')
 

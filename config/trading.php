@@ -30,5 +30,7 @@ return [
         'open_trades_min'      => 1,
         'open_trades_max'      => 20,
     ],
+    // D-66 / D-49: interruptor general de la pausa por pérdida y de «sin límite» (el motor lee el mismo nombre en su .env)
+    'risk_limit_options' => (bool) env('RISK_LIMIT_OPTIONS_ENABLED', true),
     'allow_investor_demo_accounts' => env('ALLOW_INVESTOR_DEMO_ACCOUNTS', false),
 ];

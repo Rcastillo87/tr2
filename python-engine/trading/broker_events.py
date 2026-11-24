@@ -23,6 +23,7 @@ EVENTS = frozenset({
     'liquidation_risk',     # SL más allá del precio de liquidación: cerrada al abrir
     'monthly_limit_reached',  # pérdida del mes llegó al máximo de la cuenta: sin entradas hasta el día 1
     'monthly_limit_reset',    # nuevo mes: el límite se reinicia
+    'loss_pause_ended',       # D-66: terminó la pausa por pérdida; la pérdida se cuenta de cero
     'api_auth_failed',      # Bybit rechaza las claves
     'api_auth_ok',          # Bybit vuelve a aceptarlas
     'reconcile_closed',     # cerrado en TR2 con los números de Bybit (ya no existía en Bybit)

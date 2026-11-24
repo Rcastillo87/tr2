@@ -21,7 +21,15 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · DEMO: corrección del script de Demo (p110) — 24-nov
+### Ciclo 5 · C5-21: límites de riesgo con pausa de N días y «sin límite» (p111, D-66) — 24-nov
+- **Hallazgo** de la prueba Demo: base del límite mensual (patrimonio total 178.118) ≠ base del tamaño (USDT 53.799). El
+  dueño mantiene el patrimonio total y pide la pausa de N días (1–30, conteo de cero al reanudar, respetada al cambiar
+  de mes) y «sin límite» en pérdida y trades abiertos (boceto aprobado).
+- **Fix:** motor (`loss_window`, `entry_limit_reason`, `ensure_loss_pause_end` en cada ciclo), Laravel (`RiskLimits::evaluate`,
+  panel, formulario, avisos, vigilante), migración `2026_11_24_01`, interruptor `RISK_LIMIT_OPTIONS_ENABLED`.
+- **Prueba:** código anterior FALLA; mutaciones 19/19; regresión 79 Python + 35 PHP en TODO OK.
+
+### Ciclo 5 · DEMO: corrección del script de Demo (p110) — 24-nov · instalado `fb535f2`
 - **Primera corrida en el VPS (cuenta 11, ADAUSDT):** DEMO-02 FALLA y nada más se probó; sin posición abierta. Causa: el
   script usaba el lote mínimo (1 ADA ≈ 0,65 USDT) y Bybit exige además un valor mínimo por orden (5 USDT); la orden se
   rechazó y la simulación de «respuesta perdida» tapaba el rechazo. Defecto del script, no del bot (sus órdenes reales

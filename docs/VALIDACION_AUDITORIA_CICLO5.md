@@ -16,9 +16,31 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Parte Bybit lista en p109 (`demo_c5_bybit.py`, D-65): por correr en el VPS |
+| 21 | C5-21 | P1 | Base del límite mensual (patrimonio total) distinta de la del tamaño (USDT) — hallazgo nuevo | Implementado en p111 (D-66) |
+| — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Parte Bybit **verificada** 24-nov (28/28, p110 `fb535f2`); partes con base: pruebas con base de pruebas (D-65) |
 
 ## Validados (con fix implementado o instalado)
+
+### C5-21 · Base del límite de pérdida mensual (P1, hallazgo nuevo de la prueba Demo; regla 11 del informe) — **Decisión del dueño + mejora pedida** · Implementado en p111 (D-66)
+- **Hallazgo (24-nov):** el tamaño usa el saldo en USDT (`get_balance`, `walletBalance`: 53.799 en la demo) y el límite
+  mensual el patrimonio total del día 1 (`get_equity`, `totalEquity`: 178.118 — todas las monedas y lo no realizado;
+  hoy 165.977). El 5 % deja perder 8.906 USDT = 16,5 % del dinero con que opera el bot, y la base cambia con otras
+  monedas. Presentado como defecto con la opción de usar el saldo USDT.
+- **Decisión (D-66):** la base sigue siendo el patrimonio total (el dueño). Pide además: pausa de N días (1–30) al
+  llegar al límite, con conteo de cero al reanudar y respetada al cambiar de mes; y «sin límite» en la pérdida y en los
+  trades abiertos. Boceto del panel aprobado.
+- **Fix:** motor: `loss_window` (período tras la pausa o el mes), `entry_limit_reason` (pausa, «sin límite»,
+  interruptor), `ensure_loss_pause_end` en el ciclo de cada cuenta (la pausa empieza sin esperar una señal; al terminar
+  toma el patrimonio y cuenta de cero; con guarda contra dos corridas); el cambio de mes no avisa «vuelve a abrir»
+  durante una pausa. Laravel: `RiskLimits::evaluate` (pura, misma regla; también cuenta las huérfanas como el motor,
+  antes no), panel y formulario según el boceto, validación, avisos (`monthly_limit_reached` con la pausa,
+  `loss_pause_ended`), el vigilante no pide saldo del mes a cuentas «sin límite». Base: migración `2026_11_24_01` (6
+  columnas; por defecto todo como antes). Vuelta atrás: dejar vacío / desmarcar, `RISK_LIMIT_OPTIONS_ENABLED=false` en
+  los dos `.env`, `p111_revertir.sh`.
+- **Prueba:** `risk_limits_test` (+P1–P9c, R1–R7, M1–M2, L9b), `risk_limit_options_test.php` (nueva, A1–A15, B1–B6,
+  C1–C4), `risk_limit_options_migration_test` (nueva, contra PostgreSQL de pruebas); código anterior: FALLA (11 fallos
+  y excepción; las dos nuevas fallan); mutaciones 19/19; cuatro pruebas viejas actualizadas (doble del ciclo con el paso
+  nuevo; motor tolerante a cuentas falsas sin las columnas nuevas); regresión 79 Python + 35 PHP en TODO OK.
 
 ### DEMO-01..12 · Pruebas de aceptación en Bybit Demo — **parte Bybit lista (p109, D-65)**
 - **Cómo (D-65):** sin base de pruebas en el servidor (el dueño); desde el VPS, solo contra `api-demo.bybit.com`, con la
@@ -44,7 +66,16 @@
 | DEMO-12 máximo de operaciones | Con base de pruebas: `real_unresolved_test` |
 
 - **Verificado aquí** contra un Bybit simulado: 27 comprobaciones en TODO OK; aborta con una posición abierta; la
-  evidencia no tiene claves ni firmas. Falta correrlo en el VPS contra Bybit Demo.
+  evidencia no tiene claves ni firmas.
+- **Primera corrida en el VPS:** DEMO-02 FALLA por el script (orden de 1 ADA bajo el valor mínimo de 5 USDT de Bybit;
+  la simulación tapaba el rechazo). Corregido en p110 (`fb535f2`).
+- **Corrida en Bybit Demo (24-nov 15:33 UTC, cuenta 11, ADAUSDT, 42 ADA): 28/28 PASS**, posición de prueba cerrada;
+  evidencia `/tmp/tr2_demo_c5_20261124_153348.json` en el VPS (23 llamadas a Bybit). DEMO-02: respuesta perdida
+  recuperada por `orderLinkId`, sin duplicar. DEMO-01: `cumExecQty` 42 = posición. DEMO-03: SL/TP confirmado, 34040
+  confirmado leyendo la posición, niveles distintos no confirmados, SL inválido rechazado y la protección anterior
+  sigue. DEMO-05: cliente nuevo encuentra la posición y verifica niveles. DEMO-06: «no sé» en posición, orden,
+  closed-pnl, ejecuciones y saldo. DEMO-09: riesgo 0,99999 % con saldo y precio reales; recalculado con +1 %. DEMO-10:
+  Bybit rechaza (`position idx not match position mode`, 10001), sin posición nueva.
 
 ### C5-13 · Infraestructura y mantenimiento heredado (P2) — **revisión de solo lectura** · Instalado en p108 (`a0d664f`, D-63, D-64) · verificado
 Lectura del servidor (24-nov 06:34 UTC), elemento por elemento:

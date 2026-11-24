@@ -157,6 +157,7 @@ async def _process_account(trader, account):
         if auth_ok is False:
             return account_key, {"error": f"Bybit rechaza las claves API: {auth_reason}"}
         await trader.ensure_month_baseline(account.id, client)
+        await trader.ensure_loss_pause_end(account.id, client)   # D-66
         await _track_permissions(trader.pool, account.id, client)
 
         entries_allowed = account.entries_allowed
