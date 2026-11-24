@@ -16,12 +16,11 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 21 | C5-21 | P1 | Base del límite mensual (patrimonio total) distinta de la del tamaño (USDT) — hallazgo nuevo | Implementado en p111 (D-66) |
-| — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Parte Bybit **verificada** 24-nov (28/28, p110 `fb535f2`); partes con base: pruebas con base de pruebas (D-65) |
+| — | — | — | **Ninguno: ciclo 5 cerrado el 24-nov** (resueltos abajo) | — |
 
 ## Validados (con fix implementado o instalado)
 
-### C5-21 · Base del límite de pérdida mensual (P1, hallazgo nuevo de la prueba Demo; regla 11 del informe) — **Decisión del dueño + mejora pedida** · Implementado en p111 (D-66)
+### C5-21 · Base del límite de pérdida mensual (P1, hallazgo nuevo de la prueba Demo; regla 11 del informe) — **Decisión del dueño + mejora pedida** · Instalado en p111 (`386a243`, D-66)
 - **Hallazgo (24-nov):** el tamaño usa el saldo en USDT (`get_balance`, `walletBalance`: 53.799 en la demo) y el límite
   mensual el patrimonio total del día 1 (`get_equity`, `totalEquity`: 178.118 — todas las monedas y lo no realizado;
   hoy 165.977). El 5 % deja perder 8.906 USDT = 16,5 % del dinero con que opera el bot, y la base cambia con otras
@@ -409,4 +408,6 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-08 | Un solo criterio (neto; bruto si falta) para filtro, KPI y curva de Real y el Dashboard (D-60) | p105 `c9cb836` | 14 cerradas, neto +2.942,98, 7 ganadoras con el criterio nuevo |
 | C5-11 | Posiciones manuales: un aviso por posición y aviso «Posición manual cerrada» (D-61) | p106 `c7f9090` | 0 posiciones manuales en la historia. Falta DEMO con una manual abierta y cerrada |
 | C5-12 | DD del CONSOLIDADO rotulado «peor moneda» (D-62); Excel refutado | p107 `48580b1` | 120 vistas compiladas y revisadas con `php -l` |
+| DEMO-01..12 | Pruebas de aceptación: parte Bybit en Bybit Demo; partes con base cubiertas por las pruebas con base de pruebas (D-65) | p109–p110 `fb535f2` | 24-nov 15:33 UTC, cuenta 11, ADAUSDT: 28/28 PASS; evidencia `/root/patches/demo/tr2_demo_c5_20261124_153348.json` |
+| C5-21 | Límite mensual con base patrimonio total (decisión del dueño); pausa de N días al llegar a la pérdida máxima y «sin límite» (D-66) | p111 `386a243` | Migración aplicada (6 columnas); cuenta 11 como antes (5 %, sin pausa, 3 abiertos); tick Real sin errores |
 | C5-13 | Borrar una estrategia sin error 500 y con todo lo suyo salvo Real (D-63); Horizon como root (D-64); esquema regenerado | p108 `a0d664f` | `strategy_delete_test.php` en el servidor (24-nov, transacción revertida): 10/10 PASS; esquema con 30 tablas |

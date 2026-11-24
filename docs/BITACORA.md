@@ -7,21 +7,51 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-**Lista vigente: `docs/PENDIENTES_AUDITORIA.md`.** Las tres rondas de auditoría están resueltas en código (estado de los 70 hallazgos en `docs/CERTIFICACION_AUDITORIA.md`).
-1. ~~Respaldo de la base fuera del VPS~~: descartado por el dueño (D-48, 20-nov).
-2. **Paridad con datos reales:** `cd python-engine && venv/bin/python tools/analysis/compare_paper_vs_backtest.py --config <id>` sobre cada config activa de Paper con trades (desde p81 termina en ayer y separa por snapshot); registrar aquí. Corridas del 19-nov en la sección de p80.
-3. **Fase 12:** el dueño elige opciones en `docs/FASE12_ESTADISTICA.md` (recomendado: drawdown flotante → tres tramos → costos en el tamaño → cartera → renombrar el walk forward).
-4. ~~**Infraestructura:**~~ revisado en C5-13 (24-nov): Horizon y el programador siguen como root (D-64, el vigilante necesita reiniciar servicios); permisos sin problema; lotes de TimescaleDB sin evidencia (0 parciales, 0 `[BARS]`); esquema regenerado en p108 (`ops/schema_dump.sh`).
-5. **Pantallas (maqueta primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09), funding en pantalla, «código desactualizado» en Paper; ~~decidir si borrar una estrategia debe bloquearse como un backtest~~ (D-63, p108).
-6. **Limpieza:** TP2–TP4 (REAL-05); reescribir `docs/01–03`; slippage de altcoins en demo.
-7. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
-- **Tarea manual del dueño:** reemplazar las instrucciones del proyecto "Ruben Castillo" en claude.ai por `docs/PROMPT_MAESTRO.md` (**V7.5**, 20-nov). No se puede hacer por script.
+**Ciclo 5 cerrado (24-nov):** los 20 puntos del informe + C5-21 validados, instalados y verificados; pruebas Demo de la
+parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CICLO5.md`; reglas: `docs/DECISIONES_DUENO.md`.
+1. **Del dueño:** comparar en backtest SL/TP automático vs fijo (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65
+   (D-43, «Pendientes de decisión»).
+2. **Walk-forward real (D-38 3B):** boceto presentado el 24-nov; esperar el visto bueno del dueño antes de construir.
+3. **Pantallas (boceto primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09),
+   funding en pantalla, «código desactualizado» en Paper.
+4. **Opcional:** base `tr2test` en el servidor para correr completas las pruebas Demo con base (DEMO-04, 07, 08, 11, 12; el
+   dueño no la quiso, D-65); llevar al vigilante las dos comprobaciones de TimescaleDB de `bars_order_test --db` (solo
+   lectura); botón de la exportación a Excel del backtest (la ruta existe y ninguna pantalla la enlaza, C5-12).
+5. **Limpieza:** reescribir `docs/01–03`; slippage de altcoins en demo; R-10 preventivo (D-16).
+6. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
+- **Tarea manual del dueño:** pegar `docs/PROMPT_MAESTRO.md` (**V7.6**, 24-nov) en las instrucciones del proyecto
+  «Ruben Castillo» de claude.ai (hoy están vacías). No se puede hacer por script.
 
 ---
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · C5-21: límites de riesgo con pausa de N días y «sin límite» (p111, D-66) — 24-nov
+### Cierre del ciclo 5 (24-nov) — parches instalados y verificados
+| Parche | SHA | Punto | Qué cambió | Decisión |
+|---|---|---|---|---|
+| p95 | `859f817` | C5-14..17 | Parciales canceladas, apertura sin guardar, huérfanas supervisadas, protección confirmada al adoptar | D-50 |
+| p96 | `038e8d9` | C5-18 | Sin saldo inicial del mes no se abre; aviso a los 10 min | D-51 |
+| p97 | `3478b66` | C5-19, C5-10 | Tamaño con el último precio y saldo; SL/TP confirmados tras 34040 | — |
+| p98 | `3853d5d` | C5-20 | Riesgo por suscripción validado (CHECK en la base) | D-52 |
+| p99 | `3f31b10` | C5-01 | Libro de ejecuciones: «ok» solo si todo cuadra; «no sé» = reintento | D-53 |
+| p100 | `599521a` | C5-07 | Conciliación sin fallos escondidos; aviso `real_reconcile` | D-54 |
+| p101 | `d4ca055` | C5-02 | «No se pudo probar» no es «aprobada» (mirar el futuro) | D-55 |
+| p102 | `637821f` | C5-04, C5-09 | Ninguna prueba toca producción; matriz de permisos sin defecto | D-56 |
+| p103 | `0786a92` | C5-03 | Sugerencia rechazada: filtro +5 % en 24 meses y textos de la búsqueda | D-58 |
+| p104 | `fbc71cf` | C5-06 | El comparador dice qué versión compara | D-59 |
+| p105 | `c9cb836` | C5-08 | Un solo criterio (neto) en los números de Real | D-60 |
+| p106 | `c7f9090` | C5-11 | Un aviso por posición manual y aviso de cierre | D-61 |
+| p107 | `48580b1` | C5-12 | DD del consolidado rotulado «peor moneda»; vistas revisadas con `php -l` | D-62 |
+| p108 | `a0d664f` | C5-13 | Borrar estrategia sin error 500; esquema regenerado; Horizon sigue como root | D-63, D-64 |
+| p109 | `be9296a` | DEMO | Script de pruebas en Bybit Demo (parte Bybit, sin base) | D-65 |
+| p110 | `fb535f2` | DEMO | Script corregido (valor mínimo de la orden); Demo 28/28 | — |
+| p111 | `386a243` | C5-21 | Pausa de N días al llegar a la pérdida máxima y «sin límite» | D-66 |
+| p112 | (este) | — | Cierre: bitácora, PROMPT_MAESTRO V7.6 | — |
+
+Sin arreglo (validados): C5-05 (sin exposición), C5-09 (sin defecto). Verificaciones en el servidor: `role_matrix_test`
+(61 rutas·método), `strategy_delete_test` (10/10), Demo 28/28 (evidencia en `/root/patches/demo/`).
+
+### Ciclo 5 · C5-21: límites de riesgo con pausa de N días y «sin límite» (p111, D-66) — 24-nov · instalado `386a243`
 - **Hallazgo** de la prueba Demo: base del límite mensual (patrimonio total 178.118) ≠ base del tamaño (USDT 53.799). El
   dueño mantiene el patrimonio total y pide la pausa de N días (1–30, conteo de cero al reanudar, respetada al cambiar
   de mes) y «sin límite» en pérdida y trades abiertos (boceto aprobado).

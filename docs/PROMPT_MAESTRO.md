@@ -1,9 +1,9 @@
-# PROMPT MAESTRO V7.5 — Proyecto TR2 (trading algorítmico)
+# PROMPT MAESTRO V7.6 — Proyecto TR2 (trading algorítmico)
 
 > Documento para entregar a la persona o IA que retome el proyecto. Léelo completo antes de proponer cualquier cambio.
-> Versión 7.5 · 2026-11-20 · Reemplaza a la V7.4 (agrega p81–p90: paridad por snapshot, VWAP corregido, protección contra estrategias que miran el futuro, R-22, huella del código, permisos por rol, libro de ejecuciones y funding de Real, con sus lecciones). V7.4 · 2026-11-19 reemplazó a la V7.3 (agrega p46–p72: RQ-01, estrategias BNF/Triángulo y la validación de la auditoría del 13-nov con sus lecciones). V7.3 · 2026-11-10 reemplazó a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
+> Versión 7.6 · 2026-11-24 · Reemplaza a la V7.5 (agrega el ciclo 5 de auditoría, p91–p112: Real a prueba de fallos de Bybit y de la base, criterio defecto / sugerencia / refutado, pruebas aisladas de producción, pruebas en Bybit Demo, límites de riesgo con pausa y «sin límite», con sus lecciones). V7.5 · 2026-11-20 reemplazó a la V7.4 (agrega p81–p90: paridad por snapshot, VWAP corregido, protección contra estrategias que miran el futuro, R-22, huella del código, permisos por rol, libro de ejecuciones y funding de Real, con sus lecciones). V7.4 · 2026-11-19 reemplazó a la V7.3 (agrega p46–p72: RQ-01, estrategias BNF/Triángulo y la validación de la auditoría del 13-nov con sus lecciones). V7.3 · 2026-11-10 reemplazó a la V7.2 (agrega los cambios p32–p45 de la auditoría del 07-nov, la política de borrado del collector, las pruebas de integración en la instalación y sus lecciones). V7.2 (06-nov) agregó el protocolo de instalación sin subida de archivos y p19–p30.
 > **Decisiones del dueño (reglas de negocio vigentes): `docs/DECISIONES_DUENO.md`. Consultarlo ANTES de preguntar; no se cambian salvo pedido explícito del dueño (13-nov).**
-> Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría), `docs/VALIDACION_AUDITORIA_13NOV.md` (auditoría del 13-nov: estado de cada punto y **lo que falta**, al final) y `docs/PENDIENTES_AUDITORIA.md` (histórico hasta p56).
+> Complementos: `README.md` (cómo funciona y cómo se opera), `docs/BITACORA.md` (qué cambió, por qué y cómo se verificó, **incluidos los cambios de base de datos y servidor que no viven en git**), `docs/CERTIFICACION_AUDITORIA.md` (estado de los 70 hallazgos de auditoría), `docs/VALIDACION_AUDITORIA_CICLO5.md` (ciclo 5: estado de cada punto, resueltos aparte), `docs/VALIDACION_AUDITORIA_13NOV.md` (auditoría del 13-nov) y `docs/PENDIENTES_AUDITORIA.md` (histórico hasta p56).
 
 ---
 
@@ -98,6 +98,17 @@ Actúas como **ingeniero de software senior y arquitecto** (Laravel, Python, Pos
 - Si no puede adjuntar: partes de 300 líneas con `sed -n '1,300p' $O`.
 - Pedir el `md5sum` de los archivos que se reemplazarán completos.
 
+### 6.0 Cada punto de una auditoría [V7.6]
+1. Validarlo contra el código **y** el servidor (lectura de solo lectura) antes de opinar; buscar primero en `DECISIONES_DUENO.md`.
+2. Clasificarlo: **defecto** (contradice una decisión, da un dato equivocado o arriesga dinero o datos → se propone y
+   recomienda el arreglo), **sugerencia** (cambia algo que funciona como el dueño decidió → pros y contras, decide el
+   dueño, nunca como «arreglo») o **refutado** (se explica y se cierra).
+3. Proponer en español simple y con un ejemplo concreto; si el dueño no entiende, explicar de nuevo más corto (C5-13).
+4. Construir: prueba que falla con el código anterior, mutaciones, regresión completa; `pNN_instalar.sh` + `pNN_revertir.sh`.
+5. Registrar en `BITACORA`, `VALIDACION_AUDITORIA_CICLO5` y, si hay decisión, en `DECISIONES_DUENO` (aunque no haya arreglo).
+6. Lo nuevo lleva vuelta atrás en tres niveles (D-49): valor por defecto por config / cuenta, interruptor general en el
+   `.env` y `pNN_revertir.sh`. Pantallas solo con boceto aprobado.
+
 ### 6.1b Entregar
 - Bloques largos **como archivo** (SendUserFile), no pegados en el chat: el copiado manual metió números de línea en un base64.
 - **Todo script que el dueño pegue va envuelto en `( … )`**: un `set -euo pipefail` o un `exit` pegados directo en la terminal cierran su sesión SSH (pasó el 2026-10-27). Dentro de la subshell sí se usa `set -euo pipefail`.
@@ -129,6 +140,19 @@ Bloque estándar: `git status` → extraer y verificar md5 → `python3 patch_NN
 ### 6.5 Migraciones
 SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql`. Aplicar con:
 `bash ops/dbsql.sh -v ON_ERROR_STOP=1 -1 -f database/sql-migrations/<archivo>.up.sql`
+- **[V7.6]** Idempotentes (`IF NOT EXISTS`, `duplicate_object`) y con `SET lock_timeout`. Si el código nuevo lee columnas
+  nuevas, el instalador aplica la migración **antes** del código (p111): el código anterior las ignora y la pantalla no
+  falla mientras corre la regresión. Probarlas con PostgreSQL de pruebas (`*_migration_test.py`, transacción revertida).
+- El volcado del esquema se regenera desde la base con `bash ops/schema_dump.sh > database/schema/pgsql-schema.sql`
+  (solo estructura; las hypertables y políticas de TimescaleDB van como comentario).
+
+### 6.6 Instalador: comprobaciones agregadas en el ciclo 5 [V7.6]
+- Vistas: `view:cache` puede terminar bien con un PHP compilado inválido; se revisa cada vista compilada con `php -l` y
+  se vuelve atrás si falla (p107).
+- La regresión del servidor salta las partes con base (no es de pruebas, D-56); las pruebas PHP de integración se
+  corren a mano (`php tests/Forensic/<x>_test.php`, transacción revertida).
+- Pruebas en Bybit Demo (D-65): desde el VPS, sin base, con la clave de la cuenta demo leída cifrada de la base (sin
+  mostrarla, solo si la cuenta es demo) y `tests/Forensic/demo_c5_bybit.py ADAUSDT`; evidencia en `/root/patches/demo/`.
 
 ---
 
@@ -210,6 +234,27 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 - **Limpieza (p88):** imports y `use` sin usar fuera; `unused_imports_test.py` y `unused_uses_static_test.php` impiden que vuelvan.
 - **Real (p89–p90, MEJ-004, R-23, R-24, D-47):** libro `real_trade_executions` (partes de Bybit de apertura y cierre; controles de cantidad y precio; `close_order_id` de los cierres de Bybit); el tick registra hasta 2 pendientes por cuenta. `commission` = comisiones de las partes y `funding` aparte (positivo = pagado, como Paper), solo si el neto es el closed-pnl de Bybit. Comandos: `real:executions-backfill`, `real:costs-split` (vista previa / `--apply`).
 
+### Ciclo 5 de auditoría, 21–24 nov 2026 (p91–p112) **[V7.6]**
+Detalle por punto en `docs/VALIDACION_AUDITORIA_CICLO5.md` (resueltos con SHA) y `docs/BITACORA.md` («Cierre del ciclo 5»);
+reglas D-50 a D-66 en `docs/DECISIONES_DUENO.md`.
+- **Real a prueba de fallos:** parciales canceladas nunca «fallidas»; apertura sin guardar → aviso y conciliación
+  adelantada; huérfanas supervisadas y contadas en el máximo; con una operación dudosa la cuenta no abre (D-50); sin
+  saldo del mes no abre (D-51); tamaño recalculado si el precio se movió; SL/TP confirmados leyendo la posición (34040);
+  riesgo por suscripción validado (D-52); libro de ejecuciones «ok» solo si todo cuadra y «no sé» ≠ «no hay» (D-53);
+  conciliación sin fallos escondidos (D-54).
+- **Fuentes únicas nuevas:** `App\Support\ReconcileHealth`, `App\Support\RealPnl` (neto ?? bruto, D-60),
+  `App\Support\StrategyDeletionPlan` (D-63), `App\Services\RiskLimits::evaluate` (misma regla que
+  `RealTrader.entry_limit_reason` / `loss_window`, D-66), `broker_events.manual_position_actions` (D-61),
+  `tests/Forensic/test_db.py` (barrera de base, D-56), `ops/schema_dump.sh`.
+- **Análisis:** «no se pudo probar» no es «aprobada» en la protección contra mirar el futuro (D-55); búsqueda: se evalúan
+  los 24 meses y solo se muestran configs con ≥ +5 % (D-58); el comparador dice qué versión compara (D-59); DD del
+  consolidado = «peor moneda» (D-62).
+- **Límites de riesgo (D-66):** base = patrimonio total (decisión del dueño); pausa de 1–30 días al llegar a la
+  pérdida máxima (empieza en el ciclo, se respeta al cambiar de mes, al reanudar cuenta de cero); «sin límite» en
+  pérdida y trades abiertos; interruptor `RISK_LIMIT_OPTIONS_ENABLED` (motor y Laravel).
+- **Otros:** posiciones manuales con un aviso por posición y aviso de cierre (D-61); borrar una estrategia borra todo lo
+  suyo salvo Real (D-63); Horizon y el programador siguen como root (D-64); pruebas Demo 28/28 (D-65).
+
 ---
 
 ## 8. Lecciones aprendidas (no repetir)
@@ -269,22 +314,30 @@ Detalle, lecturas y mutaciones en `docs/BITACORA.md`; reglas en `docs/DECISIONES
 | Prueba que «pasaba» con 10 fallos (`paper_parity_test`, desde p83) | La regresión mira el **código de salida**: toda prueba termina con `sys.exit(0 if fails == 0 else 1)`; `auto_levels_test` E1 lo vigila en la lista oficial. Un doble de prueba o un fixture viejo (sin el minuto siguiente de R-22) puede esconder fallos. |
 | Clave nueva que ya usaba una estrategia (`sl_mode` de TrianguloRuptura, p93) | Antes de nombrar un parámetro, buscarlo en `docs/estrategias/` y en `strategies.code`/`config` del servidor; el instalador lo revisa (p94). |
 | La comisión Real incluía el funding | El closed-pnl de Bybit descuenta comisiones **y** funding: bruto − neto no es la comisión (R-24). |
+| Prueba de fixtures que codificaban el defecto (C5-01 B5, C5-02 B5/B6) | Si una prueba vieja «pasa» con el defecto, el dato o la expectativa está mal: corregirla y justificarlo en la bitácora, no adaptar el arreglo a ella. |
+| `view:cache` terminó bien con una vista rota (simulación de p107) | Revisar cada vista compilada con `php -l` antes de reiniciar nada. |
+| Mutación «ignora el bloqueo» sobrevivía (p108) | En PHP `strpos` da `false` y `false < n` es verdadero: exigir que la cadena exista antes de comparar posiciones. |
+| Script Demo «falló» por una orden de 0,65 USDT (p109) | Bybit exige además un valor mínimo por orden (`minNotionalValue`, 5 USDT); una simulación de fallo solo debe aplicarse cuando la llamada real salió bien, para no tapar un rechazo. Guardar la evidencia siempre. |
+| Dos bases distintas para el riesgo (C5-21) | Tamaño con el saldo en USDT y límite mensual con el patrimonio total: verificar con datos reales de la cuenta qué mide cada número antes de compararlos. |
+| La pausa habría empezado con la primera señal, horas después (p111) | Una regla de tiempo (pausa, aviso) se evalúa en el ciclo de cada minuto, no solo cuando una señal intenta abrir. |
+| El panel contaba distinto que el motor (huérfanas, p111) | Pantalla y motor usan la misma regla: función pura en Laravel (`evaluate`) con las mismas pruebas que la del motor. |
+| Paso nuevo del ciclo rompió dobles de prueba viejos (p111) | Al agregar un paso al ciclo de la cuenta, agregarlo a los dobles de `RealTrader` de las pruebas de orquestación; el motor tolera filas sin las columnas nuevas (`dict(acc).get`). |
+| Instrucciones del proyecto vacías en claude.ai | El dueño pega este documento completo en las instrucciones del proyecto; verificarlo al empezar cada sesión. |
 
 ---
 
 ## 9. Pendientes (orden sugerido)
 
-> **Próxima sesión:** la lista vigente es «Lo que falta de la auditoría» al final de
-> `docs/VALIDACION_AUDITORIA_13NOV.md` y los «Pendientes de decisión» de `docs/DECISIONES_DUENO.md`. Antes, confirmar
-> con el dueño que las instrucciones del proyecto en claude.ai ya son esta V7.5 (si no, pedirle que las reemplace).
+> **Próxima sesión:** empezar por «▶ Próxima sesión» al inicio de `docs/BITACORA.md` y los «Pendientes de decisión» de
+> `docs/DECISIONES_DUENO.md`. Antes, confirmar con el dueño que las instrucciones del proyecto en claude.ai son esta V7.6.
 
-1. **Del dueño:** nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43). Después, informe por config (backtest corregido + Paper real + búsqueda nueva).
-2. **SL/TP automáticos opcionales (D-45):** hechos en p92–p93 (SL y TP por separado, formulario, búsqueda y etiquetas). Falta: el dueño compara automático vs fijo en backtest.
-3. **Walk-forward real (D-38 3B):** maqueta primero.
-4. **Infraestructura:** `trading2-horizon` como `tr2`; revisión automática de lotes solapados; regenerar el volcado del esquema. Respaldo fuera del VPS: **descartado por el dueño** (D-48).
-5. **Pantallas con maqueta:** funding en Paper y Real, `cross` en la búsqueda, «promedio por moneda», separación maestra/config/suscripción, «código desactualizado».
-6. **Preventivo:** R-10 (D-16) — el libro de ejecuciones ya avisa un llenado parcial.
-7. Reescribir `docs/01–03` (hoy con avisos de vigencia arriba).
+1. **Del dueño:** comparar SL/TP automático vs fijo en backtest (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43).
+2. **Walk-forward real (D-38 3B):** boceto presentado el 24-nov; construir solo con su visto bueno.
+3. **Pantallas con boceto:** funding en Paper y Real, `cross` en la búsqueda, separación maestra/config/suscripción,
+   «código desactualizado».
+4. **Opcional:** base `tr2test` en el servidor para las pruebas Demo con base (el dueño no la quiso, D-65);
+   comprobaciones de TimescaleDB en el vigilante (solo lectura); botón de la exportación a Excel del backtest.
+5. **Preventivo:** R-10 (D-16). **Limpieza:** reescribir `docs/01–03`.
 
 ---
 
