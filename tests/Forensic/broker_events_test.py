@@ -276,14 +276,25 @@ class ReconcileConn(rp.FakeConn):
     async def fetch(self, sql, *a):
         return self.s.get('orphans', []) if "status = 'orphaned'" in sql else []
 
+    async def execute(self, sql, *a):
+        if 'INSERT INTO broker_events' in sql and a[2] in self.s.get('fail_events', ()):
+            raise RuntimeError('base caída simulada')
+        return await super().execute(sql, *a)
+
     async def fetchrow(self, sql, *a):
+        if "'manual_position_closed'" in sql:   # último aviso manual de la moneda (D-61)
+            return self.s.get('manual_last')
+        if 'FROM real_trades' in sql and self.s.get('bot_row'):
+            return {'id': 9}
         return None
 
     async def fetchval(self, sql, *a):
         if 'INSERT INTO real_trades' in sql:
             return 55
-        if "event = 'manual_position_ignored'" in sql:
-            return 1 if self.s.get('manual_seen') else None
+        if "event = 'manual_position_ignored'" in sql:   # consulta anterior a D-61 (moneda, lado y precio)
+            m = self.s.get('manual_last')
+            return 1 if m and m['event'] == 'manual_position_ignored' and m['side'] == a[2] \
+                and m.get('avg_price') == a[3] else None
         return await super().fetchval(sql, *a)
 
 
@@ -312,7 +323,7 @@ async def run_reconcile(s, open_trades, client, settle=True):
             return settle
 
         async def has_open_trade(self, *a):
-            return False
+            return bool(s.get('bot_has'))
 
     pool = ReconcilePool(s)
 
@@ -355,9 +366,72 @@ async def part_d():
     check('D4b: no se crea fila en real_trades ni se le pone SL/TP del bot',
           not any('INSERT INTO real_trades' in sql for sql, a in s['exec']) and not s.get('tpsl_calls')
           and (res.get('results') or {}).get('manual_ignored'), ((res.get('results') or {}).get('manual_ignored'), [sql[:40] for sql, a in s['exec']]))
-    s = {'exec': [], 'manual_seen': True}
-    await run_reconcile(s, [], SeqPositionClient([dict(rp.position(), side='Buy')]))
+    manual = dict(rp.position(), side='Buy')
+    price = str(manual.get('avgPrice') or manual.get('entryPrice') or '')
+    seen = {'event': 'manual_position_ignored', 'side': 'long', 'avg_price': price}
+    s = {'exec': [], 'manual_last': seen}
+    await run_reconcile(s, [], SeqPositionClient([manual]))
     check('D5: la misma posición manual en el siguiente ciclo -> sin aviso repetido', events(s) == [], events(s))
+
+    # C5-11 / D-61: una posición manual es la misma mientras siga abierta del mismo lado
+    s = {'exec': [], 'manual_last': seen}
+    await run_reconcile(s, [], SeqPositionClient([dict(manual, avgPrice='12345.5', size='0.5')]))
+    check('D6: se agregó a la misma manual (otro precio y tamaño) -> sin aviso repetido', events(s) == [], events(s))
+
+    s = {'exec': [], 'manual_last': seen}
+    await run_reconcile(s, [], SeqPositionClient([None]))
+    ev = events(s)
+    check('D7: la manual ya no está -> manual_position_closed con su moneda y lado',
+          [e[0] for e in ev] == ['manual_position_closed'] and ev[0][2].get('side') == 'long'
+          and ev[0][2].get('symbol') and ev[0][1] is None, ev)
+
+    s = {'exec': [], 'manual_last': {'event': 'manual_position_closed', 'side': 'long'}}
+    res = await run_reconcile(s, [], SeqPositionClient([manual]))
+    ev = events(s)
+    check('D8: nueva manual después de cerrarse, mismo lado y precio -> aviso nuevo',
+          [e[0] for e in ev] == ['manual_position_ignored'] and ev[0][2].get('avg_price') == price
+          and (res.get('results') or {}).get('manual_ignored'), ev)
+
+    s = {'exec': [], 'manual_last': seen}
+    await run_reconcile(s, [], SeqPositionClient([dict(manual, side='Sell')]))
+    ev = events(s)
+    check('D9: la manual pasó a otro lado entre conciliaciones -> cierre de la anterior y aviso de la nueva',
+          [(e[0], e[2].get('side')) for e in ev] == [('manual_position_closed', 'long'), ('manual_position_ignored', 'short')], ev)
+
+    s = {'exec': [], 'manual_last': seen, 'bot_has': True}
+    res = await run_reconcile(s, [], SeqPositionClient([manual]))
+    check('D10: la posición ahora es del bot -> la manual se da por cerrada; no se cuenta como manual',
+          [e[0] for e in events(s)] == ['manual_position_closed'] and not (res.get('results') or {}).get('manual_ignored'),
+          (events(s), res.get('results')))
+
+    s = {'exec': [], 'manual_last': seen, 'bot_row': True}
+    res = await run_reconcile(s, [], SeqPositionClient([manual]))
+    check('D10b: la posición tiene fila del bot en la cuenta (otra suscripción) -> no es manual: la manual se da por cerrada',
+          [e[0] for e in events(s)] == ['manual_position_closed'] and not (res.get('results') or {}).get('manual_ignored'),
+          (events(s), res.get('results')))
+
+    s = {'exec': [], 'manual_last': seen}
+    res = await run_reconcile(s, [], SeqPositionClient(['ERR']))
+    check('D11: error de Bybit -> «no sé»: no se da por cerrada', events(s) == []
+          and (res.get('results') or {}).get('errors'), (events(s), res.get('results')))
+
+    s = {'exec': [], 'manual_last': {'event': 'manual_position_closed', 'side': 'long'}}
+    await run_reconcile(s, [], SeqPositionClient([None]))
+    check('D12: ya cerrada y sigue sin posición -> sin aviso repetido', events(s) == [], events(s))
+
+    s = {'exec': [], 'manual_last': seen, 'fail_events': ('manual_position_closed',)}
+    await run_reconcile(s, [], SeqPositionClient([dict(manual, side='Sell')]))
+    check('D13: no se pudo registrar el cierre -> tampoco se avisa la nueva (se reintenta en la próxima)',
+          events(s) == [], events(s))
+
+    acts = getattr(api, 'manual_position_actions', None)
+    check('D14: regla pura (sin aviso previo, misma, cerrada, nueva, otro lado)', acts is not None
+          and acts(None, None, None) == [] and acts(None, None, 'long') == ['ignored']
+          and acts('manual_position_ignored', 'long', 'long') == []
+          and acts('manual_position_ignored', 'long', None) == ['closed']
+          and acts('manual_position_closed', 'long', 'long') == ['ignored']
+          and acts('manual_position_closed', 'long', None) == []
+          and acts('manual_position_ignored', 'long', 'short') == ['closed', 'ignored'])
 
 
 async def main():

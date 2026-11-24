@@ -20,7 +20,7 @@ from trading.real_trader import (RealTrader, BybitClient, CIRCUIT_BREAKER_THRESH
                                  close_trigger_reason, last_close_order_id, orphan_message, is_close_orphan)
 from trading.risk_manager import RiskManager
 from trading import execution_ledger
-from trading.broker_events import emit_event
+from trading.broker_events import emit_event, manual_position_actions
 from trading.bybit_client import api_permission_problems
 
 load_dotenv()
@@ -586,8 +586,9 @@ async def reconcile(
                     await emit_event(pool, account.id, 'reconcile_discarded', trade['id'], symbol=symbol)
 
             # 3. Posiciones en Bybit sin registro en DB: abiertas a mano (las del bot siempre tienen fila, desde
-            #    pending_open). D-18 (dueño, 19-nov): se IGNORAN — no se adoptan ni se gestionan. Se avisa una vez por
-            #    posición (símbolo, lado y precio de entrada). Mientras exista, el bot no abre en esa moneda (D-19,
+            #    pending_open). D-18 (dueño, 19-nov): se IGNORAN — no se adoptan ni se gestionan. D-61 (C5-11): un
+            #    aviso al aparecer cada posición manual y otro cuando ya no está; es la misma mientras siga abierta del
+            #    mismo lado (aunque cambie precio o tamaño). Mientras exista, el bot no abre en esa moneda (D-19,
             #    check_new_signals); al cerrarse, abre solo si la señal sigue vigente.
             symbols_checked = set()
             for sub in account.subscriptions:
@@ -596,35 +597,43 @@ async def reconcile(
                 symbols_checked.add(sub.symbol)
                 try:
                     position = await client.get_open_position(sub.symbol)
-                except BybitAPIError as e:
+                except BybitAPIError as e:   # «no sé»: no se deduce que la manual se cerró
                     logger.error(f"[RECONCILE] {sub.symbol} error consultando Bybit: {e}")
                     results['errors'].append({'account_id': account.id, 'symbol': sub.symbol, 'error': str(e)})
                     continue
-                if not position or float(position.get('size', 0) or 0) <= 0:
-                    continue
-                if await trader.has_open_trade(sub.subscription_id, sub.symbol):
-                    continue
+                side_now = None
+                if position and float(position.get('size', 0) or 0) > 0 \
+                        and not await trader.has_open_trade(sub.subscription_id, sub.symbol):
+                    async with pool.acquire() as conn:
+                        existing = await conn.fetchrow(
+                            "SELECT id FROM real_trades WHERE broker_account_id=$1 AND symbol=$2 AND status IN ('open','pending_open','pending_close','orphaned')",
+                            account.id, sub.symbol
+                        )
+                    if not existing:
+                        side_now = 'long' if position.get('side', '') == 'Buy' else 'short'
                 async with pool.acquire() as conn:
-                    existing = await conn.fetchrow(
-                        "SELECT id FROM real_trades WHERE broker_account_id=$1 AND symbol=$2 AND status IN ('open','pending_open','pending_close','orphaned')",
-                        account.id, sub.symbol
-                    )
-                if existing:
-                    continue
-                pos_size = float(position.get('size', 0))
-                db_side = 'long' if position.get('side', '') == 'Buy' else 'short'
-                avg_price = str(position.get('avgPrice') or position.get('entryPrice') or '')
-                async with pool.acquire() as conn:
-                    already = await conn.fetchval(
-                        "SELECT 1 FROM broker_events WHERE broker_account_id = $1 AND event = 'manual_position_ignored' "
-                        "AND data->>'symbol' = $2 AND data->>'side' = $3 AND data->>'avg_price' = $4 LIMIT 1",
-                        account.id, sub.symbol, db_side, avg_price)
-                if not already:
-                    logger.warning(f"[RECONCILE] {sub.symbol} {db_side} {pos_size} @ {avg_price}: posición abierta a mano "
-                                   f"en Bybit (cuenta {account.id}); se ignora (D-18)")
-                    await emit_event(pool, account.id, 'manual_position_ignored', None, symbol=sub.symbol,
-                                     side=db_side, avg_price=avg_price, size=pos_size)
-                results.setdefault('manual_ignored', []).append({'symbol': sub.symbol, 'side': db_side, 'size': pos_size})
+                    last = await conn.fetchrow(
+                        "SELECT event, data->>'side' AS side FROM broker_events WHERE broker_account_id = $1 "
+                        "AND event IN ('manual_position_ignored', 'manual_position_closed') AND data->>'symbol' = $2 "
+                        "ORDER BY id DESC LIMIT 1",
+                        account.id, sub.symbol)
+                last_event, last_side = (last['event'], last['side']) if last else (None, None)
+                for action in manual_position_actions(last_event, last_side, side_now):
+                    if action == 'closed':
+                        logger.info(f"[RECONCILE] {sub.symbol} {last_side}: la posición manual ya no está (cuenta {account.id})")
+                        if not await emit_event(pool, account.id, 'manual_position_closed', None,
+                                                symbol=sub.symbol, side=last_side):
+                            break   # sin el registro del cierre no se avisa la nueva: se reintenta en la próxima
+                    else:
+                        pos_size = float(position.get('size', 0))
+                        avg_price = str(position.get('avgPrice') or position.get('entryPrice') or '')
+                        logger.warning(f"[RECONCILE] {sub.symbol} {side_now} {pos_size} @ {avg_price}: posición abierta a "
+                                       f"mano en Bybit (cuenta {account.id}); se ignora (D-18)")
+                        await emit_event(pool, account.id, 'manual_position_ignored', None, symbol=sub.symbol,
+                                         side=side_now, avg_price=avg_price, size=pos_size)
+                if side_now is not None:
+                    results.setdefault('manual_ignored', []).append(
+                        {'symbol': sub.symbol, 'side': side_now, 'size': float(position.get('size', 0))})
 
         for account in request.accounts:
             try:   # C5-07: un error inesperado en una cuenta no deja sin conciliar a las demás

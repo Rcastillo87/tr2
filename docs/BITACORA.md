@@ -21,7 +21,13 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · C5-08: un solo criterio (neto) para los números de Real (p105, D-60) — 23-nov
+### Ciclo 5 · C5-11: posiciones manuales, un aviso por posición y aviso de cierre (p106, D-61) — 24-nov
+- **Validado:** el aviso se deduplicaba por moneda + lado + precio (una manual nueva al mismo precio no avisaba; agregar
+  a una abierta repetía el aviso) y no se registraba el cierre. Lectura: 0 posiciones manuales en la historia: latente.
+- **Fix:** `manual_position_actions` + evento `manual_position_closed`. Vuelta atrás: `p106_revertir.sh`.
+- **Prueba:** `broker_events_test` D5–D14 y D10b; código anterior 7 FALLOS; mutaciones 10/10; regresión 78 + 33 en TODO OK.
+
+### Ciclo 5 · C5-08: un solo criterio (neto) para los números de Real (p105, D-60) — 23-nov · instalado `c9cb836`
 - **Validado:** filtro con el bruto y KPI con el neto; salto a bruto si la suma neta da 0; Dashboard con el bruto.
   Lectura: 13 cerradas sin diferencias de signo: latente.
 - **Fix:** `App\Support\RealPnl` en Trading y Dashboard. Vuelta atrás: `p105_revertir.sh`.

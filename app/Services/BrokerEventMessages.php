@@ -140,6 +140,13 @@ final class BrokerEventMessages
                     . ': hay una posición abierta en Bybit que no abrió TR2. El bot no la gestiona (sin SL/TP del bot) '
                     . 'y no abre en esa moneda mientras exista.',
             ],
+            'manual_position_closed' => [
+                'level' => 'info', 'mode' => 'notify', 'key' => null,
+                'title' => 'Posición manual cerrada',
+                'body'  => "{$account} · " . ($data['symbol'] ?? '') . $side
+                    . ': la posición abierta a mano en Bybit ya no está. El bot vuelve a poder abrir en esa moneda, '
+                    . 'solo si la señal de apertura sigue vigente.',
+            ],
             'reconcile_discarded' => [
                 'level' => 'info', 'mode' => 'notify', 'key' => null,
                 'title' => 'Apertura descartada',

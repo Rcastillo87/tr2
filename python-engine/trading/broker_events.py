@@ -29,12 +29,31 @@ EVENTS = frozenset({
     'reconcile_adopted',    # posición de Bybit adoptada (sin registro o huérfana)
     'reconcile_discarded',  # apertura huérfana descartada: nunca llegó a Bybit
     'manual_position_ignored',  # posición abierta a mano en Bybit: el bot no la adopta ni la gestiona (D-18)
+    'manual_position_closed',   # C5-11: esa posición manual ya no está (el bot puede volver a abrir, D-19)
     'protection_failed',    # Bybit no aceptó el SL/TP de la estrategia: la posición sigue con el stop provisional
     'protection_restored',  # el SL/TP de la estrategia quedó instalado en Bybit
     'api_permissions_bad',  # la clave no tiene los permisos que TR2 exige (o tiene retiros); la cuenta sigue operando
     'api_permissions_ok',   # la clave vuelve a tener los permisos correctos
     'executions_mismatch',  # C5-01: 24 h después del cierre, lo que llenó Bybit no cuadra con lo registrado
 })
+
+
+MANUAL_EVENTS = ('manual_position_ignored', 'manual_position_closed')
+
+
+def manual_position_actions(last_event: str | None, last_side: str | None, side_now: str | None) -> list[str]:
+    """C5-11 (D-61): avisos de posición manual que corresponden en esta conciliación, en orden.
+
+    last_event / last_side: el último aviso manual de esa cuenta y moneda (None si nunca hubo). side_now: lado de la
+    posición manual que hay ahora en Bybit, o None si no hay (sin posición, o la posición es del bot). Una posición
+    manual es «la misma» mientras siga abierta del mismo lado, aunque cambie su precio o tamaño.
+    """
+    was_open = last_event == 'manual_position_ignored'
+    if side_now is None:
+        return ['closed'] if was_open else []
+    if was_open and last_side == side_now:
+        return []
+    return (['closed'] if was_open else []) + ['ignored']
 
 
 async def emit_event(pool, account_id: int, event: str, trade_id: int | None = None, **data) -> bool:

@@ -16,15 +16,31 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 17 | C5-08 | P2 | PnL bruto / neto en estadísticas Real | Implementado en p105 (D-60) |
-| 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Pendiente de validar |
+| 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Implementado en p106 (D-61) |
 | 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Pendiente de validar |
 | 20 | C5-13 | P2 | Infraestructura heredada | Pendiente de validar (respaldo fuera del VPS: descartado, D-48) |
 | — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Pendientes (protocolo por preparar) |
 
 ## Validados (con fix implementado o instalado)
 
-### C5-08 · PnL bruto y neto en las estadísticas de Real (P2) — **Defecto pequeño de pantalla (latente)** · Implementado en p105 (D-60)
+### C5-11 · Deduplicación y trazabilidad de posiciones manuales (P2) — **Defecto pequeño (latente)** · Implementado en p106 (D-61)
+- **Código:** el aviso `manual_position_ignored` (D-18: «se avisa una vez por posición») se deduplicaba por moneda +
+  lado + precio de entrada, sin fin: una manual nueva del mismo lado y al mismo precio exacto que otra anterior ya
+  cerrada no avisaba; agregar a una manual abierta cambiaba su precio promedio y repetía el aviso. No había registro de
+  que la manual se cerró (D-19: desde ahí el bot puede volver a abrir en esa moneda).
+- **Servidor (lectura 24-nov 04:50 UTC):** 0 avisos de posición manual en la historia y 0 menciones en `engine.log`:
+  nunca hubo una posición manual (nadie opera a mano, contexto de D-19). La regla D-18 / D-19 sigue cumpliéndose.
+- **Fix (D-61, «Arreglar y avisar al cerrarse» 24-nov):** regla pura `broker_events.manual_position_actions` con el
+  último aviso manual de la cuenta y moneda: una manual es la misma mientras siga abierta del mismo lado (aunque cambie
+  precio o tamaño); cuando ya no está (sin posición, o la posición ahora es del bot) → aviso nuevo
+  `manual_position_closed` («Posición manual cerrada», info); la siguiente manual avisa de nuevo. Un error de Bybit no
+  la da por cerrada; si no se puede registrar el cierre no se avisa la nueva (se reintenta). Sin cambio de base: la
+  consulta usa el índice por cuenta de `broker_events`.
+- **Prueba:** `broker_events_test` D5–D14 (+ D10b), `broker_event_messages_test` (texto del aviso nuevo); código
+  anterior 7 FALLOS; mutaciones 10/10 (una undécima, la fila del bot en otra suscripción, sobrevivía: se agregó D10b);
+  regresión 78 Python + 33 PHP en TODO OK.
+
+### C5-08 · PnL bruto y neto en las estadísticas de Real (P2) — **Defecto pequeño de pantalla (latente)** · Instalado en p105 (`c9cb836`, D-60)
 - **Código:** el filtro «Ganadoras / Perdedoras» de Trading usaba el bruto (`pnl`) y los KPI el neto; el total pasaba a
   la suma bruta si la neta daba exactamente 0 (`sum('net_pnl') ?: sum('pnl')`); una operación sin neto contaba como 0
   en ganancia / pérdida y con su bruto al contar ganadoras. El Dashboard contaba las ganadoras de Real con el bruto.
@@ -303,3 +319,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-05 | Sin arreglo pendiente: no queda código viejo de VWAP Tendencia en ningún lado (estrategia, 11 configs, 11 backtests, operaciones abiertas) | — | Lectura 23-nov 23:23 UTC: todo con la huella corregida `2cf17fbe`; 0 código viejo |
 | C5-03 | Sugerencia rechazada (D-58): se evalúan los 24 meses; pantalla con filtro ≥ +5 %, «Retorno 24 m» antes de los tramos y textos de lo que se evalúa | p103 `0786a92` | 72 búsquedas / 1.287 filas guardadas, filtradas al mostrar |
 | C5-06 | El comparador Paper vs backtest dice qué versión compara y avisa si la config cambió después (D-59) | p104 `fbc71cf` | Regresión en el servidor (herramienta manual) |
+| C5-08 | Un solo criterio (neto; bruto si falta) para filtro, KPI y curva de Real y el Dashboard (D-60) | p105 `c9cb836` | 14 cerradas, neto +2.942,98, 7 ganadoras con el criterio nuevo |
