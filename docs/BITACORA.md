@@ -21,7 +21,16 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · C5-11: posiciones manuales, un aviso por posición y aviso de cierre (p106, D-61) — 24-nov
+### Ciclo 5 · C5-12: rótulo «peor moneda» en el DD del consolidado (p107, D-62) — 24-nov
+- **Validado:** el DD del CONSOLIDADO es el peor de las monedas (D-38 4A, D-41) con el mismo encabezado que las monedas.
+  Excel refutado (es por moneda; la ruta no está enlazada en ninguna pantalla). Sugerencia aceptada con boceto.
+- **Cambio:** solo texto en `results.blade.php`. Vuelta atrás: `p107_revertir.sh`.
+- **Prueba:** `backtest_drawdown_columns_static_test` +7; vista anterior 4 FALLOS; mutaciones 8/8; regresión 78 + 33 en TODO OK.
+- **Instalador:** `view:cache` puede terminar bien con un PHP compilado inválido (lo mostró la simulación); desde p107 se
+  revisa además cada vista compilada con `php -l` y, si alguna falla, se vuelve atrás. Los instaladores anteriores solo
+  miraban el código de salida (sus vistas cargan bien en producción).
+
+### Ciclo 5 · C5-11: posiciones manuales, un aviso por posición y aviso de cierre (p106, D-61) — 24-nov · instalado `c7f9090`
 - **Validado:** el aviso se deduplicaba por moneda + lado + precio (una manual nueva al mismo precio no avisaba; agregar
   a una abierta repetía el aviso) y no se registraba el cierre. Lectura: 0 posiciones manuales en la historia: latente.
 - **Fix:** `manual_position_actions` + evento `manual_position_closed`. Vuelta atrás: `p106_revertir.sh`.

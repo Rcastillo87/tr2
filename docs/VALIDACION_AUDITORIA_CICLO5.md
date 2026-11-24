@@ -16,14 +16,27 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 18 | C5-11 | P2 | Deduplicación de posiciones manuales | Implementado en p106 (D-61) |
-| 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Pendiente de validar |
+| 19 | C5-12 | P2 | Rótulo del drawdown consolidado | Implementado en p107 (D-62) |
 | 20 | C5-13 | P2 | Infraestructura heredada | Pendiente de validar (respaldo fuera del VPS: descartado, D-48) |
 | — | DEMO-01..12 | — | Pruebas de aceptación en Bybit Demo | Pendientes (protocolo por preparar) |
 
 ## Validados (con fix implementado o instalado)
 
-### C5-11 · Deduplicación y trazabilidad de posiciones manuales (P2) — **Defecto pequeño (latente)** · Implementado en p106 (D-61)
+### C5-12 · Claridad del drawdown consolidado del backtest (P2) — **Excel: refutado · pantalla: sugerencia aceptada** · Implementado en p107 (D-62)
+- **Código:** en la fila CONSOLIDADO, «DD cerrado» y «DD flotante» son el peor DD entre las monedas
+  (`BacktestingController`, Fase 12 · 4A); cada moneda se simula sola (D-41). El número es el decidido; el encabezado
+  («Peor caída del capital…») es el mismo de las monedas y se puede leer como el DD de una cartera conjunta.
+- **Excel: refutado.** `BacktestMonthlyExport` exige `monthly_breakdown` (resultado de una moneda): su DD es el de esa
+  moneda. Además ninguna pantalla enlaza la ruta `backtesting.export-excel` (hallazgo aparte, sin cambio).
+- **Clasificación:** sugerencia (no contradice ninguna decisión ni da un dato equivocado): se presentó con boceto y el
+  dueño la aceptó («Sí, como el boceto», 24-nov).
+- **Cambio (D-62):** con más de una moneda, bajo esos dos valores «peor moneda», la explicación al pasar el mouse y una
+  nota bajo la tabla de resumen («el peor DD entre las monedas. Cada moneda se simula sola, así que no es la caída de
+  una cartera con todas a la vez»). Con una sola moneda, sin cambio. Ningún número cambia.
+- **Prueba:** `backtest_drawdown_columns_static_test` +7 (C5-12); vista anterior 4 FALLOS; mutaciones 8/8; las 4 filas
+  siguen con 13 celdas; regresión 78 Python + 33 PHP en TODO OK.
+
+### C5-11 · Deduplicación y trazabilidad de posiciones manuales (P2) — **Defecto pequeño (latente)** · Instalado en p106 (`c7f9090`, D-61)
 - **Código:** el aviso `manual_position_ignored` (D-18: «se avisa una vez por posición») se deduplicaba por moneda +
   lado + precio de entrada, sin fin: una manual nueva del mismo lado y al mismo precio exacto que otra anterior ya
   cerrada no avisaba; agregar a una manual abierta cambiaba su precio promedio y repetía el aviso. No había registro de
@@ -320,3 +333,4 @@ producción (fix preventivo). Hay 3 `protection_failed` (19-nov: el caso 34040 d
 | C5-03 | Sugerencia rechazada (D-58): se evalúan los 24 meses; pantalla con filtro ≥ +5 %, «Retorno 24 m» antes de los tramos y textos de lo que se evalúa | p103 `0786a92` | 72 búsquedas / 1.287 filas guardadas, filtradas al mostrar |
 | C5-06 | El comparador Paper vs backtest dice qué versión compara y avisa si la config cambió después (D-59) | p104 `fbc71cf` | Regresión en el servidor (herramienta manual) |
 | C5-08 | Un solo criterio (neto; bruto si falta) para filtro, KPI y curva de Real y el Dashboard (D-60) | p105 `c9cb836` | 14 cerradas, neto +2.942,98, 7 ganadoras con el criterio nuevo |
+| C5-11 | Posiciones manuales: un aviso por posición y aviso «Posición manual cerrada» (D-61) | p106 `c7f9090` | 0 posiciones manuales en la historia. Falta DEMO con una manual abierta y cerrada |

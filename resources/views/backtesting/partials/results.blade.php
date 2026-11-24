@@ -27,6 +27,8 @@
     $allMonths = array_keys($allMonths); sort($allMonths);
 
     $aggGlobal = $result['aggregate_metrics'] ?? [];
+    // C5-12 (D-62): el DD del consolidado es el peor de las monedas (cada una se simula sola, D-41), no el de una cartera
+    $ddConsolidatedNote = 'DD del consolidado = el peor DD entre las monedas. Cada moneda se simula sola, así que no es la caída de una cartera con todas a la vez.';
     $monthlyTotals = [];
     foreach($bySymbol as $data) {
         foreach($data['monthly'] as $m) {
@@ -297,8 +299,8 @@
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($aggGlobal['total_return_pct'] ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         {{ number_format($aggGlobal['total_return_pct'] ?? 0, 2) }}%
                     </td>
-                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($aggGlobal['max_drawdown_pct'] ?? null) }}</td>
-                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);">{{ $fmtDd($aggGlobal['max_drawdown_floating_pct'] ?? null) }}</td>
+                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);"@if($isMulti) title="{{ $ddConsolidatedNote }}"@endif>{{ $fmtDd($aggGlobal['max_drawdown_pct'] ?? null) }}@if($isMulti)<div class="font-sans font-normal text-[10px]" style="color:var(--color-neutral);">peor moneda</div>@endif</td>
+                    <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:var(--color-text-muted);"@if($isMulti) title="{{ $ddConsolidatedNote }}"@endif>{{ $fmtDd($aggGlobal['max_drawdown_floating_pct'] ?? null) }}@if($isMulti)<div class="font-sans font-normal text-[10px]" style="color:var(--color-neutral);">peor moneda</div>@endif</td>
                     <td class="px-3 py-2 text-right font-mono font-bold whitespace-nowrap" style="color:{{ ($avgGlobal ?? 0) >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                         {{ number_format($avgGlobal ?? 0, 2) }}%
                     </td>
@@ -405,6 +407,9 @@
                 @endif
                 </tbody>
         </table>
+        @if($isMulti)
+            <p class="px-4 py-2 text-[11px]" style="color:var(--color-text-muted);"><span style="color:var(--color-neutral);">DD del consolidado:</span> {{ \Illuminate\Support\Str::after($ddConsolidatedNote, 'DD del consolidado = ') }}</p>
+        @endif
     </div>
 
     {{-- TABLA 2: Desglose Mensual --}}

@@ -6,6 +6,8 @@
  * - CONSOLIDADO = el peor drawdown entre las monedas; se guarda con el backtest para la fila GUARDADO.
  * - Backtests guardados antes de p75 no traen el dato: se muestra «—», nunca 0.
  * - El Excel exportado trae la fila «Max drawdown flotante (%)».
+ * - C5-12 (D-62): con más de una moneda, el DD del CONSOLIDADO dice «peor moneda», lleva la explicación al pasar el
+ *   mouse y una nota bajo la tabla (no es el DD de una cartera conjunta, D-41). Con una sola moneda, sin rótulo.
  * PHP puro, sin Laravel. Uso: cd <raíz del proyecto> && php tests/Forensic/backtest_drawdown_columns_static_test.php
  */
 declare(strict_types=1);
@@ -86,6 +88,32 @@ $check('Excel: fila «Max drawdown flotante (%)» después de «Max drawdown (%)
 $e = file_get_contents($root . '/python-engine/backtesting/engine.py');
 $check("motor: metrics['max_drawdown_floating_pct'] se calcula (llega como aggregate_metrics)",
     str_contains($e, "metrics['max_drawdown_floating_pct'] = "));
+
+// ── C5-12 (D-62): rótulo del DD consolidado ──
+$note = 'DD del consolidado = el peor DD entre las monedas. Cada moneda se simula sola, así que no es la caída de una cartera con todas a la vez.';
+$check('C5-12: la explicación está definida una vez con el texto aprobado',
+    substr_count($v, "\$ddConsolidatedNote = '" . $note . "';") === 1);
+preg_match('/CONSOLIDADO<\/td>(.*?)<\/tr>/s', $t1, $cr);
+$cons = $cr[1] ?? '';
+$cell = fn (string $k) => '@if($isMulti) title="{{ $ddConsolidatedNote }}"@endif>{{ $fmtDd($aggGlobal[\'' . $k . '\'] ?? null) }}'
+    . '@if($isMulti)<div class="font-sans font-normal text-[10px]" style="color:var(--color-neutral);">peor moneda</div>@endif</td>';
+$check('C5-12: CONSOLIDADO: DD cerrado y flotante con «peor moneda» y la explicación al pasar el mouse, solo con varias monedas',
+    str_contains($cons, $cell('max_drawdown_pct')) && str_contains($cons, $cell('max_drawdown_floating_pct')));
+$check('C5-12: «peor moneda» solo en esas dos celdas (no en moneda, GUARDADO ni COMPARATIVO)',
+    substr_count($t1, 'peor moneda') === 2 && substr_count($cons, 'peor moneda') === 2);
+$tail = strrpos($t1, '</table>') !== false ? substr($t1, strrpos($t1, '</table>')) : '';
+$check('C5-12: nota bajo la tabla de resumen, solo con varias monedas',
+    preg_match('/<\/table>\s*@if\(\$isMulti\)\s*<p\b[^>]*>.*?DD del consolidado:<\/span> \{\{ \\\\Illuminate\\\\Support\\\\Str::after\(\$ddConsolidatedNote, \'DD del consolidado = \'\) \}\}<\/p>\s*@endif/s', $tail) === 1, $tail);
+$after = substr($note, strpos($note, 'DD del consolidado = ') + strlen('DD del consolidado = '));
+$check('C5-12: la nota dice «el peor DD entre las monedas» y que no es una cartera conjunta',
+    str_starts_with($after, 'el peor DD entre las monedas.') && str_contains($after, 'no es la caída de una cartera'), $after);
+// Directivas como las reconoce Blade (\B@): todas las @if($isMulti) nuevas se compilan y quedan balanceadas
+preg_match_all('/\B@(if|endif)\b/', $t1, $dm);
+$check('C5-12: TABLA 1 con @if / @endif balanceados',
+    count(array_keys($dm[1], 'if')) === count(array_keys($dm[1], 'endif')), array_count_values($dm[1]));
+$check('C5-12: el número no cambia: CONSOLIDADO sigue con los valores del controlador (peor de las monedas)',
+    substr_count($cons, "\$fmtDd(\$aggGlobal['max_drawdown_pct'] ?? null)") === 1
+    && substr_count($cons, "\$fmtDd(\$aggGlobal['max_drawdown_floating_pct'] ?? null)") === 1);
 
 echo $fails === 0 ? "TODO OK\n" : "FALLAS: $fails\n";
 exit($fails === 0 ? 0 : 1);
