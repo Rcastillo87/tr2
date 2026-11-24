@@ -21,7 +21,16 @@
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
 
-### Ciclo 5 · DEMO: pruebas de aceptación en Bybit Demo, parte Bybit (p109, D-65) — 24-nov
+### Ciclo 5 · DEMO: corrección del script de Demo (p110) — 24-nov
+- **Primera corrida en el VPS (cuenta 11, ADAUSDT):** DEMO-02 FALLA y nada más se probó; sin posición abierta. Causa: el
+  script usaba el lote mínimo (1 ADA ≈ 0,65 USDT) y Bybit exige además un valor mínimo por orden (5 USDT); la orden se
+  rechazó y la simulación de «respuesta perdida» tapaba el rechazo. Defecto del script, no del bot (sus órdenes reales
+  superan ese mínimo). Tampoco guardaba la evidencia al detenerse a mitad.
+- **Corrección:** cantidad = la mínima que Bybit acepta (lote y `minNotionalValue`, +20 %); la respuesta solo se «pierde»
+  si Bybit aceptó la orden (si no, se ve el rechazo y su motivo); evidencia siempre. Verificado contra el Bybit simulado
+  con el valor mínimo: la versión anterior reproduce el fallo del VPS; la nueva, TODO OK.
+
+### Ciclo 5 · DEMO: pruebas de aceptación en Bybit Demo, parte Bybit (p109, D-65) — 24-nov · instalado `be9296a`
 - **Decisión:** sin base de pruebas en el servidor; desde el VPS solo contra Bybit Demo (ADAUSDT, cantidad mínima).
 - **Script:** `tests/Forensic/demo_c5_bybit.py` (DEMO-01, 02, 03, 05, 06, 09, 10 con el código real del bot; sin base:
   `asyncpg` bloqueado). Las partes con base: `real_unresolved_test`, `risk_limits_test`, `real_recovery_test`,

@@ -16,7 +16,7 @@ provocar a voluntad (respuesta perdida, Bybit sin responder, cuenta en Hedge) se
 Las partes con base de datos (DEMO-04, 07, 08, 11, 12 y la adopción de 01/05) las cubren real_unresolved_test,
 risk_limits_test, real_recovery_test y real_reconcile_visibility_test.
 
-Seguridad: SOLO api-demo.bybit.com; cantidad mínima; aborta si ya hay posición o órdenes en el símbolo; cierra siempre
+Seguridad: SOLO api-demo.bybit.com; cantidad mínima que Bybit acepta (lote mínimo y valor mínimo de la orden, ~6 USDT); aborta si ya hay posición o órdenes en el símbolo; cierra siempre
 (también si algo falla); NO se conecta a ninguna base (bloqueado en el arranque). Las claves llegan por variables de
 entorno (TR2_K / TR2_S) y nunca se imprimen ni se guardan. Evidencia (respuestas de Bybit y resultados, sin claves ni
 firmas) en un JSON fuera del proyecto.
@@ -27,6 +27,7 @@ Uso (desde python-engine/):
 """
 import asyncio
 import json
+import math
 import os
 import sys
 import time
@@ -105,6 +106,22 @@ async def wait_size(c, symbol, want, secs=15):
     return size
 
 
+async def min_order_qty(c, symbol) -> tuple[float, float]:
+    """La cantidad más chica que Bybit acepta: el lote mínimo y el valor mínimo de la orden (minNotionalValue, 5 USDT en
+    perpetuos), con un 20 % de margen por si el precio se mueve. Se redondea hacia arriba al paso de la moneda."""
+    qty, step = await c.get_min_qty(symbol)
+    async with httpx.AsyncClient(timeout=10) as h:
+        info = (await h.get(f'{c.base_url}/v5/market/instruments-info',
+                            params={'category': 'linear', 'symbol': symbol})).json()
+    items = (info.get('result') or {}).get('list') or []
+    min_value = float(((items[0].get('lotSizeFilter') or {}).get('minNotionalValue') or 5) if items else 5)
+    price = await c.get_market_price(symbol)
+    if price:
+        need = min_value * 1.2 / price
+        qty = max(qty, math.ceil(need / step - 1e-9) * step)
+    return round(qty, 8), step
+
+
 async def open_orders(c, symbol):
     data = (await c._signed_get('/v5/order/realtime', {'category': 'linear', 'symbol': symbol})).json()
     return (data.get('result') or {}).get('list') or []
@@ -125,8 +142,9 @@ async def main() -> int:
         sys.exit(f'ABORTADO: ya hay una posición abierta en {symbol}; no se toca')
     if await open_orders(c, symbol):
         sys.exit(f'ABORTADO: hay órdenes abiertas en {symbol}; no se toca')
-    qty, step = await c.get_min_qty(symbol)
-    print(f'{symbol}: cantidad mínima {qty} (paso {step}) en {c.base_url}\n')
+    qty, step = await min_order_qty(c, symbol)
+    evidence['cantidad'] = qty
+    print(f'{symbol}: cantidad {qty} (paso {step}; la mínima que Bybit acepta) en {c.base_url}\n')
 
     try:
         # ── DEMO-02: la respuesta de la apertura se pierde (Bybit sí la recibió) ──
@@ -134,15 +152,17 @@ async def main() -> int:
 
         async def post_lost(path, body, timeout=15):
             r = await real_post(path, body, timeout)          # la orden llega a Bybit…
-            if path == '/v5/order/create' and lost['n'] == 0:
-                lost['n'] += 1
-                raise httpx.ReadTimeout('respuesta perdida (simulado)')   # …pero la respuesta no llega al bot
+            if path == '/v5/order/create' and lost['n'] == 0 and r.json().get('retCode') == 0:
+                lost['n'] += 1                                # …la acepta, pero la respuesta no llega al bot
+                raise httpx.ReadTimeout('respuesta perdida (simulado)')
             return r
 
         c._signed_post = post_lost
         res = await c.place_market_order(symbol, 'Buy', qty)
         c._signed_post = real_post
         size = await wait_size(c, symbol, qty)
+        check('DEMO-02', 'Bybit aceptó la orden y su respuesta se perdió (simulado)', lost['n'] == 1,
+              {'motivo_rechazo': c.last_order_error} if lost['n'] == 0 else None)
         check('DEMO-02', 'respuesta perdida: el bot recupera la orden por su orderLinkId',
               bool(res and res.get('orderId') and not res.get('unconfirmed')), res)
         check('DEMO-02', 'la posición NO se duplicó (una sola orden llenada)', abs(size - qty) < 1e-12, size)
@@ -262,14 +282,23 @@ async def main() -> int:
         final = await wait_size(c, symbol, 0.0)
         check('CIERRE', 'posición de prueba cerrada', final == 0.0, final)
 
+    return 1 if fails else 0
+
+
+def save_evidence() -> None:
     evidence['fin_utc'] = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
     out = os.getenv('TR2_DEMO_OUT') or f"/tmp/tr2_demo_c5_{time.strftime('%Y%m%d_%H%M%S', time.gmtime())}.json"
     with open(out, 'w', encoding='utf-8') as f:
         json.dump(evidence, f, ensure_ascii=False, indent=1, default=str)
     print(f"\nEvidencia: {out} ({len(evidence['bybit'])} llamadas a Bybit)")
-    print(f"RESULTADO: {'TODO OK' if fails == 0 else f'{fails} FALLO(S)'}")
-    return 1 if fails else 0
 
 
 if __name__ == '__main__':
-    sys.exit(asyncio.run(main()))
+    code = 1
+    try:
+        code = asyncio.run(main())
+    finally:
+        if evidence['bybit']:
+            save_evidence()
+    print(f"RESULTADO: {'TODO OK' if fails == 0 and code == 0 else f'{fails} FALLO(S)'}")
+    sys.exit(code)
