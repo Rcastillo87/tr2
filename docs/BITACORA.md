@@ -7,6 +7,7 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
+**Ciclo 6 en curso (24-nov):** estado en `docs/VALIDACION_AUDITORIA_CICLO6.md` (orden del informe: C6-03 → C6-01 → C6-02 → C6-05 → C6-07 → C6-06 → C6-04).
 **Ciclo 5 cerrado (24-nov):** los 20 puntos del informe + C5-21 validados, instalados y verificados; pruebas Demo de la
 parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CICLO5.md`; reglas: `docs/DECISIONES_DUENO.md`.
 1. **Del dueño:** comparar en backtest SL/TP automático vs fijo (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65
@@ -25,6 +26,15 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 ---
 
 ## 2026-11-13 (Bogotá) — Validación del Informe Maestro de Auditoría (13-nov)
+
+## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
+
+### Ciclo 6 · C6-03: circuit breaker también para operaciones dudosas vivas (p114, D-68) — 24-nov
+- **Validado:** el circuit breaker solo revisaba `open` (y elegía cuentas con `open`/`pending_close`): una `pending_open`
+  vieja u `orphaned` viva quedaba fuera de la segunda red. Lectura: nunca hubo operaciones dudosas (latente).
+- **Fix:** `_circuit_breaker_unresolved` + `identify_unresolved_position` (cierra solo con certeza; si no, aviso
+  `unresolved_unprotected`); el job elige también cuentas con dudosas. Vuelta atrás: `p114_revertir.sh`.
+- **Prueba:** `circuit_breaker_unresolved_test.py` (nueva); código anterior 15 FALLOS; mutaciones 11/11; regresión 80 + 35.
 
 ### Cierre del ciclo 5 (24-nov) — parches instalados y verificados
 | Parche | SHA | Punto | Qué cambió | Decisión |

@@ -34,8 +34,15 @@ class CircuitBreakerMaxLossJob implements ShouldQueue
     public function handle(): void
     {
         // Toda cuenta con posiciones abiertas, activa o pausada y con o sin suscripciones: es la red de
-        // seguridad de las posiciones, no de las entradas.
-        $accounts = BrokerAccount::whereExists(fn ($e) => RealTradingTickJob::openRealTrades($e))->get();
+        // seguridad de las posiciones, no de las entradas. C6-03 (D-68): también las que tienen una operación en
+        // estado dudoso (pending_open viejo u orphaned), que puede estar viva en Bybit.
+        $accounts = BrokerAccount::whereExists(fn ($e) => RealTradingTickJob::openRealTrades($e))
+            ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('real_trades')
+                ->whereColumn('real_trades.broker_account_id', 'broker_accounts.id')
+                ->where(fn ($q) => $q->where('real_trades.status', 'orphaned')   // misma regla que RealTrade::scopeUnresolved
+                    ->orWhere(fn ($p) => $p->where('real_trades.status', 'pending_open')
+                        ->where('real_trades.created_at', '<', now()->subMinutes(\App\Models\RealTrade::PENDING_OPEN_STALE_MIN)))))
+            ->get();
 
         if ($accounts->isEmpty()) {
             return;

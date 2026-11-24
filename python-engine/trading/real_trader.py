@@ -88,6 +88,8 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 # Límites de riesgo: el mes se cuenta en hora de Bogotá
 RISK_TZ = ZoneInfo('America/Bogota')
 _MONTHLY_NOTIFIED: set = set()
+_UNPROTECTED_NOTIFIED: set = set()   # C6-03: (cuenta, operación) ya avisadas como dudosas sin poder protegerse
+PROVISIONAL_SL_PCT = 0.02            # D-13: SL provisional de la orden de apertura (place_market_order)
 
 
 def risk_limit_options_enabled() -> bool:
@@ -1018,7 +1020,87 @@ class RealTrader:
                                      limit_pct=round(max_allowed_loss_pct * 100, 3))
                 else:
                     results["errors"] += 1
+        await self._circuit_breaker_unresolved(account_id, client, max_loss_multiplier, results)
         return results
+
+    @staticmethod
+    def identify_unresolved_position(trade: dict, position: dict, others_live: int) -> str | None:
+        """C6-03 (D-68): None si la posición viva de Bybit es CON CERTEZA la de esta operación dudosa (pending_open
+        viejo u orphaned de apertura); si no, el motivo. One-Way: una sola posición por moneda."""
+        if is_close_orphan(trade):
+            return 'huérfana de cierre con la posición todavía viva'
+        if others_live:
+            return 'hay otra operación del bot viva en la misma moneda'
+        side = {'Buy': 'long', 'Sell': 'short'}.get(position.get('side'))
+        if side != trade.get('side'):
+            return f"lado distinto (Bybit {position.get('side')}, operación {trade.get('side')})"
+        size, asked = float(position.get('size') or 0), float(trade.get('size') or 0)
+        if asked <= 0 or size > asked * (1 + 1e-9):
+            return f"tamaño en Bybit {size:g} mayor que el pedido {asked:g}"
+        return None
+
+    async def _circuit_breaker_unresolved(self, account_id: int, client: BybitClient, mult: float, results: dict) -> None:
+        """C6-03 (D-68): el circuit breaker también cubre las operaciones dudosas vivas en Bybit. Si la posición es con
+        certeza la de la operación, la misma regla que las abiertas, con la entrada de Bybit y su SL (el provisional,
+        D-13; si no lo tiene, 2 % desde la entrada): si la pérdida pasa el tope, cierre reduce-only y la conciliación
+        anota el resultado. Si no hay certeza: nunca se cierra; aviso de máxima prioridad (una vez) y la cuenta sigue sin
+        abrir (D-50). Error de Bybit = «no sé»: nada."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT id, symbol, side, size, status, error_message FROM real_trades WHERE broker_account_id = $1"
+                f" AND {UNRESOLVED_SQL} ORDER BY id", account_id)
+            if not rows:
+                return
+            live = await conn.fetch(
+                "SELECT id, symbol FROM real_trades WHERE broker_account_id = $1"
+                " AND status IN ('pending_open', 'open', 'pending_close', 'orphaned')", account_id)
+        for row in rows:
+            trade = dict(row)
+            symbol = trade['symbol']
+            results['unresolved_checked'] = results.get('unresolved_checked', 0) + 1
+            try:
+                position = await client.get_open_position(symbol)
+            except BybitAPIError as e:
+                logger.error(f"[CIRCUIT-MAXLOSS] #{trade['id']} {symbol} (dudosa): error consultando Bybit: {e}")
+                results['errors'] += 1
+                continue
+            if not position or float(position.get('size') or 0) <= 0:
+                continue   # nada vivo en Bybit: la conciliación la resuelve
+            others = sum(1 for x in live if x['symbol'] == symbol and x['id'] != trade['id'])
+            why = self.identify_unresolved_position(trade, position, others)
+            if why is not None:
+                results['unidentified'] = results.get('unidentified', 0) + 1
+                key = (account_id, trade['id'])
+                if key not in _UNPROTECTED_NOTIFIED:
+                    _UNPROTECTED_NOTIFIED.add(key)
+                    logger.critical(f"[CIRCUIT-MAXLOSS] #{trade['id']} {symbol} dudosa con posición viva que no se puede "
+                                    f"identificar con certeza ({why}): NO se cierra; revisar a mano")
+                    await emit_event(self.pool, account_id, 'unresolved_unprotected', trade['id'], symbol=symbol, reason=why)
+                continue
+            avg = float(position.get('avgPrice') or 0)
+            mark = float(position.get('markPrice') or 0)
+            if avg <= 0 or mark <= 0:
+                continue
+            side = trade['side']
+            ref = float(position.get('stopLoss') or 0) or (
+                avg * (1 - PROVISIONAL_SL_PCT) if side == 'long' else avg * (1 + PROVISIONAL_SL_PCT))
+            max_allowed = abs(avg - ref) / avg * mult
+            loss = (ref - mark) / ref if side == 'long' else (mark - ref) / ref
+            if loss <= max_allowed:
+                continue
+            size = float(position['size'])
+            logger.error(f"[CIRCUIT-MAXLOSS] #{trade['id']} {symbol} dudosa ({trade['status']}) retrocedió "
+                         f"{loss * 100:.3f}% desde {ref}, supera {mult}x ({max_allowed * 100:.3f}%) — cierre de {size:g}")
+            res = await client.place_market_order(symbol, 'Sell' if side == 'long' else 'Buy', size, reduce_only=True)
+            if res and res.get('orderId'):
+                results['closed'] += 1
+                await self.log_audit(trade['id'], 'circuit_breaker_unresolved_close', {
+                    'status': trade['status'], 'size': size, 'avg_price': avg, 'mark_price': mark, 'reference': ref,
+                    'loss_pct': round(loss * 100, 3), 'limit_pct': round(max_allowed * 100, 3), 'order_id': res['orderId']})
+                await emit_event(self.pool, account_id, 'max_loss_close', trade['id'], symbol=symbol,
+                                 loss_pct=round(loss * 100, 3), limit_pct=round(max_allowed * 100, 3), unresolved=True)
+            else:
+                results['errors'] += 1
 
     @staticmethod
     def _sl_beyond_liquidation(side: str, sl: float, liq_price: float, buffer: float = LIQ_BUFFER) -> bool:

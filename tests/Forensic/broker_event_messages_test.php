@@ -27,6 +27,7 @@ $expect = [   // evento => [nivel, modo]
     'reconcile_discarded' => ['info', 'notify'], 'manual_position_ignored' => ['warning', 'notify'],
     'manual_position_closed' => ['info', 'notify'],
     'loss_pause_ended' => ['success', 'resolve'],
+    'unresolved_unprotected' => ['error', 'notify'],
     'protection_failed' => ['error', 'open'], 'protection_restored' => ['success', 'resolve'],
     'api_permissions_bad' => ['error', 'open'], 'api_permissions_ok' => ['success', 'resolve'],
     'executions_mismatch' => ['warning', 'notify'],

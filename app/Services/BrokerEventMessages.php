@@ -75,7 +75,15 @@ final class BrokerEventMessages
                 'body'  => "{$account} · {$ref}: el precio retrocedió "
                     . (isset($data['loss_pct']) ? self::pct($data['loss_pct']) : 'más de lo tolerado')
                     . (isset($data['limit_pct']) ? ' (límite ' . self::pct($data['limit_pct']) . ')' : '')
-                    . ' desde el nivel de referencia y se cerró a mercado como red de seguridad.',
+                    . ' desde el nivel de referencia y se cerró a mercado como red de seguridad'
+                    . (! empty($data['unresolved']) ? ' (operación sin confirmar: la conciliación anota el cierre).' : '.'),
+            ],
+            'unresolved_unprotected' => [   // C6-03 (D-68)
+                'level' => 'error', 'mode' => 'notify', 'key' => null,
+                'title' => 'Operación sin confirmar y sin poder protegerse',
+                'body'  => "{$account} · {$ref}: hay una posición viva en Bybit que el bot no puede identificar con certeza"
+                    . (isset($data['reason']) ? " ({$data['reason']})" : '')
+                    . '. No se cierra sola: revísala en Bybit. La cuenta no abre operaciones nuevas mientras tanto.',
             ],
             'liquidation_risk' => [
                 'level' => 'error', 'mode' => 'notify', 'key' => null,
