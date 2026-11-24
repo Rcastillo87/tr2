@@ -283,6 +283,11 @@ async def process_pending(pool, trader, client, account_id: int, limit: int = PE
     """Del tick: hasta `limit` operaciones de la cuenta con partes por registrar (no las 'historical'). Una que quedó
     sin verificar (Bybit falló o no cuadra todavía) espera RETRY_EVERY antes de volver a pedirse (C5-01)."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # C6-01: las que esperan su reintento se descartan EN la consulta (antes se tomaban las 20 más antiguas y se
+    # filtraban después: con 20 esperando, las nuevas no entraban nunca). Lo vencido hace más de 2 días se olvida.
+    for tid in [t for t, at in _RETRY_AT.items() if at <= now - timedelta(days=2)]:
+        _RETRY_AT.pop(tid, None)
+    waiting = [t for t, at in _RETRY_AT.items() if at > now]
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT {TRADE_COLS}
@@ -291,9 +296,10 @@ async def process_pending(pool, trader, client, account_id: int, limit: int = PE
                  AND ((executions_status IS NULL AND status IN ('open', 'closed'))
                       OR (executions_status = 'open_ok' AND status = 'closed'))
                  AND (status <> 'closed' OR exit_time < timezone('UTC', now()) - interval '1 minute')
-               ORDER BY id LIMIT $2""", account_id, limit * 10)
+                 AND NOT (id = ANY($3::bigint[]))
+               ORDER BY id LIMIT $2""", account_id, limit, waiting)
     out = []
-    for r in [r for r in rows if _RETRY_AT.get(r['id'], now) <= now][:limit]:
+    for r in rows:
         try:
             res = await record_trade(pool, trader, client, dict(r))
             out.append(res)

@@ -29,7 +29,13 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-03: circuit breaker también para operaciones dudosas vivas (p114, D-68) — 24-nov
+### Ciclo 6 · C6-01: la cola del libro de ejecuciones no deja atrás a las nuevas (p115) — 24-nov
+- **Validado:** se tomaban las 20 pendientes más antiguas y se descartaban después las que esperaban su reintento: con
+  20 esperando, las nuevas no entraban (hasta ~24 h). Lectura: 0 en cola (latente).
+- **Fix:** exclusión en la consulta (`NOT (id = ANY($3))`, `LIMIT 2`); limpieza de la memoria de esperas. Vuelta atrás: `p115_revertir.sh`.
+- **Prueba:** `execution_ledger_fairness_test.py` (nueva); código anterior 4 FALLOS; mutaciones 6/6; regresión 81 + 35.
+
+### Ciclo 6 · C6-03: circuit breaker también para operaciones dudosas vivas (p114, D-68) — 24-nov · instalado `7d5956e`
 - **Validado:** el circuit breaker solo revisaba `open` (y elegía cuentas con `open`/`pending_close`): una `pending_open`
   vieja u `orphaned` viva quedaba fuera de la segunda red. Lectura: nunca hubo operaciones dudosas (latente).
 - **Fix:** `_circuit_breaker_unresolved` + `identify_unresolved_position` (cierra solo con certeza; si no, aviso
