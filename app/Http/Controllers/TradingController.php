@@ -28,7 +28,9 @@ class TradingController extends Controller
         $end   = $month->copy()->endOfMonth();
 
         // Filtros
-        $filterStrategy = $request->query('strategy', 'all');
+        // D-71 (dueño, 25-nov): el inversionista no ve nombres de estrategias (ni filtra por ellas)
+        $hideStrategy = (bool) $request->user()?->isInversionista();
+        $filterStrategy = $hideStrategy ? 'all' : $request->query('strategy', 'all');
         $filterSymbol   = $request->query('symbol', 'all');
         $filterInterval = $request->query('interval', 'all');
         $filterResult   = $request->query('result', 'all');
@@ -189,6 +191,7 @@ class TradingController extends Controller
             'availableMonths' => $availableMonths,
             'filterOptions'   => $filterOptions,
             'filterStrategy'  => $filterStrategy,
+            'hideStrategy'    => $hideStrategy,
             'filterSymbol'    => $filterSymbol,
             'filterInterval'  => $filterInterval,
             'filterResult'    => $filterResult,

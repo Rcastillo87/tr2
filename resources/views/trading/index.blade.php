@@ -28,7 +28,8 @@
             @endforeach
         </select>
 
-        {{-- Estrategia --}}
+        {{-- Estrategia (el inversionista no la ve: D-71) --}}
+        @unless ($hideStrategy ?? false)
         <select name="strategy" onchange="document.getElementById('filterForm').submit()"
                 class="rounded-lg px-3 py-1.5 text-xs border focus:outline-none"
                 style="background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-text-primary);">
@@ -37,6 +38,7 @@
                 <option value="{{ $s }}" {{ $filterStrategy === $s ? 'selected' : '' }}>{{ $s }}</option>
             @endforeach
         </select>
+        @endunless
 
         {{-- Símbolo --}}
         <select name="symbol" onchange="document.getElementById('filterForm').submit()"
@@ -175,7 +177,7 @@
         <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
             <thead>
                 <tr class="border-b" style="border-color:var(--color-border-soft);">
-                    <th class="py-2 px-3 text-left font-normal">Estrategia</th>
+                    @unless ($hideStrategy ?? false)<th class="py-2 px-3 text-left font-normal">Estrategia</th>@endunless
                     <th class="py-2 px-3 text-left font-normal">Símbolo</th>
                     <th class="py-2 px-3 text-left font-normal">Int.</th>
                     <th class="py-2 px-3 text-left font-normal">Dir.</th>
@@ -193,7 +195,7 @@
                 @foreach ($openTrades as $trade)
                     @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
                     <tr class="border-b" style="border-color:var(--color-border-soft);">
-                        <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>
+                        @unless ($hideStrategy ?? false)<td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>@endunless
                         <td class="py-2 px-3">{{ $trade->symbol }}</td>
                         <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? $trade->interval }}</td>
                         <td class="py-2 px-3">
@@ -273,7 +275,7 @@
             <table class="w-full font-mono text-[11px]" style="color:var(--color-text-muted);">
                 <thead>
                     <tr class="border-b" style="border-color:var(--color-border-soft); background:var(--color-surface-raised);">
-                        <th class="py-2 px-3 text-left font-normal">Estrategia</th>
+                        @unless ($hideStrategy ?? false)<th class="py-2 px-3 text-left font-normal">Estrategia</th>@endunless
                         <th class="py-2 px-3 text-left font-normal">Símbolo</th>
                         <th class="py-2 px-3 text-left font-normal">Int.</th>
                         <th class="py-2 px-3 text-left font-normal">Dir.</th>
@@ -293,7 +295,7 @@
                     @foreach ($closedTrades as $trade)
                         @php $lbs = ['60'=>'H1','120'=>'H2','240'=>'H4','D'=>'D1','1'=>'1m','5'=>'5m','15'=>'15m']; @endphp
                         <tr class="border-b" style="border-color:var(--color-border-soft);">
-                            <td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>
+                            @unless ($hideStrategy ?? false)<td class="py-2 px-3" style="color:var(--color-text-primary);">{{ trim(explode('—', $trade->strategy)[0]) }}</td>@endunless
                             <td class="py-2 px-3">{{ $trade->symbol }}</td>
                             <td class="py-2 px-3">{{ $lbs[$trade->interval] ?? ($trade->interval ?? '—') }}</td>
                             <td class="py-2 px-3">

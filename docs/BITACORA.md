@@ -29,7 +29,15 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Backtest: un solo retorno y estrellas unificadas (p123, D-70) — 25-nov
+### El inversionista no ve nombres de estrategias (p124, D-71) — 25-nov
+- **Pedido del dueño:** ocultar al perfil inversionista la sección de estrategias del dashboard y, en su pantalla de
+  trading, el filtro y la columna de estrategia. Solo eso (el resumen de Paper del dashboard queda como está).
+- **Fix:** `@unless` por rol en las dos vistas; `TradingController` ignora `?strategy=` para el inversionista.
+- **Prueba:** `investor_hides_strategies_test.php` (nueva; código anterior 5 FALLOS); mutaciones 4/4; regresión 85 + 40.
+
+### Backtest: un solo retorno y estrellas unificadas (p123, D-70) — 25-nov · instalado `40cb550`
+- **Servidor:** estrellas de las 15 configs = la tabla aprobada (2,4–4,6); #74 DOGE da 3,3 (no 3,5) porque la estrella de la
+  config es la de su backtest, que promedia todas sus monedas.
 - **Reportado por el dueño (capturas PEPE y SOL):** totales que no cuadran, CONSOLIDADO con una moneda, estrellas.
 - **Validado:** «24 meses» corría 23 (`subMonths` desde el 31-oct cae en dic-2024: «10/23 meses»); la moneda mostraba el
   retorno real (SOL 30,01 %) y el consolidado y el acumulado mensual la suma de los % por operación (27,91 %); al guardar,

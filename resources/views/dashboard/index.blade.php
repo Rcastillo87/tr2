@@ -89,7 +89,8 @@
         </div>
     </div>
 
-    {{-- 3. Estrategias — consolidado por grupo --}}
+    {{-- 3. Estrategias — consolidado por grupo (el inversionista no ve estrategias: D-71) --}}
+    @unless (auth()->user()?->isInversionista())
     <div class="rounded-lg border p-4 mb-4" style="background:var(--color-surface); border-color:var(--color-border-soft);">
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-xs font-medium" style="color:var(--color-text-secondary);">Estrategias — paper trading</h3>
@@ -126,6 +127,8 @@
             </div>
         @endif
     </div>
+
+    @endunless
 
     {{-- 4. Data Collector: el detalle (estado, validación, historial) vive en /collector --}}
     @can('manageUsers')
