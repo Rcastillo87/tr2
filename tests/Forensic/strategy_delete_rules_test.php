@@ -86,8 +86,9 @@ $check('D2: destroy no borra por su cuenta', $cb !== '' && ! str_contains($cb, '
 $check('D3: destroy exige admin', str_contains($cb, "Gate::authorize('manageUsers')"));
 
 $sub = file_get_contents("{$root}/app/Http/Controllers/RealStrategySubscriptionController.php");
-$check('E1: reactivar una suscripción que se borrará al cerrar: el aviso nombra los dos motivos',
-    str_contains($sub, '(su usuario fue inactivado o su estrategia fue eliminada)'));
+$check('E1: reactivar una suscripción que se borrará al cerrar: el aviso nombra los motivos (usuario inactivado, '
+    . 'config fuera de Paper o eliminada: 24-nov)',
+    str_contains($sub, '(su usuario fue inactivado, o su configuración salió de Paper o fue eliminada)'));
 
 echo "\nRESULTADO: " . ($fails === 0 ? 'TODO OK' : "{$fails} FALLO(S)") . "\n";
 exit($fails === 0 ? 0 : 1);

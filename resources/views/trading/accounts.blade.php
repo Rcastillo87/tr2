@@ -498,16 +498,17 @@ function confirmAddAll(event, accountLabel, count) {
     return false;
 }
 
-function confirmSubToggle(event, name, isActive, willPauseOther) {
+function confirmSubToggle(event, name, isActive, sharedWith) {
     event.preventDefault();
     const form = event.target;
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     let html;
     if (isActive) {
-        html = `¿Pausar <b>${name}</b>?`;
-    } else if (willPauseOther) {
-        html = `¿Activar <b>${name}</b>? Esto pausará automáticamente la otra estrategia activa para este mismo símbolo (solo puede haber una a la vez).`;
+        html = `¿Pausar <b>${esc(name)}</b>?`;
+    } else if (sharedWith) {
+        html = `¿Activar <b>${esc(name)}</b>?<br><small>${esc(sharedWith)} opera la misma moneda: las dos quedan activas y solo una abre a la vez (la que dé señal primero).</small>`;
     } else {
-        html = `¿Activar <b>${name}</b>?`;
+        html = `¿Activar <b>${esc(name)}</b>?`;
     }
     Swal.fire({
         title: isActive ? 'Pausar estrategia' : 'Activar estrategia',
@@ -524,9 +525,10 @@ function confirmSubDelete(event, name) {
     event.preventDefault();
     const form = event.target;
     Swal.fire({
-        title: 'Quitar estrategia', html: `¿Quitar <b>${name}</b> de esta cuenta?`,
+        title: 'Eliminar suscripción',
+        html: `¿Eliminar <b>${String(name).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]))}</b> de esta cuenta?<br><small>Deja de operar aquí. Puedes agregarla de nuevo desde «Agregar configuración».</small>`,
         icon: 'warning', showCancelButton: true,
-        confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',
+        confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar',
         background: '#11161F', color: '#E5E9F0',
         confirmButtonColor: '#F2545B', cancelButtonColor: '#232B38',
     }).then(r => { if (r.isConfirmed) form.submit(); });

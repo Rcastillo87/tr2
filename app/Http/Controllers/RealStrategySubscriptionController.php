@@ -11,27 +11,6 @@ use Illuminate\Support\Facades\Gate;
 class RealStrategySubscriptionController extends Controller
 {
     /**
-     * Si la cuenta exige una sola posicion por simbolo (regla configurable
-     * via broker_accounts.single_position_per_symbol, pensada para el limite
-     * real de Bybit en modo One-Way), pausa cualquier OTRA suscripcion activa
-     * del mismo simbolo en esta cuenta, dejando como unica activa a
-     * $keepSubscriptionId. Si el flag esta en false (broker/modo que permite
-     * varias posiciones simultaneas del mismo simbolo), no hace nada.
-     */
-    protected function enforceSingleActivePerSymbol(BrokerAccount $account, string $symbol, int $keepSubscriptionId): void
-    {
-        if (!$account->single_position_per_symbol) {
-            return;
-        }
-
-        RealStrategySubscription::where('broker_account_id', $account->id)
-            ->where('symbol', $symbol)
-            ->where('id', '!=', $keepSubscriptionId)
-            ->where('status', 'active')
-            ->update(['status' => 'paused']);
-    }
-
-    /**
      * Suscribir una estrategia activa de paper_strategy_configs a una cuenta.
      */
     public function store(Request $request, BrokerAccount $account)
@@ -138,15 +117,13 @@ class RealStrategySubscriptionController extends Controller
         if ($activating && $subscription->retire_on_close) {
             // D-04 (usuario inactivado) y D-63 (estrategia eliminada): se elimina al cerrar su operación abierta
             return back()->withErrors(['subscription' => 'Esta suscripción se eliminará cuando cierre su operación abierta'
-                . ' (su usuario fue inactivado o su estrategia fue eliminada). Después podrás agregar la configuración de nuevo.']);
+                . ' (su usuario fue inactivado, o su configuración salió de Paper o fue eliminada). Después podrás agregarla de nuevo.']);
         }
 
+        // 24-nov: ya no se pausa en silencio otra suscripción de la misma moneda (parecía que el botón no cambiaba
+        // nada); el motor abre una sola posición por moneda y cuenta (real_trader: has_open_trade + Bybit).
         $subscription->status = $activating ? 'active' : 'paused';
         $subscription->save();
-
-        if ($activating) {
-            $this->enforceSingleActivePerSymbol($account, $subscription->symbol, $subscription->id);
-        }
 
         return back()->with('status', $subscription->status === 'active'
             ? "Estrategia \"{$subscription->strategy}\" activada."

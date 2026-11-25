@@ -33,9 +33,10 @@ $check("B6: auditoría 'deleted' por config antes de borrar",
     && strpos($body, "'deleted'") < strpos($body, 'PaperStrategyConfig::whereIn(\'id\', $ids)->delete()'));
 $check("B6b: la fila 'deleted' guarda config_id y backtest_id en new_params (las FK SET NULL los anulan)",
     (bool) preg_match("/'deleted' => \['config_id' => .*'backtest_id' => /", $body));
-$check('B7: pausa las suscripciones Real activas', (bool) preg_match("/update\(\['status' => 'paused'\]\)/", $body));
+// 24-nov (dueño): fuera de Paper = fuera de Real; antes pausaba las suscripciones y quedaban en la lista
+$check('B7: saca de Real las suscripciones de sus configs (retireSubscriptions)', str_contains($body, '$this->retireSubscriptions('));
 $check('B8: las comprobaciones van antes de cualquier escritura',
-    strpos($body, 'RECONCILE_STATUSES') < strpos($body, "'paused'"));
+    strpos($body, 'RECONCILE_STATUSES') < strpos($body, '$this->retireSubscriptions('));
 
 $ctl = file_get_contents("{$root}/app/Http/Controllers/BacktestingController.php");
 preg_match('/public function destroyBacktest\(.*?\n    \}\n/s', $ctl, $c);

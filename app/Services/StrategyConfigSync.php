@@ -13,6 +13,7 @@ use App\Models\ParamSearchRun;
 use App\Models\RealTrade;
 use App\Models\Strategy;
 use App\Support\StrategyDeletionPlan;
+use App\Support\SubscriptionRetirement;
 use App\Support\StrategyLabel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -182,6 +183,7 @@ final class StrategyConfigSync
                 $config->update(['active' => false]);
                 $this->audit($config, 'deactivated', (array) $config->params, null, [], $source, $userId);
                 $summary['deactivated'][] = (string) $symbol;
+                $this->retireSubscriptions([(int) $config->id]);   // 24-nov: fuera de Paper = fuera de Real
             }
         });
 
@@ -218,9 +220,7 @@ final class StrategyConfigSync
                      . 'Espera a que cierren o se reconcilien.';
             }
 
-            RealStrategySubscription::whereIn('paper_strategy_config_id', $ids)
-                ->where('status', 'active')
-                ->update(['status' => 'paused']);
+            $this->retireSubscriptions($ids->map(fn ($id) => (int) $id)->all());   // 24-nov: fuera de Paper = fuera de Real
             foreach ($configs as $config) {
                 $tombstone = ['deleted' => ['config_id' => (int) $config->id, 'backtest_id' => (int) $backtest->id,
                                             'display_name' => $config->display_name]];
@@ -302,21 +302,26 @@ final class StrategyConfigSync
                 $config->update(['active' => false]);
                 $this->audit($config, 'deactivated', (array) $config->params, null, [], self::SOURCE_STOP, $userId);
             }
+            $this->retireSubscriptions($configs->pluck('id')->map(fn ($id) => (int) $id)->all());   // 24-nov
 
             return $configs->count();
         });
     }
 
     /**
-     * Crea (si no existe) una suscripción por cada cuenta broker activa.
-     * Activa solo en las cuentas listadas en $liveAccounts (donde el backtest ya
-     * opera en Real); en el resto queda PAUSADA hasta acción explícita.
+     * Moneda nueva de un backtest que ya opera en Real: entra ACTIVA en las cuentas de $liveAccounts (opción A).
+     * En el resto de cuentas no se crea nada (dueño, 24-nov): la config queda en «Agregar configuración» hasta que
+     * el dueño la elija. Antes se creaba PAUSADA en todas las cuentas y parecía elegida.
      *
      * @param int[] $liveAccounts
      */
     public function ensureSubscriptions(PaperStrategyConfig $config, array $liveAccounts = []): void
     {
-        BrokerAccount::where('status', 'active')
+        if ($liveAccounts === []) {
+            return;
+        }
+        BrokerAccount::whereIn('id', $liveAccounts)
+            ->where('status', 'active')
             ->whereHas('user', fn ($u) => $u->where('is_active', true))   // U-3: nunca para usuarios inactivos
             ->get()->each(function (BrokerAccount $account) use ($config, $liveAccounts) {
             RealStrategySubscription::firstOrCreate(
@@ -326,15 +331,38 @@ final class StrategyConfigSync
                     'strategy' => $config->display_name,
                     'symbol'   => $config->symbol,
                     'interval' => $config->interval,
-                    'status'   => in_array($account->id, $liveAccounts, false) ? 'active' : 'paused',
+                    'status'   => 'active',
                 ]
             );
         });
     }
 
-    public function ensurePausedSubscriptions(PaperStrategyConfig $config): void
+    /**
+     * Saca de Real las suscripciones de configs que salen de Paper (dueño, 24-nov): sin operación viva se borran; con
+     * operación viva se pausan y se borran solas al cerrar (retire_on_close, purgeFinished cada 5 min). Llamar dentro
+     * de la transacción del cambio de la config.
+     *
+     * @param int[] $configIds
+     * @return array{deleted: int, retired: int}
+     */
+    private function retireSubscriptions(array $configIds): array
     {
-        $this->ensureSubscriptions($config, []);
+        if ($configIds === []) {
+            return ['deleted' => 0, 'retired' => 0];
+        }
+        $subs = RealStrategySubscription::whereIn('paper_strategy_config_id', $configIds)->lockForUpdate()->get();
+        $plan = SubscriptionRetirement::split(
+            $subs->mapWithKeys(fn ($s) => [(int) $s->id => UserDeactivation::hasLiveTrades((int) $s->id)])->all()
+        );
+        if ($plan['retire'] !== []) {
+            RealStrategySubscription::whereIn('id', $plan['retire'])->update(['status' => 'paused', 'retire_on_close' => true]);
+        }
+        $deleted = $plan['delete'] !== [] ? RealStrategySubscription::whereIn('id', $plan['delete'])->delete() : 0;
+        if ($subs->isNotEmpty()) {
+            Log::info('[CONFIG-SYNC] suscripciones Real fuera de Paper', ['configs' => $configIds] + $plan);
+        }
+
+        return ['deleted' => (int) $deleted, 'retired' => count($plan['retire'])];
     }
 
     // ───────────────────────── Internos ─────────────────────────

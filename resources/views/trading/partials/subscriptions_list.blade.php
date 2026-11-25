@@ -3,6 +3,11 @@
 @else
     @php
         // Agrupar por backtest_id (o por nombre base si no hay backtest)
+        // 24-nov: cada moneda con su estado y el aviso de misma moneda (App\Support\SubscriptionRows)
+        $rows = \App\Support\SubscriptionRows::build($account->subscriptions->map(fn ($s) => [
+            'id' => (int) $s->id, 'symbol' => (string) $s->symbol, 'strategy' => (string) $s->strategy,
+            'status' => (string) $s->status, 'retire_on_close' => (bool) $s->retire_on_close,
+        ])->values()->all());
         $groupedSubs = $account->subscriptions->groupBy(function($sub) {
             return $sub->paperStrategyConfig?->backtest_id ?? trim(explode(' — ', $sub->strategy)[0]);
         });
@@ -25,7 +30,6 @@
                 $interval = $bt ? $bt->interval : $first->interval;
                 $baseName = trim(explode(' — ', $first->strategy)[0]);
                 $displayName = $baseName . ' — ' . implode(', ', $symbols) . ' (' . $interval . ')';
-                $status = $first->status;
 
                 // Métricas del backtest
                 $m = $bt->metrics ?? [];
@@ -51,9 +55,6 @@
                 <div class="flex-1">
                     <div class="flex items-center gap-2 mb-1 flex-wrap">
                         <span class="font-medium text-sm" style="color:var(--color-text-primary);">{{ $displayName }}</span>
-                        <span class="px-2 py-0.5 rounded text-[10px] font-medium" style="background:{{ $status === 'active' ? '#16331F' : '#33221B' }}; color:{{ $status === 'active' ? 'var(--color-profit)' : '#F59E0B' }};">
-                            {{ $status === 'active' ? 'Activa' : 'Pausada' }}
-                        </span>
                         @if($months)
                             <span class="text-[10px] px-2 py-0.5 rounded" style="background:var(--color-surface); border:1px solid var(--color-border-soft); color:var(--color-text-muted);">
                                 {{ $months }} meses
@@ -70,20 +71,40 @@
                         <span>{{ $trades }} trades</span>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 ml-4">
+                <div class="flex flex-col gap-1.5 ml-4">
                     @foreach($subs as $sub)
-                        <form method="POST" action="{{ route('trading.subscriptions.toggle', [$account, $sub]) }}" class="inline">
-                            @csrf @method('PATCH')
-                            <button type="submit" class="px-2 py-1 rounded text-[11px] border" style="background:transparent; border-color:var(--color-border-strong); color:var(--color-text-primary);">
-                                {{ $sub->status === 'active' ? '⏸️ Pausar' : '▶️ Reanudar' }}
-                            </button>
-                        </form>
-                        <form method="POST" action="{{ route('trading.subscriptions.destroy', [$account, $sub]) }}" class="inline" onsubmit="return confirm('¿Eliminar esta suscripción?');">
-                            @csrf @method('DELETE')
-                            <button type="submit" class="px-2 py-1 rounded text-[11px] border text-red-400" style="background:transparent; border-color:#7F1D1D;">
-                                🗑️
-                            </button>
-                        </form>
+                        @php
+                            $row = $rows[$sub->id];
+                            $note = \App\Support\SubscriptionRows::sharedNote($row['shares']);
+                            $coin = str_replace('USDT', '', $sub->symbol);
+                            $badge = ['active' => ['#16331F', 'var(--color-profit)'], 'paused' => ['#33221B', '#F59E0B'],
+                                      'retiring' => ['var(--color-surface)', 'var(--color-text-muted)']][$row['state']];
+                        @endphp
+                        <div class="flex items-center justify-end gap-2 flex-wrap" data-sub-row="{{ $sub->id }}">
+                            <span class="text-[11px]" style="color:var(--color-text-secondary);">{{ $sub->symbol }}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-medium" style="background:{{ $badge[0] }}; color:{{ $badge[1] }};">{{ $row['label'] }}</span>
+                            @if ($row['state'] === 'retiring')
+                                <span class="text-[10px]" style="color:var(--color-text-muted);">Quitada de Paper · su operación sigue hasta el SL/TP</span>
+                            @else
+                                <form method="POST" action="{{ route('trading.subscriptions.toggle', [$account, $sub]) }}" class="inline"
+                                      onsubmit="return confirmSubToggle(event, @js($sub->strategy), {{ $row['state'] === 'active' ? 'true' : 'false' }}, @js(implode(', ', $row['shares'])))">
+                                    @csrf @method('PATCH')
+                                    <button type="submit" class="px-2 py-1 rounded text-[11px] border" style="background:transparent; border-color:var(--color-border-strong); color:var(--color-text-primary);">
+                                        {{ $row['state'] === 'active' ? '⏸️ Pausar ' . $coin : '▶️ Reanudar ' . $coin }}
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('trading.subscriptions.destroy', [$account, $sub]) }}" class="inline"
+                                      onsubmit="return confirmSubDelete(event, @js($sub->strategy))">
+                                    @csrf @method('DELETE')
+                                    <button type="submit" aria-label="Eliminar {{ $sub->symbol }}" class="px-2 py-1 rounded text-[11px] border text-red-400" style="background:transparent; border-color:#7F1D1D;">
+                                        🗑️
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
+                        @if ($note)
+                            <div class="text-[10px] px-2 py-1 rounded text-right" style="background:#2A2410; color:#F5C518;">ⓘ {{ $note }}</div>
+                        @endif
                     @endforeach
                 </div>
             </div>

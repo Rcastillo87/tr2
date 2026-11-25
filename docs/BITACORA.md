@@ -29,7 +29,19 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-07: herramienta de comparación SL/TP fijo vs automático (p119) — 24-nov
+### Suscripciones Real siguen a Paper (p120, D-69) — 24-nov
+- **Reportado por el dueño:** al implementar en Paper la config aparecía en Real «elegida pero pausada» y no cambiaba de
+  estado; quitarla de Paper debía quitarla de Real; eliminar usaba el `confirm()` del navegador.
+- **Validado (código + lectura 24-nov 00:29 UTC):** `ensureSubscriptions` creaba una suscripción PAUSADA en todas las
+  cuentas; la cuenta 11 tiene «una posición por moneda» y 3 monedas con dos configs (DOGE #116/#121, LINK #97/#118, ENA
+  #124/#129): activar una pausaba en silencio la otra (y «Agregar todas» no aplicaba la regla); la lista mostraba un solo
+  estado por backtest (el de la primera moneda). Detener / eliminar en Paper dejaba la suscripción en Real. Editar ya
+  actualizaba los dos (misma config, 03-nov). Hoy: 14 activas, 0 pausadas creadas solas (no hay datos que limpiar).
+- **Fix:** D-69 (a)–(d). El motor ya impide dos posiciones de la misma moneda en la cuenta (`has_open_trade` + Bybit).
+- **Prueba:** `real_subscriptions_flow_test.php` (nueva; código anterior 16 FALLOS); `backtest_delete_rules_test` B7–B8 y
+  `strategy_delete_rules_test` E1 cambian por la decisión; mutaciones 10/10; regresión 84 Python + 37 PHP en TODO OK.
+
+### Ciclo 6 · C6-07: herramienta de comparación SL/TP fijo vs automático (p119) — 24-nov · instalado `c707bd4`
 - **Validado:** 0 usos del modo automático (72 búsquedas, 14 configs, 15 backtests: todos fijos). «Los dos y comparar» compara
   configs distintas (competencia, D-45), no la misma config con los dos modos.
 - **Nuevo:** `tools/analysis/compare_levels.py` (solo lectura, baja prioridad): cada config dos veces con las mismas velas,
