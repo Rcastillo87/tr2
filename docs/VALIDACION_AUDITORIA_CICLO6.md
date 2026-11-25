@@ -12,13 +12,25 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Herramienta en p119; falta correrla y la decisión del dueño |
-| 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Implementado en p121 |
-| 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Pendiente de validar |
+| 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Corrida 25-nov; decisión: automático solo en LINK #64, PEPE #69, SUI #79 (el dueño lo cambia desde el backtest) |
+| 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Implementado en p122 |
 
 ## Validados
 
-### C6-06 · Esquema PostgreSQL del repositorio (P3) — **Defecto (documentación técnica)** · Implementado en p121
+### C6-04 · Fechas reales de cada tramo de la búsqueda (P3) — **Sugerencia (pantalla)** · Implementado en p122
+- **Código:** la barra mostraba «Elegir · meses 1–14 / Validar · 15–19 / Prueba final · 20–24» (meses redondeados de
+  los cortes guardados) y el encabezado «24 meses (2024-11-01 → 2026-11-01)», con el fin exclusivo del rango (el último
+  día que cuenta es el 31-oct). Los cortes reales salen de `segment_cuts` (60/20/20 del tiempo, no de meses enteros):
+  p. ej. 13-ene y 8-jun-2026.
+- **Fix (boceto aprobado 25-nov, «si»):** `App\Support\SearchPeriodLabels` arma, desde `results.period` de cada
+  búsqueda, el total («1 nov 2024 → 31 oct 2026») y las fechas de cada tramo («1 nov 2024 – 12 ene 2026», «13 ene –
+  7 jun 2026», «8 jun – 31 oct 2026»); el controlador las entrega (`period_labels`) y la vista las pone debajo de cada
+  tramo (escapadas) y en el encabezado. Búsquedas de dos tramos: total corregido, sin tramos; datos raros: como antes.
+  D-58 sin cambios (la barra sigue diciendo que el total ordena y filtra y que la prueba final solo se muestra).
+- **Prueba:** `search_period_labels_test.php` (nueva; código anterior 4 FALLOS); `search_three_segments_static_test`
+  sigue en TODO OK; mutaciones 7/7; regresión 85 Python + 38 PHP en TODO OK.
+
+### C6-06 · Esquema PostgreSQL del repositorio (P3) — **Defecto (documentación técnica)** · Instalado en p121 (`7f9c636`)
 - **Código:** p111 aplicó la migración de D-66 (`2026_11_24_01_risk_limit_options`: 6 columnas y
   `broker_accounts_loss_pause_days_check`) sin regenerar `database/schema/pgsql-schema.sql`; la última regeneración fue
   p108. Ninguna prueba comparaba las migraciones con el volcado. Confirmado: el informe tiene razón.
@@ -33,6 +45,8 @@
   todas las migraciones: 0 faltantes; quitando 1 columna y 1 restricción: las 2 detectadas. La copia local del volcado
   está vieja (no se puede traer del servidor): ahí R1 falla, como debe; en el servidor corre con el regenerado.
   Mutaciones 6/6; regresión 85 Python + 37 PHP.
+- **Instalado p121 (`7f9c636`, 25-nov 01:36 UTC):** volcado regenerado, 30 tablas (igual que la base), 1.851 → 1.858
+  líneas; las 6 columnas con su tipo y default; `schema_sync_test` en TODO OK en el servidor.
 
 ### C6-07 · Comparación controlada SL/TP fijo vs automático (P2) — **Sugerencia (validación, no defecto)** · Herramienta en p119
 - **Servidor (lectura 24-nov 23:57 UTC):** nadie usó todavía el modo automático: 72 búsquedas `fixed`, 14 configs de
@@ -57,6 +71,17 @@
   SL por ATR dentro de los topes, velas sin pisarse; S solo lectura y baja prioridad); mutaciones 9/10 (la décima, «sin
   copia de las velas», es equivalente hoy: `_simulate` no modifica las velas; la copia se deja por seguridad);
   regresión 84 Python + 36 PHP en TODO OK.
+- **Resultado (servidor, 25-nov; 15 configs, 2024-11-01 → 2026-10-31; automático SL 2×ATR [0,8–5 %], TP 2× el SL, BE
+  1× el SL):** retorno: gana el fijo en 12, el automático en 3; profit factor: fijo 11, automático 4; caída máxima:
+  automático 9, fijo 6. Por moneda, el fijo gana en 10 de 11 (solo PEPE al revés). Con automático dos configs pasan a
+  perder (ENA #67 +21,7 → −7,0 %; SUI #72 +6,1 → −10,4 %). El automático gana en las tres métricas en LINK #64
+  (0,1 → 4,2 %), PEPE #69 (7,9 → 16,6 %) y SUI #79 (20,4 → 26,9 %). Sesgo a favor del fijo: las configs salieron de
+  búsquedas con SL/TP fijo y el automático va con los valores por defecto; una comparación pareja es una búsqueda
+  «Automáticos».
+- **Decisión (25-nov):** «Automático en PEPE, SUI y LINK»: solo esas 3; el resto sigue fijo. Se cambia con el camino de
+  siempre (editar el backtest de la config: SL «Automático», TP «veces el SL», Guardar → StrategyConfigSync), sin
+  datafix; la config es la misma para Paper y Real (#64 y #69 están activas en la cuenta 11, demo). Vuelta atrás: volver
+  a «Fijo» en el backtest (D-49 nivel 1).
 
 ### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Instalado en p117 (`c3946eb`) y p118 (`373c3ef`)
 - **Antecedente:** el 28-oct una recompresión dejó lotes solapados (50 fragmentos reescritos; `detect.sql`, que crea una
@@ -152,6 +177,7 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-06 | Volcado del esquema al día + `schema_sync_test` (migraciones ⊆ volcado) | p121 `7f9c636` | 30 tablas; 6 columnas de D-66 presentes |
 | C6-05 | Revisión automática cada 3 h de lotes solapados + reparación con respaldo de los 2 fragmentos de octubre | p117 `c3946eb`, p118 `373c3ef` | 339.794 velas idénticas; 0 solapes; aviso cerrado |
 | C6-02 | El panel de riesgo dice «Esperando saldo base» / «Operación sin confirmar» como el motor | p116 `f9bcfe6` | 120 vistas compiladas y revisadas |
 | C6-01 | La cola del libro de ejecuciones descarta en la consulta las que esperan reintento | p115 `0cd5811` | 16 cerradas `ok`, 2 abiertas `open_ok`; motor y tick sin errores |

@@ -29,7 +29,15 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-06: esquema regenerado y prueba de sincronía con las migraciones (p121) — 24-nov
+### Ciclo 6 · C6-04: fechas reales de cada tramo de la búsqueda (p122) — 25-nov
+- **Fix (boceto aprobado):** debajo de «Elegir / Validar / Prueba final» van sus fechas, desde los cortes guardados de cada
+  búsqueda (`App\Support\SearchPeriodLabels`); el encabezado termina en el último día que cuenta (31-oct, no 1-nov).
+  D-58 sin cambios.
+- **C6-07 (resultado, 25-nov):** el fijo gana en retorno en 12 de 15 configs; el dueño pasa a automático solo LINK #64,
+  PEPE #69 y SUI #79 desde la pantalla del backtest (D-45).
+- **Prueba:** `search_period_labels_test.php` (nueva); mutaciones 7/7; regresión 85 + 38.
+
+### Ciclo 6 · C6-06: esquema regenerado y prueba de sincronía con las migraciones (p121) — 24-nov · instalado `7f9c636`
 - **Validado:** p111 (D-66) no regeneró `database/schema/pgsql-schema.sql`: faltaban 6 columnas y una restricción de
   `broker_accounts`; nada lo detectaba.
 - **Fix:** `schema_sync_test.py` (migraciones ⊆ volcado) y p121 regenera el volcado en el servidor antes de la regresión.

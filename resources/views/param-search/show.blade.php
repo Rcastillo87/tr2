@@ -158,7 +158,9 @@
         $('sbIvs').textContent = ivs(s);
         const p = s.period;
         let meta = `Búsqueda #${s.id} · iniciada ${fmtDate(s.created_at)} · ${(s.search_symbols || []).length} monedas`;
-        if (p) meta += ` · 24 meses (${p.start} → ${p.end})`;
+        // C6-04: fechas reales (el último día que cuenta, no el día siguiente)
+        if (s.period_labels) meta += ` · 24 meses: ${s.period_labels.total}`;
+        else if (p) meta += ` · 24 meses (${p.start} → ${p.end})`;
         if (s.elapsed_s) meta += ` · duró ${Math.floor(s.elapsed_s / 60)} min ${Math.round(s.elapsed_s % 60)} s`;
         $('sbMeta').textContent = meta;
         $('sbSyms').innerHTML = '<b>Monedas:</b> ' + short(s.search_symbols);
@@ -327,20 +329,22 @@
         const p = state?.period;
         if (!(data.version >= 4) || !p || !p.test) return null;
         const choose = monthsBetween(p.start, p.split), val = monthsBetween(p.split, p.test), test = monthsBetween(p.test, p.end);
-        return { choose, val, test, from: [1, choose + 1, choose + val + 1], to: [choose, choose + val, choose + val + test] };
+        const dates = state?.period_labels?.segments || ['', '', ''];   // C6-04: fechas de cada tramo (cortes guardados)
+        return { choose, val, test, dates, from: [1, choose + 1, choose + val + 1], to: [choose, choose + val, choose + val + test] };
     }
     function bar3(g) {
-        const box = (flex, bg, fg, txt) => `<div style="flex:${flex};background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">${txt}</div>`;
+        const box = (flex, bg, fg, txt, dates) => `<div style="flex:${flex};background:${bg};color:${fg};padding:4px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">`
+            + `<div>${txt}</div>${dates ? `<div style="font-size:10px;opacity:.9">${SB.esc(dates)}</div>` : ''}</div>`;
         const total = g.choose + g.val + g.test;
         const tag = (flex, fg, txt) => `<div style="flex:${flex};color:${fg};padding:0 6px;text-align:center">${txt}</div>`;
         // D-58 (p103): qué se evalúa en cada parte. El total de 24 meses ordena y filtra; cada tramo dice si debe ganar.
         return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px;color:var(--color-text-primary)">`
             + `<span style="flex:1;border-top:2px solid #C4B5FD"></span><span style="white-space:nowrap"><b>Total ${total} meses</b> · con esto se ordena, `
             + `se dan las estrellas y se pide el mínimo de operaciones y +${SB.num(MIN_RET, 0)} %</span><span style="flex:1;border-top:2px solid #C4B5FD"></span></div>`
-            + `<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;font-size:11px">`
-            + box(g.choose, 'var(--color-surface-raised)', 'var(--color-text-secondary)', `Elegir · meses ${g.from[0]}–${g.to[0]}`)
-            + box(g.val, 'rgba(196,181,253,.18)', '#C4B5FD', `Validar · ${g.from[1]}–${g.to[1]}`)
-            + box(g.test, 'rgba(34,197,94,.15)', 'var(--color-profit)', `Prueba final · ${g.from[2]}–${g.to[2]}`) + `</div>`
+            + `<div style="display:flex;min-height:22px;border-radius:6px;overflow:hidden;font-size:11px">`
+            + box(g.choose, 'var(--color-surface-raised)', 'var(--color-text-secondary)', `Elegir · meses ${g.from[0]}–${g.to[0]}`, g.dates[0])
+            + box(g.val, 'rgba(196,181,253,.18)', '#C4B5FD', `Validar · ${g.from[1]}–${g.to[1]}`, g.dates[1])
+            + box(g.test, 'rgba(34,197,94,.15)', 'var(--color-profit)', `Prueba final · ${g.from[2]}–${g.to[2]}`, g.dates[2]) + `</div>`
             + `<div style="display:flex;font-size:11px;line-height:1.4;margin-top:4px">`
             + tag(g.choose, 'var(--color-text-secondary)', 'debe ganar aquí') + tag(g.val, '#C4B5FD', 'debe ganar aquí también')
             + tag(g.test, 'var(--color-profit)', 'no se le exige ganar: solo se muestra') + `</div>`;

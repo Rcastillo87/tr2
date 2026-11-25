@@ -265,6 +265,7 @@ class ParamSearchController extends Controller
             'started_at'     => $run->started_at?->toIso8601String(),
             'finished_at'    => $run->finished_at?->toIso8601String(),
             'period'         => $r['period'] ?? null,
+            'period_labels'  => \App\Support\SearchPeriodLabels::build($r['period'] ?? null),   // C6-04: fechas reales
             'tested'         => $r['tested'] ?? null,
             'candidates'     => $r['candidates'] ?? $r['survivors'] ?? null,
             'robust'         => $r['robust'] ?? $r['survivors'] ?? null,
