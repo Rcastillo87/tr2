@@ -10,12 +10,8 @@
 declare(strict_types=1);
 
 namespace App\Helpers {
-    if (! class_exists(RatingHelper::class)) {
-        class RatingHelper   // doble: la regla real se prueba en la integración
-        {
-            public static function calculate($wr, $sh, $pf, $ret, $c): float { return round(($wr + $ret + $c) / 100, 4); }
-        }
-    }
+    // D-70: la calificación real (fórmula única; su prueba es rating_unified_test.php)
+    require_once getcwd() . '/app/Helpers/RatingHelper.php';
 }
 
 namespace {
@@ -45,8 +41,10 @@ namespace {
             abs($n['wr'] - 55) < 1e-9 && $n['ret'] === -0.012 && abs($n['consist'] - 80) < 1e-9
             && $m === ['wr' => 55.0, 'ret' => 1.6, 'consist' => 80.0]
             && $S::normalized(['avg_monthly_pnl' => 0.71])['ret'] === 0.71, [$n, $m]);
-        $check('L5: rating guardado manda; si no hay, se calcula con las métricas normalizadas',
-            $S::rating(['rating' => 4.2]) === 4.2 && $S::rating(['win_rate' => 0.55, 'avg_monthly_pnl' => 0.0, 'consist_pct' => 0.8]) === 1.35);
+        $mm = ['rating' => 4.2, 'profit_factor' => 1.55, 'total_return_pct' => 13.39, 'max_drawdown_pct' => 5.0, 'consist_pct' => 43.5,
+               'total_trades' => 53];
+        $check('L5: D-70: siempre la fórmula vigente (no la calificación guardada)',
+            $S::rating($mm) === \App\Helpers\RatingHelper::fromMetrics($mm) && $S::rating($mm) !== 4.2, $S::rating($mm));
     $hist = (string) @file_get_contents("{$root}/resources/views/backtesting/history.blade.php");
     $check('L7: el historial ya no multiplica por 100 el retorno mensual', ! str_contains($hist, '$ret *= 100'));
         $check('L6: catálogos de estado y origen', array_keys($S::PAPER) === ['active', 'stopped', 'none']

@@ -495,9 +495,7 @@ final class StrategyConfigSync
             'consistency_pct'     => $clamp($consist, 9999.9),     // numeric(5,1)
             'backtest_range_from' => $toMonth($runParams['start_date'] ?? null),
             'backtest_range_to'   => $toMonth($runParams['end_date'] ?? null),
-            'star_rating'         => RatingHelper::calculate(
-                $winRate ?? 0.0, $sharpe ?? 0.0, $pf ?? 0.0, $avgPnl ?? 0.0, $consist ?? 0.0
-            ),
+            'star_rating'         => RatingHelper::fromMetrics($m),   // D-70: fórmula única
         ];
     }
 

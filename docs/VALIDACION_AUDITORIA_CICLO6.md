@@ -13,11 +13,10 @@
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
 | 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Corrida 25-nov; decisión: automático solo en LINK #64, PEPE #69, SUI #79 (el dueño lo cambia desde el backtest) |
-| 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Implementado en p122 |
 
 ## Validados
 
-### C6-04 · Fechas reales de cada tramo de la búsqueda (P3) — **Sugerencia (pantalla)** · Implementado en p122
+### C6-04 · Fechas reales de cada tramo de la búsqueda (P3) — **Sugerencia (pantalla)** · Instalado en p122 (`4f53e69`)
 - **Código:** la barra mostraba «Elegir · meses 1–14 / Validar · 15–19 / Prueba final · 20–24» (meses redondeados de
   los cortes guardados) y el encabezado «24 meses (2024-11-01 → 2026-11-01)», con el fin exclusivo del rango (el último
   día que cuenta es el 31-oct). Los cortes reales salen de `segment_cuts` (60/20/20 del tiempo, no de meses enteros):
@@ -29,6 +28,8 @@
   D-58 sin cambios (la barra sigue diciendo que el total ordena y filtra y que la prueba final solo se muestra).
 - **Prueba:** `search_period_labels_test.php` (nueva; código anterior 4 FALLOS); `search_three_segments_static_test`
   sigue en TODO OK; mutaciones 7/7; regresión 85 Python + 38 PHP en TODO OK.
+- **Instalado p122 (`4f53e69`, 25-nov 02:1x UTC):** búsqueda #205: «1 nov 2024 → 31 oct 2026 · 1 nov 2024 – 12 ene 2026 |
+  13 ene – 7 jun 2026 | 8 jun – 31 oct 2026»; el dueño lo vio en pantalla.
 
 ### C6-06 · Esquema PostgreSQL del repositorio (P3) — **Defecto (documentación técnica)** · Instalado en p121 (`7f9c636`)
 - **Código:** p111 aplicó la migración de D-66 (`2026_11_24_01_risk_limit_options`: 6 columnas y
@@ -177,6 +178,7 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-04 | Fechas reales de cada tramo y período hasta el último día que cuenta | p122 `4f53e69` | búsqueda #205 con sus 3 fechas |
 | C6-06 | Volcado del esquema al día + `schema_sync_test` (migraciones ⊆ volcado) | p121 `7f9c636` | 30 tablas; 6 columnas de D-66 presentes |
 | C6-05 | Revisión automática cada 3 h de lotes solapados + reparación con respaldo de los 2 fragmentos de octubre | p117 `c3946eb`, p118 `373c3ef` | 339.794 velas idénticas; 0 solapes; aviso cerrado |
 | C6-02 | El panel de riesgo dice «Esperando saldo base» / «Operación sin confirmar» como el motor | p116 `f9bcfe6` | 120 vistas compiladas y revisadas |

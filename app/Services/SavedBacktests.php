@@ -181,12 +181,6 @@ class SavedBacktests
     /** Misma calificación que la tarjeta del historial. */
     public static function rating(array $m): float
     {
-        if (isset($m['rating'])) {
-            return (float) $m['rating'];
-        }
-        $n = self::normalized($m);
-        $r = RatingHelper::calculate($n['wr'], (float) ($m['sharpe_ratio'] ?? 0), (float) ($m['profit_factor'] ?? 0), $n['ret'], $n['consist']);
-
-        return $r > 0 ? (float) $r : 1.0;
+        return RatingHelper::fromMetrics($m);   // D-70: siempre la fórmula vigente (no la calificación guardada)
     }
 }

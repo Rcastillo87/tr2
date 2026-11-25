@@ -232,8 +232,10 @@ class ParamSearchService
             $months = array_map(fn ($v) => (float) ($v ?? 0), $s['m'] ?? []);
             $avg = count($months) ? array_sum($months) / count($months) : 0.0;
             $consist = count($months) ? round(count(array_filter($months, fn ($v) => $v > 0)) / count($months) * 100, 1) : 0.0;
-            $ratings[] = RatingHelper::calculate((float) ($s['wr'] ?? 0), (float) ($s['sharpe'] ?? 0),
-                (float) ($s['pf'] ?? 0), $avg, $consist);
+            // D-70: fórmula única (PF, retorno ÷ caída, meses positivos, caída máxima; topes por pocas operaciones)
+            $pfS = isset($s['pf']) && is_numeric($s['pf']) && (float) $s['pf'] < 999 ? (float) $s['pf'] : null;
+            $ratings[] = RatingHelper::calculate($pfS, (float) ($s['ret'] ?? 0),
+                isset($s['dd']) && is_numeric($s['dd']) ? (float) $s['dd'] : null, $consist, (int) ($s['n'] ?? 0));
             $sharpes[] = (float) ($s['sharpe'] ?? 0);
             $trades += (int) ($s['n'] ?? 0);
             $wins += (int) ($s['wins'] ?? 0);

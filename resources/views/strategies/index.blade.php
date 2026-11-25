@@ -160,7 +160,7 @@
                                     $consist = (float)($metrics['consist_pct'] ?? 0);
                                     $pf = (float)($metrics['profit_factor'] ?? 0);
                                     
-                                    $rating = isset($metrics['rating']) ? (float)$metrics['rating'] : \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $ret, $consist);
+                                    $rating = \App\Helpers\RatingHelper::fromMetrics((array) $metrics);   // D-70: fórmula única
                                     $color = \App\Helpers\RatingHelper::getColor($rating);
                                     
                                     $symbols = implode(', ', $bt_obj->symbols ?? []);

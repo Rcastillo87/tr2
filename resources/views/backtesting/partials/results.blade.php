@@ -2,51 +2,51 @@
 @php
     // ── CÁLCULOS BASE ──
     // Usamos el Helper centralizado
-    $calcRating5 = fn($wr, $sharpe, $pf, $retMes, $consist) => \App\Helpers\RatingHelper::calculate($wr, $sharpe, $pf, $retMes, $consist);
+    // D-70: una sola fórmula de estrellas (App\Helpers\RatingHelper) y meses con el retorno real de la cuenta
+    // (App\Support\BacktestMonths): el acumulado termina en el retorno de la moneda, el mismo número en toda la pantalla.
     $starColor = fn($r) => \App\Helpers\RatingHelper::getColor($r);
 
     $bySymbol = [];
     foreach(($result['individual_results'] ?? []) as $ind) {
         $ia = $ind['aggregate_metrics'] ?? [];
         $monthly = $ind['monthly_breakdown'] ?? [];
-        $pnls = array_map(fn($m) => (float)($m['total_pnl_pct'] ?? 0), $monthly);
-        $avgMonthly = count($pnls) > 0 ? array_sum($pnls) / count($pnls) : 0;
-        $positive = count(array_filter($pnls, fn($v) => $v > 0));
-        $consist = count($pnls) > 0 ? round($positive / count($pnls) * 100, 1) : 0;
-        $rating = $calcRating5($ia['win_rate'] ?? 0, $ia['sharpe_ratio'] ?? 0, $ia['profit_factor'] ?? 0, $avgMonthly, $consist);
+        $months = \App\Support\BacktestMonths::build($monthly, (float) ($ia['initial_balance'] ?? 10000));
+        $st = \App\Support\BacktestMonths::stats($months);
         $bySymbol[$ind['symbol']] = [
-            'agg' => $ia, 'monthly' => $monthly, 'avg_monthly' => $avgMonthly,
-            'consist' => $consist, 'rating' => $rating,
+            'agg' => $ia, 'months' => $months, 'avg_monthly' => $st['avg'],
+            'consist' => $st['consist'], 'rating' => \App\Helpers\RatingHelper::forMetrics($ia, $monthly)['rating'],
         ];
     }
     $symbolsList = array_keys($bySymbol);
     $isMulti = count($symbolsList) > 1;
 
     $allMonths = [];
-    foreach($bySymbol as $data) { foreach($data['monthly'] as $m) { $allMonths[$m['month']] = true; } }
+    foreach($bySymbol as $data) { foreach($data['months'] as $k => $m) { $allMonths[$k] = true; } }
     $allMonths = array_keys($allMonths); sort($allMonths);
 
     $aggGlobal = $result['aggregate_metrics'] ?? [];
     // C5-12 (D-62): el DD del consolidado es el peor de las monedas (cada una se simula sola, D-41), no el de una cartera
     $ddConsolidatedNote = 'DD del consolidado = el peor DD entre las monedas. Cada moneda se simula sola, así que no es la caída de una cartera con todas a la vez.';
-    $monthlyTotals = [];
+    $monthlyTotals = []; $monthlyAcum = [];
     foreach($bySymbol as $data) {
-        foreach($data['monthly'] as $m) {
-            $monthKey = $m['month'];
-            if (!isset($monthlyTotals[$monthKey])) $monthlyTotals[$monthKey] = 0;
-            $monthlyTotals[$monthKey] += (float)($m['total_pnl_pct'] ?? 0);
+        foreach($data['months'] as $k => $m) {
+            $monthlyTotals[$k] = ($monthlyTotals[$k] ?? 0) + $m['pct'];
+        }
+    }
+    foreach ($allMonths as $k) {   // acumulado del consolidado = suma de los acumulados de las monedas (termina en la suma de los retornos)
+        $monthlyAcum[$k] = 0;
+        foreach ($bySymbol as $data) {
+            $last = null;
+            foreach ($data['months'] as $mk => $m) { if ($mk <= $k) { $last = $m['acum']; } }
+            $monthlyAcum[$k] += $last ?? 0;
         }
     }
     $avgGlobal = count($monthlyTotals) > 0 ? array_sum($monthlyTotals) / count($monthlyTotals) : 0;
     $positiveGlobal = count(array_filter($monthlyTotals, fn($v) => $v > 0));
     $consistGlobal = count($monthlyTotals) > 0 ? round($positiveGlobal / count($monthlyTotals) * 100, 1) : 0;
     $pnlsGlobal = array_values($monthlyTotals); // Para el conteo en la tabla
-    $sumRatings = 0;
-    $countSymbols = 0;
-    foreach ($bySymbol as $data) {
-        $sumRatings += $data['rating'];
-        $countSymbols++;
-    }
+    $sumRatings = array_sum(array_column($bySymbol, 'rating'));
+    $countSymbols = count($bySymbol);
     $ratingGlobal = $countSymbols > 0 ? round($sumRatings / $countSymbols, 1) : 0;
 @endphp
 
@@ -73,7 +73,8 @@
                 @php
                     $payload = $result['save_payload'];
                     $payload['backtest_id'] = request('backtest_id');
-                    $payload['metrics'] = [
+                    // D-70: se conservan las métricas del servidor (DD, trades por moneda…); antes se perdía el DD al guardar
+                    $payload['metrics'] = array_merge((array) ($result['save_payload']['metrics'] ?? []), [
                         'total_trades' => $aggGlobal['total_trades'] ?? 0,
                         'win_rate' => $aggGlobal['win_rate'] ?? 0,
                         'sharpe_ratio' => $aggGlobal['sharpe_ratio'] ?? 0,
@@ -82,8 +83,10 @@
                         'avg_monthly_pnl' => $avgGlobal ?? 0,
                         'consist_pct' => $consistGlobal ?? 0,
                         'rating' => $ratingGlobal ?? 0,
+                        'max_drawdown_pct' => $aggGlobal['max_drawdown_pct'] ?? null,
+                        'max_drawdown_floating_pct' => $aggGlobal['max_drawdown_floating_pct'] ?? null,
                         'individual_results' => $result['individual_results'] ?? []
-                    ];
+                    ]);
                 @endphp
                 <input type="hidden" name="save_data" value="{{ base64_encode(json_encode($payload)) }}">
                 <button type="button" onclick="confirmSaveBacktest()" class="text-[12px] font-medium px-4 py-1.5 rounded transition-colors" style="background:var(--color-profit); color:#fff;">
@@ -150,13 +153,13 @@
                 @php
                     $d = $bySymbol[$sym]; $r = $d['rating']; $c = $starColor($r);
                     $bestMonth = '—'; $worstMonth = '—'; $bestVal = null; $worstVal = null; $winsM = 0;
-                    foreach($d['monthly'] as $m) {
-                        $val = (float)$m['total_pnl_pct'];
+                    foreach($d['months'] as $m) {
+                        $val = (float)$m['pct'];
                         if($bestVal === null || $val > $bestVal) { $bestVal = $val; $bestMonth = $m['month']; }
                         if($worstVal === null || $val < $worstVal) { $worstVal = $val; $worstMonth = $m['month']; }
                         if($val > 0) $winsM++;
                     }
-                    $totalM = count($d['monthly']);
+                    $totalM = count($d['months']);
                 @endphp
                 <tr class="hover:bg-[#1A2230] transition-colors">
                     <td class="px-4 py-2 font-medium whitespace-nowrap" style="color:var(--color-text-primary);">{{ $sym }}</td>
@@ -199,8 +202,8 @@
                     // Calcular Mejor/Peor mes actual
                     $currBestVal = null; $currWorstVal = null;
                     foreach($bySymbol as $data) {
-                        foreach($data['monthly'] as $m) {
-                            $val = (float)$m['total_pnl_pct'];
+                        foreach($data['months'] as $m) {
+                            $val = (float)$m['pct'];
                             if ($currBestVal === null || $val > $currBestVal) $currBestVal = $val;
                             if ($currWorstVal === null || $val < $currWorstVal) $currWorstVal = $val;
                         }
@@ -209,27 +212,8 @@
                     // Preparar los datos del backtest guardado (si existe)
                     if ($prevBacktest) {
                         $prevM = $prevBacktest->metrics ?? [];
-                        if (isset($prevM['rating']) && $prevM['rating'] > 0) {
-                            $prevRating = (float)$prevM['rating'];
-                        } else {
-                            // Recalcular si es un backtest viejo
-                            $pWr = (float)($prevM['win_rate'] ?? 0);
-                            $pSharpe = (float)($prevM['sharpe_ratio'] ?? 0);
-                            $pPf = (float)($prevM['profit_factor'] ?? 0);
-                            $pRet = (float)($prevM['avg_monthly_pnl'] ?? 0);
-                            $pCons = (float)($prevM['consist_pct'] ?? 0);
-                            
-                            // Normalizar retorno por si está en decimal (0.05 en vez de 5)
-                            if (abs($pRet) > 0 && abs($pRet) <= 1) $pRet *= 100;
-
-                            $sWr = $pWr >= 65 ? 5 : ($pWr >= 55 ? 4 : ($pWr >= 45 ? 3 : ($pWr >= 35 ? 2 : 1)));
-                            $sSharpe = $pSharpe >= 4 ? 5 : ($pSharpe >= 3 ? 4 : ($pSharpe >= 2 ? 3 : ($pSharpe >= 1 ? 2 : 1)));
-                            $sPf = $pPf >= 2.5 ? 5 : ($pPf >= 2.0 ? 4 : ($pPf >= 1.5 ? 3 : ($pPf >= 1.0 ? 2 : 1)));
-                            $sRet = $pRet >= 20 ? 5 : ($pRet >= 10 ? 4 : ($pRet >= 5 ? 3 : ($pRet >= 2 ? 2 : 1)));
-                            $sCons = $pCons >= 80 ? 5 : ($pCons >= 60 ? 4 : ($pCons >= 40 ? 3 : ($pCons >= 20 ? 2 : 1)));
-                            
-                            $prevRating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-                        }
+                        // D-70: la misma fórmula que la fila actual (no la calificación vieja guardada)
+                        $prevRating = \App\Helpers\RatingHelper::fromMetrics((array) $prevM);
                         $prevTrades = (int)($prevM['total_trades'] ?? 0);
                         $prevWr = (float)($prevM['win_rate'] ?? 0);
                         $prevSharpe = (float)($prevM['sharpe_ratio'] ?? 0);
@@ -249,8 +233,10 @@
                         $prevBestVal = -999; $prevWorstVal = 999;
                         if (isset($prevM['individual_results'])) {
                             foreach ($prevM['individual_results'] as $ind) {
-                                foreach (($ind['monthly_breakdown'] ?? []) as $m) {
-                                    $val = (float)($m['total_pnl_pct'] ?? 0);
+                                $pMonths = \App\Support\BacktestMonths::build((array) ($ind['monthly_breakdown'] ?? []),
+                                    (float) ($ind['aggregate_metrics']['initial_balance'] ?? 10000));
+                                foreach ($pMonths as $m) {
+                                    $val = (float) $m['pct'];
                                     if ($val > $prevBestVal) $prevBestVal = $val;
                                     if ($val < $prevWorstVal) $prevWorstVal = $val;
                                 }
@@ -265,7 +251,8 @@
                     }
                 @endphp
 
-                {{-- FILA DEL CONSOLIDADO ACTUAL --}}
+                {{-- FILA DEL CONSOLIDADO ACTUAL: solo con varias monedas (con una, es la misma moneda; D-70) --}}
+                @if($isMulti)
                 <tr style="background:var(--color-surface-raised); border-t-2 border-[var(--color-border-strong)];">
                     <td class="px-4 py-2 font-bold whitespace-nowrap" style="color:var(--color-info);">CONSOLIDADO</td>
                     <td class="px-3 py-2 text-center whitespace-nowrap">
@@ -305,6 +292,7 @@
                         {{ number_format($avgGlobal ?? 0, 2) }}%
                     </td>
                 </tr>
+                @endif
 
                 @if($prevBacktest)
                 {{-- FILA DE DATOS GUARDADOS (PREVIOS) --}}
@@ -432,22 +420,20 @@
                         @php
                             $monthTrades = 0; $monthWins = 0; $monthPnl = 0;
                             foreach($symbolsList as $sym) {
-                                foreach($bySymbol[$sym]['monthly'] as $m) {
-                                    if($m['month'] === $month) { $monthTrades += $m['total_trades']; $monthWins += $m['wins']; $monthPnl += $m['total_pnl_pct']; }
-                                }
+                                $m = $bySymbol[$sym]['months'][$month] ?? null;
+                                if($m) { $monthTrades += $m['trades']; $monthWins += $m['wins']; $monthPnl += $m['pct']; }
                             }
                         @endphp
                         <tr>
                             <td class="px-3 py-2 font-mono font-medium" style="color:var(--color-text-primary);">{{ $month }}</td>
                             @foreach($symbolsList as $sym)
                                 @php
-                                    $found = null;
-                                    foreach($bySymbol[$sym]['monthly'] as $m) { if($m['month'] === $month) { $found = $m; break; } }
+                                    $found = $bySymbol[$sym]['months'][$month] ?? null;
                                 @endphp
                                 <td class="px-3 py-2 text-center border-l text-[10px] font-mono" style="border-color:var(--color-border-soft);">
                                     @if($found)
-                                        <div style="color:var(--color-text-muted);">{{ $found['total_trades'] }}t | {{ $found['wins'] }}/{{ $found['losses'] }}</div>
-                                        <div style="color:{{ $found['total_pnl_pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}; font-weight:600;">{{ $found['total_pnl_pct'] >= 0 ? '+' : '' }}{{ number_format($found['total_pnl_pct'], 2) }}%</div>
+                                        <div style="color:var(--color-text-muted);">{{ $found['trades'] }}t | {{ $found['wins'] }}/{{ $found['losses'] }}</div>
+                                        <div style="color:{{ $found['pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}; font-weight:600;">{{ $found['pct'] >= 0 ? '+' : '' }}{{ number_format($found['pct'], 2) }}%</div>
                                     @else
                                         <span style="color:var(--color-text-muted);">—</span>
                                     @endif
@@ -456,6 +442,7 @@
                             <td class="px-3 py-2 text-center border-l text-[10px] font-mono" style="border-color:var(--color-border-strong); background:#0D1117;">
                                 <div style="color:var(--color-text-secondary);">{{ $monthTrades }}t | {{ $monthWins }}/{{ $monthTrades - $monthWins }}</div>
                                 <div style="color:{{ $monthPnl >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}; font-weight:600;">{{ $monthPnl >= 0 ? '+' : '' }}{{ number_format($monthPnl, 2) }}%</div>
+                                <div style="color:var(--color-text-muted);" title="Acumulado: suma de lo que creció cada moneda hasta este mes">acum {{ ($monthlyAcum[$month] ?? 0) >= 0 ? '+' : '' }}{{ number_format($monthlyAcum[$month] ?? 0, 2) }}%</div>
                             </td>
                         </tr>
                         @endforeach
@@ -497,10 +484,9 @@
                         @php $acum = 0; $totalWins = 0; $totalLosses = 0; @endphp
                         @foreach($allMonths as $month)
                             @php
-                                $found = null;
-                                foreach($singleData['monthly'] as $m) { if($m['month'] === $month) { $found = $m; break; } }
-                                if ($found) { 
-                                    $acum += $found['total_pnl_pct']; 
+                                $found = $singleData['months'][$month] ?? null;
+                                if ($found) {
+                                    $acum = $found['acum'];   // D-70: lo que creció la cuenta (termina en el retorno)
                                     $totalWins += $found['wins'];
                                     $totalLosses += $found['losses'];
                                 }
@@ -508,11 +494,11 @@
                             <tr class="hover:bg-[#1A2230] transition-colors">
                                 <td class="px-3 py-2 font-mono font-medium" style="color:var(--color-text-primary);">{{ $month }}</td>
                                 @if($found)
-                                    <td class="px-3 py-2 text-center font-mono" style="color:var(--color-text-muted);">{{ $found['total_trades'] }}</td>
+                                    <td class="px-3 py-2 text-center font-mono" style="color:var(--color-text-muted);">{{ $found['trades'] }}</td>
                                     <td class="px-3 py-2 text-center font-mono" style="color:var(--color-profit);">{{ $found['wins'] }}</td>
                                     <td class="px-3 py-2 text-center font-mono" style="color:var(--color-loss);">{{ $found['losses'] }}</td>
-                                    <td class="px-3 py-2 text-right font-mono font-medium" style="color:{{ $found['total_pnl_pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
-                                        {{ $found['total_pnl_pct'] >= 0 ? '+' : '' }}{{ number_format($found['total_pnl_pct'], 2) }}%
+                                    <td class="px-3 py-2 text-right font-mono font-medium" style="color:{{ $found['pct'] >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
+                                        {{ $found['pct'] >= 0 ? '+' : '' }}{{ number_format($found['pct'], 2) }}%
                                     </td>
                                     <td class="px-3 py-2 text-right font-mono" style="color:{{ $acum >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }};">
                                         {{ $acum >= 0 ? '+' : '' }}{{ number_format($acum, 2) }}%

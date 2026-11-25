@@ -54,7 +54,8 @@ class BacktestingController extends Controller
             return response()->json(['success' => false, 'error' => 'Meses: debe ser un número entero entre 1 y 60.']);
         }
         $end = now()->subMonthNoOverflow()->endOfMonth();
-        $start = $end->copy()->subMonths($months - 1)->startOfMonth();
+        // D-70: sin desborde (desde el 31 de un mes, subMonths caía en el mes siguiente: «24 meses» corría 23)
+        $start = $end->copy()->subMonthsNoOverflow($months - 1)->startOfMonth();
 
         // El motor sube el trailing fijo < 1% a 1% (escudo anti-comisiones): se rechaza aquí para que
         // el backtest corra exactamente lo que muestra la UI.
@@ -253,21 +254,19 @@ class BacktestingController extends Controller
         // Sin pérdidas: 999.99, el mismo tope que se guarda en paper_strategy_configs.
         $profitFactor = $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : ($grossProfit > 0 ? 999.99 : 0);
 
-        // Calcular promedio mensual y consistencia global (igual que en results.blade.php)
+        // D-70: meses con el retorno REAL de cada moneda (sobre el saldo al empezar el mes); el consolidado suma las
+        // monedas mes a mes (igual que results.blade.php). El retorno consolidado es la suma de los retornos de las
+        // monedas ($totalPnl): el mismo número que muestra cada fila (antes, la suma de los % de cada operación).
         $monthlyTotals = [];
         foreach ($resultsData as $ind) {
-            $monthly = $ind['monthly_breakdown'] ?? [];
-            foreach ($monthly as $m) {
-                $monthKey = $m['month'];
-                if (!isset($monthlyTotals[$monthKey])) $monthlyTotals[$monthKey] = 0;
-                $monthlyTotals[$monthKey] += (float)($m['total_pnl_pct'] ?? 0);
+            $initial = (float) ($ind['aggregate_metrics']['initial_balance'] ?? 10000);
+            foreach (\App\Support\BacktestMonths::build($ind['monthly_breakdown'] ?? [], $initial) as $k => $mm) {
+                $monthlyTotals[$k] = ($monthlyTotals[$k] ?? 0) + $mm['pct'];
             }
         }
         $avgGlobal = count($monthlyTotals) > 0 ? array_sum($monthlyTotals) / count($monthlyTotals) : 0;
         $positiveGlobal = count(array_filter($monthlyTotals, fn($v) => $v > 0));
         $consistGlobal = count($monthlyTotals) > 0 ? round($positiveGlobal / count($monthlyTotals) * 100, 1) : 0;
-
-        $totalPnl = array_sum($monthlyTotals); // Fix: El retorno consolidado es la suma de los meses
 
         $result = [
             'strategy' => $strategy->name,

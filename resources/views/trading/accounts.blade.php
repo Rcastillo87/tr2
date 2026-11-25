@@ -156,24 +156,11 @@
                                     $params = $group['params'];
                                     $m = $group['metrics'];
                                     
-                                    // CÁLCULO DE ESTRELLAS (Igual que en el Historial)
-                                    $wr = $m['win_rate'];
-                                    $sharpe = $m['sharpe_ratio'];
-                                    $pf = $m['profit_factor'];
-                                    $ret = $m['avg_monthly_pnl'];
-                                    $consist = $m['consist_pct'];
+                                    // D-70: estrellas con la fórmula única (App\Helpers\RatingHelper), las mismas del historial
                                     $trades = $m['total_trades'];
-                                    
-                                    $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
-                                    $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
-                                    $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
-                                    $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
-                                    $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-                                    
-                                    $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-                                    if ($rating <= 0) $rating = 1.0;
-                                    
-                                    $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : '#E24B4A'));
+                                    $rd = \App\Helpers\RatingHelper::fromMetricsDetail((array) ($bt?->metrics ?? []));
+                                    $rating = $rd['rating'];
+                                    $starColor = \App\Helpers\RatingHelper::getColor($rating);
                                 @endphp
 
                                 <div class="rounded-lg border" style="background:var(--color-surface); border-color:var(--color-border-soft);" id="group_{{ $account->id }}_{{ $group['id'] }}">
@@ -227,34 +214,27 @@
                                         <span class="text-[11px]" style="color:var(--color-text-muted);">{{ $trades }} trades</span>
                                     </div>
 
-                                    {{-- Fila de Métricas (5 columnas) --}}
-                                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); padding: 8px; gap: 4px;">
-                                        <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                            <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">Win Rate</p>
-                                            <p style="font-size:14px; color:{{ $sWr > 0 ? $starColor : '#4B5563' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $sWr) }}{{ str_repeat('☆', 5 - $sWr) }}</p>
-                                            <p style="font-size:11px; font-family:monospace; margin:0;">{{ number_format($wr, 2) }}%</p>
-                                        </div>
-                                        <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                            <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">Sharpe Ratio</p>
-                                            <p style="font-size:14px; color:{{ $sSharpe > 0 ? $starColor : '#4B5563' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $sSharpe) }}{{ str_repeat('☆', 5 - $sSharpe) }}</p>
-                                            <p style="font-size:11px; font-family:monospace; margin:0;">{{ number_format($sharpe, 2) }}</p>
-                                        </div>
-                                        <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                            <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">Ret. prom/mes</p>
-                                            <p style="font-size:14px; color:{{ $sRet > 0 ? $starColor : '#4B5563' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $sRet) }}{{ str_repeat('☆', 5 - $sRet) }}</p>
-                                            <p style="font-size:11px; font-family:monospace; color:{{ $ret >= 0 ? 'var(--color-profit)' : 'var(--color-loss)' }}; margin:0;">{{ number_format($ret, 2) }}%</p>
-                                        </div>
-                                        <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                            <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">Consistencia</p>
-                                            <p style="font-size:14px; color:{{ $sCons > 0 ? $starColor : '#4B5563' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $sCons) }}{{ str_repeat('☆', 5 - $sCons) }}</p>
-                                            <p style="font-size:11px; font-family:monospace; margin:0;">{{ number_format($consist, 1) }}%</p>
-                                        </div>
-                                        <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
-                                            <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">Profit Factor</p>
-                                            <p style="font-size:14px; color:{{ $sPf > 0 ? $starColor : '#4B5563' }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $sPf) }}{{ str_repeat('☆', 5 - $sPf) }}</p>
-                                            <p style="font-size:11px; font-family:monospace; margin:0;">{{ number_format($pf, 2) }}</p>
-                                        </div>
+                                    {{-- Las cuatro notas de las estrellas (D-70); el % de ganadas y el Sharpe se muestran sin contar --}}
+                                    @php
+                                        $v = $rd['values'];
+                                        $cards = [
+                                            ['pf', $v['pf'] === null ? 'sin pérdidas' : number_format($v['pf'], 2)],
+                                            ['recovery', $v['recovery'] === null ? '—' : number_format($v['recovery'], 1) . '×'],
+                                            ['consist', number_format($v['consist'], 1) . '%'],
+                                            ['dd', $v['dd'] === null ? '—' : number_format($v['dd'], 2) . '%'],
+                                        ];
+                                    @endphp
+                                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); padding: 8px; gap: 4px;">
+                                        @foreach ($cards as $card)
+                                            @php [$key, $val] = $card; $n = $rd['parts'][$key]; @endphp
+                                            <div style="text-align:center; border-radius:4px; padding:6px 4px; background:var(--color-surface-raised); border:1px solid var(--color-border-soft);">
+                                                <p style="font-size:10px; color:var(--color-text-muted); margin:0 0 3px;">{{ \App\Helpers\RatingHelper::LABELS[$key] }}</p>
+                                                <p style="font-size:14px; color:{{ $starColor }}; margin:0 0 3px; line-height:1;">{{ str_repeat('★', $n) }}{{ str_repeat('☆', 5 - $n) }}</p>
+                                                <p style="font-size:11px; font-family:monospace; margin:0;">{{ $val }}</p>
+                                            </div>
+                                        @endforeach
                                     </div>
+                                    <p class="px-4 pb-2 text-[10px]" style="color:var(--color-text-muted);">Win rate {{ number_format((float) $m['win_rate'], 1) }}% · Sharpe {{ number_format((float) $m['sharpe_ratio'], 2) }} (se muestran, no cuentan en las estrellas)</p>
                                 </div>
                             @endforeach
                         </div>

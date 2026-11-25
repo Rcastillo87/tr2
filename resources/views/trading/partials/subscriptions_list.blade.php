@@ -40,16 +40,9 @@
                 $consist = (float)($m['consist_pct'] ?? 0);
                 $trades = (int)($m['total_trades'] ?? 0);
 
-                // Cálculo de estrellas (igual que en el historial)
-                $sWr = $wr >= 65 ? 5 : ($wr >= 55 ? 4 : ($wr >= 45 ? 3 : ($wr >= 35 ? 2 : 1)));
-                $sSharpe = $sharpe >= 4 ? 5 : ($sharpe >= 3 ? 4 : ($sharpe >= 2 ? 3 : ($sharpe >= 1 ? 2 : 1)));
-                $sPf = $pf >= 2.5 ? 5 : ($pf >= 2.0 ? 4 : ($pf >= 1.5 ? 3 : ($pf >= 1.0 ? 2 : 1)));
-                $sRet = $ret >= 20 ? 5 : ($ret >= 10 ? 4 : ($ret >= 5 ? 3 : ($ret >= 2 ? 2 : 1)));
-                $sCons = $consist >= 80 ? 5 : ($consist >= 60 ? 4 : ($consist >= 40 ? 3 : ($consist >= 20 ? 2 : 1)));
-
-                $rating = round(($sWr + $sSharpe + $sPf + $sRet + $sCons) / 5, 1);
-                if ($rating <= 0) $rating = 1.0;
-                $starColor = $rating >= 4 ? '#F5C518' : ($rating >= 3 ? '#EF9F27' : ($rating >= 2 ? '#E8832A' : '#E24B4A'));
+                // D-70: estrellas con la fórmula única (App\Helpers\RatingHelper)
+                $rating = \App\Helpers\RatingHelper::fromMetrics((array) ($bt->metrics ?? []));
+                $starColor = \App\Helpers\RatingHelper::getColor($rating);
             @endphp
             <div class="flex items-center justify-between p-3 rounded-lg border" style="background:var(--color-surface-raised); border-color:var(--color-border-soft);">
                 <div class="flex-1">

@@ -29,7 +29,21 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-04: fechas reales de cada tramo de la búsqueda (p122) — 25-nov
+### Backtest: un solo retorno y estrellas unificadas (p123, D-70) — 25-nov
+- **Reportado por el dueño (capturas PEPE y SOL):** totales que no cuadran, CONSOLIDADO con una moneda, estrellas.
+- **Validado:** «24 meses» corría 23 (`subMonths` desde el 31-oct cae en dic-2024: «10/23 meses»); la moneda mostraba el
+  retorno real (SOL 30,01 %) y el consolidado y el acumulado mensual la suma de los % por operación (27,91 %); al guardar,
+  el formulario rehacía las métricas sin el DD (los 15 backtests guardados sin DD); la fórmula de estrellas estaba copiada
+  en 5 lugares y con umbrales de 20 %/mes y Sharpe 4 (todas las configs entre 1,8 y 2,4).
+- **Fix:** D-70 (a)–(e). Las estrellas se calculan siempre con la fórmula vigente: no hay datos que recalcular; la
+  columna `star_rating` de cada config se actualiza al volver a guardar su backtest.
+- **Después de instalar:** volver a correr y guardar los backtests de las configs para tener los 24 meses reales y el DD.
+- **Prueba:** `rating_unified_test.php` (nueva; código anterior 12 FALLOS; reproduce la tabla aprobada); mutaciones 12/12;
+  `saved_backtests_test` L5 y `vwap_metrics_fix_test` A1–A6 cambian por la decisión (la datafix D-43 es histórica);
+  regresión 85 Python + 39 PHP en TODO OK.
+
+### Ciclo 6 · C6-04: fechas reales de cada tramo de la búsqueda (p122) — 25-nov · instalado `4f53e69`
+- **Servidor:** LINK #64 y PEPE #69 en automático (SL 2×ATR [0,8–5 %], TP 2× el SL, BE 1× el SL) desde el backtest; SUI #79 seguía fijo en la lectura de cierre.
 - **Fix (boceto aprobado):** debajo de «Elegir / Validar / Prueba final» van sus fechas, desde los cortes guardados de cada
   búsqueda (`App\Support\SearchPeriodLabels`); el encabezado termina en el último día que cuenta (31-oct, no 1-nov).
   D-58 sin cambios.

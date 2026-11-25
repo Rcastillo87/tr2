@@ -71,11 +71,7 @@ foreach ($cases as [$metrics, $rp, $months, $sym, $n]) {
     $a['avg_monthly_trades'] = $S::tradesPerMonth($metrics, $rp, $months, $sym, $n);
     $out[] = $a;
 }
-$grid = [];
-foreach ([[34.9, 0.99, 0.99, 1.99, 19.9], [35, 1, 1, 2, 20], [45, 2, 1.5, 5, 40], [55, 3, 2.0, 10, 60], [65, 4, 2.5, 20, 80], [73.91, 1.24, 1.71, 0.36, 62.5]] as $g) {
-    $grid[] = \App\Helpers\RatingHelper::calculate(...$g);
-}
-echo json_encode(['cols' => $out, 'grid' => $grid]);
+echo json_encode(['cols' => $out]);
 '''
 try:
     res = subprocess.run(['php', '-r', php], input=json.dumps(CASES), capture_output=True, text=True, cwd=ROOT, timeout=60)
@@ -86,13 +82,12 @@ except Exception as e:   # noqa: BLE001
 if ref:
     for i, (case, want) in enumerate(zip(CASES, ref['cols'])):
         got = fx.config_columns(*case)
-        bad = {k: (got[k], want.get(k)) for k in fx.CONFIG_COLS
-               if (got[k] is None) != (want.get(k) is None) or (got[k] is not None and abs(float(got[k]) - float(want[k])) > 1e-9)}
+        # D-70 (25-nov): las estrellas cambiaron de fórmula; la datafix D-43 (ya aplicada en p82) usó la anterior y
+        # StrategyConfigSync las recalcula con la nueva al guardar. Se comparan las demás columnas.
+        bad = {k: (got[k], want.get(k)) for k in fx.CONFIG_COLS if k != 'star_rating'
+               and ((got[k] is None) != (want.get(k) is None) or (got[k] is not None and abs(float(got[k]) - float(want[k])) > 1e-9))}
         check(f'A{i + 1}: columnas de la config = StrategyConfigSync (PHP)', not bad, bad)
-    grid = [fx.rating(*g) for g in ([34.9, 0.99, 0.99, 1.99, 19.9], [35, 1, 1, 2, 20], [45, 2, 1.5, 5, 40], [55, 3, 2.0, 10, 60],
-                                    [65, 4, 2.5, 20, 80], [73.91, 1.24, 1.71, 0.36, 62.5])]
-    check('A6: estrellas = RatingHelper (PHP) en los bordes de cada escalón', grid == [float(x) for x in ref['grid']],
-          (grid, ref['grid']))
+    print('NOTA A6: las estrellas de la datafix D-43 (fórmula anterior) ya no se comparan: D-70 cambió la fórmula')
 check('A7: no se tocan params ni estado (solo columnas de métricas)',
       set(fx.CONFIG_COLS).isdisjoint({'params', 'active', 'display_name', 'interval', 'backtest_id'}))
 
