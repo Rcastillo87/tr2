@@ -125,9 +125,11 @@ class RealStrategySubscriptionController extends Controller
         $subscription->status = $activating ? 'active' : 'paused';
         $subscription->save();
 
+        $name = $this->label($subscription);
+
         return back()->with('status', $subscription->status === 'active'
-            ? "Estrategia \"{$subscription->strategy}\" activada."
-            : "Estrategia \"{$subscription->strategy}\" pausada.");
+            ? "Estrategia \"{$name}\" activada."
+            : "Estrategia \"{$name}\" pausada.");
     }
 
     /**
@@ -147,9 +149,17 @@ class RealStrategySubscriptionController extends Controller
             ]);
         }
 
-        $name = $subscription->strategy;
+        $name = $this->label($subscription);
         $subscription->delete();
 
         return back()->with('status', "Suscripción \"{$name}\" eliminada.");
+    }
+
+    /** D-72: el inversionista no ve nombres de estrategias (Config #N · moneda · temporalidad). */
+    private function label(RealStrategySubscription $subscription): string
+    {
+        return auth()->user()?->isInversionista()
+            ? \App\Support\StrategyLabel::anon([(int) $subscription->paper_strategy_config_id], [(string) $subscription->symbol], (string) $subscription->interval)
+            : (string) $subscription->strategy;
     }
 }

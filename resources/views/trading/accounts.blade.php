@@ -167,7 +167,8 @@
                                     {{-- Header con Botón --}}
                                     <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:var(--color-border-soft);">
                                         <div class="flex items-center gap-3">
-                                            <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ $group['display_name'] }}</span>
+                                            {{-- D-72: el inversionista no ve nombres de estrategias --}}
+                                            <span class="text-[12px] font-medium" style="color:var(--color-text-primary);">{{ auth()->user()?->isInversionista() ? \App\Support\StrategyLabel::anon($group['config_ids'], $group['symbols'], (string) $group['interval']) : $group['display_name'] }}</span>
                                             <span class="text-[11px]" style="color:var(--color-text-muted);">{{ implode(', ', $group['symbols']) }} / {{ $group['interval'] }} / {{ $group['months'] }} meses</span>
                                         </div>
                                         <form method="POST" action="{{ route('trading.subscriptions.store', $account) }}" class="inline" onsubmit="submitAddForm(event, this, 'group_{{ $account->id }}_{{ $group['id'] }}', {{ $account->id }})">

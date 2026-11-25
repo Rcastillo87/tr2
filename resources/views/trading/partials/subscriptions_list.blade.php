@@ -4,8 +4,13 @@
     @php
         // Agrupar por backtest_id (o por nombre base si no hay backtest)
         // 24-nov: cada moneda con su estado y el aviso de misma moneda (App\Support\SubscriptionRows)
+        // D-72: el inversionista no ve nombres de estrategias: «Config #N · moneda · temporalidad»
+        $anon = (bool) auth()->user()?->isInversionista();
+        $subName = fn ($s) => $anon
+            ? \App\Support\StrategyLabel::anon([(int) $s->paper_strategy_config_id], [(string) $s->symbol], (string) $s->interval)
+            : (string) $s->strategy;
         $rows = \App\Support\SubscriptionRows::build($account->subscriptions->map(fn ($s) => [
-            'id' => (int) $s->id, 'symbol' => (string) $s->symbol, 'strategy' => (string) $s->strategy,
+            'id' => (int) $s->id, 'symbol' => (string) $s->symbol, 'strategy' => $subName($s),
             'status' => (string) $s->status, 'retire_on_close' => (bool) $s->retire_on_close,
         ])->values()->all());
         $groupedSubs = $account->subscriptions->groupBy(function($sub) {
@@ -29,7 +34,9 @@
 
                 $interval = $bt ? $bt->interval : $first->interval;
                 $baseName = trim(explode(' — ', $first->strategy)[0]);
-                $displayName = $baseName . ' — ' . implode(', ', $symbols) . ' (' . $interval . ')';
+                $displayName = $anon
+                    ? \App\Support\StrategyLabel::anon($subs->pluck('paper_strategy_config_id')->all(), $symbols, (string) $interval)
+                    : $baseName . ' — ' . implode(', ', $symbols) . ' (' . $interval . ')';
 
                 // Métricas del backtest
                 $m = $bt->metrics ?? [];
@@ -80,14 +87,14 @@
                                 <span class="text-[10px]" style="color:var(--color-text-muted);">Quitada de Paper · su operación sigue hasta el SL/TP</span>
                             @else
                                 <form method="POST" action="{{ route('trading.subscriptions.toggle', [$account, $sub]) }}" class="inline"
-                                      onsubmit="return confirmSubToggle(event, @js($sub->strategy), {{ $row['state'] === 'active' ? 'true' : 'false' }}, @js(implode(', ', $row['shares'])))">
+                                      onsubmit="return confirmSubToggle(event, @js($subName($sub)), {{ $row['state'] === 'active' ? 'true' : 'false' }}, @js(implode(', ', $row['shares'])))">
                                     @csrf @method('PATCH')
                                     <button type="submit" class="px-2 py-1 rounded text-[11px] border" style="background:transparent; border-color:var(--color-border-strong); color:var(--color-text-primary);">
                                         {{ $row['state'] === 'active' ? '⏸️ Pausar ' . $coin : '▶️ Reanudar ' . $coin }}
                                     </button>
                                 </form>
                                 <form method="POST" action="{{ route('trading.subscriptions.destroy', [$account, $sub]) }}" class="inline"
-                                      onsubmit="return confirmSubDelete(event, @js($sub->strategy))">
+                                      onsubmit="return confirmSubDelete(event, @js($subName($sub)))">
                                     @csrf @method('DELETE')
                                     <button type="submit" aria-label="Eliminar {{ $sub->symbol }}" class="px-2 py-1 rounded text-[11px] border text-red-400" style="background:transparent; border-color:#7F1D1D;">
                                         🗑️

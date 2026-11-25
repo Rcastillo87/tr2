@@ -113,8 +113,8 @@ $check('D5: la lista usa SubscriptionRows y ya no el estado de la primera moneda
     && str_contains($blade, "\$row = \$rows[\$sub->id];") && str_contains($blade, "{{ \$row['label'] }}"));
 $check('D6: el botón dice la moneda', str_contains($blade, "'⏸️ Pausar ' . \$coin") && str_contains($blade, "'▶️ Reanudar ' . \$coin"));
 $check('D7: eliminar y pausar con SweetAlert (sin confirm() del navegador)', ! str_contains($blade, 'confirm(\'')
-    && str_contains($blade, 'onsubmit="return confirmSubDelete(event, @js($sub->strategy))"')
-    && str_contains($blade, 'return confirmSubToggle(event, @js($sub->strategy)'));
+    && str_contains($blade, 'onsubmit="return confirmSubDelete(event, @js($subName($sub)))"')   // D-72: etiqueta según el rol
+    && str_contains($blade, 'return confirmSubToggle(event, @js($subName($sub))'));
 $check('D8: una que se elimina al cerrar no muestra botones', (bool) preg_match(
     "/@if \(\\\$row\['state'\] === 'retiring'\)(?:(?!@else).)*Quitada de Paper(?:(?!@else).)*@else/s", $blade));
 $acc = $read('resources/views/trading/accounts.blade.php');

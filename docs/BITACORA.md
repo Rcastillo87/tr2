@@ -29,7 +29,15 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### El inversionista no ve nombres de estrategias (p124, D-71) — 25-nov
+### Trading — Cuentas sin nombres de estrategias para el inversionista (p125, D-72) — 25-nov
+- **Dashboard (D-71):** el dueño reportó que seguía viendo «Estrategias — paper trading»; la lectura dibujó el dashboard
+  como el inversionista (usuario #2): «no se ve» → era la página guardada en el navegador.
+- **Fix:** `StrategyLabel::anon` («Config #74 · DOGEUSDT · H4») en lista, aviso de misma moneda, confirmaciones, mensajes
+  y modal para el inversionista.
+- **Prueba:** `investor_accounts_labels_test.php` (nueva; código anterior 7 FALLOS); `real_subscriptions_flow_test` D7
+  sigue la etiqueta; mutaciones 4/4; regresión 85 + 41.
+
+### El inversionista no ve nombres de estrategias (p124, D-71) — 25-nov · instalado `97d8702`
 - **Pedido del dueño:** ocultar al perfil inversionista la sección de estrategias del dashboard y, en su pantalla de
   trading, el filtro y la columna de estrategia. Solo eso (el resumen de Paper del dashboard queda como está).
 - **Fix:** `@unless` por rol en las dos vistas; `TradingController` ignora `?strategy=` para el inversionista.
