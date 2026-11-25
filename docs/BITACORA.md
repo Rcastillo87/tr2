@@ -29,7 +29,14 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Suscripciones Real siguen a Paper (p120, D-69) — 24-nov
+### Ciclo 6 · C6-06: esquema regenerado y prueba de sincronía con las migraciones (p121) — 24-nov
+- **Validado:** p111 (D-66) no regeneró `database/schema/pgsql-schema.sql`: faltaban 6 columnas y una restricción de
+  `broker_accounts`; nada lo detectaba.
+- **Fix:** `schema_sync_test.py` (migraciones ⊆ volcado) y p121 regenera el volcado en el servidor antes de la regresión.
+  Regla en PROMPT_MAESTRO §6.5.
+- **Prueba:** contra `pg_dump` local completo 0 faltantes; quitando 2 objetos, detectados; mutaciones 6/6.
+
+### Suscripciones Real siguen a Paper (p120, D-69) — 24-nov · instalado `7b7ed7c`
 - **Reportado por el dueño:** al implementar en Paper la config aparecía en Real «elegida pero pausada» y no cambiaba de
   estado; quitarla de Paper debía quitarla de Real; eliminar usaba el `confirm()` del navegador.
 - **Validado (código + lectura 24-nov 00:29 UTC):** `ensureSubscriptions` creaba una suscripción PAUSADA en todas las

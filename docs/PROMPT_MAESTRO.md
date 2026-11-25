@@ -145,6 +145,9 @@ SQL a mano en `database/sql-migrations/AAAA_MM_DD_NN_nombre.up.sql` y `.down.sql
   falla mientras corre la regresión. Probarlas con PostgreSQL de pruebas (`*_migration_test.py`, transacción revertida).
 - El volcado del esquema se regenera desde la base con `bash ops/schema_dump.sh > database/schema/pgsql-schema.sql`
   (solo estructura; las hypertables y políticas de TimescaleDB van como comentario).
+- **[C6-06]** Todo instalador con migración regenera el volcado **después** de aplicarla y **antes** de la regresión, y lo
+  incluye en su commit: `schema_sync_test.py` falla si al volcado le falta una tabla, columna, índice o restricción de
+  las migraciones (p111 aplicó D-66 sin regenerarlo).
 
 ### 6.6 Instalador: comprobaciones agregadas en el ciclo 5 [V7.6]
 - Vistas: `view:cache` puede terminar bien con un PHP compilado inválido; se revisa cada vista compilada con `php -l` y

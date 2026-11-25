@@ -13,10 +13,26 @@
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
 | 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Herramienta en p119; falta correrla y la decisión del dueño |
-| 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Pendiente de validar |
+| 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Implementado en p121 |
 | 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Pendiente de validar |
 
 ## Validados
+
+### C6-06 · Esquema PostgreSQL del repositorio (P3) — **Defecto (documentación técnica)** · Implementado en p121
+- **Código:** p111 aplicó la migración de D-66 (`2026_11_24_01_risk_limit_options`: 6 columnas y
+  `broker_accounts_loss_pause_days_check`) sin regenerar `database/schema/pgsql-schema.sql`; la última regeneración fue
+  p108. Ninguna prueba comparaba las migraciones con el volcado. Confirmado: el informe tiene razón.
+- **Fix (opción B del dueño, 24-nov: sin acceso al repositorio desde aquí):** `schema_sync_test.py` (nueva): lee todas
+  las migraciones `*.up.sql` (tablas, columnas, índices y restricciones con nombre, también dentro de `DO $$`, descontando
+  lo que una migración posterior borra) y exige que estén en el volcado. p121 regenera el volcado en el servidor con
+  `ops/schema_dump.sh` (solo lectura) **antes** de la regresión, comprueba que tenga las mismas tablas que la base y las
+  6 columnas con su tipo y default, y lo incluye en el commit. Regla nueva en PROMPT_MAESTRO §6.5: todo instalador con
+  migración regenera el volcado antes de la regresión.
+- **Prueba:** S1–S6 el lector (columnas con comas en tipos y textos, `DO $$`, borrados posteriores, formato de
+  `pg_dump`, volcado viejo, tabla que falta); R1 el volcado real. Contra un `pg_dump` local de PostgreSQL de pruebas con
+  todas las migraciones: 0 faltantes; quitando 1 columna y 1 restricción: las 2 detectadas. La copia local del volcado
+  está vieja (no se puede traer del servidor): ahí R1 falla, como debe; en el servidor corre con el regenerado.
+  Mutaciones 6/6; regresión 85 Python + 37 PHP.
 
 ### C6-07 · Comparación controlada SL/TP fijo vs automático (P2) — **Sugerencia (validación, no defecto)** · Herramienta en p119
 - **Servidor (lectura 24-nov 23:57 UTC):** nadie usó todavía el modo automático: 72 búsquedas `fixed`, 14 configs de
