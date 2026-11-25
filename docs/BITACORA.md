@@ -29,7 +29,15 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Ciclo 6 · C6-05 (parte 2): reparación con respaldo de los 2 fragmentos solapados (p118) — 24-nov
+### Ciclo 6 · C6-07: herramienta de comparación SL/TP fijo vs automático (p119) — 24-nov
+- **Validado:** 0 usos del modo automático (72 búsquedas, 14 configs, 15 backtests: todos fijos). «Los dos y comparar» compara
+  configs distintas (competencia, D-45), no la misma config con los dos modos.
+- **Nuevo:** `tools/analysis/compare_levels.py` (solo lectura, baja prioridad): cada config dos veces con las mismas velas,
+  solo cambia el SL/TP; métricas del informe y resumen por métrica y por moneda. Decisión del dueño: «Comparar mis 14 configs».
+- **Prueba:** `compare_levels_test.py` (nueva); mutaciones 9/10 (1 equivalente); regresión 84 + 36.
+
+### Ciclo 6 · C6-05 (parte 2): reparación con respaldo de los 2 fragmentos solapados (p118) — 24-nov · instalado `373c3ef`
+- **Servidor:** 169.897 + 169.897 velas idénticas (10 s y 7 s); «Sin lotes comprimidos solapados»; aviso cerrado.
 - **Nuevo:** `ops/ohlcv_rewrite_chunk.sh <fragmento>` + `database/sql/ohlcv_rewrite_chunk.sql`: respaldo csv.gz de las
   velas del fragmento y `decompress_chunk` + `compress_chunk` en una transacción que solo se confirma con las velas
   idénticas (número y md5); si no, se deshace. Reutilizable cuando la revisión de p117 vuelva a avisar.

@@ -12,14 +12,37 @@
 
 | Orden | ID | Prioridad | Punto | Estado |
 |---|---|---|---|---|
-| 4 | C6-05 | P2 | Detección de lotes comprimidos solapados (TimescaleDB) | Detección instalada en p117 (`c3946eb`); reparación de los 2 fragmentos en p118 |
-| 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Pendiente (del dueño, D-45) |
+| 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Herramienta en p119; falta correrla y la decisión del dueño |
 | 6 | C6-06 | P3 | Esquema PostgreSQL del repositorio tras D-66 | Pendiente de validar |
 | 7 | C6-04 | P3 | Fechas reales de cada tramo de la búsqueda | Pendiente de validar |
 
 ## Validados
 
-### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Detección instalada en p117 (`c3946eb`); reparación en p118
+### C6-07 · Comparación controlada SL/TP fijo vs automático (P2) — **Sugerencia (validación, no defecto)** · Herramienta en p119
+- **Servidor (lectura 24-nov 23:57 UTC):** nadie usó todavía el modo automático: 72 búsquedas `fixed`, 14 configs de
+  Paper/Real con SL y TP fijos, 15 backtests guardados fijos; el interruptor general `SLTP_AUTO_ENABLED` encendido.
+- **Código:** la búsqueda «Los dos y comparar» (`sample_configs`, `sltp='both'`) sortea una config fija y otra
+  automática **distintas** (cambian también filtros, trailing, duración): es una competencia, como dice su ayuda («gana
+  el que mejor rinda»), no una comparación controlada (informe: mismas reglas de entrada y filtros). No es defecto: es
+  lo aprobado en D-45.
+- **Decisión (24-nov, ejemplo de una config probada dos veces):** «Comparar mis 14 configs». Sin cambios de pantallas.
+- **Herramienta (p119):** `tools/analysis/compare_levels.py`: por cada config de `paper_strategy_configs` (todas, o
+  `--configs`), un backtest con la config tal cual (SL/TP fijo explícito) y otro idéntico con SL = k × ATR(14)
+  [mín, máx], TP = m × el SL y break-even en veces el SL (los de D-45; otros con `--sl-atr-mult`, `--tp-r-mult`, …).
+  Mismo periodo que la pantalla (D-58: 24 meses completos), las velas se cargan **una vez** por config con el mismo
+  camino que `/backtest/run` y cada variante corre con el mismo `_simulate` sobre su copia. Métricas del informe por
+  config y variante: retorno neto, profit factor, caída máxima, operaciones, % ganadas, ganancia media (USDT y %), meses
+  positivos / peor / mejor mes, duración media y motivos de salida; resumen de quién gana por métrica y por moneda;
+  `--json-out` con todo (huella de parámetros). Solo lee la base (transacción de solo lectura), corre en un proceso
+  aparte con prioridad mínima (`low_priority`, como la búsqueda) y de a una config; con el interruptor apagado no compara.
+- **Prueba:** `compare_levels_test.py` (nueva: P1 las dos pruebas solo difieren en el SL/TP, aunque la config ya tuviera
+  niveles; P2 multiplicadores; P3 métricas; P4–P5 quién gana y resumen; P6 una config que falla no frena las demás,
+  periodo D-58, interruptor; P7 backtest real sobre velas sintéticas: «fijo» = el backtest de la config tal cual, «auto»
+  SL por ATR dentro de los topes, velas sin pisarse; S solo lectura y baja prioridad); mutaciones 9/10 (la décima, «sin
+  copia de las velas», es equivalente hoy: `_simulate` no modifica las velas; la copia se deja por seguridad);
+  regresión 84 Python + 36 PHP en TODO OK.
+
+### C6-05 · Lotes comprimidos solapados en TimescaleDB (P2) — **Defecto confirmado (está ocurriendo)** · Instalado en p117 (`c3946eb`) y p118 (`373c3ef`)
 - **Antecedente:** el 28-oct una recompresión dejó lotes solapados (50 fragmentos reescritos; `detect.sql`, que crea una
   tabla temporal). El motor ordena y avisa `[BARS]` (`bars_frame`). Faltaba la revisión automática (BITACORA 28-oct).
 - **Servidor (lecturas 24-nov 20:38–20:45 UTC, solo lectura):** compresión `segmentby` broker, symbol, interval;
@@ -55,6 +78,9 @@
   cambiado, falla de la compresión → se deshace con las velas intactas; repetidas o cambio desde el respaldo → no toca);
   mutaciones 7/8 (la octava, «md5 sin `ORDER BY`», es equivalente en PostgreSQL 16: el plan ya ordena la entrada por el
   `count(DISTINCT …)`; se deja el `ORDER BY` para no depender del plan); regresión 83 Python + 36 PHP en TODO OK.
+- **Instalado p118 (`373c3ef`, 24-nov 23:49 UTC):** `_hyper_1_123_chunk` 169.897 velas, reescrito en 10 s;
+  `_hyper_1_124_chunk` 169.897 velas, 7 s; idénticas antes y después (número y md5); respaldos en
+  `/root/patches/ohlcv_rewrite/`; la revisión dio «Sin lotes comprimidos solapados» y cerró el aviso.
 
 ### C6-02 · Estado del panel de riesgo coherente con el motor (P2) — **Defecto (pantalla)** · Instalado en p116 (`f9bcfe6`)
 - **Código:** `RiskLimits::evaluate` devolvía `ok` («Opera normal») con una nota cuando faltaba el saldo base del mes,
@@ -110,6 +136,7 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-05 | Revisión automática cada 3 h de lotes solapados + reparación con respaldo de los 2 fragmentos de octubre | p117 `c3946eb`, p118 `373c3ef` | 339.794 velas idénticas; 0 solapes; aviso cerrado |
 | C6-02 | El panel de riesgo dice «Esperando saldo base» / «Operación sin confirmar» como el motor | p116 `f9bcfe6` | 120 vistas compiladas y revisadas |
 | C6-01 | La cola del libro de ejecuciones descarta en la consulta las que esperan reintento | p115 `0cd5811` | 16 cerradas `ok`, 2 abiertas `open_ok`; motor y tick sin errores |
 | C6-03 | El circuit breaker también cubre las operaciones dudosas vivas; cierra solo con certeza, si no aviso máximo (D-68) | p114 `7d5956e` | 2 abiertas, 0 dudosas; tick Real y motor sin errores tras el reinicio |
