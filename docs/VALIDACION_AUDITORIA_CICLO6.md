@@ -10,9 +10,12 @@
 
 ## Pendientes del ciclo
 
-| Orden | ID | Prioridad | Punto | Estado |
-|---|---|---|---|---|
-| 5 | C6-07 | P2 | Comparación SL/TP fijo vs automático | Corrida 25-nov; decisión: automático solo en LINK #64, PEPE #69, SUI #79 (el dueño lo cambia desde el backtest) |
+Ninguno.
+
+## Cierre (25-nov)
+Los 7 puntos validados e instalados (p114–p122; tabla «Resueltos» abajo). C6-07: comparación hecha y decisión del dueño
+(automático solo en LINK #64, PEPE #69 y SUI #79; el resto fijo). Fuera del informe, a pedido del dueño: D-69 (p120),
+D-70 (p123), D-71 (p124), D-72 (p125). Resumen en `docs/BITACORA.md` («Cierre del ciclo 6»).
 
 ## Validados
 
@@ -178,6 +181,7 @@
 
 | ID | Fix | Instalado | Verificación |
 |---|---|---|---|
+| C6-07 | Comparación controlada SL/TP: el fijo gana en retorno en 12 de 15; automático solo en LINK #64, PEPE #69, SUI #79 | p119 `c707bd4` | `compare_levels.py` en el servidor (15 configs) |
 | C6-04 | Fechas reales de cada tramo y período hasta el último día que cuenta | p122 `4f53e69` | búsqueda #205 con sus 3 fechas |
 | C6-06 | Volcado del esquema al día + `schema_sync_test` (migraciones ⊆ volcado) | p121 `7f9c636` | 30 tablas; 6 columnas de D-66 presentes |
 | C6-05 | Revisión automática cada 3 h de lotes solapados + reparación con respaldo de los 2 fragmentos de octubre | p117 `c3946eb`, p118 `373c3ef` | 339.794 velas idénticas; 0 solapes; aviso cerrado |

@@ -7,21 +7,20 @@
 ---
 
 ## ▶ Próxima sesión (empezar aquí)
-**Ciclo 6 en curso (24-nov):** estado en `docs/VALIDACION_AUDITORIA_CICLO6.md` (orden del informe: C6-03 → C6-01 → C6-02 → C6-05 → C6-07 → C6-06 → C6-04).
-**Ciclo 5 cerrado (24-nov):** los 20 puntos del informe + C5-21 validados, instalados y verificados; pruebas Demo de la
-parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CICLO5.md`; reglas: `docs/DECISIONES_DUENO.md`.
-1. **Del dueño:** comparar en backtest SL/TP automático vs fijo (D-45); nueva búsqueda de VWAP Tendencia; decidir NEAR #65
-   (D-43, «Pendientes de decisión»).
-2. ~~**Walk-forward real (D-38 3B)**~~: opcional y para más adelante (D-67, carga en el VPS multiusuario); boceto del 24-nov.
-3. **Pantallas (boceto primero):** `cross` en la búsqueda (N-03), separación maestra/config/suscripción (CFG-06/07/09),
-   funding en pantalla, «código desactualizado» en Paper.
-4. **Opcional:** base `tr2test` en el servidor para correr completas las pruebas Demo con base (DEMO-04, 07, 08, 11, 12; el
-   dueño no la quiso, D-65); llevar al vigilante las dos comprobaciones de TimescaleDB de `bars_order_test --db` (solo
-   lectura); botón de la exportación a Excel del backtest (la ruta existe y ninguna pantalla la enlaza, C5-12).
-5. **Limpieza:** reescribir `docs/01–03`; slippage de altcoins en demo; R-10 preventivo (D-16).
-6. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
-- **Tarea manual del dueño:** pegar `docs/PROMPT_MAESTRO.md` (**V7.6**, 24-nov) en las instrucciones del proyecto
-  «Ruben Castillo» de claude.ai (hoy están vacías). No se puede hacer por script.
+**Ciclo 6 cerrado (25-nov):** los 7 puntos del informe validados, instalados y verificados (p114–p122); además, a pedido
+del dueño, D-69 a D-72 (p120, p123–p125). Resumen: «Cierre del ciclo 6» abajo; punto por punto:
+`docs/VALIDACION_AUDITORIA_CICLO6.md`; reglas: `docs/DECISIONES_DUENO.md` (D-68 a D-72).
+1. **Del dueño, en curso:** revisar con capturas un backtest de una moneda y otro de varias (D-70: 24 meses reales, un
+   solo retorno, DD guardado). Los backtests de las configs ya se volvieron a correr y guardar (25-nov).
+2. **Verificar:** SUI #79 en SL/TP automático (D-45, C6-07): en la lectura de cierre seguía fijo; LINK #64 y PEPE #69 ya
+   están en automático.
+3. **Pendientes de antes:** nueva búsqueda de VWAP Tendencia; decidir NEAR #65 (D-43); pantallas con boceto (`cross` en
+   la búsqueda N-03, separación maestra/config/suscripción CFG-06/07/09, funding en pantalla, «código desactualizado»
+   en Paper); botón de exportación a Excel del backtest (C5-12); limpieza de `docs/01–03`.
+4. **Opcional:** walk-forward real (D-67); base `tr2test` en el servidor (D-65, el dueño no la quiso).
+5. **Seguridad:** sin cambios (los `.env` 664 dentro de `/home/tr2` 770; no poner 600).
+- **Tarea manual del dueño:** pegar `docs/PROMPT_MAESTRO.md` (V7.6, con la regla C6-06 en §6.5) en las instrucciones del
+  proyecto «Ruben Castillo» de claude.ai. No se puede hacer por script.
 
 ---
 
@@ -29,7 +28,39 @@ parte Bybit 28/28 (D-65). Estado punto por punto: `docs/VALIDACION_AUDITORIA_CIC
 
 ## Ciclo 6 — informe de mejoras del 24-nov (versión `542b6f4`)
 
-### Trading — Cuentas sin nombres de estrategias para el inversionista (p125, D-72) — 25-nov
+### Cierre del ciclo 6 (25-nov) — parches instalados y verificados
+| Parche | SHA | Punto | Qué cambió | Decisión |
+|---|---|---|---|---|
+| p114 | `7d5956e` | C6-03 (P1) | El circuit breaker también vigila operaciones dudosas vivas; cierra solo con certeza, si no avisa | D-68 |
+| p115 | `0cd5811` | C6-01 (P2) | La cola del libro de ejecuciones no deja atrás a las operaciones nuevas | — |
+| p116 | `f9bcfe6` | C6-02 (P2) | El panel de riesgo dice «Esperando saldo base» / «Operación sin confirmar» como el motor | — |
+| p117 | `c3946eb` | C6-05 (P2) | Revisión automática (solo lectura, cada 3 h) de lotes comprimidos solapados en las velas | — |
+| p118 | `373c3ef` | C6-05 (P2) | Reparación con respaldo de 2 fragmentos de octubre: 339.794 velas idénticas antes y después | — |
+| p119 | `c707bd4` | C6-07 (P2) | Herramienta de comparación SL/TP fijo vs automático (misma config, mismas velas) | D-45 |
+| p120 | `7b7ed7c` | Dueño | Suscripciones Real siguen a Paper: sin pausadas automáticas, fuera de Paper = fuera de Real, estado por moneda | D-69 |
+| p121 | `7f9c636` | C6-06 (P3) | Esquema regenerado (6 columnas de D-66) y `schema_sync_test`; regla en PROMPT_MAESTRO §6.5 | — |
+| p122 | `4f53e69` | C6-04 (P3) | Fechas reales de cada tramo de la búsqueda y período hasta el último día que cuenta | — |
+| p123 | `40cb550` | Dueño | Backtest: «24 meses» son 24, un solo retorno, DD guardado, sin CONSOLIDADO con 1 moneda; estrellas con una sola fórmula | D-70 |
+| p124 | `97d8702` | Dueño | El inversionista no ve nombres de estrategias (dashboard y Trading) | D-71 |
+| p125 | `b8f159f` | Dueño | Trading — Cuentas: el inversionista ve «Config #N · moneda · temporalidad» | D-72 |
+| p126 | (este) | — | Cierre: bitácora y validación del ciclo 6 | — |
+
+- **C6-07, resultado (25-nov):** con las 15 configs y 24 meses, el SL/TP fijo gana en retorno en 12 y en profit factor en
+  11; el automático baja la caída en 9. El dueño pasó a automático solo LINK #64, PEPE #69 y SUI #79 (desde la pantalla
+  del backtest); el resto sigue fijo.
+- **Estrellas (D-70):** de 1,8–2,4 (fórmula vieja) a 2,4–4,6; mismas en backtest, historial, Estrategias, búsqueda, Paper y
+  Real.
+- **Operación:** los backtests de las configs se volvieron a correr y guardar con los 24 meses reales y el DD (dueño,
+  25-nov).
+- **Verificaciones en el servidor:** regresión 85 Python + 41 PHP en TODO OK en cada instalación; 120 vistas compiladas y
+  revisadas con `php -l`; revisión de velas «Sin lotes comprimidos solapados»; dashboard dibujado como el inversionista
+  (sin la sección de estrategias).
+- **Pruebas nuevas del ciclo:** `circuit_breaker_unresolved_test`, `execution_ledger_fairness_test`,
+  `ohlcv_overlap_check_test`, `ohlcv_overlap_command_test`, `ohlcv_rewrite_chunk_test`, `compare_levels_test`,
+  `real_subscriptions_flow_test`, `schema_sync_test`, `search_period_labels_test`, `rating_unified_test`,
+  `investor_hides_strategies_test`, `investor_accounts_labels_test` (más ajustes en `risk_limit_options_test`).
+
+### Trading — Cuentas sin nombres de estrategias para el inversionista (p125, D-72) — 25-nov · instalado `b8f159f`
 - **Dashboard (D-71):** el dueño reportó que seguía viendo «Estrategias — paper trading»; la lectura dibujó el dashboard
   como el inversionista (usuario #2): «no se ve» → era la página guardada en el navegador.
 - **Fix:** `StrategyLabel::anon` («Config #74 · DOGEUSDT · H4») en lista, aviso de misma moneda, confirmaciones, mensajes
